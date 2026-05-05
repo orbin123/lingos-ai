@@ -19,11 +19,26 @@ from app.core.mixins import IDMixin, TimestampMixin
 
 # Enums
 class TaskType(str, Enum):
-    """Task activity type — drives which UI component renders."""
+    """Task activity type — drives which UI component renders.
+
+    The first four values (reading/writing/speaking/listening) are used by
+    the rotation engine and seeded tasks.
+
+    The remaining values are generated task types produced by the LLM
+    Task Generator agent. They map 1-to-1 to template task_type strings
+    so the frontend can detect them via isGeneratedTaskType().
+    """
+    # Seeded / rotation-engine activity types
     READING = "reading"
     WRITING = "writing"
     SPEAKING = "speaking"
     LISTENING = "listening"
+    # LLM-generated task types (grammar)
+    FILL_IN_BLANKS = "fill_in_blanks"
+    ERROR_SPOTTING = "error_spotting"
+    SENTENCE_TRANSFORMATION = "sentence_transformation"
+    VOICE_CONVERSION = "voice_conversion"
+    ERROR_CORRECTION = "error_correction"
 
 
 class TaskStatus(str, Enum):
@@ -53,11 +68,23 @@ class Task(Base, IDMixin, TimestampMixin):
 
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     task_type: Mapped[TaskType] = mapped_column(
-        SQLAlchemyEnum(TaskType, name="task_type_enum"), nullable=False, index=True
+        SQLAlchemyEnum(
+            TaskType,
+            name="task_type_enum",
+            values_callable=lambda e: [m.value for m in e],  # store lowercase values, not names
+            create_type=False,  # type already exists in DB, managed by Alembic
+        ),
+        nullable=False,
+        index=True,
     )
     difficulty: Mapped[int] = mapped_column(nullable=False, default=1)
     status: Mapped[TaskStatus] = mapped_column(
-        SQLAlchemyEnum(TaskStatus, name="task_status_enum"),
+        SQLAlchemyEnum(
+            TaskStatus,
+            name="task_status_enum",
+            values_callable=lambda e: [m.value for m in e],
+            create_type=False,
+        ),
         nullable=False, default=TaskStatus.ACTIVE, index=True,
     )
     # Full task body — passage, questions, answer keys. Shape depends on task_type.
@@ -122,7 +149,12 @@ class UserTask(Base, IDMixin, TimestampMixin):
         index=True,
     )
     status: Mapped[UserTaskStatus] = mapped_column(
-        SQLAlchemyEnum(UserTaskStatus, name="user_task_status_enum"),
+        SQLAlchemyEnum(
+            UserTaskStatus,
+            name="user_task_status_enum",
+            values_callable=lambda e: [m.value for m in e],
+            create_type=False,
+        ),
         nullable=False, default=UserTaskStatus.PENDING, index=True,
     )
     completed_at: Mapped[datetime | None] = mapped_column(

@@ -67,10 +67,21 @@ class Course(Base, IDMixin, TimestampMixin):
     description: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     duration_weeks: Mapped[int] = mapped_column(nullable=False)  # 24 or 48
     target_level: Mapped[CourseLevel] = mapped_column(
-        SQLAlchemyEnum(CourseLevel, name="course_level_enum"), nullable=False
+        SQLAlchemyEnum(
+            CourseLevel,
+            name="course_level_enum",
+            values_callable=lambda e: [m.value for m in e],
+            create_type=False,
+        ),
+        nullable=False,
     )
     status: Mapped[CourseStatus] = mapped_column(
-        SQLAlchemyEnum(CourseStatus, name="course_status_enum"),
+        SQLAlchemyEnum(
+            CourseStatus,
+            name="course_status_enum",
+            values_callable=lambda e: [m.value for m in e],
+            create_type=False,
+        ),
         nullable=False,
         default=CourseStatus.ACTIVE,
         index=True,
@@ -110,7 +121,12 @@ class UserEnrollment(Base, IDMixin, TimestampMixin):
     current_day_in_week: Mapped[int] = mapped_column(nullable=False, default=1)
     tasks_per_day: Mapped[int] = mapped_column(nullable=False, default=2)
     status: Mapped[EnrollmentStatus] = mapped_column(
-        SQLAlchemyEnum(EnrollmentStatus, name="enrollment_status_enum"),
+        SQLAlchemyEnum(
+            EnrollmentStatus,
+            name="enrollment_status_enum",
+            values_callable=lambda e: [m.value for m in e],
+            create_type=False,
+        ),
         nullable=False,
         default=EnrollmentStatus.ACTIVE,
         index=True,
@@ -154,8 +170,13 @@ class EnrollmentSkillHistory(Base, IDMixin, TimestampMixin):
         index=True,
     )
     last_activity_type: Mapped[TaskType | None] = mapped_column(
-        SQLAlchemyEnum(TaskType, name="task_type_enum", create_type=False),
-        nullable=True,    # null until first practice for this skill
+        SQLAlchemyEnum(
+            TaskType,
+            name="task_type_enum",
+            values_callable=lambda e: [m.value for m in e],
+            create_type=False,
+        ),
+        nullable=True,
     )
     times_practiced: Mapped[int] = mapped_column(nullable=False, default=0)
     last_practiced_at: Mapped[datetime | None] = mapped_column(
