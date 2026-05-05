@@ -52,6 +52,38 @@ class TaskRepository:
             .all()
         )
     
+    def find_by_task_type(
+        self,
+        *,
+        task_type: str,
+        target_difficulty: int = 5,
+    ) -> Task | None:
+        """Find ONE seeded task matching a task_type string.
+
+        Used only by the superuser dev panel as a fallback when LLM
+        generation fails and we still want to show *something* for that
+        task_type. Returns the ACTIVE task closest in difficulty.
+        Returns None if no match exists in the seeded pool.
+        """
+        try:
+            tt = TaskType(task_type)
+        except ValueError:
+            return None  # unknown task_type string
+
+        from sqlalchemy import func
+        return (
+            self.db.query(Task)
+            .filter(
+                Task.status == TaskStatus.ACTIVE,
+                Task.task_type == tt,
+            )
+            .order_by(
+                func.abs(Task.difficulty - target_difficulty),
+                Task.id,
+            )
+            .first()
+        )
+
     def find_for_plan(
         self,
         *,
