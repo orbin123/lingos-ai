@@ -44,12 +44,11 @@ class FeedbackService:
                 f"Evaluation {evaluation_id} does not exist"
             )
 
-        # 2. Idempotency — don't double-generate
+        # 2. Overwrite existing feedback if present
         existing = self.feedback_repo.get_by_evaluation_id(evaluation_id)
         if existing is not None:
-            raise FeedbackAlreadyExists(
-                f"Evaluation {evaluation_id} already has feedback {existing.id}"
-            )
+            self.db.delete(existing)
+            self.db.flush()
 
         # 3. Walk back through the chain to gather LLM inputs.
         # Relationships are eager enough on access; SQLAlchemy will

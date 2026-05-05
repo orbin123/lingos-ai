@@ -1,20 +1,32 @@
+"""AI debug routes.
+
+Lightweight endpoints for verifying the LLM layer works end-to-end
+(API key valid, network reachable, LangSmith tracing flowing).
+Mounted under /debug/ai.
+"""
+
 from fastapi import APIRouter
-from langchain_core.messages import HumanMessage
-from app.ai.llm import get_llm
+
+from app.ai.llm import get_default_llm_client
 
 router = APIRouter(prefix="/debug/ai", tags=["debug"])
 
 
 @router.get("/ping")
-async def ping_llm():
+async def ping_llm() -> dict[str, str]:
+    """Smoke test the LLM client.
+
+    Sends one prompt to OpenAI and returns the reply. Useful for:
+      - confirming OPENAI_API_KEY is set + valid
+      - confirming LangSmith trace shows up under project
+        'ai-english-coach'
+      - sanity-checking the unified client after a deploy
+
+    Safe to leave in production — it's a single short call.
     """
-    TEMPORARY — S9 verification only.
-    Sends one message to OpenAI, returns the reply.
-    Trace should appear in LangSmith under project 'ai-english-coach'.
-    DELETE this endpoint after S9 is verified.
-    """
-    llm = get_llm()
-    response = await llm.ainvoke(
-        [HumanMessage(content="Say 'LangSmith trace working' in 5 words exactly.")]
+    client = get_default_llm_client()
+    reply = await client.generate_text(
+        system_prompt="You are a terse echo bot.",
+        user_prompt="Say 'LangSmith trace working' in 5 words exactly.",
     )
-    return {"reply": response.content}
+    return {"reply": reply}

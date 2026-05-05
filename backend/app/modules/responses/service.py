@@ -68,30 +68,32 @@ class ResponseService:
                 f"{user_task_id} (owner: {user_task.user_id})"
             )
 
-        # 3. State check
-        if user_task.status not in _SUBMITTABLE_STATUSES:
+        # 3. State check — block only truly unsubmittable states (skipped)
+        if user_task.status == UserTaskStatus.SKIPPED:
             raise UserTaskNotSubmittable(
-                f"UserTask {user_task_id} is {user_task.status.value} — "
-                f"cannot submit"
+                f"UserTask {user_task_id} is skipped — cannot submit"
             )
 
-        # 4. Duplicate-submission check
+        # 4. Overwrite any previous response (+ cascade deletes evaluation,
+        #    feedback via DB ondelete=CASCADE so every resubmit is a clean slate).
         existing = self.response_repo.get_by_user_task_id(user_task_id)
         if existing is not None:
-            raise ResponseAlreadySubmitted(
-                f"UserTask {user_task_id} already has response {existing.id}"
+            logger.info(
+                "UserTask %s already has response %s — deleting and rewriting",
+                user_task_id, existing.id,
             )
+            self.db.delete(existing)
+            self.db.flush()  # remove before inserting the new one
 
-        # 5. Create the response row
+        # 5. Create the new response row
         response = self.response_repo.create(
             user_task_id=user_task_id,
             content=content,
             raw_text=raw_text,
         )
 
-        # 6. Move the assignment forward
-        if user_task.status == UserTaskStatus.PENDING:
-            user_task.status = UserTaskStatus.IN_PROGRESS
+        # 6. Reset the assignment status so the task can be re-evaluated
+        user_task.status = UserTaskStatus.IN_PROGRESS
 
         # 7. Commit response + status flip atomically
         self.db.commit()
@@ -102,31 +104,33 @@ class ResponseService:
     def _evaluate_and_persist(
         self, *, response: UserResponse
     ) -> Evaluation:
-        """Run the rule-based evaluator and save the Evaluation row.
-
-        Idempotent: if an evaluation already exists for this response,
-        return it instead of re-evaluating.
-
-        Picks the right evaluator based on the FIRST activity inside
-        Task.content.activities. MVP shortcut: a task today has exactly
-        one scorable activity. When tasks bundle multiple activities,
-        we'll loop here and aggregate.
-        """
-        # Idempotency guard — protects against retries/duplicate calls
+        """Run the rule-based evaluator and save the Evaluation row."""
+        # Overwrite existing evaluation if present (resubmit scenario)
         existing = self.evaluation_repo.get_by_response_id(response.id)
         if existing is not None:
-            return existing
+            self.db.delete(existing)
+            self.db.flush()
 
         # Walk back to the Task to get the answer key + activity type
         user_task = self.user_task_repo.get_by_id(response.user_task_id)
         task = user_task.task
 
+        logger.info(
+            "[evaluator] evaluating response=%s user_task=%s task=%s task_type=%s",
+            response.id, response.user_task_id, task.id, task.task_type,
+        )
+
         activity_type = self._first_activity_type(task.content)
+        logger.info("[evaluator] resolved activity_type=%r", activity_type)
 
         report = self.evaluator.evaluate(
             activity_type=activity_type,
             task_content=task.content,
             user_answers=response.content,
+        )
+        logger.info(
+            "[evaluator] scored: total=%s correct=%s percentage=%s%%",
+            report.get("total"), report.get("correct_count"), report.get("percentage"),
         )
 
         # overall_score = percentage / 10 → 0–10 scale (matches Numeric(4,2))
@@ -145,17 +149,56 @@ class ResponseService:
 
     @staticmethod
     def _first_activity_type(task_content: dict) -> str:
-        """Return the activity_type of the first activity in the task.
+        """Detect the activity_type to use for evaluation.
 
-        Raises ValueError if the task has no activities at all — that's
-        a malformed seed and should fail loud, not silently default.
+        Two content shapes exist:
+
+        1. SEEDED tasks (old hand-authored content):
+              {"activities": [{"activity_type": "fill_in_the_blanks", ...}]}
+           → return activities[0]["activity_type"]
+
+        2. GENERATED tasks (LLM output, no "activities" key):
+           Shape is inferred from which top-level / item-level keys are present.
+           Each generated Pydantic model has a unique fingerprint field.
+
+        Raises ValueError only if the shape is genuinely unrecognisable.
         """
+        # ── Seeded path ──────────────────────────────────────────────
         activities = task_content.get("activities") or []
-        if not activities:
-            raise ValueError(
-                "Task content has no activities — cannot evaluate"
-            )
-        return activities[0]["activity_type"]
+        if activities:
+            detected = activities[0]["activity_type"]
+            logger.debug("[evaluator] seeded task → activity_type=%r", detected)
+            return detected
+
+        # ── Generated path — infer from content fingerprint ──────────
+        # Check more-specific shapes first so there's no ambiguity.
+
+        if "blanks" in task_content:
+            logger.debug("[evaluator] generated task fingerprint='blanks' → fill_in_blanks")
+            return "fill_in_blanks"
+
+        if "sentences" in task_content and "total_with_errors" in task_content:
+            logger.debug("[evaluator] generated task fingerprint='sentences+total_with_errors' → error_spotting")
+            return "error_spotting"
+
+        if "items" in task_content:
+            items = task_content["items"]
+            if items:
+                first = items[0]
+                if "direction" in first:
+                    logger.debug("[evaluator] generated task fingerprint='items[].direction' → voice_conversion")
+                    return "voice_conversion"
+                if "incorrect_sentence" in first:
+                    logger.debug("[evaluator] generated task fingerprint='items[].incorrect_sentence' → error_correction")
+                    return "error_correction"
+                if "transformation_target" in first:
+                    logger.debug("[evaluator] generated task fingerprint='items[].transformation_target' → sentence_transformation")
+                    return "sentence_transformation"
+
+        raise ValueError(
+            f"Cannot detect activity_type from task content. "
+            f"Top-level keys present: {list(task_content.keys())}"
+        )
     
     # ---- Step 5 (side-effect): embed response + store vector ----
     async def _embed_response(self, *, response: UserResponse) -> None:
