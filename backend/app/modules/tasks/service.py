@@ -12,7 +12,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
-from app.ai.task_generator import TaskGeneratorAgent
+from app.ai.agents.task_generator import TaskGeneratorAgent
 from app.modules.curriculum.exceptions import (
     EnrollmentNotActive,
     NoTaskAvailable,
@@ -169,32 +169,49 @@ class TaskService:
         if template is None:
             template = templates[0]  # fallback to first template
 
+        logger.info(
+            "Attempting LLM generation: skill=%s activity=%s template=%s user_profile=%s",
+            plan.skill_name, plan.activity_type.value,
+            template.template_id, user_profile,
+        )
+
         try:
-            # Run the async generator in a sync context
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # We're inside an async framework (FastAPI) — use a new thread
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    content = pool.submit(
-                        asyncio.run,
-                        self.generator.generate(template, user_profile),
-                    ).result(timeout=30)
-            else:
-                content = asyncio.run(
+            # FastAPI routes are synchronous (the router uses sync def).
+            # asyncio.get_event_loop() inside a sync thread returns a loop
+            # that is NOT running, so asyncio.run() is safe here.
+            # We explicitly create a fresh loop to avoid any stale-loop
+            # issues across requests.
+            loop = asyncio.new_event_loop()
+            try:
+                content = loop.run_until_complete(
                     self.generator.generate(template, user_profile)
                 )
+            finally:
+                loop.close()
         except Exception as exc:
             logger.warning(
-                "LLM generation failed for template=%s: %s",
+                "[task_gen] ⚠️  LLM call FAILED for template=%s: %s — will fall back to seeded pool",
                 template.template_id, exc,
             )
             return None
 
+        # Map the template's task_type string (e.g. "fill_in_blanks") to the
+        # TaskType enum so the frontend's isGeneratedTaskType() check works.
+        from app.modules.tasks.models import TaskType as TT
+        try:
+            generated_task_type = TT(template.task_type)
+        except ValueError:
+            logger.warning(
+                "template.task_type=%r has no matching TaskType enum value; "
+                "falling back to activity type",
+                template.task_type,
+            )
+            generated_task_type = plan.activity_type
+
         # Create a new Task row with the generated content
         task = Task(
-            title=f"{plan.skill_name.title()} – {template.task_type} (generated)",
-            task_type=plan.activity_type,
+            title=f"{plan.skill_name.title()} – {template.task_type.replace('_', ' ').title()} (AI)",
+            task_type=generated_task_type,
             difficulty=sub_level,
             status=TaskStatus.ACTIVE,
             content=content,
@@ -220,8 +237,9 @@ class TaskService:
         )
 
         logger.info(
-            "LLM-generated task created: task_id=%s template=%s for user=%s",
-            task.id, template.template_id, user_id,
+            "[task_gen] ✅ LLM task generated successfully: "
+            "task_id=%s template=%s task_type=%s for user=%s",
+            task.id, template.template_id, generated_task_type.value, user_id,
         )
         return assignment
 
@@ -261,8 +279,10 @@ class TaskService:
             return assignment
 
         # --- Fallback: seeded task pool ---
-        logger.info(
-            "Falling back to seeded pool for skill=%s activity=%s",
+        logger.warning(
+            "[task_gen] ⚠️  LLM generation FAILED or no template matched — "
+            "falling back to seeded pool for skill=%s activity=%s. "
+            "User will receive a hand-authored task, NOT an AI-generated one.",
             plan.skill_name, plan.activity_type.value,
         )
         task = self.task_repo.find_for_plan(
@@ -359,6 +379,118 @@ class TaskService:
             self.db.refresh(ut.task)
 
         return bundle
+
+    def superuser_jump_by_type(
+        self,
+        *,
+        user_id: int,
+        task_type: str,
+    ) -> list[UserTask]:
+        """Dev-only: generate a task for a SPECIFIC task_type string.
+
+        Bypasses the rotation engine entirely. Finds the first template
+        whose task_type matches the requested string, then calls the
+        LLM to generate content. Falls back to the seeded pool if LLM
+        fails, same as the normal path.
+
+        Used by the SuperUser dev panel when the tester picks a specific
+        task type (e.g. 'error_spotting') regardless of the curriculum day.
+        """
+        from app.tasks.schemas import ALL_TEMPLATES
+        from app.modules.tasks.models import TaskType as TT
+
+        enrollment = self._load_enrollment(user_id)
+        user_profile = self._build_user_profile(user_id)
+
+        # Find the first template that matches the requested task_type
+        template = next(
+            (t for t in ALL_TEMPLATES if t.task_type == task_type), None
+        )
+        if template is None:
+            raise NoTaskAvailable(
+                f"No template found for task_type={task_type!r}. "
+                f"Check that it is defined in a *_templates.py file."
+            )
+
+        # Find the skill_id for this template's sub_skill
+        skill_name_to_id = self.skill_repo.name_to_id_map()
+        skill_id = skill_name_to_id.get(template.sub_skill.value)
+        if skill_id is None:
+            raise NoTaskAvailable(
+                f"Skill '{template.sub_skill.value}' not found in DB skills table."
+            )
+
+        logger.info(
+            "[superuser_jump_by_type] task_type=%r template=%s skill=%s",
+            task_type, template.template_id, template.sub_skill.value,
+        )
+
+        # Attempt LLM generation
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                content = loop.run_until_complete(
+                    self.generator.generate(template, user_profile)
+                )
+            finally:
+                loop.close()
+        except Exception as exc:
+            logger.warning(
+                "[superuser_jump_by_type] ⚠️  LLM FAILED for template=%s: %s "
+                "— falling back to seeded pool",
+                template.template_id, exc,
+            )
+            content = None
+
+        if content is not None:
+            try:
+                generated_task_type = TT(task_type)
+            except ValueError:
+                generated_task_type = TT.READING  # safe fallback, shouldn't happen
+
+            task = Task(
+                title=f"{template.sub_skill.value.title()} – {task_type.replace('_', ' ').title()} (AI)",
+                task_type=generated_task_type,
+                difficulty=user_profile.get("sub_level", 5),
+                status=TaskStatus.ACTIVE,
+                content=content,
+            )
+            self.db.add(task)
+            self.db.flush()
+
+            from app.modules.tasks.models import TaskSkill
+            self.db.add(TaskSkill(task_id=task.id, skill_id=skill_id, weight=1.0))
+            self.db.flush()
+
+            assignment = self.user_task_repo.assign(
+                user_id=user_id,
+                task_id=task.id,
+                enrollment_id=enrollment.id,
+            )
+            logger.info(
+                "[superuser_jump_by_type] ✅ Generated task_id=%s for user=%s",
+                task.id, user_id,
+            )
+        else:
+            # Seeded fallback — find any task with a matching task_type
+            task = self.task_repo.find_by_task_type(
+                task_type=task_type,
+                target_difficulty=user_profile.get("sub_level", 5),
+            )
+            if task is None:
+                raise NoTaskAvailable(
+                    f"LLM failed and no seeded task exists for task_type={task_type!r}"
+                )
+            assignment = self.user_task_repo.assign(
+                user_id=user_id,
+                task_id=task.id,
+                enrollment_id=enrollment.id,
+            )
+
+        self.db.commit()
+        self.db.refresh(assignment)
+        self.db.refresh(assignment.task)
+        return [assignment]
 
     def superuser_jump(
         self,

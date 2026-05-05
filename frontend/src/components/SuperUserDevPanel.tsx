@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { tasksApi } from "@/lib/tasks-api";
 
@@ -127,8 +126,6 @@ export function SuperUserDevPanel() {
 }
 
 function PanelInner() {
-  const router = useRouter();
-
   // ── Position / drag ────────────────────────────────────────
   const [pos, setPos] = useState({ x: 20, y: 20 }); // offset from bottom-right
   const [isMinimized, setIsMinimized] = useState(false);
@@ -188,9 +185,15 @@ function PanelInner() {
     setIsLoading(true);
     setError(null);
     try {
-      const bundle = await tasksApi.superuserJump(selectedDay.week, selectedDay.day);
+      // Pass the specific task_type so the backend generates that exact
+      // template, not whatever the rotation engine picks for the week/day.
+      const bundle = await tasksApi.superuserJump(
+        selectedDay.week,
+        selectedDay.day,
+        selectedType.id,
+      );
       sessionStorage.setItem("superuser_jump_bundle", JSON.stringify(bundle));
-      router.push("/task");
+      window.location.href = "/task";
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Jump failed";
       setError(msg);

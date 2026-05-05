@@ -20,6 +20,14 @@ from app.modules.tasks.service import DayNotComplete, TaskService
 class SuperuserJumpRequest(BaseModel):
     week: int = Field(..., ge=1, le=48)
     day_in_week: int = Field(..., ge=1, le=7)
+    task_type: str | None = Field(
+        default=None,
+        description=(
+            "If supplied, the backend finds the template that matches this "
+            "task_type and generates directly — ignoring the rotation engine. "
+            "Used by the SuperUser dev panel to test a specific task type."
+        ),
+    )
 
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -71,11 +79,17 @@ def superuser_jump(
     Only accessible to superusers. Does not modify enrollment state."""
     service = TaskService(db)
     try:
-        bundle = service.superuser_jump(
-            user_id=current_user.id,
-            week=payload.week,
-            day_in_week=payload.day_in_week,
-        )
+        if payload.task_type:
+            bundle = service.superuser_jump_by_type(
+                user_id=current_user.id,
+                task_type=payload.task_type,
+            )
+        else:
+            bundle = service.superuser_jump(
+                user_id=current_user.id,
+                week=payload.week,
+                day_in_week=payload.day_in_week,
+            )
     except NotEnrolled as e:
         raise HTTPException(status_code=404, detail=str(e))
     except EnrollmentNotActive as e:

@@ -327,6 +327,7 @@ Return ONLY valid JSON matching the SentenceTransformationTask schema.
         "passing_threshold": 0.65,
     },
     difficulty_modifiers={
+        "beginner": {"item_count": 3},
         "intermediate": {"item_count": 3},
         "advanced": {"item_count": 5},
     },
@@ -364,6 +365,7 @@ Return ONLY valid JSON matching the VoiceConversionTask schema.
         "passing_threshold": 0.75,
     },
     difficulty_modifiers={
+        "beginner": {"item_count": 3},
         "intermediate": {"item_count": 4},
         "advanced": {"item_count": 6},
     },
@@ -402,8 +404,8 @@ Return ONLY valid JSON matching the ErrorCorrectionTask schema.
         "passing_threshold": 0.7,
     },
     difficulty_modifiers={
-        "beginner": {"item_count": 4},
-        "intermediate": {"item_count": 6},
+        "beginner": {"item_count": 3},
+        "intermediate": {"item_count": 5},
         "advanced": {"item_count": 8},
     },
 )
@@ -441,6 +443,7 @@ Set audio_url to null — it will be populated after TTS generation.
         "passing_threshold": 0.7,
     },
     difficulty_modifiers={
+        "beginner": {"item_count": 3},
         "intermediate": {"item_count": 4},
         "advanced": {"item_count": 6},
     },
@@ -515,6 +518,7 @@ Return ONLY valid JSON matching the SpeakSentenceCombinersTask schema.
         "passing_threshold": 0.6,
     },
     difficulty_modifiers={
+        "beginner": {"item_count": 3},
         "intermediate": {"item_count": 3},
         "advanced": {"item_count": 5},
     },

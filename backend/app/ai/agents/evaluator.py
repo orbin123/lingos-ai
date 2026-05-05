@@ -30,6 +30,9 @@ ErrorType = Literal[
     "too_short",          # paraphrasing: answer is shorter than min_words
     "too_similar",        # paraphrasing: user copied the original
     "needs_review",       # paraphrasing: passed rule checks, needs LLM later
+    "false_positive",     # error_spotting: user flagged a correct sentence as wrong
+    "false_negative",     # error_spotting: user marked an erroneous sentence as correct
+    "wrong_error_type",   # error_spotting: verdict correct but error category wrong
 ]
 
 
@@ -37,6 +40,10 @@ ErrorType = Literal[
 # Keep this list in sync with the dispatcher (`evaluate`) below.
 SupportedActivity = Literal[
     "fill_in_the_blanks",
+    "fill_in_blanks",
+    "error_spotting",
+    "sentence_transformation",
+    "voice_conversion",
     "sentence_engineering",
     "paraphrasing",
 ]
@@ -379,6 +386,382 @@ class EvaluationService:
         }
 
     # ------------------------------------------------------------------
+    # Generated fill-in-blanks — reads content.blanks[], not activities[]
+    # ------------------------------------------------------------------
+    def evaluate_generated_fill_in_blanks(
+        self,
+        *,
+        task_content: dict,
+        user_answers: dict,
+    ) -> dict:
+        """Score an LLM-generated fill-in-blanks task.
+
+        Generated tasks have a different content shape from seeded tasks:
+
+            SEEDED:    content["activities"][0]["answers"] = {"Q1": "went", ...}
+            GENERATED: content["blanks"] = [
+                           {"blank_id": "b1", "correct_answer": "went", ...},
+                           ...
+                       ]
+
+        The user submits answers keyed by blank_id:
+            user_answers = {"b1": "went", "b2": "has"}
+        """
+        blanks: list[dict] = task_content.get("blanks", [])
+        if not blanks:
+            raise ValueError(
+                "Generated fill_in_blanks task has no 'blanks' in content"
+            )
+
+        per_question: dict[str, dict] = {}
+        correct_count = 0
+
+        for blank in blanks:
+            bid = blank["blank_id"]
+            correct = blank["correct_answer"]
+            user_ans = user_answers.get(bid, "")
+            result = _check_one(user_ans, correct)
+            # Also store the grammar_rule so the feedback agent can use it
+            result["grammar_rule"] = blank.get("grammar_rule", "")
+            result["sentence"] = blank.get("sentence_with_blank", "")
+            per_question[bid] = result
+            if result["correct"]:
+                correct_count += 1
+
+        total = len(blanks)
+        percentage = round((correct_count / total) * 100, 2) if total else 0.0
+
+        return {
+            "task_type": "fill_in_blanks",
+            "total": total,
+            "correct_count": correct_count,
+            "percentage": percentage,
+            "questions": per_question,
+        }
+
+    # ------------------------------------------------------------------
+    # Sentence transformation — stub grader (open-ended writing)
+    #
+    # Real grading needs an LLM to check structure match + grammar.
+    # Today we ship the same cheap rule-based checks as paraphrasing so
+    # the full loop works end-to-end without blocking on the LLM evaluator:
+    #
+    #   - empty                    → missing_answer        (0%)
+    #   - too short (< 4 words)    → too_short             (0%)
+    #   - identical to original    → too_similar           (0%)
+    #   - otherwise                → needs_review          (70% placeholder)
+    #
+    # TODO(post-MVP): replace the stub with an LLM evaluator that checks:
+    #   - transformation_target was applied (make_complex, add_relative_clause, etc.)
+    #   - expected_pattern was followed
+    #   - grammar is correct
+    # The dispatcher signature stays the same so callers don't change.
+    # ------------------------------------------------------------------
+    def evaluate_sentence_transformation(
+        self,
+        *,
+        task_content: dict,
+        user_answers: dict,
+    ) -> dict:
+        """Score a generated sentence-transformation task.
+
+        Content shape (from SentenceTransformationTask Pydantic model):
+            {
+              "items": [
+                {
+                  "item_id": "item_1",
+                  "original_sentence": "He was tired.",
+                  "transformation_target": "make_complex",
+                  "expected_pattern": "Although/Because + clause",
+                  "sample_correct_answer": "Although he was tired, he finished the work.",
+                  "grading_criteria": [...]
+                },
+                ...
+              ]
+            }
+
+        User answer shape (from GeneratedSentenceTransformation.tsx):
+            { "item_1": "Although he was tired, he finished the work.", ... }
+
+        Scoring per item (max 1.0 point each):
+            - Empty                      → 0.0  (missing_answer)
+            - Fewer than 4 words         → 0.0  (too_short)
+            - Identical to original      → 0.0  (too_similar)
+            - Otherwise                  → 0.7  (needs_review)
+        """
+        items: list[dict] = task_content.get("items", [])
+        if not items:
+            raise ValueError(
+                "Generated sentence_transformation task has no 'items' in content"
+            )
+
+        per_question: dict[str, dict] = {}
+        score_sum = 0.0
+
+        for item in items:
+            iid = item["item_id"]
+            original = item.get("original_sentence", "")
+            sample = item.get("sample_correct_answer", original)
+            user_ans = user_answers.get(iid, "")
+
+            result = _score_paraphrase(
+                user_answer=user_ans,
+                original=original,
+                reference=sample,
+                min_words=4,
+            )
+            # Attach transformation metadata so the feedback agent can
+            # reference the target and expected pattern.
+            result["transformation_target"] = item.get("transformation_target", "")
+            result["expected_pattern"] = item.get("expected_pattern", "")
+            result["grading_criteria"] = item.get("grading_criteria", [])
+
+            per_question[iid] = result
+            score_sum += result["score"]
+
+        total = len(items)
+        percentage = round((score_sum / total) * 100, 2) if total else 0.0
+        correct_count = sum(
+            1 for r in per_question.values() if r["score"] >= 0.7
+        )
+
+        return {
+            "task_type": "sentence_transformation",
+            "total": total,
+            "correct_count": correct_count,
+            "percentage": percentage,
+            "questions": per_question,
+        }
+
+    # ------------------------------------------------------------------
+    # Voice conversion — exact match with sentence normalization
+    #
+    # Each item has a `correct_answer` field, so we can do a real
+    # deterministic check — no stub needed. We use `_normalize_sentence`
+    # (strip trailing punctuation + lowercase + collapse spaces) so that
+    # "The letter was written by John" matches "the letter was written by john."
+    # ------------------------------------------------------------------
+    def evaluate_voice_conversion(
+        self,
+        *,
+        task_content: dict,
+        user_answers: dict,
+    ) -> dict:
+        """Score a generated voice-conversion task.
+
+        Content shape (from VoiceConversionTask Pydantic model):
+            {
+              "items": [
+                {
+                  "item_id": "item_1",
+                  "original_sentence": "John wrote the letter.",
+                  "direction": "active_to_passive",
+                  "correct_answer": "The letter was written by John.",
+                  "common_mistake": "..."
+                },
+                ...
+              ]
+            }
+
+        User answer shape (from GeneratedVoiceConversion.tsx):
+            { "item_1": "The letter was written by John.", ... }
+
+        Scoring per item (max 1.0 each):
+            - Empty                                         → 0.0  (missing_answer)
+            - Normalised match with correct_answer          → 1.0  (correct)
+            - Non-empty but doesn’t match                  → 0.0  (wrong_answer)
+        """
+        items: list[dict] = task_content.get("items", [])
+        if not items:
+            raise ValueError(
+                "Generated voice_conversion task has no 'items' in content"
+            )
+
+        per_question: dict[str, dict] = {}
+        correct_count = 0
+
+        for item in items:
+            iid = item["item_id"]
+            correct = item.get("correct_answer", "")
+            user_ans = user_answers.get(iid, "")
+
+            if not user_ans.strip():
+                per_question[iid] = {
+                    "correct": False,
+                    "user_answer": user_ans,
+                    "correct_answer": correct,
+                    "error_type": "missing_answer",
+                    "direction": item.get("direction", ""),
+                    "original_sentence": item.get("original_sentence", ""),
+                    "common_mistake": item.get("common_mistake"),
+                }
+                continue
+
+            is_correct = (
+                _normalize_sentence(user_ans) == _normalize_sentence(correct)
+            )
+            per_question[iid] = {
+                "correct": is_correct,
+                "user_answer": user_ans,
+                "correct_answer": correct,
+                "error_type": "correct" if is_correct else "wrong_answer",
+                "direction": item.get("direction", ""),
+                "original_sentence": item.get("original_sentence", ""),
+                "common_mistake": item.get("common_mistake"),
+            }
+            if is_correct:
+                correct_count += 1
+
+        total = len(items)
+        percentage = round((correct_count / total) * 100, 2) if total else 0.0
+
+        return {
+            "task_type": "voice_conversion",
+            "total": total,
+            "correct_count": correct_count,
+            "percentage": percentage,
+            "questions": per_question,
+        }
+
+    # ------------------------------------------------------------------
+    # Error spotting — 0.5 pts for verdict + 0.5 pts for error_type
+    # ------------------------------------------------------------------
+    def evaluate_error_spotting(
+        self,
+        *,
+        task_content: dict,
+        user_answers: dict,
+    ) -> dict:
+        """Score a generated error-spotting task.
+
+        Content shape (from ErrorSpottingTask Pydantic model):
+            {
+              "sentences": [
+                {
+                  "sentence_id": "s1",
+                  "sentence": "She go to school every day.",
+                  "has_error": true,
+                  "error_type": "present_simple",
+                  "incorrect_phrase": "go",
+                  "correction": "goes",
+                  "explanation": "..."
+                },
+                ...
+              ],
+              "total_with_errors": 4,
+              ...
+            }
+
+        User answer shape (from GeneratedErrorSpotting.tsx):
+            {
+              "s1": "present_simple",   # user said has_error + picked type
+              "s2": "correct",          # user said this sentence is correct
+              ...
+            }
+
+        Scoring per sentence (max 1.0 point each):
+            - Sentence has no error AND user says "correct"      → 1.0
+            - Sentence has error  AND user picks correct type    → 1.0
+            - Sentence has error  AND user picks wrong type      → 0.5
+              (got the verdict right, missed the category)
+            - Any other mismatch (false positive / false negative) → 0.0
+        """
+        sentences: list[dict] = task_content.get("sentences", [])
+        if not sentences:
+            raise ValueError(
+                "Generated error_spotting task has no 'sentences' in content"
+            )
+
+        per_question: dict[str, dict] = {}
+        score_sum = 0.0
+
+        for sent in sentences:
+            sid = sent["sentence_id"]
+            has_error: bool = sent.get("has_error", False)
+            correct_type: str | None = sent.get("error_type")  # None when has_error=False
+            user_ans: str = user_answers.get(sid, "").strip()
+
+            # Build the canonical "correct answer" label shown in feedback.
+            # For error-free sentences, "correct" is the right answer.
+            # For erroneous sentences, the right answer is the error type.
+            expected_label = "correct" if not has_error else (correct_type or "unknown")
+
+            if not user_ans:
+                # User did not answer this sentence at all
+                per_question[sid] = {
+                    "correct": False,
+                    "user_answer": user_ans,
+                    "correct_answer": expected_label,
+                    "error_type": "missing_answer",
+                    "score": 0.0,
+                    # Pass through the sentence data so the feedback agent
+                    # can reference the original text and explanation.
+                    "sentence": sent.get("sentence", ""),
+                    "correction": sent.get("correction"),
+                    "explanation": sent.get("explanation"),
+                }
+                continue
+
+            user_said_correct = (user_ans == "correct")
+
+            if not has_error:
+                # Sentence is actually correct
+                if user_said_correct:
+                    q_score = 1.0
+                    q_correct = True
+                    q_error_type = "correct"
+                else:
+                    # False positive — user flagged an error that doesn't exist
+                    q_score = 0.0
+                    q_correct = False
+                    q_error_type = "false_positive"
+            else:
+                # Sentence has a real error
+                if user_said_correct:
+                    # False negative — user missed the error entirely
+                    q_score = 0.0
+                    q_correct = False
+                    q_error_type = "false_negative"
+                elif user_ans == correct_type:
+                    # Correct verdict AND correct error type → full marks
+                    q_score = 1.0
+                    q_correct = True
+                    q_error_type = "correct"
+                else:
+                    # Correct verdict but wrong error type → half marks
+                    q_score = 0.5
+                    q_correct = False
+                    q_error_type = "wrong_error_type"
+
+            per_question[sid] = {
+                "correct": q_correct,
+                "user_answer": user_ans,
+                "correct_answer": expected_label,
+                "error_type": q_error_type,
+                "score": q_score,
+                "sentence": sent.get("sentence", ""),
+                "correction": sent.get("correction"),
+                "explanation": sent.get("explanation"),
+            }
+            score_sum += q_score
+
+        total = len(sentences)
+        # Each sentence is worth 1.0 max, so percentage = (sum / total) * 100
+        percentage = round((score_sum / total) * 100, 2) if total else 0.0
+        # "correct" means full marks on that sentence (score == 1.0)
+        correct_count = sum(
+            1 for r in per_question.values() if r["score"] == 1.0
+        )
+
+        return {
+            "task_type": "error_spotting",
+            "total": total,
+            "correct_count": correct_count,
+            "percentage": percentage,
+            "questions": per_question,
+        }
+
+    # ------------------------------------------------------------------
     # Dispatcher — the ONE method service code should call.
     # ------------------------------------------------------------------
     def evaluate(
@@ -401,6 +784,23 @@ class EvaluationService:
             return self.evaluate_fill_in_blanks(
                 task_content=task_content, user_answers=user_answers
             )
+        if activity_type == "fill_in_blanks":
+            # Generated task shape — blanks[] not activities[]
+            return self.evaluate_generated_fill_in_blanks(
+                task_content=task_content, user_answers=user_answers
+            )
+        if activity_type == "error_spotting":
+            return self.evaluate_error_spotting(
+                task_content=task_content, user_answers=user_answers
+            )
+        if activity_type == "sentence_transformation":
+            return self.evaluate_sentence_transformation(
+                task_content=task_content, user_answers=user_answers
+            )
+        if activity_type == "voice_conversion":
+            return self.evaluate_voice_conversion(
+                task_content=task_content, user_answers=user_answers
+            )
         if activity_type == "sentence_engineering":
             return self.evaluate_sentence_engineering(
                 task_content=task_content, user_answers=user_answers
@@ -411,7 +811,8 @@ class EvaluationService:
             )
         raise ValueError(
             f"Unsupported activity_type: {activity_type!r}. "
-            f"Supported: fill_in_the_blanks, sentence_engineering, paraphrasing."
+            f"Supported: fill_in_the_blanks, fill_in_blanks, error_spotting, "
+            f"sentence_transformation, voice_conversion, sentence_engineering, paraphrasing."
         )
 
     # ------------------------------------------------------------------

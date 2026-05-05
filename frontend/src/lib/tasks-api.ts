@@ -279,12 +279,14 @@ export const tasksApi = {
   completeDay: () =>
     api.post("/tasks/complete-day").then((r) => r.data),
 
-  // Superuser-only: jump to a specific week/day to generate tasks for it
-  superuserJump: (week: number, dayInWeek: number) =>
+  // Superuser-only: jump to a specific week/day to generate tasks for it.
+  // If task_type is provided, the backend generates that specific type directly.
+  superuserJump: (week: number, dayInWeek: number, taskType?: string) =>
     api
       .post<UserTask[]>("/tasks/superuser-jump", {
         week,
         day_in_week: dayInWeek,
+        task_type: taskType ?? null,
       })
       .then((r) => r.data),
 };
