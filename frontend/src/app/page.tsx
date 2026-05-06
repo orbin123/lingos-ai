@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { Brain, Target, Wrench, Repeat, BarChart, Layers } from "lucide-react";
+import { LandingNavbar } from "@/components/layout/LandingNavbar";
+import { LandingFooter } from "@/components/layout/LandingFooter";
 
 const ACCENT_HUE = 240;
 const CTA_TEXT = "Start Learning Free";
@@ -66,136 +69,7 @@ function DotGrid({ opacity = 0.18 }: { opacity?: number }) {
   );
 }
 
-// ── NAV ─────────────────────────────────────────────────────────────────────
-function Nav({ onCTAClick }: { onCTAClick: () => void }) {
-  const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const h = () => setScrolled(window.scrollY > 30);
-    window.addEventListener("scroll", h);
-    return () => window.removeEventListener("scroll", h);
-  }, []);
-  return (
-    <nav
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 100,
-        padding: "0 40px",
-        transition: "all 0.3s",
-        background: scrolled ? "rgba(220,235,250,0.82)" : "transparent",
-        backdropFilter: scrolled ? "blur(20px)" : "none",
-        borderBottom: scrolled ? "1px solid rgba(255,255,255,0.7)" : "none",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1180,
-          margin: "0 auto",
-          display: "flex",
-          alignItems: "center",
-          height: 68,
-          gap: 40,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 9,
-              background: `oklch(52% 0.18 ${ACCENT_HUE})`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <svg width="17" height="17" viewBox="0 0 17 17" fill="none">
-              <path
-                d="M3 13L8.5 4L14 13"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M5.2 10h6.6"
-                stroke="white"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
-          <span
-            style={{
-              fontWeight: 700,
-              fontSize: 17,
-              letterSpacing: "-0.3px",
-              color: "oklch(18% 0.09 245)",
-            }}
-          >
-            LingosAI
-          </span>
-        </div>
-        <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-          {["Features", "How It Works", "Pricing", "For Teams"].map((l) => (
-            <a
-              key={l}
-              href="#"
-              style={{
-                padding: "7px 16px",
-                borderRadius: 50,
-                fontSize: 14,
-                fontWeight: 500,
-                color: "oklch(28% 0.08 240)",
-                textDecoration: "none",
-                transition: "background 0.15s",
-              }}
-              onMouseEnter={(e) =>
-                ((e.target as HTMLElement).style.background =
-                  "rgba(255,255,255,0.5)")
-              }
-              onMouseLeave={(e) =>
-                ((e.target as HTMLElement).style.background = "transparent")
-              }
-            >
-              {l}
-            </a>
-          ))}
-        </div>
-        <button
-          onClick={onCTAClick}
-          style={{
-            padding: "9px 22px",
-            borderRadius: 50,
-            border: "none",
-            cursor: "pointer",
-            background: `oklch(22% 0.09 ${ACCENT_HUE})`,
-            color: "white",
-            fontFamily: "inherit",
-            fontWeight: 600,
-            fontSize: 14,
-            boxShadow: "0 2px 12px rgba(30,60,120,0.18)",
-            transition: "transform 0.15s, box-shadow 0.15s",
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.transform = "scale(1.04)";
-            (e.currentTarget as HTMLElement).style.boxShadow =
-              "0 4px 18px rgba(30,60,120,0.28)";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.transform = "scale(1)";
-            (e.currentTarget as HTMLElement).style.boxShadow =
-              "0 2px 12px rgba(30,60,120,0.18)";
-          }}
-        >
-          {CTA_TEXT}
-        </button>
-      </div>
-    </nav>
-  );
-}
+// ── NAV REPLACED WITH SHARED COMPONENT ───────────────────────────────────────
 
 // ── Chat bubble ──────────────────────────────────────────────────────────────
 function ChatBubble({
@@ -382,7 +256,7 @@ function RadarChart({
     "Z";
 
   return (
-    <svg width="180" height="180" viewBox="0 0 180 180">
+    <svg width="280" height="220" viewBox="-50 -20 280 220">
       {[0.25, 0.5, 0.75, 1].map((l) => (
         <polygon
           key={l}
@@ -516,6 +390,7 @@ function Hero({ onCTAClick }: { onCTAClick: () => void }) {
         position: "relative",
         overflow: "hidden",
         paddingTop: 100,
+        paddingBottom: 100,
       }}
     >
       <DotGrid opacity={0.14} />
@@ -1386,39 +1261,39 @@ function HowItWorks() {
 function Features() {
   const features = [
     {
-      title: "Weakness Diagnosis",
-      desc: "AI maps your exact skill gaps across all 7 subskills: Grammar, Vocabulary, Pronunciation, Fluency, Expression, Comprehension, and Speech Delivery.",
-      icon: "◎",
+      title: "Skill Breakdown Engine",
+      desc: "Pinpoint your exact weaknesses across grammar, fluency, and clarity.",
+      icon: <Brain size={24} strokeWidth={2.2} />,
       color: "230",
     },
     {
-      title: "Personalized Daily Tasks",
-      desc: "No two learners get the same task. Yours are built fresh each morning around your specific profile.",
-      icon: "◈",
+      title: "Adaptive Task System",
+      desc: "Tasks that automatically adjust based on your performance.",
+      icon: <Target size={24} strokeWidth={2.2} />,
       color: "250",
     },
     {
-      title: "Precise Feedback Engine",
-      desc: "Every error is flagged, explained, and corrected with the underlying rule — not just a red underline.",
-      icon: "◉",
+      title: "Precision Feedback Engine",
+      desc: "Get exact corrections, explanations, and improvement tips.",
+      icon: <Wrench size={24} strokeWidth={2.2} />,
       color: "210",
     },
     {
-      title: "Multi-Skill Sessions",
-      desc: "A single task simultaneously trains grammar, structure, vocabulary, and communication confidence.",
-      icon: "◇",
+      title: "Pattern Detection",
+      desc: "We track your repeated mistakes and help you fix them permanently.",
+      icon: <Repeat size={24} strokeWidth={2.2} />,
       color: "270",
     },
     {
-      title: "Progress Dashboard",
-      desc: "See your skill radar evolve week by week. Hard numbers, not just streaks.",
-      icon: "▣",
+      title: "Progress Intelligence",
+      desc: "Visualize your improvement across multiple communication skills.",
+      icon: <BarChart size={24} strokeWidth={2.2} />,
       color: "220",
     },
     {
-      title: "Career-Focused Training",
-      desc: "Practice job interviews, professional emails, and real meetings — not tourist phrases.",
-      icon: "◆",
+      title: "Multi-Skill Training",
+      desc: "Every task improves multiple skills at once — not just one.",
+      icon: <Layers size={24} strokeWidth={2.2} />,
       color: "245",
     },
   ];
@@ -2282,81 +2157,7 @@ function CTA({ onCTAClick }: { onCTAClick: () => void }) {
   );
 }
 
-// ── FOOTER ───────────────────────────────────────────────────────────────────
-function Footer() {
-  return (
-    <footer
-      style={{
-        padding: "48px 40px",
-        background: "oklch(18% 0.09 245)",
-        color: "rgba(255,255,255,0.55)",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1180,
-          margin: "0 auto",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 20,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              borderRadius: 8,
-              background: "oklch(52% 0.18 240)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path
-                d="M2 11L7 3L12 11"
-                stroke="white"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M4 8h6"
-                stroke="white"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
-          <span
-            style={{
-              fontWeight: 700,
-              fontSize: 15,
-              color: "rgba(255,255,255,0.85)",
-            }}
-          >
-            LingosAI
-          </span>
-        </div>
-        <div style={{ display: "flex", gap: 28, fontSize: 13 }}>
-          {["Privacy", "Terms", "Contact", "Blog"].map((l) => (
-            <a
-              key={l}
-              href="#"
-              style={{ color: "rgba(255,255,255,0.5)", textDecoration: "none" }}
-            >
-              {l}
-            </a>
-          ))}
-        </div>
-        <div style={{ fontSize: 13 }}>© 2026 LingosAI. All rights reserved.</div>
-      </div>
-    </footer>
-  );
-}
+// ── FOOTER REPLACED WITH SHARED COMPONENT ────────────────────────────────────
 
 // ── PAGE ─────────────────────────────────────────────────────────────────────
 export default function LandingPage() {
@@ -2378,7 +2179,7 @@ export default function LandingPage() {
         rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
       />
-      <Nav onCTAClick={handleCTA} />
+      <LandingNavbar onCTAClick={handleCTA} showCTA={true} />
       <Hero onCTAClick={handleCTA} />
       <Problem />
       <HowItWorks />
@@ -2386,7 +2187,7 @@ export default function LandingPage() {
       <UIPreview />
       <Testimonials />
       <CTA onCTAClick={handleCTA} />
-      <Footer />
+      <LandingFooter />
     </div>
   );
 }

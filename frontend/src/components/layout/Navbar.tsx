@@ -62,33 +62,11 @@ export function Navbar({ user }: NavbarProps) {
             textDecoration: "none",
           }}
         >
-          <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "oklch(52% 0.18 240)",
-            }}
-          >
-            <svg width="17" height="17" viewBox="0 0 17 17" fill="none">
-              <path
-                d="M3 13L8.5 4L14 13"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M5.2 10h6.6"
-                stroke="white"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
+          <img
+            src="/lingosai_logo.png"
+            alt="LingosAI Logo"
+            style={{ height: 44, width: "auto", borderRadius: 8 }}
+          />
           <span
             style={{
               fontWeight: 700,
