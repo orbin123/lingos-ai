@@ -7,7 +7,7 @@ Public surface (what callers should import):
         get_default_tts_service,
         CachedTTSService,
         # Types
-        ITTSClient, SynthesisResult, DialogueTurn,
+        ITTSClient, SynthesizedAudio, SynthesisResult, DialogueTurn,
         # Errors
         TTSError, TTSValidationError, TTSAuthError, TTSRateLimited,
     )
@@ -34,6 +34,7 @@ from app.ai.tts.interface import (
     DialogueTurn,
     ITTSClient,
     SynthesisResult,
+    SynthesizedAudio,
 )
 from app.ai.tts.openai_client import OpenAITTSClient, get_default_tts_client
 
@@ -47,6 +48,7 @@ __all__ = [
     "get_default_tts_client",
     # Types
     "ITTSClient",
+    "SynthesizedAudio",
     "SynthesisResult",
     "DialogueTurn",
     # Errors

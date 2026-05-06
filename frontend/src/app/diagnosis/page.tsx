@@ -13,7 +13,6 @@ import {
   type DiagnosisInput,
 } from "@/lib/validators/diagnosis";
 import { useDiagnosis } from "@/hooks/useDiagnosis";
-import { useAuthStore } from "@/store/authStore";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { authApi } from "@/lib/auth-api";
 import { diagnosisApi } from "@/lib/diagnosis-api";
@@ -80,6 +79,7 @@ const DEFAULT_VALUES: DiagnosisFormInput = {
     audioBlob: undefined as unknown as Blob,
     transcript: "",
     duration_seconds: 0,
+    words: [],
   },
 };
 
@@ -438,6 +438,7 @@ function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisForm
       // Store blob in form (for validation)
       setValue("read_aloud.audioBlob", blob, { shouldValidate: false });
       setValue("read_aloud.duration_seconds", duration, { shouldValidate: false });
+      setValue("read_aloud.words", [], { shouldValidate: false });
 
       // Send to Whisper
       setRecordState("transcribing");
@@ -445,10 +446,12 @@ function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisForm
         const result = await diagnosisApi.transcribe(blob);
         setValue("read_aloud.transcript", result.transcript, { shouldValidate: true });
         setValue("read_aloud.duration_seconds", result.duration_seconds, { shouldValidate: true });
+        setValue("read_aloud.words", result.words, { shouldValidate: true });
         setValue("read_aloud.audioBlob", blob, { shouldValidate: true });
         setRecordState("done");
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "Transcription failed. Please try again.";
+        setValue("read_aloud.words", [], { shouldValidate: false });
         setTranscribeError(msg);
         setRecordState("error");
       }
@@ -478,6 +481,7 @@ function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisForm
     setValue("read_aloud.audioBlob", undefined as unknown as Blob, { shouldValidate: false });
     setValue("read_aloud.transcript", "", { shouldValidate: false });
     setValue("read_aloud.duration_seconds", 0, { shouldValidate: false });
+    setValue("read_aloud.words", [], { shouldValidate: false });
   };
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -609,7 +613,6 @@ export default function DiagnosisPage() {
   const router = useRouter();
   const { isReady, isSuperUser } = useRequireAuth();
   const [currentStep, setCurrentStep] = useState(0);
-  const [serverError, setServerError] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
   const { data: me } = useQuery({
@@ -627,11 +630,8 @@ export default function DiagnosisPage() {
     mode: "onTouched",
   });
 
-  const { mutate, isPending, error } = useDiagnosis();
-
-  useEffect(() => {
-    if (error) setServerError(getApiErrorMessage(error));
-  }, [error]);
+  const { mutate, isPending, error, reset } = useDiagnosis();
+  const serverError = error ? getApiErrorMessage(error) : null;
 
   useEffect(() => {
     const node = cardRef.current;
@@ -643,19 +643,22 @@ export default function DiagnosisPage() {
   }, [currentStep]);
 
   const goNext = async () => {
-    setServerError(null);
-    const ok = await form.trigger(FIELDS_PER_STEP[currentStep] as any);
+    reset();
+    const currentFields = FIELDS_PER_STEP[currentStep] as Parameters<
+      typeof form.trigger
+    >[0];
+    const ok = await form.trigger(currentFields);
     if (!ok) return;
     if (currentStep < STEP_LABELS.length - 1) setCurrentStep((s) => s + 1);
   };
 
   const goBack = () => {
-    setServerError(null);
+    reset();
     if (currentStep > 0) setCurrentStep((s) => s - 1);
   };
 
   const onSubmit = form.handleSubmit((values) => {
-    setServerError(null);
+    reset();
     mutate(values as DiagnosisInput);
   });
 

@@ -47,6 +47,7 @@ async def transcribe_audio(
     The STT service (`app.ai.stt`) handles:
       - calling OpenAI Whisper with `verbose_json` so duration is real,
         not estimated from byte size
+      - requesting word timestamps so we can do pacing + mismatch analysis
       - 25 MB pre-flight size check (raises STTPayloadTooLarge)
       - hash-based caching — re-uploads of the same recording are free
       - retries on transient OpenAI failures
@@ -77,7 +78,7 @@ async def transcribe_audio(
             audio_bytes=audio_bytes,
             filename=filename,
             language="en",
-            with_timestamps=False,
+            with_timestamps=True,
         )
     except STTPayloadTooLarge as exc:
         raise HTTPException(
@@ -102,6 +103,7 @@ async def transcribe_audio(
     return TranscribeResponse(
         transcript=result["text"].strip(),
         duration_seconds=round(duration, 2),
+        words=result["words"] or [],
     )
 
 
@@ -120,7 +122,7 @@ async def submit_diagnosis(
     Auth: Bearer token required.
     """
     try:
-        skill_scores, ai_feedback = await DiagnosisService(db).run_diagnosis(
+        skill_scores, ai_feedback, read_aloud_analysis = await DiagnosisService(db).run_diagnosis(
             user_id=current_user.id,
             payload=payload,
         )
@@ -158,4 +160,5 @@ async def submit_diagnosis(
         skill_scores=skill_scores,
         weakest_skills=weakest_skill_names,
         feedback=feedback_out,
+        read_aloud_analysis=read_aloud_analysis,
     )

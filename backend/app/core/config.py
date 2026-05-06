@@ -69,6 +69,25 @@ class Settings(BaseSettings):
     # (transcripts may have privacy implications audio doesn't).
     STT_CACHE_DIR: str = "app/ai/stt/_cache"
 
+    # AI / Pronunciation (Azure Speech Pronunciation Assessment)
+    # Optional at startup so Phase 4 code doesn't break environments that
+    # haven't created an Azure Speech resource yet. The pronunciation route
+    # fails fast with a clear error if these remain unset at call time.
+    AZURE_SPEECH_KEY: str = ""
+    AZURE_SPEECH_REGION: str = ""
+    # Where pronunciation-score JSON sidecars are cached on disk.
+    PRONUNCIATION_CACHE_DIR: str = "app/ai/pronunciation/_cache"
+
+    # AI / Image Generation (OpenAI)
+    # `gpt-image-2` is the current OpenAI flagship image-generation
+    # model. We keep output as PNG because the API returns base64 bytes
+    # and PNG is the simplest format to serve/debug locally.
+    OPENAI_IMAGE_MODEL: str = "gpt-image-2"
+    OPENAI_IMAGE_QUALITY: str = "medium"
+    OPENAI_IMAGE_OUTPUT_FORMAT: str = "png"
+    IMAGEGEN_CACHE_DIR: str = "app/ai/imagegen/_cache"
+    IMAGEGEN_PUBLIC_URL_PREFIX: str = "/images"
+
     # Vector DB (Pinecone)
     PINECONE_API_KEY: str
     PINECONE_INDEX_NAME: str = "lingosai-responses"

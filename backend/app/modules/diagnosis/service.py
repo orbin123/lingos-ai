@@ -16,7 +16,10 @@ from app.modules.diagnosis.exceptions import (
     DiagnosisAlreadyCompleted,
     DiagnosisInvalidPayload,
 )
-from app.modules.diagnosis.schemas import DiagnosisSubmitRequest
+from app.modules.diagnosis.schemas import (
+    DiagnosisSubmitRequest,
+    ReadAloudAnalysisOut,
+)
 from app.modules.diagnosis.scoring import compute_skill_scores
 from app.modules.skills.repository import (
     SkillRepository,
@@ -40,7 +43,7 @@ class DiagnosisService:
 
     async def run_diagnosis(
         self, *, user_id: int, payload: DiagnosisSubmitRequest
-    ) -> tuple[dict[str, float], DiagnosisFeedbackOutput]:
+    ) -> tuple[dict[str, float], DiagnosisFeedbackOutput, ReadAloudAnalysisOut]:
         """Process a complete diagnosis submission.
 
         Steps:
@@ -53,7 +56,11 @@ class DiagnosisService:
           7. Call AI feedback agent with scores → get human-friendly feedback
 
         Returns:
-            Tuple of (skill_scores dict, DiagnosisFeedbackOutput)
+            Tuple of (
+                skill_scores dict,
+                DiagnosisFeedbackOutput,
+                ReadAloudAnalysisOut,
+            )
 
         Raises:
             DiagnosisInvalidPayload: profile missing
@@ -84,6 +91,7 @@ class DiagnosisService:
             passage_id=payload.read_aloud.passage_id,
             transcript=payload.read_aloud.transcript,
             duration_seconds=payload.read_aloud.duration_seconds,
+            words=payload.read_aloud.words,
         )
 
         # 3. Compute 7 scores
@@ -131,4 +139,4 @@ class DiagnosisService:
             weakest_skills=weakest_skill_names,
         )
 
-        return skill_scores, feedback
+        return skill_scores, feedback, speech

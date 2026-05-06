@@ -33,10 +33,17 @@ export const writingSchema = z.object({
     .max(2000, "Maximum 2000 characters"),
 });
 
+export const readAloudWordSchema = z.object({
+  word: z.string().min(1),
+  start_seconds: z.number().min(0),
+  end_seconds: z.number().min(0),
+  confidence: z.number().min(0).max(1).nullable().optional(),
+});
+
 // Step 4: read-aloud — user must record audio and receive a transcript back
 // from POST /diagnosis/transcribe before submitting the main form.
 // audioBlob holds the raw recording in memory only (not submitted in JSON).
-// transcript + duration_seconds come from the transcribe response and ARE
+// transcript + duration_seconds + words come from the transcribe response and ARE
 // included in the final JSON submit.
 export const readAloudSchema = z.object({
   // The recorded audio blob — stored in form state only, never sent as JSON.
@@ -49,6 +56,7 @@ export const readAloudSchema = z.object({
   // From Whisper — populated after transcribe call succeeds
   transcript: z.string().min(1, "Transcription is missing — please record again"),
   duration_seconds: z.number().positive("Duration must be greater than 0"),
+  words: z.array(readAloudWordSchema).default([]),
 });
 
 // Combined schema — used for the whole multi-step form

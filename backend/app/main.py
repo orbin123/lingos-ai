@@ -34,16 +34,15 @@ app.add_middleware(
 
 
 # ---------------------------------------------------------------------------
-# Static files: serve cached TTS audio under /audio/<key>.mp3
+# Static files: serve cached AI blobs written by LocalBlobStorage.
 #
-# In production this would be S3 / Cloudflare R2 with a CDN. For dev,
-# mounting StaticFiles is the simplest possible path: the same files
+# Today that includes:
+#   - TTS audio under /audio/<shard>/<key>.mp3
+#   - image-generation outputs under /images/<shard>/<key>.png
+#
+# In production this would likely move to S3 / Cloudflare R2 with a CDN.
+# For dev, StaticFiles is the simplest possible path: the same files
 # `LocalBlobStorage` writes to disk become directly fetchable here.
-#
-# Path resolution: TTS_CACHE_DIR is RELATIVE in config. We resolve it
-# against the directory uvicorn was launched from (`backend/`) once at
-# startup so the absolute path is locked in. Mounting will fail loudly
-# if the directory doesn't exist; LocalBlobStorage creates it on init.
 # ---------------------------------------------------------------------------
 _audio_root = Path(settings.TTS_CACHE_DIR).resolve()
 _audio_root.mkdir(parents=True, exist_ok=True)
@@ -51,6 +50,14 @@ app.mount(
     settings.TTS_PUBLIC_URL_PREFIX,
     StaticFiles(directory=_audio_root),
     name="audio",
+)
+
+_image_root = Path(settings.IMAGEGEN_CACHE_DIR).resolve()
+_image_root.mkdir(parents=True, exist_ok=True)
+app.mount(
+    settings.IMAGEGEN_PUBLIC_URL_PREFIX,
+    StaticFiles(directory=_image_root),
+    name="images",
 )
 
 
