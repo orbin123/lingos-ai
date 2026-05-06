@@ -10,10 +10,13 @@ Public surface (everything else is an implementation detail):
         system_prompt="...", user_prompt="..."
     )
 
-For agents that already use LangChain's `.with_structured_output(...)`
-pattern, a backwards-compatible helper exists:
+For structured (Pydantic-validated) output:
 
-    from app.ai.llm import get_llm   # returns the underlying ChatOpenAI
+    result = await client.generate_structured(
+        system_prompt="...",
+        user_prompt="...",
+        output_model=MyPydanticModel,
+    )
 """
 
 from app.ai.llm.exceptions import (
@@ -31,23 +34,6 @@ from app.ai.llm.openai_client import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Backwards-compatibility shim for agents that still call `get_llm()`.
-# Returns the underlying ChatOpenAI so `.with_structured_output(...)` and
-# `.ainvoke(...)` keep working without touching legacy agent code.
-#
-# New code should NOT use this — call `get_default_llm_client()` instead.
-# ---------------------------------------------------------------------------
-def get_llm():
-    """DEPRECATED — kept so feedback.py / diagnosis_feedback.py keep working.
-
-    Returns the underlying ChatOpenAI instance from the default client.
-    New code should use `get_default_llm_client()` and call
-    `.generate_structured(...)` instead.
-    """
-    return get_default_llm_client().raw_chat_model()
-
-
 __all__ = [
     # Public client surface
     "ILLMClient",
@@ -60,6 +46,4 @@ __all__ = [
     "LLMAuthError",
     "LLMValidationError",
     "LLMProviderError",
-    # Legacy shim
-    "get_llm",
 ]

@@ -32,3 +32,9 @@ dist/
 
 # Test Files
 backend/scratch
+
+# Local archive of deprecated files (kept locally, not committed)
+backend/.archive/
+
+# TTS audio cache (regenerated on demand from OpenAI)
+backend/app/ai/tts/_cache/

@@ -8,7 +8,9 @@ retell_what_you_heard, and any future free-form speaking task.
 
 from __future__ import annotations
 
-from typing import Protocol, TypedDict
+from typing import Protocol
+
+from typing_extensions import TypedDict
 
 
 class WordTimestamp(TypedDict):

@@ -15,11 +15,15 @@ Two methods cover everything our agents need today:
 
 Streaming + function-calling will be added later as new methods on the
 same protocol — additive, never breaking.
+
+Note: provider-specific escape hatches (e.g. `OpenAILLMClient.raw_chat_model()`)
+live on the concrete class, NOT on this Protocol — they aren't part of
+the portable contract that future providers must satisfy.
 """
 
 from __future__ import annotations
 
-from typing import Any, Protocol, TypeVar
+from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -66,22 +70,5 @@ class ILLMClient(Protocol):
                 match the schema after the implementation's retries.
             LLMError: any other provider-side failure (timeout, 5xx,
                 auth, rate-limit). Caller decides recovery.
-        """
-        ...
-
-    # --------------------------------------------------------------
-    # Escape hatch — for code that already uses LangChain's
-    # `.with_structured_output(...)` pattern (feedback.py,
-    # diagnosis_feedback.py). Lets us migrate incrementally without
-    # rewriting prompts. Not part of the long-term contract.
-    # --------------------------------------------------------------
-    def raw_chat_model(self) -> Any:
-        """Return the underlying chat-model object.
-
-        Today: a `ChatOpenAI` instance. Tomorrow: whatever the provider
-        exposes. Existing agents use this to call
-        `.with_structured_output(SchemaCls).ainvoke(messages)`.
-
-        New code should prefer `generate_structured(...)` instead.
         """
         ...

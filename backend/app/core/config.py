@@ -42,6 +42,22 @@ class Settings(BaseSettings):
     LANGCHAIN_PROJECT: str = "ai-english-coach"
     LANGCHAIN_ENDPOINT: str = "https://api.smith.langchain.com"
 
+    # AI / TTS (text-to-speech)
+    # `gpt-4o-mini-tts` is the newest + cheapest TTS model from OpenAI.
+    # It uniquely supports the `instructions` parameter (e.g. "speak slowly,
+    # sound encouraging") which is gold for a tutor app.
+    # Voices for this model: alloy, ash, ballad, coral, echo, fable,
+    # onyx, nova, sage, shimmer, verse.
+    OPENAI_TTS_MODEL: str = "gpt-4o-mini-tts"
+    OPENAI_TTS_VOICE: str = "alloy"
+    # Where synthesized audio files are cached on disk. Path is RELATIVE
+    # to the backend/ directory so it works regardless of where uvicorn
+    # is launched from. Override per-environment via env var.
+    TTS_CACHE_DIR: str = "app/ai/tts/_cache"
+    # Public URL prefix the audio files are served under by FastAPI's
+    # StaticFiles mount. Frontend uses these URLs in <audio src=...>.
+    TTS_PUBLIC_URL_PREFIX: str = "/audio"
+
     # Vector DB (Pinecone)
     PINECONE_API_KEY: str
     PINECONE_INDEX_NAME: str = "lingosai-responses"
