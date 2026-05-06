@@ -41,7 +41,7 @@ from app.ai.tts.exceptions import (
     TTSTimeout,
     TTSValidationError,
 )
-from app.ai.tts.interface import DialogueTurn, SynthesisResult
+from app.ai.tts.interface import DialogueTurn, SynthesizedAudio
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -112,6 +112,25 @@ class OpenAITTSClient:
             timeout=timeout,
         )
 
+    @property
+    def model_name(self) -> str:
+        """Public read-only access for cache-key construction."""
+        return self._model
+
+    @property
+    def default_voice_id(self) -> str:
+        """Public read-only access for cache-key construction."""
+        return self._voice
+
+    @property
+    def response_format(self) -> str:
+        """Public read-only access for storage/content-type decisions."""
+        return self._format
+
+    def estimate_duration_seconds(self, *, audio_bytes: bytes) -> float:
+        """Estimate duration for provider audio already cached on disk."""
+        return self._estimate_duration(audio_bytes)
+
     # ------------------------------------------------------------------
     # Public — synthesize plain text
     # ------------------------------------------------------------------
@@ -122,14 +141,12 @@ class OpenAITTSClient:
         voice_id: str | None = None,
         speed: float = 1.0,
         style_instructions: str | None = None,
-    ) -> tuple[bytes, SynthesisResult]:
+    ) -> SynthesizedAudio:
         """Generate audio bytes for `text`.
 
-        Returns a tuple of (raw_audio_bytes, SynthesisResult).
-        SynthesisResult.audio_url is intentionally LEFT EMPTY here —
-        only the cache layer knows the URL after writing to storage.
-        That keeps responsibilities clean: this client does TTS, the
-        cache layer does storage + URLs.
+        Returns raw provider output only. The cache layer is
+        responsible for persisting these bytes and turning them into a
+        public URL.
 
         Args:
             text: What to speak. Non-empty, <= 2000 tokens (provider
@@ -164,13 +181,12 @@ class OpenAITTSClient:
 
         audio_bytes = await self._call_with_retries(kwargs)
 
-        result: SynthesisResult = {
-            "audio_url": "",  # filled in by the cache layer
+        result: SynthesizedAudio = {
+            "audio_bytes": audio_bytes,
             "duration_seconds": self._estimate_duration(audio_bytes),
-            "cache_hit": False,
         }
         self._log_usage(text=text, audio_bytes=audio_bytes, voice=voice)
-        return audio_bytes, result
+        return result
 
     # ------------------------------------------------------------------
     # Public — synthesize multi-voice dialogue (NOT YET SUPPORTED)
@@ -179,7 +195,7 @@ class OpenAITTSClient:
         self,
         *,
         turns: list[DialogueTurn],
-    ) -> tuple[bytes, SynthesisResult]:
+    ) -> SynthesizedAudio:
         """OpenAI TTS is single-voice per call. True multi-voice
         dialogue would need: synthesize each turn separately, then
         stitch the mp3s together (e.g. with ffmpeg or pydub).

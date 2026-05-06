@@ -35,6 +35,29 @@ function displayScoreLabel(displayScore: number): string {
   return "Weak";
 }
 
+function paceLabel(wordsPerMinute: number): string {
+  if (wordsPerMinute < 100) return "Measured";
+  if (wordsPerMinute <= 160) return "On target";
+  return "Fast";
+}
+
+function describeMismatch(mismatch: {
+  issue: "substitution" | "omission" | "insertion";
+  reference_word: string | null;
+  transcript_word: string | null;
+}): string {
+  if (mismatch.issue === "omission" && mismatch.reference_word) {
+    return `Missed "${mismatch.reference_word}"`;
+  }
+  if (mismatch.issue === "insertion" && mismatch.transcript_word) {
+    return `Added "${mismatch.transcript_word}"`;
+  }
+  if (mismatch.reference_word && mismatch.transcript_word) {
+    return `Expected "${mismatch.reference_word}", heard "${mismatch.transcript_word}"`;
+  }
+  return "Minor word mismatch";
+}
+
 function Reveal({
   children,
   delay = 0,
@@ -87,7 +110,7 @@ export default function DiagnosisResultPage() {
 
   if (!result) return null;
 
-  const { skill_scores, weakest_skills, feedback } = result;
+  const { skill_scores, weakest_skills, feedback, read_aloud_analysis } = result;
 
   const continueToDashboard = () => {
     // NOW we invalidate /me — after the user has seen the result.
@@ -229,6 +252,72 @@ export default function DiagnosisResultPage() {
                 </ul>
               </div>
             </Reveal>
+
+            {read_aloud_analysis && (
+              <Reveal delay={100}>
+                <div className="rounded-3xl border border-white/90 bg-white/90 px-6 py-7 shadow-[0_8px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+                  <h2 className="mb-6 text-[13px] font-bold uppercase tracking-widest text-slate-500">
+                    Read-Aloud Snapshot
+                  </h2>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                        Transcript Match
+                      </p>
+                      <p className="mt-2 text-2xl font-extrabold text-[#0a1f44]">
+                        {Math.round(read_aloud_analysis.transcript_similarity * 100)}%
+                      </p>
+                      <p className="mt-1 text-[12.5px] text-slate-500">
+                        Word accuracy {Math.round(read_aloud_analysis.word_accuracy * 100)}%
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                        Reading Pace
+                      </p>
+                      <p className="mt-2 text-2xl font-extrabold text-[#0a1f44]">
+                        {read_aloud_analysis.words_per_minute.toFixed(0)} WPM
+                      </p>
+                      <p className="mt-1 text-[12.5px] text-slate-500">
+                        {paceLabel(read_aloud_analysis.words_per_minute)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                        Pauses
+                      </p>
+                      <p className="mt-2 text-2xl font-extrabold text-[#0a1f44]">
+                        {read_aloud_analysis.long_pause_count}
+                      </p>
+                      <p className="mt-1 text-[12.5px] text-slate-500">
+                        Long pauses, longest {read_aloud_analysis.longest_pause_seconds.toFixed(2)}s
+                      </p>
+                    </div>
+                  </div>
+
+                  {read_aloud_analysis.mismatches.length > 0 && (
+                    <div className="mt-6">
+                      <p className="text-[12px] font-bold uppercase tracking-widest text-slate-400">
+                        Top Word Mismatches
+                      </p>
+                      <ul className="mt-3 space-y-2">
+                        {read_aloud_analysis.mismatches.slice(0, 5).map((mismatch, index) => (
+                          <li
+                            key={`${mismatch.issue}-${mismatch.reference_index ?? "x"}-${mismatch.transcript_index ?? index}`}
+                            className="rounded-xl border border-amber-100 bg-amber-50/60 px-4 py-3 text-[13.5px] text-[#0a1f44]"
+                          >
+                            {describeMismatch(mismatch)}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </Reveal>
+            )}
 
             {/* Weak skill explanations */}
             {feedback.weak_skill_explanations.length > 0 && (

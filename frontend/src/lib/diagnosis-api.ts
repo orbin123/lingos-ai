@@ -8,9 +8,39 @@ const READ_ALOUD_PASSAGE_ID = "diag_passage_v1";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+export interface ReadAloudWord {
+  word: string;
+  start_seconds: number;
+  end_seconds: number;
+  confidence?: number | null;
+}
+
 export interface TranscribeResult {
   transcript: string;
   duration_seconds: number;
+  words: ReadAloudWord[];
+}
+
+export interface ReadAloudMismatch {
+  issue: "substitution" | "omission" | "insertion";
+  reference_word: string | null;
+  transcript_word: string | null;
+  reference_index: number | null;
+  transcript_index: number | null;
+}
+
+export interface ReadAloudAnalysis {
+  fluency_score: number;
+  clarity_score: number;
+  transcript_similarity: number;
+  word_accuracy: number;
+  words_per_minute: number;
+  pause_count: number;
+  long_pause_count: number;
+  longest_pause_seconds: number;
+  average_pause_seconds: number;
+  mismatch_count: number;
+  mismatches: ReadAloudMismatch[];
 }
 
 export interface WeakSkillExplanation {
@@ -32,6 +62,7 @@ export interface DiagnosisResult {
   skill_scores: Record<string, number>;
   weakest_skills: string[];
   feedback: DiagnosisFeedback;
+  read_aloud_analysis?: ReadAloudAnalysis | null;
   next_step: string;
 }
 
@@ -41,7 +72,7 @@ export const diagnosisApi = {
   /**
    * Upload an audio blob to Whisper transcription.
    * Called when the user finishes recording in StepReadAloud.
-   * Returns the transcript text + duration so they can be included in submit().
+   * Returns transcript text + duration + word timings for later scoring.
    */
   transcribe: (audioBlob: Blob): Promise<TranscribeResult> => {
     const formData = new FormData();
@@ -60,7 +91,7 @@ export const diagnosisApi = {
 
   /**
    * Submit the full diagnosis form.
-   * read_aloud sends transcript + duration_seconds (from transcribe()),
+   * read_aloud sends transcript + duration_seconds + words (from transcribe()),
    * NOT the audio blob — keeps this endpoint clean JSON.
    */
   submit: (data: DiagnosisInput): Promise<DiagnosisResult> => {
@@ -78,6 +109,7 @@ export const diagnosisApi = {
         passage_id: READ_ALOUD_PASSAGE_ID,
         transcript: data.read_aloud.transcript,
         duration_seconds: data.read_aloud.duration_seconds,
+        words: data.read_aloud.words,
       },
     };
     return api

@@ -2,12 +2,12 @@
 
 This is the layer agents and routes actually import. It composes:
 
-    OpenAITTSClient  +  IBlobStorage  =  CachedTTSService
+    ITTSClient  +  IBlobStorage  =  CachedTTSService
 
 The contract:
   - Same (text, voice, speed, instructions, model) -> always same audio
-  - First call:  OpenAI -> storage write -> URL  (cache_hit=False)
-  - Later calls: storage read              -> URL  (cache_hit=True, $0)
+  - First call:  OpenAI -> storage write -> metadata write -> URL
+  - Later calls: storage read + metadata read -> URL/duration ($0)
 
 Why a separate layer (not a method on OpenAITTSClient)?
   - Single Responsibility: providers do TTS, storage stores blobs, this
@@ -20,14 +20,22 @@ Why a separate layer (not a method on OpenAITTSClient)?
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 
-from app.ai.storage import IBlobStorage, get_default_blob_storage
+from typing_extensions import TypedDict
+
+from app.ai.storage import IBlobStorage, StorageError, get_default_blob_storage
 from app.ai.tts.exceptions import TTSValidationError
-from app.ai.tts.interface import SynthesisResult
-from app.ai.tts.openai_client import OpenAITTSClient, get_default_tts_client
+from app.ai.tts.interface import ITTSClient, SynthesisResult
+from app.ai.tts.openai_client import get_default_tts_client
 
 logger = logging.getLogger(__name__)
+
+
+class TTSDurationMetadata(TypedDict):
+    """Sidecar metadata persisted alongside cached audio."""
+    duration_seconds: float
 
 
 def _compute_cache_key(
@@ -68,6 +76,11 @@ def _compute_cache_key(
     return f"{digest}.{audio_format}"
 
 
+def _metadata_key_for(cache_key: str) -> str:
+    """Return the JSON sidecar key for one audio cache key."""
+    return f"{cache_key}.meta.json"
+
+
 class CachedTTSService:
     """High-level TTS façade with on-disk dedup caching.
 
@@ -81,13 +94,11 @@ class CachedTTSService:
     def __init__(
         self,
         *,
-        provider: OpenAITTSClient,
+        provider: ITTSClient,
         storage: IBlobStorage,
-        audio_format: str = "mp3",
     ) -> None:
         self._provider = provider
         self._storage = storage
-        self._audio_format = audio_format
         # mp3 is the only content_type we currently produce; if you ever
         # change the format, update the lookup below.
         self._content_type_map: dict[str, str] = {
@@ -128,8 +139,9 @@ class CachedTTSService:
         # Resolve effective voice / model so they're correctly hashed.
         # We mirror the same defaults the provider uses, so the cache
         # key matches the provider's actual call shape.
-        effective_voice = voice or self._provider._voice  # noqa: SLF001
-        effective_model = self._provider._model            # noqa: SLF001
+        effective_voice = voice or self._provider.default_voice_id
+        effective_model = self._provider.model_name
+        audio_format = self._provider.response_format
 
         cache_key = _compute_cache_key(
             text=text,
@@ -137,38 +149,33 @@ class CachedTTSService:
             speed=speed,
             style_instructions=style_instructions,
             model=effective_model,
-            audio_format=self._audio_format,
+            audio_format=audio_format,
         )
 
         # ---- 1. Cache check
         if await self._storage.exists(key=cache_key):
             logger.info("tts_cache_hit key=%s chars=%d", cache_key, len(text))
-            # We don't read the bytes back — we just need the URL. The
-            # storage layer will compute it from the key.
-            # NOTE: this requires the storage backend to expose URLs
-            # given just a key, which our LocalBlobStorage does via
-            # _public_url_for(). We avoid reaching into a private method
-            # by re-using the same path StoredBlob would publish.
-            # Fastest way to get the URL: call put() with empty data?
-            # No — we want a side-effect-free URL builder. Add a small
-            # helper on the storage by going through put on miss only.
-            return self._build_cached_result(cache_key)
+            return await self._build_cached_result(cache_key)
 
         # ---- 2. Cache miss — synthesize then store
         logger.info("tts_cache_miss key=%s chars=%d", cache_key, len(text))
-        audio_bytes, provider_result = await self._provider.synthesize(
+        provider_result = await self._provider.synthesize(
             text=text,
             voice_id=effective_voice,
             speed=speed,
             style_instructions=style_instructions,
         )
         content_type = self._content_type_map.get(
-            self._audio_format, "application/octet-stream"
+            audio_format, "application/octet-stream"
         )
         stored = await self._storage.put(
             key=cache_key,
-            data=audio_bytes,
+            data=provider_result["audio_bytes"],
             content_type=content_type,
+        )
+        await self._persist_duration_metadata(
+            cache_key=cache_key,
+            duration_seconds=provider_result["duration_seconds"],
         )
 
         return SynthesisResult(
@@ -180,42 +187,107 @@ class CachedTTSService:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _build_cached_result(self, cache_key: str) -> SynthesisResult:
+    async def _build_cached_result(self, cache_key: str) -> SynthesisResult:
         """Build a SynthesisResult for a cache hit WITHOUT re-reading
         the bytes off disk.
 
-        We rebuild the URL by leaning on the storage's public URL
-        convention. Both LocalBlobStorage and any future S3 client
-        compute URLs deterministically from keys, so this is safe.
-
-        Duration is unknown on cache hits without a separate stat() +
-        parse. We return 0.0 and let the frontend ignore it; if you
-        need exact duration on cache hits later, persist it alongside
-        the file (e.g. in a sidecar .json or a metadata key).
+        Newer cache entries carry a JSON sidecar with the exact
+        duration. Older entries created before that change are
+        backfilled on first read by estimating from the cached audio.
         """
-        # The storage interface doesn't expose a "key -> url" function
-        # directly, but our LocalBlobStorage builds URLs from keys via
-        # `<prefix>/<key>`. We replicate that pattern here. When you add
-        # an S3 backend, expose a public `url_for(key)` method on
-        # IBlobStorage and switch this line to call it.
-        from app.ai.storage.local_client import LocalBlobStorage
-
-        if isinstance(self._storage, LocalBlobStorage):
-            url = self._storage._public_url_for(cache_key)  # noqa: SLF001
-        else:
-            # Future-proofing — if a different storage is wired up
-            # later without exposing url_for, surface a clear error.
-            raise NotImplementedError(
-                f"Storage backend {type(self._storage).__name__} does not "
-                "expose a key→URL helper. Add `url_for(key)` to its "
-                "interface and call it here."
-            )
+        url = self._storage.url_for(key=cache_key)
+        duration = await self._read_or_backfill_duration(cache_key=cache_key)
 
         return SynthesisResult(
             audio_url=url,
-            duration_seconds=0.0,  # not tracked on cache hit
+            duration_seconds=duration,
             cache_hit=True,
         )
+
+    async def _read_or_backfill_duration(self, *, cache_key: str) -> float:
+        """Read cached duration metadata, or backfill it for old entries."""
+        metadata_key = _metadata_key_for(cache_key)
+
+        try:
+            raw_metadata = await self._storage.get(key=metadata_key)
+        except StorageError as exc:
+            logger.warning(
+                "tts_cache_metadata_read_failed key=%s err=%s; backfilling",
+                metadata_key, exc,
+            )
+            raw_metadata = None
+
+        if raw_metadata is not None:
+            try:
+                parsed = json.loads(raw_metadata.decode("utf-8"))
+                duration = round(float(parsed["duration_seconds"]), 2)
+            except (
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                KeyError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                logger.warning(
+                    "tts_cache_metadata_corrupt key=%s err=%s; backfilling",
+                    metadata_key, exc,
+                )
+            else:
+                return duration
+
+        try:
+            audio_bytes = await self._storage.get(key=cache_key)
+        except StorageError as exc:
+            logger.warning(
+                "tts_cache_audio_read_failed key=%s err=%s; returning 0.0",
+                cache_key, exc,
+            )
+            return 0.0
+
+        if audio_bytes is None:
+            logger.warning(
+                "tts_cache_audio_missing_after_exists key=%s; returning 0.0",
+                cache_key,
+            )
+            return 0.0
+
+        duration = self._provider.estimate_duration_seconds(audio_bytes=audio_bytes)
+        await self._persist_duration_metadata(
+            cache_key=cache_key,
+            duration_seconds=duration,
+        )
+        logger.info(
+            "tts_cache_metadata_backfilled key=%s duration=%.2f",
+            cache_key, duration,
+        )
+        return duration
+
+    async def _persist_duration_metadata(
+        self,
+        *,
+        cache_key: str,
+        duration_seconds: float,
+    ) -> None:
+        """Persist sidecar metadata for cache-hit parity.
+
+        Metadata write failures are non-fatal: the audio is already
+        usable, and we can always backfill the sidecar later.
+        """
+        metadata_key = _metadata_key_for(cache_key)
+        payload = TTSDurationMetadata(
+            duration_seconds=round(duration_seconds, 2),
+        )
+        try:
+            await self._storage.put(
+                key=metadata_key,
+                data=json.dumps(payload).encode("utf-8"),
+                content_type="application/json",
+            )
+        except StorageError as exc:
+            logger.warning(
+                "tts_cache_metadata_write_failed key=%s err=%s; continuing",
+                metadata_key, exc,
+            )
 
 
 # ---------------------------------------------------------------------------

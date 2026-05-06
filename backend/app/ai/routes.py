@@ -7,7 +7,20 @@ Mounted under /debug/ai.
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from app.ai.imagegen import (
+    AspectRatio,
+    ImageGenError,
+    ImageGenValidationError,
+    ImageResult,
+    get_default_imagegen_service,
+)
 from app.ai.llm import get_default_llm_client
+from app.ai.pronunciation import (
+    PronunciationError,
+    PronunciationResult,
+    PronunciationValidationError,
+    get_default_pronunciation_service,
+)
 from app.ai.stt import (
     STTError,
     STTPayloadTooLarge,
@@ -18,6 +31,7 @@ from app.ai.stt import (
 from app.ai.tts import (
     SynthesisResult,
     TTSError,
+    TTSValidationError,
     get_default_tts_service,
 )
 
@@ -83,6 +97,10 @@ async def tts_synthesize(req: TTSRequest) -> SynthesisResult:
     First call:  OpenAI is hit, audio written to disk, cache_hit=False.
     Repeat call (same text+voice+speed+instructions): cache_hit=True,
     no provider charge.
+
+    Errors:
+      400 - invalid text / voice / speed
+      502 - provider failure (timeout, rate limit, etc.)
     """
     service = get_default_tts_service()
     try:
@@ -92,9 +110,112 @@ async def tts_synthesize(req: TTSRequest) -> SynthesisResult:
             speed=req.speed,
             style_instructions=req.style_instructions,
         )
+    except TTSValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except TTSError as exc:
         # 502: provider failed. We surface the message — debug-only,
         # safe to leak provider error text here.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Image generation (debug)
+# ---------------------------------------------------------------------------
+class ImageGenerationRequest(BaseModel):
+    """Body for /debug/ai/image/generate."""
+    prompt: str = Field(min_length=1, max_length=4000)
+    aspect_ratio: AspectRatio = Field(
+        default="square",
+        description="square, landscape, or portrait",
+    )
+    style: str | None = Field(
+        default=None,
+        description=(
+            "Optional free-form style hint, e.g. 'storybook watercolor' "
+            "or 'clean flat illustration'."
+        ),
+    )
+
+
+@router.post("/image/generate")
+async def image_generate(req: ImageGenerationRequest) -> ImageResult:
+    """Generate one image from a prompt and return its cached public URL.
+
+    Useful for:
+      - verifying OpenAI image generation is wired up
+      - checking cache_hit flips from False -> True on the same prompt
+      - confirming static image serving works under the configured URL
+
+    Errors:
+      400 - invalid prompt / aspect ratio
+      502 - provider failure (auth, timeout, rate limit, etc.)
+    """
+    service = get_default_imagegen_service()
+    try:
+        result = await service.generate(
+            prompt=req.prompt,
+            aspect_ratio=req.aspect_ratio,
+            style=req.style,
+        )
+    except ImageGenValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ImageGenError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Pronunciation score (debug)
+# ---------------------------------------------------------------------------
+@router.post("/pronunciation/score")
+async def pronunciation_score(
+    audio: UploadFile = File(
+        ...,
+        description=(
+            "Short pronunciation clip. WAV is the most reliable format for "
+            "local verification; compressed formats require GStreamer."
+        ),
+    ),
+    reference_text: str = Form(..., min_length=1),
+    language: str = Form(default="en-US"),
+) -> PronunciationResult:
+    """Score one short scripted audio clip against the expected text.
+
+    Useful for:
+      - verifying Azure Speech Pronunciation Assessment is wired up
+      - checking phoneme-level scoring end-to-end before task integration
+      - confirming cache hits on repeated uploads of the same clip
+
+    Important:
+      - This route uses Azure Speech `recognize_once`, which Microsoft
+        documents as suitable for a single utterance of about 30 seconds.
+      - WAV works without extra local dependencies. Compressed formats
+        such as mp3/ogg/flac/mp4 need GStreamer installed on the server.
+
+    Sample curl:
+      curl -F "audio=@read-aloud.wav" \\
+           -F "reference_text=The quick brown fox jumps over the lazy dog." \\
+           http://localhost:8000/debug/ai/pronunciation/score
+
+    Errors:
+      400 - invalid audio / unsupported format / missing reference text
+      502 - provider failure (auth, timeout, rate limit, SDK error)
+    """
+    audio_bytes = await audio.read()
+    filename = audio.filename or "recording.wav"
+
+    service = get_default_pronunciation_service()
+    try:
+        result = await service.score(
+            audio_bytes=audio_bytes,
+            filename=filename,
+            reference_text=reference_text,
+            language=language,
+        )
+    except PronunciationValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PronunciationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return result
 

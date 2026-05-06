@@ -62,13 +62,17 @@ class IPronunciationClient(Protocol):
         self,
         *,
         audio_bytes: bytes,
+        filename: str,
         reference_text: str,
         language: str = "en-US",
     ) -> PronunciationResult:
         """Score user audio against the expected reference text.
 
         Args:
-            audio_bytes: User's recording (WAV / MP3 — provider decides).
+            audio_bytes: User's recording bytes.
+            filename: A name like "recording.wav". The extension matters
+                because providers / local decoders use it to determine
+                the container or codec.
             reference_text: What the user was supposed to say.
             language: Provider locale (e.g. 'en-US', 'en-GB').
 

@@ -1,8 +1,8 @@
-"""Blob storage contract — STUB.
+"""Blob storage contract.
 
-Implementation comes later — TTS, STT, and image-gen all need somewhere
-to put their output bytes. This abstraction lets them stay agnostic of
-the actual backend (local disk in dev, S3 / Cloudflare R2 in prod).
+TTS and STT already use this abstraction, and image-gen will reuse it
+later. Keeping one contract here lets AI modules stay agnostic of the
+actual backend (local disk in dev, S3 / Cloudflare R2 in prod).
 
 Why an interface here at all? Because storage is the *one* dependency
 that every multimedia AI module will share — and the cheapest place to
@@ -62,5 +62,14 @@ class IBlobStorage(Protocol):
         """Cheap existence check — does NOT pull bytes.
 
         Used to avoid an expensive `get` just to check the cache.
+        """
+        ...
+
+    def url_for(self, *, key: str) -> str:
+        """Return the public URL for an already-stored key.
+
+        This is deterministic for local-disk and object-storage backends,
+        so callers do not need to re-upload or re-read the blob just to
+        rebuild a fetchable URL on a cache hit.
         """
         ...

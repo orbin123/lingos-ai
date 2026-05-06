@@ -117,6 +117,13 @@ class LocalBlobStorage:
         # Path.exists() is sync but only does one stat() — fine inline.
         return path.exists()
 
+    def url_for(self, *, key: str) -> str:
+        """Return the public URL for `key` without touching the disk."""
+        # Re-use the same validation path as read/write helpers so a
+        # malformed key fails consistently instead of building a bogus URL.
+        self._key_to_path(key)
+        return self._public_url_for(key)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
