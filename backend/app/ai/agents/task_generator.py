@@ -165,7 +165,9 @@ class TaskGeneratorAgent:
             template.template_id,
             template.output_model_name,
         )
-        return validated.model_dump()
+        content = validated.model_dump()
+        content["estimated_time_minutes"] = template.estimated_time_minutes
+        return content
 
 
 # ---------------------------------------------------------------------------

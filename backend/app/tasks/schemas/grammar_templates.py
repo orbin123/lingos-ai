@@ -20,7 +20,7 @@ Total: 8 Grammar templates.
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.tasks.schemas.base import (
     Activity,
@@ -67,12 +67,24 @@ class BlankItem(BaseModel):
     grammar_rule: GrammarRule
     explanation: str = Field(..., min_length=10, max_length=200)
 
+    @model_validator(mode="after")
+    def correct_answer_must_be_an_option(self) -> "BlankItem":
+        if self.correct_answer not in self.options:
+            raise ValueError("correct_answer must be included in options")
+        return self
+
 
 class FillInBlanksTask(GeneratedTaskBase):
     passage_title: str
-    passage: str = Field(..., min_length=80, max_length=500)
+    passage: str = Field(..., min_length=80, max_length=4000)
     blanks: list[BlankItem] = Field(..., min_length=5, max_length=10)
     total_blanks: int
+
+    @model_validator(mode="after")
+    def total_blanks_must_match_items(self) -> "FillInBlanksTask":
+        if self.total_blanks != len(self.blanks):
+            raise ValueError("total_blanks must match the number of blanks")
+        return self
 
 
 # ─── Template 2: Error Spotting ───────────────────────────────────────

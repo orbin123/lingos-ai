@@ -236,6 +236,44 @@ export interface SkillScore {
   score: number;
 }
 
+export interface EvaluationQuestionResult {
+  correct?: boolean;
+  user_answer?: string;
+  correct_answer?: string;
+  error_type?: string;
+  grammar_rule?: string;
+  sentence?: string;
+  [key: string]: unknown;
+}
+
+export interface EvaluationReport {
+  task_type?: string;
+  total?: number;
+  correct_count?: number;
+  percentage?: number;
+  questions?: Record<string, EvaluationQuestionResult>;
+  [key: string]: unknown;
+}
+
+export interface FeedbackError {
+  question_id: string;
+  user_answer: string;
+  correct_answer: string;
+  error_type: string;
+  why_wrong: string;
+  rule: string;
+  memory_tip: string;
+}
+
+export interface FeedbackBody {
+  overall_message: string;
+  errors: FeedbackError[];
+  score: number;
+  overall_level: "needs_work" | "okay" | "good" | "excellent";
+  practice_suggestion: string;
+  [key: string]: unknown;
+}
+
 export interface ResponseGraded {
   response: {
     id: number;
@@ -248,11 +286,11 @@ export interface ResponseGraded {
     id: number;
     overall_score: number;
     percentage: number;
-    report: Record<string, unknown>;
+    report: EvaluationReport;
   };
   feedback: {
     id: number;
-    body: Record<string, unknown>;
+    body: FeedbackBody;
   };
   skill_scores: SkillScore[];
 }

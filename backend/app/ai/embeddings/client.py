@@ -5,6 +5,7 @@ These wrap the SDKs but do NOT know anything about business logic
 """
 
 import logging
+from functools import lru_cache
 
 import httpx
 from pinecone import Pinecone
@@ -54,9 +55,11 @@ async def hf_embed(text: str) -> list[float]:
 
 # ----- Pinecone -----
 
-# Built once on import. Pinecone client is lightweight + thread-safe.
-_pc = Pinecone(api_key=settings.PINECONE_API_KEY)
-_index = _pc.Index(settings.PINECONE_INDEX_NAME)
+@lru_cache(maxsize=1)
+def _pinecone_index():
+    """Create the Pinecone index lazily so imports never require network."""
+    pc = Pinecone(api_key=settings.PINECONE_API_KEY)
+    return pc.Index(settings.PINECONE_INDEX_NAME)
 
 
 def pinecone_upsert(
@@ -67,7 +70,7 @@ def pinecone_upsert(
     Raises PineconeUpsertFailed on any SDK error.
     """
     try:
-        _index.upsert(
+        _pinecone_index().upsert(
             vectors=[
                 {"id": vector_id, "values": values, "metadata": metadata}
             ]
