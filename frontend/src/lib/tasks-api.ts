@@ -240,9 +240,14 @@ export interface EvaluationQuestionResult {
   correct?: boolean;
   user_answer?: string;
   correct_answer?: string;
+  score?: number;
   error_type?: string;
+  error_classification?: string;
   grammar_rule?: string;
   sentence?: string;
+  incorrect_phrase?: string | null;
+  correction?: string | null;
+  explanation?: string | null;
   [key: string]: unknown;
 }
 
@@ -259,6 +264,7 @@ export interface FeedbackError {
   question_id: string;
   user_answer: string;
   correct_answer: string;
+  correction?: string | null;
   error_type: string;
   why_wrong: string;
   rule: string;

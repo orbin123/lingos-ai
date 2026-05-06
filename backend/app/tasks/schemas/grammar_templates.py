@@ -99,11 +99,37 @@ class ErrorItem(BaseModel):
     correction: str | None = None
     explanation: str | None = None
 
+    @model_validator(mode="after")
+    def error_fields_must_match_verdict(self) -> "ErrorItem":
+        error_fields = {
+            "error_type": self.error_type,
+            "incorrect_phrase": self.incorrect_phrase,
+            "correction": self.correction,
+            "explanation": self.explanation,
+        }
+        if self.has_error:
+            missing = [name for name, value in error_fields.items() if value is None]
+            if missing:
+                raise ValueError(
+                    "error sentences must include error_type, "
+                    "incorrect_phrase, correction, and explanation"
+                )
+        elif any(value is not None for value in error_fields.values()):
+            raise ValueError("clean sentences must leave error fields null")
+        return self
+
 
 class ErrorSpottingTask(GeneratedTaskBase):
     instructions: str
     sentences: list[ErrorItem] = Field(..., min_length=5, max_length=10)
     total_with_errors: int
+
+    @model_validator(mode="after")
+    def total_with_errors_must_match_sentences(self) -> "ErrorSpottingTask":
+        actual = sum(1 for sentence in self.sentences if sentence.has_error)
+        if self.total_with_errors != actual:
+            raise ValueError("total_with_errors must match sentences with has_error=true")
+        return self
 
 
 # ─── Template 3: Sentence Transformation ──────────────────────────────
@@ -283,12 +309,15 @@ LEARNER PROFILE
 - Topic context: {topic}
 
 TASK
-Generate {sentence_count} sentences:
-- About {error_count} should contain a grammar error
+Generate exactly {sentence_count} sentences:
+- Exactly {error_count} should contain a grammar error
 - The rest should be grammatically correct
 - Errors should be subtle, not obvious
 - Each error must be tagged with its type ({grammar_rules_in_play})
-- For correct sentences, set has_error=false and leave error fields null
+- For every error sentence, include error_type, incorrect_phrase, correction, and explanation
+- For correct sentences, set has_error=false and set error_type, incorrect_phrase, correction, and explanation to null
+- Set total_with_errors to the exact number of sentences where has_error is true
+- The instructions field must tell the learner to choose "Correct" or one grammar error type only; do not ask them to write or suggest a correction
 
 Return ONLY valid JSON matching the ErrorSpottingTask schema.
 """,

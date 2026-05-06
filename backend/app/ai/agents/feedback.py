@@ -31,6 +31,10 @@ class ErrorExplanation(BaseModel):
     question_id: str = Field(description="e.g 'Q1', 'Q2'")
     user_answer: str = Field(description="What the user wrote")
     correct_answer: str = Field(description="The right answer")
+    correction: str | None = Field(
+        default=None,
+        description="Corrected phrase or sentence when the evaluation report provides one",
+    )
     error_type: str = Field(description="Plain-English reason, 1-2 sentences")
     why_wrong: str = Field(description="Plain-English reason, 1-2 sentences")
     rule: str = Field(description="The grammar/usage rule in simple words")
@@ -75,6 +79,13 @@ YOUR RULES (follow exactly):
 5. End with ONE concrete practice suggestion. Not vague advice.
 6. If all answers are correct, still give one tip to push the learner
    to the next level.
+7. For error_spotting reports:
+   - false_positive: explain that the sentence was already correct.
+   - false_negative: explain what the learner missed, using correction
+     and explanation from the evaluation report.
+   - wrong_error_type: say the learner correctly spotted an error, but
+     chose the wrong grammar label.
+   - Include correction when the evaluation report provides it.
 
 You will receive:
 - The original task (passage + questions)

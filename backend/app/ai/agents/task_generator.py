@@ -166,8 +166,43 @@ class TaskGeneratorAgent:
             template.output_model_name,
         )
         content = validated.model_dump()
+        self._validate_template_contract(
+            template=template,
+            content=content,
+            modifiers=modifiers,
+        )
         content["estimated_time_minutes"] = template.estimated_time_minutes
         return content
+
+    @staticmethod
+    def _validate_template_contract(
+        *,
+        template: TaskTemplate,
+        content: dict,
+        modifiers: dict,
+    ) -> None:
+        """Validate template-owned invariants that are not in static schemas."""
+        if template.template_id != "grammar_read_error_spotting_v1":
+            return
+
+        expected_sentence_count = modifiers.get("sentence_count")
+        expected_error_count = modifiers.get("error_count")
+        sentences = content.get("sentences") or []
+        actual_error_count = sum(
+            1 for sentence in sentences if sentence.get("has_error") is True
+        )
+
+        if expected_sentence_count is not None and len(sentences) != expected_sentence_count:
+            raise LLMValidationError(
+                "ErrorSpottingTask sentence count mismatch: "
+                f"expected {expected_sentence_count}, got {len(sentences)}"
+            )
+
+        if expected_error_count is not None and actual_error_count != expected_error_count:
+            raise LLMValidationError(
+                "ErrorSpottingTask error count mismatch: "
+                f"expected {expected_error_count}, got {actual_error_count}"
+            )
 
 
 # ---------------------------------------------------------------------------
