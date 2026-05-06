@@ -12,7 +12,9 @@ detect_speaker_tone, register_mismatch_dialogue, write_answers_from_audio.
 
 from __future__ import annotations
 
-from typing import Protocol, TypedDict
+from typing import Protocol
+
+from typing_extensions import TypedDict
 
 
 class DialogueTurn(TypedDict):

@@ -8,10 +8,14 @@ understand their weaknesses and why LingosAI will help them reach their goal.
 
 Input  : 7 skill scores + user goal + self-assessed level + weakest 2 skills
 Output : DiagnosisFeedbackOutput (structured JSON from LLM)
+
+Implementation: LLM-backed via the unified `app.ai.llm` client. Retries,
+LangSmith tracing, and usage logging are handled by the client.
 """
 
 from pydantic import BaseModel, Field
-from app.ai.llm import get_llm
+
+from app.ai.llm import LLMError, LLMValidationError, get_default_llm_client
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +152,12 @@ async def generate_diagnosis_feedback(
 ) -> DiagnosisFeedbackOutput:
     """Call the LLM and return a validated DiagnosisFeedbackOutput.
 
+    Uses the unified LLM client, so this call automatically gets:
+      - 3-attempt retry on transient failures
+      - LangSmith tracing under project `ai-english-coach`
+      - Token + cost logging at INFO level
+      - Provider-error translation into our LLMError family
+
     Args:
         self_assessed_level: "beginner" | "intermediate" | "advanced"
         goal: "professional" | "academic" | "casual"
@@ -158,24 +168,27 @@ async def generate_diagnosis_feedback(
         DiagnosisFeedbackOutput — structured, validated feedback object.
 
     Raises:
-        pydantic.ValidationError: if the LLM returns bad JSON (very rare
-            with structured output).
+        LLMValidationError: the LLM returned content that didn't match
+            the DiagnosisFeedbackOutput schema.
+        LLMError: any other provider failure.
     """
-    llm = get_llm()
-    structured_llm = llm.with_structured_output(DiagnosisFeedbackOutput)
+    client = get_default_llm_client()
+    human_message = _build_human_message(
+        self_assessed_level=self_assessed_level,
+        goal=goal,
+        skill_scores=skill_scores,
+        weakest_skills=weakest_skills,
+    )
 
-    messages = [
-        ("system", DIAGNOSIS_FEEDBACK_SYSTEM_PROMPT),
-        (
-            "human",
-            _build_human_message(
-                self_assessed_level=self_assessed_level,
-                goal=goal,
-                skill_scores=skill_scores,
-                weakest_skills=weakest_skills,
-            ),
-        ),
-    ]
+    try:
+        result = await client.generate_structured(
+            system_prompt=DIAGNOSIS_FEEDBACK_SYSTEM_PROMPT,
+            user_prompt=human_message,
+            output_model=DiagnosisFeedbackOutput,
+        )
+    except (LLMValidationError, LLMError):
+        # Re-raise unchanged — DiagnosisService maps these to the right
+        # HTTP status. Don't wrap in a generic exception.
+        raise
 
-    result = await structured_llm.ainvoke(messages)
     return result

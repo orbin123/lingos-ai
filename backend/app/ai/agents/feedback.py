@@ -7,7 +7,10 @@ Output : structured JSON matching FeedbackOutput schema
 Rule   : Never says "Good job!" alone. Every praise must be followed
          by a specific correction.
 
-Implementation: LLM-backed (OpenAI via langchain_openai).
+Implementation: LLM-backed via the unified `app.ai.llm` client. The
+client gives us retries, LangSmith tracing, exception translation, and
+usage logging for free — this file just owns the prompt + schema.
+
 The single public entry point is `generate_feedback(...)`.
 """
 
@@ -16,7 +19,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.ai.llm import get_llm
+from app.ai.llm import LLMError, LLMValidationError, get_default_llm_client
 
 
 # ---------------------------------------------------------------------------
@@ -119,22 +122,31 @@ async def generate_feedback(
 ) -> FeedbackOutput:
     """Call the Feedback Agent. Returns a validated FeedbackOutput.
 
+    Uses the unified LLM client, so this call automatically gets:
+      - 3-attempt retry on transient failures (timeout, rate limit, 5xx)
+      - LangSmith tracing under project `ai-english-coach`
+      - Token + cost logging at INFO level
+      - Provider-error translation into our LLMError family
+
     Raises:
-        pydantic.ValidationError: if the LLM returns bad JSON.
-            (Very rare with structured output, but possible.)
+        LLMValidationError: the LLM returned content that didn't match
+            the FeedbackOutput schema (very rare with structured output).
+        LLMError: any other provider failure (timeout, auth, rate limit).
     """
-    llm = get_llm()
-    structured_llm = llm.with_structured_output(FeedbackOutput)
+    client = get_default_llm_client()
+    human_message = _build_human_message(
+        task_content, user_answers, evaluation_report, score
+    )
 
-    messages = [
-        ("system", FEEDBACK_SYSTEM_PROMPT),
-        (
-            "human",
-            _build_human_message(
-                task_content, user_answers, evaluation_report, score
-            ),
-        ),
-    ]
+    try:
+        result = await client.generate_structured(
+            system_prompt=FEEDBACK_SYSTEM_PROMPT,
+            user_prompt=human_message,
+            output_model=FeedbackOutput,
+        )
+    except (LLMValidationError, LLMError):
+        # Re-raise unchanged — caller (FeedbackService) maps these to
+        # the right HTTP status. Don't wrap in a generic exception.
+        raise
 
-    result = await structured_llm.ainvoke(messages)
     return result

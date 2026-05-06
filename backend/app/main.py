@@ -1,17 +1,20 @@
 """FastAPI application entry point."""
 
+from pathlib import Path
+
 from dotenv import load_dotenv
-
 from fastapi import FastAPI
-
-from app.modules.auth.routes import router as auth_router
-from app.modules.diagnosis.routes import router as diagnosis_router 
-from app.modules.curriculum.routes import router as curriculum_router
-from app.modules.tasks.routes import router as tasks_router
-from app.modules.responses.routes import router as responses_router
-from app.modules.progress.routes import router as progress_router
-from app.ai.routes import router as ai_router
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from app.ai.routes import router as ai_router
+from app.core.config import settings
+from app.modules.auth.routes import router as auth_router
+from app.modules.curriculum.routes import router as curriculum_router
+from app.modules.diagnosis.routes import router as diagnosis_router
+from app.modules.progress.routes import router as progress_router
+from app.modules.responses.routes import router as responses_router
+from app.modules.tasks.routes import router as tasks_router
 
 load_dotenv("../.env")
 
@@ -29,10 +32,33 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ---------------------------------------------------------------------------
+# Static files: serve cached TTS audio under /audio/<key>.mp3
+#
+# In production this would be S3 / Cloudflare R2 with a CDN. For dev,
+# mounting StaticFiles is the simplest possible path: the same files
+# `LocalBlobStorage` writes to disk become directly fetchable here.
+#
+# Path resolution: TTS_CACHE_DIR is RELATIVE in config. We resolve it
+# against the directory uvicorn was launched from (`backend/`) once at
+# startup so the absolute path is locked in. Mounting will fail loudly
+# if the directory doesn't exist; LocalBlobStorage creates it on init.
+# ---------------------------------------------------------------------------
+_audio_root = Path(settings.TTS_CACHE_DIR).resolve()
+_audio_root.mkdir(parents=True, exist_ok=True)
+app.mount(
+    settings.TTS_PUBLIC_URL_PREFIX,
+    StaticFiles(directory=_audio_root),
+    name="audio",
+)
+
+
 @app.get("/health", tags=["system"])
 def health_check() -> dict[str, str]:
     """Liveness probe - confirms server is up."""
     return {"status": "ok"}
+
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(diagnosis_router, prefix="/diagnosis", tags=["diagnosis"])
