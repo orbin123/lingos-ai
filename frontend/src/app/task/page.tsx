@@ -71,6 +71,7 @@ export default function TaskPage() {
 
   const bundle: UserTask[] = overrideBundle ?? taskQuery.data ?? [];
   const totalTasks = bundle.length;
+  const isSuperUserJumpBundle = overrideBundle !== null;
 
   // ─── Step state ────────────────────────────────────────────
   const [currentStep, setCurrentStep] = useState(0);
@@ -124,7 +125,8 @@ export default function TaskPage() {
   const submitMutation = useMutation({
     mutationFn: (payload: {
       user_task_id: number;
-      content: Record<string, string>;
+      content: Record<string, unknown>;
+      raw_text?: string;
     }) => tasksApi.submitResponse(payload),
     onSuccess: (graded) => {
       setResults((prev) => {
@@ -147,13 +149,19 @@ export default function TaskPage() {
     });
   };
 
-  // Generated task submit (from the component's own onSubmit)
+  // Generated task submit (from the component's own onSubmit).
+  // Content is Record<string,unknown> so speaking tasks can pass
+  // {transcript, duration_seconds, audio_url} alongside the usual string values.
   const onGeneratedSubmit = useCallback(
-    (answers: Record<string, string>) => {
+    (answers: Record<string, unknown>) => {
       if (!currentTask) return;
       submitMutation.mutate({
         user_task_id: currentTask.id,
         content: answers,
+        // raw_text for embedding: use transcript for speaking tasks, otherwise undefined
+        raw_text: typeof answers["transcript"] === "string"
+          ? answers["transcript"]
+          : undefined,
       });
     },
     [currentTask, submitMutation],
@@ -177,6 +185,15 @@ export default function TaskPage() {
       router.push("/dashboard");
     },
   });
+
+  const finishDayOrJump = () => {
+    if (isSuperUserJumpBundle) {
+      queryClient.invalidateQueries({ queryKey: ["task", "next"] });
+      router.push("/dashboard");
+      return;
+    }
+    completeDayMutation.mutate();
+  };
 
   // ─── Render states ─────────────────────────────────────────
   if (!isReady) return null;
@@ -263,7 +280,7 @@ export default function TaskPage() {
           results={results}
           bundle={bundle}
           isCompleting={completeDayMutation.isPending}
-          onFinish={() => completeDayMutation.mutate()}
+          onFinish={finishDayOrJump}
         />
       </PageShell>
     );
@@ -324,6 +341,7 @@ export default function TaskPage() {
       {/* Generated task — self-contained, no form wrapper needed */}
       {isGenerated && (
         <GeneratedTaskRenderer
+          key={currentTask.id}
           taskType={taskType as import("@/lib/tasks-api").GeneratedTaskType}
           content={content as GeneratedTaskContent}
           onSubmit={onGeneratedSubmit}
@@ -914,6 +932,12 @@ function EvaluationRow({
 }) {
   const isCorrect = question.correct === true;
   const isMissing = question.error_type === "missing_answer";
+  const score = typeof question.score === "number" ? question.score : null;
+  const displayedSentence =
+    question.speaking_prompt ||
+    question.incorrect_sentence ||
+    question.sentence ||
+    question.original_sentence;
 
   return (
     <div
@@ -932,7 +956,7 @@ function EvaluationRow({
           justifyContent: "space-between",
           gap: 10,
           alignItems: "center",
-          marginBottom: question.sentence ? 8 : 0,
+          marginBottom: displayedSentence ? 8 : 0,
         }}
       >
         <span
@@ -951,11 +975,11 @@ function EvaluationRow({
             color: isCorrect ? "oklch(42% 0.18 155)" : "oklch(50% 0.16 20)",
           }}
         >
-          {isCorrect ? "Correct" : isMissing ? "Missing" : "Review"}
+          {score !== null ? `${score.toFixed(1)} / 1` : isCorrect ? "Correct" : isMissing ? "Missing" : "Review"}
         </span>
       </div>
 
-      {question.sentence && (
+      {displayedSentence && (
         <p
           style={{
             fontSize: 13,
@@ -964,7 +988,7 @@ function EvaluationRow({
             margin: "0 0 8px",
           }}
         >
-          {question.sentence}
+          {displayedSentence}
         </p>
       )}
 
@@ -984,6 +1008,77 @@ function EvaluationRow({
           Correct: <strong>{question.correct_answer ?? "—"}</strong>
         </span>
       </div>
+
+      {(question.direction || question.common_mistake || question.transformation_target || question.expected_pattern || question.grammar_rule || question.item_error_type || question.target_tense || question.sentence_count !== undefined) && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8,
+            marginTop: 8,
+            fontSize: 12,
+            color: "oklch(42% 0.07 240)",
+          }}
+        >
+          {question.direction && (
+            <span>
+              Direction: <strong>{question.direction.replace(/_/g, " ")}</strong>
+            </span>
+          )}
+          {question.grammar_rule && (
+            <span>
+              Rule: <strong>{question.grammar_rule.replace(/_/g, " ")}</strong>
+            </span>
+          )}
+          {question.item_error_type && (
+            <span>
+              Error type: <strong>{(question.item_error_type as string).replace(/_/g, " ")}</strong>
+            </span>
+          )}
+          {question.transformation_target && (
+            <span>
+              Target: <strong>{question.transformation_target.replace(/_/g, " ")}</strong>
+            </span>
+          )}
+          {question.expected_pattern && (
+            <span>
+              Pattern: <strong>{question.expected_pattern}</strong>
+            </span>
+          )}
+          {question.common_mistake && (
+            <span>
+              Common mistake: <strong>{question.common_mistake}</strong>
+            </span>
+          )}
+          {question.target_tense && (
+            <span>
+              Tense: <strong>{(question.target_tense as string).replace(/_/g, " ")}</strong>
+            </span>
+          )}
+          {question.sentence_count !== undefined && (
+            <span>
+              Sentences: <strong>{question.sentence_count as number}</strong>
+              {question.minimum_sentences !== undefined && ` / ${question.minimum_sentences} min`}
+            </span>
+          )}
+          {question.duration_seconds !== undefined && (
+            <span>
+              Duration: <strong>{question.duration_seconds as number}s</strong>
+            </span>
+          )}
+          {question.grading_criteria && Array.isArray(question.grading_criteria) && (
+            <span style={{ width: "100%" }}>
+              Criteria:{" "}
+              <strong>{(question.grading_criteria as string[]).join(" · ")}</strong>
+            </span>
+          )}
+          {question.explanation && !question.sentence && (
+            <span style={{ width: "100%" }}>
+              Explanation: <strong>{question.explanation as string}</strong>
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

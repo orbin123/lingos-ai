@@ -170,6 +170,17 @@ export interface ErrorCorrectionTaskContent extends GeneratedTaskBase {
   items: CorrectionItem[];
 }
 
+// ── Template 7: Speak with Tense ────────────────────────────────────
+export interface SpeakWithTenseTaskContent extends GeneratedTaskBase {
+  instructions: string;
+  target_tense: GrammarRule;
+  speaking_prompt: string;
+  minimum_duration_seconds: number;
+  minimum_sentences: number;
+  grading_criteria: string[];
+  sample_response: string;
+}
+
 // Union of all generated task content shapes.
 // Discrimination happens via task.task_type (outer object), not a field inside content.
 export type GeneratedTaskContent =
@@ -177,7 +188,8 @@ export type GeneratedTaskContent =
   | ErrorSpottingTaskContent
   | SentenceTransformationTaskContent
   | VoiceConversionTaskContent
-  | ErrorCorrectionTaskContent;
+  | ErrorCorrectionTaskContent
+  | SpeakWithTenseTaskContent;
 
 // The known task_type strings for generated tasks
 export type GeneratedTaskType =
@@ -185,7 +197,8 @@ export type GeneratedTaskType =
   | "error_spotting"
   | "sentence_transformation"
   | "voice_conversion"
-  | "error_correction";
+  | "error_correction"
+  | "speak_with_tense";
 
 // The known task_type strings for old seeded tasks
 export type SeededTaskType = "reading" | "writing" | "speaking" | "listening";
@@ -196,6 +209,7 @@ const GENERATED_TASK_TYPES: Set<string> = new Set([
   "sentence_transformation",
   "voice_conversion",
   "error_correction",
+  "speak_with_tense",
 ]);
 
 /** Check if a task_type string is a generated (LLM) task type */
@@ -241,8 +255,28 @@ export interface EvaluationQuestionResult {
   user_answer?: string;
   correct_answer?: string;
   error_type?: string;
+  error_classification?: string;
   grammar_rule?: string;
   sentence?: string;
+  original_sentence?: string;
+  direction?: string;
+  common_mistake?: string | null;
+  transformation_target?: string;
+  expected_pattern?: string;
+  grading_criteria?: string[];
+  incorrect_phrase?: string | null;
+  correction?: string | null;
+  explanation?: string | null;
+  incorrect_sentence?: string;
+  item_error_type?: string;
+  // speaking task fields
+  speaking_prompt?: string;
+  target_tense?: string;
+  minimum_sentences?: number;
+  sentence_count?: number;
+  duration_seconds?: number;
+  sample_response?: string;
+  score?: number;
   [key: string]: unknown;
 }
 
@@ -306,12 +340,27 @@ export const tasksApi = {
 
   submitResponse: (payload: {
     user_task_id: number;
-    content: Record<string, string>;
+    content: Record<string, unknown>;
     raw_text?: string;
   }) =>
     api
       .post<ResponseGraded>("/responses/submit", payload)
       .then((r) => r.data),
+
+  /** Upload learner audio and receive the transcript + audio URL.
+   *  Used by speaking tasks before final submission. */
+  transcribeAudio: (audioBlob: Blob, filename = "recording.webm") => {
+    const form = new FormData();
+    form.append("audio", audioBlob, filename);
+    form.append("language", "en");
+    return api
+      .post<{ transcript: string; audio_url: string }>(
+        "/responses/transcribe-audio",
+        form,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      )
+      .then((r) => r.data);
+  },
 
   // Mark the entire day as complete after all tasks in the bundle are submitted
   completeDay: () =>

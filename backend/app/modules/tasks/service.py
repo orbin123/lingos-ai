@@ -465,7 +465,7 @@ class TaskService:
             assignment = self.user_task_repo.assign(
                 user_id=user_id,
                 task_id=task.id,
-                enrollment_id=enrollment.id,
+                enrollment_id=None,
             )
             logger.info(
                 "[superuser_jump_by_type] ✅ Generated task_id=%s for user=%s",
@@ -484,7 +484,7 @@ class TaskService:
             assignment = self.user_task_repo.assign(
                 user_id=user_id,
                 task_id=task.id,
-                enrollment_id=enrollment.id,
+                enrollment_id=None,
             )
 
         self.db.commit()
@@ -505,6 +505,8 @@ class TaskService:
         Bypasses the enrollment's current_week/current_day_in_week.
         Always creates new tasks — does NOT reuse existing ones.
         Does NOT advance or modify the user's enrollment state.
+        The assignment is ad hoc (enrollment_id=NULL), so old dev-panel
+        tasks cannot block the real enrolled day bundle.
         Does NOT update rotation history.
         Commits and returns the created UserTask objects.
         """
@@ -532,6 +534,8 @@ class TaskService:
             user_profile=user_profile,
             skill_name_to_id=skill_name_to_id,
         )
+        if assignment is not None:
+            assignment.enrollment_id = None
 
         if assignment is None:
             task = self.task_repo.find_for_plan(
@@ -548,7 +552,7 @@ class TaskService:
             assignment = self.user_task_repo.assign(
                 user_id=user_id,
                 task_id=task.id,
-                enrollment_id=enrollment.id,
+                enrollment_id=None,
             )
 
         self.db.commit()

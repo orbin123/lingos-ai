@@ -30,6 +30,7 @@ ErrorType = Literal[
     "too_short",          # paraphrasing: answer is shorter than min_words
     "too_similar",        # paraphrasing: user copied the original
     "needs_review",       # paraphrasing: passed rule checks, needs LLM later
+    "needs_ai_review",    # speaking: passed basic checks, needs LLM tense/grammar grading
     "false_positive",     # error_spotting: user flagged a correct sentence as wrong
     "false_negative",     # error_spotting: user marked an erroneous sentence as correct
     "wrong_error_type",   # error_spotting: verdict correct but error category wrong
@@ -46,6 +47,8 @@ SupportedActivity = Literal[
     "voice_conversion",
     "sentence_engineering",
     "paraphrasing",
+    "error_correction",
+    "speak_with_tense",
 ]
 
 
@@ -515,6 +518,7 @@ class EvaluationService:
             result["transformation_target"] = item.get("transformation_target", "")
             result["expected_pattern"] = item.get("expected_pattern", "")
             result["grading_criteria"] = item.get("grading_criteria", [])
+            result["original_sentence"] = original
 
             per_question[iid] = result
             score_sum += result["score"]
@@ -591,6 +595,7 @@ class EvaluationService:
                     "user_answer": user_ans,
                     "correct_answer": correct,
                     "error_type": "missing_answer",
+                    "score": 0.0,
                     "direction": item.get("direction", ""),
                     "original_sentence": item.get("original_sentence", ""),
                     "common_mistake": item.get("common_mistake"),
@@ -605,6 +610,7 @@ class EvaluationService:
                 "user_answer": user_ans,
                 "correct_answer": correct,
                 "error_type": "correct" if is_correct else "wrong_answer",
+                "score": 1.0 if is_correct else 0.0,
                 "direction": item.get("direction", ""),
                 "original_sentence": item.get("original_sentence", ""),
                 "common_mistake": item.get("common_mistake"),
@@ -617,6 +623,103 @@ class EvaluationService:
 
         return {
             "task_type": "voice_conversion",
+            "total": total,
+            "correct_count": correct_count,
+            "percentage": percentage,
+            "questions": per_question,
+        }
+
+    # ------------------------------------------------------------------
+    # Error correction — exact match with sentence normalization
+    #
+    # Each item provides an `incorrect_sentence` the learner must fix
+    # and a `correct_sentence` as the answer key. We use
+    # `_normalize_sentence` so differences in capitalization and trailing
+    # punctuation (., !, ?) don't count against the learner.
+    #
+    # Note: `error_type` in the result dict is the standard evaluation
+    # verdict ("correct" / "missing_answer" / "wrong_answer"). The
+    # grammar category from the item is stored under `item_error_type`
+    # to avoid a name clash.
+    # ------------------------------------------------------------------
+    def evaluate_error_correction(
+        self,
+        *,
+        task_content: dict,
+        user_answers: dict,
+    ) -> dict:
+        """Score a generated error-correction task.
+
+        Content shape (from ErrorCorrectionTask Pydantic model):
+            {
+              "items": [
+                {
+                  "item_id": "item_1",
+                  "incorrect_sentence": "She don't likes apples.",
+                  "correct_sentence": "She doesn't like apples.",
+                  "error_type": "subject_verb_agreement",
+                  "explanation": "After 'doesn't', the verb stays in base form."
+                },
+                ...
+              ]
+            }
+
+        User answer shape (from GeneratedErrorCorrection.tsx):
+            { "item_1": "She doesn't like apples.", ... }
+
+        Scoring per item (max 1.0 each):
+            - Empty answer                              → 0.0  (missing_answer)
+            - Normalised match with correct_sentence    → 1.0  (correct)
+            - Non-empty but doesn't match               → 0.0  (wrong_answer)
+        """
+        items: list[dict] = task_content.get("items", [])
+        if not items:
+            raise ValueError(
+                "Generated error_correction task has no 'items' in content"
+            )
+
+        per_question: dict[str, dict] = {}
+        correct_count = 0
+
+        for item in items:
+            iid = item["item_id"]
+            correct = item.get("correct_sentence", "")
+            user_ans = user_answers.get(iid, "")
+
+            if not user_ans.strip():
+                per_question[iid] = {
+                    "correct": False,
+                    "user_answer": user_ans,
+                    "correct_answer": correct,
+                    "error_type": "missing_answer",
+                    "score": 0.0,
+                    "incorrect_sentence": item.get("incorrect_sentence", ""),
+                    "item_error_type": item.get("error_type", ""),
+                    "explanation": item.get("explanation", ""),
+                }
+                continue
+
+            is_correct = (
+                _normalize_sentence(user_ans) == _normalize_sentence(correct)
+            )
+            per_question[iid] = {
+                "correct": is_correct,
+                "user_answer": user_ans,
+                "correct_answer": correct,
+                "error_type": "correct" if is_correct else "wrong_answer",
+                "score": 1.0 if is_correct else 0.0,
+                "incorrect_sentence": item.get("incorrect_sentence", ""),
+                "item_error_type": item.get("error_type", ""),
+                "explanation": item.get("explanation", ""),
+            }
+            if is_correct:
+                correct_count += 1
+
+        total = len(items)
+        percentage = round((correct_count / total) * 100, 2) if total else 0.0
+
+        return {
+            "task_type": "error_correction",
             "total": total,
             "correct_count": correct_count,
             "percentage": percentage,
@@ -762,6 +865,116 @@ class EvaluationService:
         }
 
     # ------------------------------------------------------------------
+    # Speak with tense — stub evaluator (sentence-count heuristic)
+    #
+    # A real tense-usage grader needs an LLM to check whether the learner
+    # actually used the target tense and whether the grammar is correct.
+    # Today we ship cheap rule-based sentence counting so the full loop
+    # works end-to-end without blocking on the LLM evaluator:
+    #
+    #   - empty transcript          → missing_answer        (0.0)
+    #   - < minimum_sentences       → too_short             (0.3)
+    #   - >= minimum_sentences      → needs_ai_review       (0.7)
+    #
+    # TODO(post-MVP): replace stub with an LLM call that checks:
+    #   - target tense was used correctly
+    #   - grammar accuracy and fluency
+    # The dispatcher signature stays the same so callers don't change.
+    # ------------------------------------------------------------------
+    def evaluate_speak_with_tense(
+        self,
+        *,
+        task_content: dict,
+        user_answers: dict,
+    ) -> dict:
+        """Score a generated speak-with-tense submission.
+
+        Content shape (from SpeakWithTenseTask Pydantic model):
+            {
+              "target_tense": "past_simple",
+              "speaking_prompt": "Tell me about your last weekend.",
+              "minimum_duration_seconds": 60,
+              "minimum_sentences": 4,
+              "grading_criteria": ["uses past simple", ...],
+              "sample_response": "Last weekend I visited..."
+            }
+
+        User answer shape (from SpeakAndRecord component):
+            {
+              "transcript": "Last weekend I visited my grandmother...",
+              "duration_seconds": 65,
+              "audio_url": "/audio/user-recordings/abc123.webm"
+            }
+
+        Scoring:
+            - Empty transcript         → 0.0  (missing_answer)
+            - < minimum_sentences      → 0.3  (too_short)
+            - >= minimum_sentences     → 0.7  (needs_ai_review)
+        """
+        transcript: str = str(user_answers.get("transcript", "")).strip()
+        duration: float | None = user_answers.get("duration_seconds")
+        minimum_sentences: int = int(task_content.get("minimum_sentences", 4))
+
+        # Count sentences by splitting on terminal punctuation.
+        # Filter fragments shorter than 3 chars (catch "..." or lone "?").
+        if transcript:
+            import re
+            raw_fragments = re.split(r"[.!?]+", transcript)
+            sentence_count = sum(
+                1 for f in raw_fragments if f.strip() and len(f.strip()) >= 3
+            )
+        else:
+            sentence_count = 0
+
+        base = {
+            "user_answer": transcript,
+            "correct_answer": None,
+            "target_tense": task_content.get("target_tense", ""),
+            "speaking_prompt": task_content.get("speaking_prompt", ""),
+            "minimum_sentences": minimum_sentences,
+            "sentence_count": sentence_count,
+            "duration_seconds": duration,
+            "grading_criteria": task_content.get("grading_criteria", []),
+            "sample_response": task_content.get("sample_response", ""),
+        }
+
+        if not transcript:
+            result = {
+                **base,
+                "correct": False,
+                "score": 0.0,
+                "error_type": "missing_answer",
+            }
+            percentage = 0.0
+            correct_count = 0
+        elif sentence_count < minimum_sentences:
+            result = {
+                **base,
+                "correct": False,
+                "score": 0.3,
+                "error_type": "too_short",
+            }
+            percentage = 30.0
+            correct_count = 0
+        else:
+            result = {
+                **base,
+                "correct": True,
+                "score": 0.7,
+                "error_type": "needs_ai_review",
+            }
+            percentage = 70.0
+            correct_count = 1
+
+        return {
+            "task_type": "speak_with_tense",
+            "total": 1,
+            "correct_count": correct_count,
+            "percentage": percentage,
+            "questions": {"speaking_response": result},
+        }
+
+    # ------------------------------------------------------------------
     # Dispatcher — the ONE method service code should call.
     # ------------------------------------------------------------------
     def evaluate(
@@ -809,10 +1022,19 @@ class EvaluationService:
             return self.evaluate_paraphrasing(
                 task_content=task_content, user_answers=user_answers
             )
+        if activity_type == "error_correction":
+            return self.evaluate_error_correction(
+                task_content=task_content, user_answers=user_answers
+            )
+        if activity_type == "speak_with_tense":
+            return self.evaluate_speak_with_tense(
+                task_content=task_content, user_answers=user_answers
+            )
         raise ValueError(
             f"Unsupported activity_type: {activity_type!r}. "
             f"Supported: fill_in_the_blanks, fill_in_blanks, error_spotting, "
-            f"sentence_transformation, voice_conversion, sentence_engineering, paraphrasing."
+            f"sentence_transformation, voice_conversion, sentence_engineering, "
+            f"paraphrasing, error_correction, speak_with_tense."
         )
 
     # ------------------------------------------------------------------

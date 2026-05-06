@@ -1,8 +1,14 @@
 """HTTP endpoints for response submission."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import hashlib
+import logging
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
@@ -24,6 +30,8 @@ from app.modules.responses.schemas import (
     SkillScoreRead,
 )
 from app.modules.responses.service import ResponseService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/responses", tags=["responses"])
 
@@ -100,4 +108,87 @@ async def submit_response(
         evaluation=EvaluationRead.model_validate(evaluation),
         feedback=FeedbackRead.model_validate(feedback),
         skill_scores=skill_scores,
+    )
+
+
+class TranscribeAudioResponse(BaseModel):
+    transcript: str
+    audio_url: str
+
+
+@router.post(
+    "/transcribe-audio",
+    response_model=TranscribeAudioResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def transcribe_audio(
+    audio: UploadFile = File(
+        ..., description="Learner's recorded audio (webm, mp3, wav, ogg, m4a)"
+    ),
+    language: str = Form(default="en"),
+    _current_user: User = Depends(get_current_user),
+) -> TranscribeAudioResponse:
+    """Transcribe learner-recorded audio for a speaking task.
+
+    Flow:
+      1. Read uploaded audio bytes.
+      2. Save to disk under the TTS static-file root so it is retrievable later
+         (for re-evaluation or audit). Path: user-recordings/<sha256[:16]>.webm
+      3. Transcribe via the cached STT service (OpenAI Whisper-1).
+      4. Return transcript text + the public audio URL.
+
+    The public URL is constructed from `TTS_PUBLIC_URL_PREFIX` so it is
+    served by the existing StaticFiles mount in main.py without any extra
+    configuration.
+
+    Errors:
+      400 — empty or malformed audio
+      413 — audio over 25 MB (Whisper hard limit)
+      502 — STT provider failure
+    """
+    from app.ai.stt import get_default_stt_service
+    from app.ai.stt.exceptions import STTError, STTPayloadTooLarge, STTValidationError
+
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio upload.")
+
+    # Derive a stable filename from the content hash (deduplicate re-uploads).
+    content_hash = hashlib.sha256(audio_bytes).hexdigest()[:16]
+    original_ext = Path(audio.filename or "recording.webm").suffix or ".webm"
+    filename_on_disk = f"{content_hash}{original_ext}"
+
+    # Save under the TTS cache root (already mounted as /audio in main.py).
+    recordings_dir = Path(settings.TTS_CACHE_DIR).resolve() / "user-recordings"
+    recordings_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = recordings_dir / filename_on_disk
+    if not audio_path.exists():
+        audio_path.write_bytes(audio_bytes)
+        logger.info(
+            "[transcribe_audio] saved %d bytes → %s", len(audio_bytes), audio_path
+        )
+    else:
+        logger.debug("[transcribe_audio] cache hit for %s", filename_on_disk)
+
+    audio_url = f"{settings.TTS_PUBLIC_URL_PREFIX}/user-recordings/{filename_on_disk}"
+
+    # Transcribe via the STT service.
+    service = get_default_stt_service()
+    try:
+        result = await service.transcribe(
+            audio_bytes=audio_bytes,
+            filename=audio.filename or filename_on_disk,
+            language=language,
+            with_timestamps=False,
+        )
+    except STTPayloadTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except STTValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except STTError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return TranscribeAudioResponse(
+        transcript=result["text"],
+        audio_url=audio_url,
     )
