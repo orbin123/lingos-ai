@@ -692,11 +692,14 @@ class EvaluationService:
                     "correct": False,
                     "user_answer": user_ans,
                     "correct_answer": expected_label,
+                    "grammar_rule": correct_type,
                     "error_type": "missing_answer",
+                    "error_classification": "missing_answer",
                     "score": 0.0,
                     # Pass through the sentence data so the feedback agent
                     # can reference the original text and explanation.
                     "sentence": sent.get("sentence", ""),
+                    "incorrect_phrase": sent.get("incorrect_phrase"),
                     "correction": sent.get("correction"),
                     "explanation": sent.get("explanation"),
                 }
@@ -737,9 +740,12 @@ class EvaluationService:
                 "correct": q_correct,
                 "user_answer": user_ans,
                 "correct_answer": expected_label,
+                "grammar_rule": correct_type,
                 "error_type": q_error_type,
+                "error_classification": q_error_type,
                 "score": q_score,
                 "sentence": sent.get("sentence", ""),
+                "incorrect_phrase": sent.get("incorrect_phrase"),
                 "correction": sent.get("correction"),
                 "explanation": sent.get("explanation"),
             }

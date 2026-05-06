@@ -9,7 +9,6 @@ from app.ai.agents import EvaluationService
 from app.modules.progress.service import ScoreUpdaterService
 from app.modules.responses.exceptions import (
     NotResponseOwner,
-    ResponseAlreadySubmitted,
     UserTaskNotFound,
     UserTaskNotSubmittable,
 )
@@ -290,7 +289,13 @@ class ResponseService:
         # 4. Update skill scores + log progress (commit 4)
         updated_scores = self.score_updater.apply(evaluation.id)
 
-        # 5. Embed response — best-effort, never blocks the user (commit 5)
+        # 5. Mark the assignment completed so /tasks/complete-day can advance.
+        user_task = self.user_task_repo.get_by_id(user_task_id)
+        if user_task is not None:
+            self.user_task_repo.mark_completed(user_task)
+            self.db.commit()
+
+        # 6. Embed response — best-effort, never blocks the user (commit 6)
         await self._embed_response(response=response)
 
         return response, evaluation, feedback, updated_scores

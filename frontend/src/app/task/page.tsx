@@ -262,8 +262,15 @@ export default function TaskPage() {
           dayNum={dayNum}
           results={results}
           bundle={bundle}
-          isCompleting={completeDayMutation.isPending}
-          onFinish={() => completeDayMutation.mutate()}
+          isCompleting={overrideBundle ? false : completeDayMutation.isPending}
+          onFinish={() => {
+            if (overrideBundle) {
+              queryClient.invalidateQueries({ queryKey: ["me"] });
+              router.push("/dashboard");
+            } else {
+              completeDayMutation.mutate();
+            }
+          }}
         />
       </PageShell>
     );
@@ -759,7 +766,8 @@ function TaskResultScreen({
               color: "oklch(45% 0.08 240)",
             }}
           >
-            {report.correct_count ?? 0} / {report.total ?? questionEntries.length} correct
+            {report.correct_count ?? 0} / {report.total ?? questionEntries.length} full-score ·{" "}
+            {Number(report.percentage ?? percentage).toFixed(1)}%
           </span>
         </div>
 
@@ -802,6 +810,18 @@ function TaskResultScreen({
                 >
                   {error.question_id}: {error.user_answer || "(blank)"} → {error.correct_answer}
                 </p>
+                {error.correction && (
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "oklch(32% 0.07 70)",
+                      lineHeight: 1.55,
+                      margin: "0 0 4px",
+                    }}
+                  >
+                    <strong>Correction:</strong> {error.correction}
+                  </p>
+                )}
                 <p
                   style={{
                     fontSize: 13,
@@ -914,6 +934,8 @@ function EvaluationRow({
 }) {
   const isCorrect = question.correct === true;
   const isMissing = question.error_type === "missing_answer";
+  const score = typeof question.score === "number" ? question.score : null;
+  const classification = question.error_classification ?? question.error_type;
 
   return (
     <div
@@ -951,7 +973,7 @@ function EvaluationRow({
             color: isCorrect ? "oklch(42% 0.18 155)" : "oklch(50% 0.16 20)",
           }}
         >
-          {isCorrect ? "Correct" : isMissing ? "Missing" : "Review"}
+          {score !== null ? `${score.toFixed(1)} / 1` : isCorrect ? "Correct" : isMissing ? "Missing" : "Review"}
         </span>
       </div>
 
@@ -984,6 +1006,57 @@ function EvaluationRow({
           Correct: <strong>{question.correct_answer ?? "—"}</strong>
         </span>
       </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          marginTop: 8,
+          fontSize: 12,
+          color: "oklch(42% 0.07 240)",
+        }}
+      >
+        {classification && (
+          <span>
+            Classification: <strong>{classification.replace(/_/g, " ")}</strong>
+          </span>
+        )}
+        {question.grammar_rule && (
+          <span>
+            Rule: <strong>{question.grammar_rule.replace(/_/g, " ")}</strong>
+          </span>
+        )}
+        {question.incorrect_phrase && (
+          <span>
+            Phrase: <strong>{question.incorrect_phrase}</strong>
+          </span>
+        )}
+      </div>
+
+      {(question.correction || question.explanation) && (
+        <div
+          style={{
+            marginTop: 8,
+            paddingTop: 8,
+            borderTop: "1px solid rgba(80,120,200,0.1)",
+            fontSize: 12,
+            color: "oklch(34% 0.07 240)",
+            lineHeight: 1.5,
+          }}
+        >
+          {question.correction && (
+            <p style={{ margin: "0 0 4px" }}>
+              <strong>Correction:</strong> {question.correction}
+            </p>
+          )}
+          {question.explanation && (
+            <p style={{ margin: 0 }}>
+              <strong>Explanation:</strong> {question.explanation}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
