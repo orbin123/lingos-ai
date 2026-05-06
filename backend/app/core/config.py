@@ -58,6 +58,17 @@ class Settings(BaseSettings):
     # StaticFiles mount. Frontend uses these URLs in <audio src=...>.
     TTS_PUBLIC_URL_PREFIX: str = "/audio"
 
+    # AI / STT (speech-to-text)
+    # We use whisper-1 because it's the ONLY OpenAI model that supports
+    # word-level timestamps (needed for fluency analysis on speak_*
+    # tasks). gpt-4o-mini-transcribe is newer + cheaper but only returns
+    # plain text. Sticking with whisper-1 keeps one model for all STT.
+    OPENAI_STT_MODEL: str = "whisper-1"
+    # Where transcript JSON sidecars are cached on disk. Different
+    # directory from TTS so retention/cleanup policies stay independent
+    # (transcripts may have privacy implications audio doesn't).
+    STT_CACHE_DIR: str = "app/ai/stt/_cache"
+
     # Vector DB (Pinecone)
     PINECONE_API_KEY: str
     PINECONE_INDEX_NAME: str = "lingosai-responses"

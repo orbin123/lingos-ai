@@ -1,9 +1,16 @@
-"""Speech-to-Text client contract — STUB for Phase 3.
+"""Speech-to-Text client contract.
 
-Implementation lands in Phase 3 (likely OpenAI Whisper API).
+Implementation: OpenAI Whisper API (whisper-1).
 
 Used by all speak_* task types: storyboard_narration,
 retell_what_you_heard, and any future free-form speaking task.
+
+Why one interface instead of two methods?
+The same Whisper call handles both modes — the only difference is
+whether `with_timestamps=True` flips the response_format from `json`
+to `verbose_json`. Hiding that behind one method keeps callers simple
+and lets a future provider (e.g. local Whisper, Deepgram) drop in
+without changing call sites.
 """
 
 from __future__ import annotations
@@ -18,6 +25,10 @@ class WordTimestamp(TypedDict):
 
     Word-level timestamps power fluency analysis (pauses, speed,
     self-corrections) without a separate model.
+
+    Note: Whisper-1 does not return per-word confidence scores.
+    The `confidence` field is reserved for providers that do
+    (e.g. Deepgram, AssemblyAI) — for whisper-1 it's always None.
     """
     word: str
     start_seconds: float
@@ -26,30 +37,53 @@ class WordTimestamp(TypedDict):
 
 
 class TranscriptionResult(TypedDict):
-    """Full STT output."""
+    """Full STT output.
+
+    `words` is None when timestamps weren't requested (cheaper + faster
+    response). When requested, it's the full list of word timings.
+    """
     text: str
     language: str
     duration_seconds: float
-    words: list[WordTimestamp] | None  # None when timestamps weren't requested
+    words: list[WordTimestamp] | None
 
 
 class ISTTClient(Protocol):
-    """Minimal STT contract."""
+    """Minimal STT contract.
+
+    A single method handles both plain and timestamped transcription —
+    callers pass `with_timestamps=True` when they need word timings.
+    """
 
     async def transcribe(
         self,
         *,
         audio_bytes: bytes,
+        filename: str,
         language: str = "en",
+        with_timestamps: bool = False,
     ) -> TranscriptionResult:
-        """Plain transcription — no timestamps. Cheaper + faster."""
-        ...
+        """Transcribe audio bytes. Optionally include word timestamps.
 
-    async def transcribe_with_timestamps(
-        self,
-        *,
-        audio_bytes: bytes,
-        language: str = "en",
-    ) -> TranscriptionResult:
-        """Word-level timestamps. Used for fluency / pause analysis."""
+        Args:
+            audio_bytes: Raw audio bytes. Must be < 25 MB (provider limit).
+            filename: A name like "recording.webm". The extension is what
+                providers use to detect the audio format — bytes alone
+                are not enough. Anything sensible works (e.g. "audio.mp3").
+            language: ISO-639-1 code, default "en". Setting this avoids
+                language mis-detection on short / noisy audio.
+            with_timestamps: When True, returns word-level timing data
+                in `result["words"]`. When False, that field is None.
+
+        Returns:
+            TranscriptionResult dict.
+
+        Raises:
+            STTValidationError: empty bytes, bad filename, oversized.
+            STTPayloadTooLarge: audio over 25 MB (subclass of validation).
+            STTAuthError: bad API key.
+            STTRateLimited: rate-limited after all retries.
+            STTTimeout: timed out after all retries.
+            STTProviderError: any other provider failure.
+        """
         ...

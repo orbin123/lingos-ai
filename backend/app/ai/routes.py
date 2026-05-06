@@ -4,10 +4,17 @@ Lightweight endpoints for verifying the AI layer works end-to-end.
 Mounted under /debug/ai.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.ai.llm import get_default_llm_client
+from app.ai.stt import (
+    STTError,
+    STTPayloadTooLarge,
+    STTValidationError,
+    TranscriptionResult,
+    get_default_stt_service,
+)
 from app.ai.tts import (
     SynthesisResult,
     TTSError,
@@ -88,5 +95,54 @@ async def tts_synthesize(req: TTSRequest) -> SynthesisResult:
     except TTSError as exc:
         # 502: provider failed. We surface the message — debug-only,
         # safe to leak provider error text here.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return result
+
+
+# ---------------------------------------------------------------------------
+# STT transcribe (debug)
+# ---------------------------------------------------------------------------
+@router.post("/stt/transcribe")
+async def stt_transcribe(
+    audio: UploadFile = File(
+        ..., description="Audio recording (webm, mp3, wav, ogg, m4a, flac)"
+    ),
+    language: str = Form(default="en"),
+    with_timestamps: bool = Form(default=False),
+) -> TranscriptionResult:
+    """Transcribe one audio upload via Whisper.
+
+    Useful for:
+      - verifying OpenAI STT is wired up
+      - testing word-level timestamps for fluency analysis later
+      - watching the cache hit on identical re-uploads (look for
+        `stt_cache_hit` in server logs)
+
+    Sample curl:
+      curl -F "audio=@hello.mp3" \\
+           -F "with_timestamps=true" \\
+           http://localhost:8000/debug/ai/stt/transcribe
+
+    Errors:
+      400 - empty / malformed audio
+      413 - audio over 25 MB (OpenAI's hard limit)
+      502 - provider failure (timeout, rate limit, etc.)
+    """
+    audio_bytes = await audio.read()
+    filename = audio.filename or "recording.webm"
+
+    service = get_default_stt_service()
+    try:
+        result = await service.transcribe(
+            audio_bytes=audio_bytes,
+            filename=filename,
+            language=language,
+            with_timestamps=with_timestamps,
+        )
+    except STTPayloadTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except STTValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except STTError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return result

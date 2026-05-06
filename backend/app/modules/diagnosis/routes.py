@@ -1,13 +1,14 @@
 """Diagnosis HTTP routes."""
 
-import io
-import time
-
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
+from app.ai.stt import (
+    STTError,
+    STTPayloadTooLarge,
+    STTValidationError,
+    get_default_stt_service,
+)
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
@@ -26,21 +27,10 @@ from app.modules.diagnosis.service import DiagnosisService
 
 router = APIRouter()
 
-# One shared async OpenAI client for Whisper calls
-_openai = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-
-# Allowed audio MIME types Whisper accepts
-ALLOWED_AUDIO_TYPES = {
-    "audio/webm",
-    "audio/webm;codecs=opus",
-    "audio/mp4",
-    "audio/mpeg",
-    "audio/wav",
-    "audio/ogg",
-}
-
-# Max file size: 25 MB (Whisper API limit)
-MAX_AUDIO_BYTES = 25 * 1024 * 1024
+# Floor used to satisfy `TranscribeResponse.duration_seconds > 0` if Whisper
+# ever returns 0.0 for very short audio. Real recordings are always > 0.01s,
+# so this clamp only fires on degenerate inputs and keeps us from 500ing.
+_MIN_REPORTED_DURATION_S = 0.01
 
 
 @router.post(
@@ -52,68 +42,66 @@ async def transcribe_audio(
     audio: UploadFile = File(..., description="Audio recording from the read-aloud step"),
     current_user: User = Depends(get_current_user),
 ) -> TranscribeResponse:
-    """Transcribe a read-aloud audio recording using OpenAI Whisper.
+    """Transcribe a read-aloud audio recording via the shared STT service.
 
-    Accepts: webm, mp4, mpeg, wav, ogg (browser MediaRecorder output).
+    The STT service (`app.ai.stt`) handles:
+      - calling OpenAI Whisper with `verbose_json` so duration is real,
+        not estimated from byte size
+      - 25 MB pre-flight size check (raises STTPayloadTooLarge)
+      - hash-based caching — re-uploads of the same recording are free
+      - retries on transient OpenAI failures
+
+    We deliberately do NOT validate `audio.content_type` here. Browser
+    MIME labels are unreliable (some clients send `application/octet-stream`
+    for valid webm), and Whisper detects the format from the file's
+    extension via the multipart filename. Filename is what matters.
+
     Returns: transcript text + duration in seconds.
-
     Auth: Bearer token required.
     """
-    # Validate MIME type
-    content_type = (audio.content_type or "").lower()
-    if content_type not in ALLOWED_AUDIO_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=(
-                f"Unsupported audio type: {content_type!r}. "
-                "Please record in webm, mp4, wav, or ogg format."
-            ),
-        )
-
-    # Read file into memory and check size
     audio_bytes = await audio.read()
-    if len(audio_bytes) > MAX_AUDIO_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="Audio file is too large. Maximum size is 25 MB.",
-        )
-    if len(audio_bytes) == 0:
+    if not audio_bytes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Audio file is empty.",
         )
 
-    # Wrap bytes in a file-like object with a filename so Whisper can detect format
-    extension = _mime_to_extension(content_type)
-    audio_file = (f"recording.{extension}", io.BytesIO(audio_bytes), content_type)
+    # Whisper sniffs the format from the filename extension, so we always
+    # hand it one. If the upload didn't carry a name, default to .webm —
+    # the format the diagnosis frontend records in via MediaRecorder.
+    filename = audio.filename or "recording.webm"
 
-    # Time the call so we can derive duration from wall-clock if needed
-    t_start = time.monotonic()
-
+    service = get_default_stt_service()
     try:
-        transcription = await _openai.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            language="en",          # force English — avoids mis-detection
-            response_format="json",
+        result = await service.transcribe(
+            audio_bytes=audio_bytes,
+            filename=filename,
+            language="en",
+            with_timestamps=False,
         )
-    except Exception as exc:
+    except STTPayloadTooLarge as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
+    except STTValidationError as exc:
+        # Empty bytes / bad filename / unsupported format — caller's fault.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except STTError as exc:
+        # Provider-side failure (timeout, rate limit, 5xx). 502 keeps the
+        # original signal: "upstream is the problem, not your request."
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Whisper transcription failed: {exc}",
-        )
+            detail=f"Transcription failed: {exc}",
+        ) from exc
 
-    t_elapsed = time.monotonic() - t_start
-
-    # Whisper JSON response doesn't include duration — estimate from byte size.
-    # A typical webm/opus recording runs ~12–16 kbps, so:
-    #   duration ≈ bytes / (14_000 / 8)  = bytes / 1750
-    # This is a rough estimate; good enough for scoring fluency.
-    estimated_duration = max(len(audio_bytes) / 1750, t_elapsed)
-
+    duration = max(result["duration_seconds"], _MIN_REPORTED_DURATION_S)
     return TranscribeResponse(
-        transcript=transcription.text.strip(),
-        duration_seconds=round(estimated_duration, 2),
+        transcript=result["text"].strip(),
+        duration_seconds=round(duration, 2),
     )
 
 
@@ -171,18 +159,3 @@ async def submit_diagnosis(
         weakest_skills=weakest_skill_names,
         feedback=feedback_out,
     )
-
-
-# ── Helpers ────────────────────────────────────────────────────────────────
-
-def _mime_to_extension(mime: str) -> str:
-    """Map a MIME type to a file extension Whisper recognises."""
-    mapping = {
-        "audio/webm": "webm",
-        "audio/webm;codecs=opus": "webm",
-        "audio/mp4": "mp4",
-        "audio/mpeg": "mp3",
-        "audio/wav": "wav",
-        "audio/ogg": "ogg",
-    }
-    return mapping.get(mime, "webm")

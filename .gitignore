@@ -38,3 +38,6 @@ backend/.archive/
 
 # TTS audio cache (regenerated on demand from OpenAI)
 backend/app/ai/tts/_cache/
+
+# STT transcript cache (regenerated on demand from OpenAI)
+backend/app/ai/stt/_cache/
