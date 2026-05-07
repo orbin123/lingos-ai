@@ -45,6 +45,21 @@ class EnrollmentRead(BaseModel):
     course_id: int
     current_week: int
     current_day_in_week: int
+    tasks_per_day: int
+    allow_reading: bool
+    allow_writing: bool
+    allow_listening: bool
+    allow_speaking: bool
     status: EnrollmentStatus
     started_at: datetime | None
     course: CourseRead   # nested — frontend gets course details in one response
+
+
+class EnrollmentSettingsUpdate(BaseModel):
+    """User-configurable practice settings for the active enrollment."""
+
+    tasks_per_day: int | None = Field(default=None, ge=1, le=4)
+    allow_reading: bool | None = None
+    allow_writing: bool | None = None
+    allow_listening: bool | None = None
+    allow_speaking: bool | None = None

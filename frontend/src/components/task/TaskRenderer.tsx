@@ -10,6 +10,7 @@ import type {
   SentenceTransformationTaskContent,
   VoiceConversionTaskContent,
   ErrorCorrectionTaskContent,
+  SpeakWithTenseTaskContent,
 } from "@/lib/tasks-api";
 
 // ── Old activity-based components (seeded tasks) ──
@@ -23,6 +24,7 @@ import { GeneratedErrorSpotting } from "./GeneratedErrorSpotting";
 import { GeneratedSentenceTransformation } from "./GeneratedSentenceTransformation";
 import { GeneratedVoiceConversion } from "./GeneratedVoiceConversion";
 import { GeneratedErrorCorrection } from "./GeneratedErrorCorrection";
+import { GeneratedSpeakWithTense } from "./GeneratedSpeakWithTense";
 
 type FormValues = Record<string, string>;
 
@@ -34,7 +36,9 @@ interface GeneratedTaskRendererProps {
   /** task.task_type from the outer UserTask — NOT from inside content */
   taskType: GeneratedTaskType;
   content: GeneratedTaskContent;
-  onSubmit: (answers: Record<string, string>) => void;
+  /** Writing/reading tasks pass Record<string,string>; speaking tasks pass
+   *  Record<string,unknown> (transcript + duration_seconds + audio_url). */
+  onSubmit: (answers: Record<string, unknown>) => void;
   isPending: boolean;
 }
 
@@ -88,6 +92,14 @@ export function GeneratedTaskRenderer({
       return (
         <GeneratedErrorCorrection
           content={content as ErrorCorrectionTaskContent}
+          onSubmit={onSubmit}
+          isPending={isPending}
+        />
+      );
+    case "speak_with_tense":
+      return (
+        <GeneratedSpeakWithTense
+          content={content as SpeakWithTenseTaskContent}
           onSubmit={onSubmit}
           isPending={isPending}
         />

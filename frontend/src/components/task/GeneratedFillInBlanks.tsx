@@ -5,7 +5,7 @@ import type { FillInBlanksTaskContent } from "@/lib/tasks-api";
 
 interface Props {
   content: FillInBlanksTaskContent;
-  onSubmit: (answers: Record<string, string>) => void;
+  onSubmit: (answers: Record<string, unknown>) => void;
   isPending: boolean;
 }
 

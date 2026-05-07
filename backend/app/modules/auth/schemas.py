@@ -1,8 +1,11 @@
 """Pydantic schemas for auth module - API boundary contracts"""
 
+from datetime import datetime
+
 from pydantic import BaseModel, EmailStr, Field
 
 from app.modules.curriculum.schemas import EnrollmentRead
+from app.modules.subscriptions.schemas import NotificationSettings
 
 class UserCreate(BaseModel):
     """Input schema for signup. What the client sends."""
@@ -20,11 +23,37 @@ class UserOut(BaseModel):
     id: int
     email: EmailStr
     name: str
+    display_name: str
+    created_at: datetime
+    auth_provider: str = "password"
     is_superuser: bool = False
     diagnosis_completed: bool = False  # tells frontend where to send the user
     enrollment: EnrollmentRead | None = None
+    phone_number: str | None = None
+    country: str | None = None
+    native_language: str | None = None
+    primary_goals: list[str] = Field(default_factory=list)
+    personalisation_context: str = ""
+    self_assessed_level: str | None = None
+    goal: str | None = None
+    interests: list[str] = Field(default_factory=list)
+    notifications: NotificationSettings = Field(default_factory=NotificationSettings)
 
     model_config = {"from_attributes": True}
+
+
+class UserUpdate(BaseModel):
+    """Editable account/profile fields for PATCH /auth/me."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    display_name: str | None = Field(default=None, min_length=1, max_length=100)
+    email: EmailStr | None = None
+    password: str | None = Field(default=None, min_length=1, max_length=128)
+    phone_number: str | None = Field(default=None, max_length=40)
+    country: str | None = Field(default=None, max_length=80)
+    native_language: str | None = Field(default=None, max_length=80)
+    primary_goals: list[str] | None = Field(default=None, max_length=8)
+    personalisation_context: str | None = Field(default=None, max_length=500)
 
 class TokenOut(BaseModel):
     """Output Schema returned after successful login."""

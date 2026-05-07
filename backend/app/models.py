@@ -20,3 +20,4 @@ from app.modules.responses.models import (  # noqa: F401
     UserResponse, Evaluation, Feedback,
 )
 from app.modules.progress.models import ProgressLog  # noqa: F401
+from app.modules.subscriptions.models import Purchase  # noqa: F401

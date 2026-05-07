@@ -13,7 +13,7 @@ const TARGET_LABELS: Record<string, string> = {
 
 interface Props {
   content: SentenceTransformationTaskContent;
-  onSubmit: (answers: Record<string, string>) => void;
+  onSubmit: (answers: Record<string, unknown>) => void;
   isPending: boolean;
 }
 

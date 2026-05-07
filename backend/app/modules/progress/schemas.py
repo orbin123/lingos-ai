@@ -26,3 +26,50 @@ class ProgressLogPoint(BaseModel):
 
     score: float
     created_at: datetime
+
+
+class WeeklySnapshot(BaseModel):
+    """Aggregated weekly metrics for the stats page."""
+
+    overall_score_change: float
+    tasks_completed: int
+    weekly_task_goal: int
+    best_skill_name: str | None
+    best_skill_score: float | None
+
+
+class StatsMistake(BaseModel):
+    """One mistake or strength row shown under a recent activity."""
+
+    label: str
+    issue: str
+    correction: str | None = None
+
+
+class RecentActivity(BaseModel):
+    """Completed task summary with evaluator and feedback details."""
+
+    id: int
+    task_name: str
+    task_type: str
+    completed_at: datetime
+    score: float
+    mistake_count: int
+    mistakes: list[StatsMistake]
+    strength: StatsMistake | None = None
+
+
+class StatsFeedback(BaseModel):
+    """Feedback Agent highlights for strengths and focus areas."""
+
+    strengths: list[str]
+    focus_areas: list[str]
+
+
+class StatsDashboard(BaseModel):
+    """Everything the frontend stats page needs in one read-only response."""
+
+    weekly_snapshot: WeeklySnapshot
+    skill_scores: list[SkillScoreSnapshot]
+    feedback: StatsFeedback
+    recent_activities: list[RecentActivity]

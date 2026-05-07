@@ -6,12 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
-from app.modules.curriculum.exceptions import AlreadyEnrolled, CourseNotFound
+from app.modules.curriculum.exceptions import AlreadyEnrolled, CourseNotFound, NotEnrolled
 from app.modules.curriculum.repository import CourseRepository
 from app.modules.curriculum.schemas import (
     CourseRead,
     EnrollmentCreate,
     EnrollmentRead,
+    EnrollmentSettingsUpdate,
 )
 from app.modules.curriculum.service import EnrollmentService
 
@@ -54,5 +55,30 @@ def enroll_in_course(
         raise HTTPException(status_code=404, detail=str(e))
     except AlreadyEnrolled as e:
         raise HTTPException(status_code=409, detail=str(e))
+
+    return EnrollmentRead.model_validate(enrollment)
+
+
+@router.patch(
+    "/enrollment/settings",
+    response_model=EnrollmentRead,
+    status_code=status.HTTP_200_OK,
+)
+def update_enrollment_settings(
+    payload: EnrollmentSettingsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EnrollmentRead:
+    """Update the current user's daily task count and activity preferences."""
+    service = EnrollmentService(db)
+    try:
+        enrollment = service.update_settings(
+            user_id=current_user.id,
+            **payload.model_dump(exclude_unset=True),
+        )
+    except NotEnrolled as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     return EnrollmentRead.model_validate(enrollment)

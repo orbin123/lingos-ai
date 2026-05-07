@@ -167,7 +167,7 @@ class VoiceConversionItem(BaseModel):
 
 class VoiceConversionTask(GeneratedTaskBase):
     instructions: str
-    items: list[VoiceConversionItem] = Field(..., min_length=4, max_length=8)
+    items: list[VoiceConversionItem] = Field(..., min_length=3, max_length=6)
 
 
 # ─── Template 5: Error Correction ─────────────────────────────────────
@@ -183,7 +183,7 @@ class CorrectionItem(BaseModel):
 
 class ErrorCorrectionTask(GeneratedTaskBase):
     instructions: str
-    items: list[CorrectionItem] = Field(..., min_length=4, max_length=8)
+    items: list[CorrectionItem] = Field(..., min_length=3, max_length=8)
 
 
 # ─── Template 6: Listen — Detect Grammar Errors in Audio ──────────────
@@ -391,9 +391,10 @@ LEARNER PROFILE
 - Topic: {topic}
 
 TASK
-Create {item_count} items mixing both directions:
+Create exactly {item_count} items with BOTH directions mixed in the same task:
 - Some active → passive
 - Some passive → active
+- Include at least one active_to_passive item and at least one passive_to_active item
 - Provide the correct answer
 - Note one common mistake learners make for each item
 
@@ -401,7 +402,7 @@ Return ONLY valid JSON matching the VoiceConversionTask schema.
 """,
     output_model_name="VoiceConversionTask",
     evaluation_logic={
-        "method": "fuzzy_match",
+        "method": "exact_match",
         "tolerance": "ignore_case_and_trailing_punctuation",
         "passing_threshold": 0.75,
     },

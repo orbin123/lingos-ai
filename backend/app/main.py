@@ -14,6 +14,10 @@ from app.modules.curriculum.routes import router as curriculum_router
 from app.modules.diagnosis.routes import router as diagnosis_router
 from app.modules.progress.routes import router as progress_router
 from app.modules.responses.routes import router as responses_router
+from app.modules.subscriptions.routes import (
+    subscription_router,
+    users_router,
+)
 from app.modules.tasks.routes import router as tasks_router
 
 load_dotenv("../.env")
@@ -74,3 +78,5 @@ app.include_router(tasks_router)
 app.include_router(responses_router)
 app.include_router(progress_router)
 app.include_router(ai_router)
+app.include_router(subscription_router)
+app.include_router(users_router)

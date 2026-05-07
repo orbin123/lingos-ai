@@ -1,5 +1,7 @@
 """Auth HTTP routes - translates between HTTP and AuthService"""
 
+from urllib.parse import urlencode
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
@@ -7,17 +9,79 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import create_access_token
+from app.core.security import create_access_token, decode_token, verify_password
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.exceptions import EmailAlreadyExists, InvalidCredentials
-from app.modules.auth.models import User
+from app.modules.auth.models import OAuthAccount, User
 from app.modules.auth.repository import UserProfileRepository
-from app.modules.auth.schemas import TokenOut, UserCreate, UserLogin, UserOut
+from app.modules.auth.schemas import TokenOut, UserCreate, UserLogin, UserOut, UserUpdate
 from app.modules.auth.service import AuthService
 from app.modules.curriculum.schemas import EnrollmentRead
 from app.modules.curriculum.service import EnrollmentService
+from app.modules.subscriptions.schemas import NotificationSettings
 
 router = APIRouter()
+
+
+def _split_csv(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _profile_value(value: object) -> str | None:
+    if value is None:
+        return None
+    return getattr(value, "value", str(value))
+
+
+def _build_user_out(
+    *,
+    user: User,
+    profile: object | None,
+    enrollment: object | None,
+) -> UserOut:
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        display_name=getattr(profile, "display_name", None) or user.name,
+        created_at=user.created_at,
+        auth_provider="google" if user.password_hash is None else "password",
+        is_superuser=user.is_superuser,
+        diagnosis_completed=bool(profile and profile.diagnosis_completed),
+        enrollment=(
+            EnrollmentRead.model_validate(enrollment)
+            if enrollment is not None
+            else None
+        ),
+        phone_number=getattr(profile, "phone_number", None) if profile else None,
+        country=getattr(profile, "country", None) if profile else None,
+        native_language=getattr(profile, "native_language", None) if profile else None,
+        primary_goals=_split_csv(getattr(profile, "primary_goals", "") if profile else ""),
+        personalisation_context=(
+            getattr(profile, "personalisation_context", "") if profile else ""
+        ),
+        self_assessed_level=(
+            _profile_value(getattr(profile, "self_assessed_level", None))
+            if profile
+            else None
+        ),
+        goal=_profile_value(getattr(profile, "goal", None)) if profile else None,
+        interests=_split_csv(getattr(profile, "interests", "") if profile else ""),
+        notifications=NotificationSettings(
+            daily_practice_reminder=(
+                getattr(profile, "daily_practice_reminder", True) if profile else True
+            ),
+            streak_reminder=getattr(profile, "streak_reminder", True) if profile else True,
+            weekly_progress_email=(
+                getattr(profile, "weekly_progress_email", False) if profile else False
+            ),
+            feature_announcements=(
+                getattr(profile, "feature_announcements", False) if profile else False
+            ),
+        ),
+    )
 
 # ---------------------------------------------------------------------------
 # Standard email / password routes
@@ -41,8 +105,12 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut:
         id=user.id,
         email=user.email,
         name=user.name,
+        display_name=user.name,
+        created_at=user.created_at,
+        auth_provider="password",
         diagnosis_completed=False,
         enrollment=None,
+        notifications=NotificationSettings(),
     )
 
 @router.post("/login", response_model=TokenOut)
@@ -73,18 +141,61 @@ def me(
     """Return the currently logged-in user's profile + diagnosis status."""
     profile = UserProfileRepository(db).get_by_user_id(current_user.id)
     enrollment = EnrollmentService(db).get_for_user(current_user.id)
-    return UserOut(
-        id=current_user.id,
-        email=current_user.email,
-        name=current_user.name,
-        is_superuser=current_user.is_superuser,
-        diagnosis_completed=bool(profile and profile.diagnosis_completed),
-        enrollment=(
-            EnrollmentRead.model_validate(enrollment)
-            if enrollment is not None
-            else None
-        ),
-    )
+    return _build_user_out(user=current_user, profile=profile, enrollment=enrollment)
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(
+    payload: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserOut:
+    """Update editable account/profile fields for the current user."""
+    profile_repo = UserProfileRepository(db)
+    profile = profile_repo.get_by_user_id(current_user.id)
+    if profile is None:
+        profile = profile_repo.create_default(current_user.id)
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "display_name" in updates and updates["display_name"] is not None:
+        profile.display_name = updates["display_name"].strip()
+
+    if "email" in updates and updates["email"] is not None:
+        new_email = str(updates["email"]).lower().strip()
+        if new_email != current_user.email:
+            password = updates.get("password") or ""
+            if current_user.password_hash is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Google accounts must re-authenticate with Google to change email.",
+                )
+            if not verify_password(password, current_user.password_hash):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Password is incorrect.",
+                )
+            existing = AuthService(db).users.get_by_email(new_email)
+            if existing is not None and existing.id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email is already registered.",
+                )
+            current_user.email = new_email
+
+    for field in ("phone_number", "country", "native_language", "personalisation_context"):
+        if field in updates:
+            value = updates[field]
+            setattr(profile, field, value.strip() if isinstance(value, str) else value)
+
+    if "primary_goals" in updates:
+        goals = updates["primary_goals"] or []
+        profile.primary_goals = ",".join(goal.strip() for goal in goals if goal.strip())
+
+    db.commit()
+    db.refresh(current_user)
+    db.refresh(profile)
+    enrollment = EnrollmentService(db).get_for_user(current_user.id)
+    return _build_user_out(user=current_user, profile=profile, enrollment=enrollment)
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +209,20 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo"
 GOOGLE_SCOPES = "openid email profile"
 
 
+def _google_auth_url(*, state: str | None = None) -> str:
+    params = {
+        "client_id": settings.google_client_id,
+        "redirect_uri": settings.google_redirect_uri,
+        "response_type": "code",
+        "scope": GOOGLE_SCOPES,
+        "access_type": "offline",
+        "prompt": "select_account",
+    }
+    if state:
+        params["state"] = state
+    return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
+
+
 @router.get("/google/login")
 def google_login() -> RedirectResponse:
     """
@@ -106,21 +231,27 @@ def google_login() -> RedirectResponse:
     The frontend calls this URL. The browser is redirected to Google.
     After consent, Google redirects back to /auth/google/callback.
     """
-    params = {
-        "client_id": settings.google_client_id,
-        "redirect_uri": settings.google_redirect_uri,
-        "response_type": "code",
-        "scope": GOOGLE_SCOPES,
-        "access_type": "offline",
-        "prompt": "select_account",  # always show account picker
-    }
-    query_string = "&".join(f"{k}={v}" for k, v in params.items())
-    return RedirectResponse(url=f"{GOOGLE_AUTH_URL}?{query_string}")
+    return RedirectResponse(url=_google_auth_url())
+
+
+@router.post("/google/relink-url")
+def google_relink_url(
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str]:
+    """Return a Google OAuth URL that relinks the current user's Google login."""
+    state = create_access_token(
+        data={
+            "sub": str(current_user.id),
+            "mode": "google_relink",
+        }
+    )
+    return {"auth_url": _google_auth_url(state=state)}
 
 
 @router.get("/google/callback")
 def google_callback(
     code: str = Query(...),
+    state: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> RedirectResponse:
     """
@@ -166,6 +297,52 @@ def google_callback(
     google_user_id: str = google_user["sub"]        # Google's unique user ID
     email: str = google_user["email"]
     name: str = google_user.get("name", email.split("@")[0])
+    frontend_base = settings.frontend_url
+
+    state_payload = decode_token(state) if state else None
+    if state_payload and state_payload.get("mode") == "google_relink":
+        user_id = int(state_payload["sub"])
+        user = db.get(User, user_id)
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        existing_link = AuthService(db).oauth_accounts.get_by_provider(
+            provider="google",
+            provider_user_id=google_user_id,
+        )
+        if existing_link is not None and existing_link.user_id != user.id:
+            redirect_url = f"{frontend_base}/callback?error=google_account_in_use&next=profile"
+            return RedirectResponse(url=redirect_url)
+
+        existing_email_user = AuthService(db).users.get_by_email(email)
+        if existing_email_user is not None and existing_email_user.id != user.id:
+            redirect_url = f"{frontend_base}/callback?error=email_in_use&next=profile"
+            return RedirectResponse(url=redirect_url)
+
+        user_link = (
+            db.query(OAuthAccount)
+            .filter(OAuthAccount.user_id == user.id, OAuthAccount.provider == "google")
+            .first()
+        )
+        if user_link is None:
+            AuthService(db).oauth_accounts.create(
+                user_id=user.id,
+                provider="google",
+                provider_user_id=google_user_id,
+            )
+        else:
+            user_link.provider_user_id = google_user_id
+
+        user.email = email.lower()
+        db.commit()
+        db.refresh(user)
+
+        jwt_token = create_access_token(data={
+            "sub": str(user.id),
+            "is_superuser": user.is_superuser,
+        })
+        redirect_url = f"{frontend_base}/callback?token={jwt_token}&next=profile"
+        return RedirectResponse(url=redirect_url)
 
     # --- Find or create the user in our DB ---
     user, is_new = AuthService(db).get_or_create_google_user(
@@ -182,7 +359,6 @@ def google_callback(
 
     # --- Redirect frontend with token ---
     # We pass the token as a query param. The frontend reads it and stores it.
-    frontend_base = settings.frontend_url
     destination = "diagnosis" if is_new else "dashboard"
     redirect_url = f"{frontend_base}/callback?token={jwt_token}&next={destination}"
 

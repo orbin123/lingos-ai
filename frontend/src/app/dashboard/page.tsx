@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/authStore";
 import { authApi } from "@/lib/auth-api";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
-import { coursesApi } from "@/lib/courses-api";
-import { Navbar } from "@/components/layout/Navbar";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { DailyTaskPanel } from "@/components/dashboard/DailyTaskPanel";
 import { SkillScorePreview } from "@/components/dashboard/SkillScorePreview";
 
 const DEFAULT_SCORES: Record<string, number> = {
@@ -72,12 +72,21 @@ const LOCKED_TASKS = [
   { type: "Listening task", skill: "Comprehension & Tone" },
 ] as const;
 
+function getInitialPurchaseToast() {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("purchase") !== "success") return null;
+  const plan = params.get("plan") || "selected";
+  return `You're now on the ${plan} plan. Let's go! 🎉`;
+}
+
 /* ── Page component ── */
 
 export default function DashboardPage() {
   const router = useRouter();
   const { logout } = useAuthStore();
   const { isReady } = useRequireAuth();
+  const [toast, setToast] = useState<string | null>(getInitialPurchaseToast);
 
   // Fetch user info using the token (proves token works)
   const { data: user, isLoading } = useQuery({
@@ -85,16 +94,19 @@ export default function DashboardPage() {
     queryFn: authApi.me,
     enabled: isReady,
   });
-  const coursesQuery = useQuery({
-    queryKey: ["courses"],
-    queryFn: coursesApi.list,
-    enabled: isReady && !!user?.diagnosis_completed && !user?.enrollment,
-  });
-
   // If diagnosis not done, redirect to diagnosis flow
   useEffect(() => {
     if (user && !user.diagnosis_completed) router.replace("/diagnosis");
   }, [user, router]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = window.setTimeout(() => setToast(null), 4200);
+    if (window.location.search.includes("purchase=success")) {
+      router.replace("/dashboard");
+    }
+    return () => window.clearTimeout(timeout);
+  }, [router, toast]);
 
   const handleLogout = () => {
     logout();
@@ -167,10 +179,31 @@ export default function DashboardPage() {
       />
 
       <div style={{ position: "relative", zIndex: 1 }}>
-        <Navbar user={user} />
-
-        <main
-          style={{
+        {toast && (
+          <div
+            role="status"
+            style={{
+              position: "fixed",
+              top: 88,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 40,
+              background: "oklch(28% 0.1 240)",
+              color: "white",
+              borderRadius: 8,
+              padding: "12px 16px",
+              fontSize: 14,
+              fontWeight: 700,
+              boxShadow: "0 14px 38px rgba(20,35,70,0.2)",
+            }}
+          >
+            {toast}
+          </div>
+        )}
+        <DashboardLayout
+          user={user}
+          onSignOut={handleLogout}
+          mainStyle={{
             maxWidth: 780,
             margin: "0 auto",
             padding: "32px 20px 64px",
@@ -185,18 +218,17 @@ export default function DashboardPage() {
               <EnrolledView
                 enrollment={enrollment}
                 scores={scores}
-                onStartTask={() => router.push("/task")}
                 onViewStats={() => router.push("/stats")}
               />
             ) : (
               <NoEnrollmentView
                 scores={scores}
-                onChoosePlan={() => router.push("/courses")}
+                onChoosePlan={() => router.push("/pricing")}
                 onViewStats={() => router.push("/stats")}
               />
             )}
           </div>
-        </main>
+        </DashboardLayout>
       </div>
     </div>
   );
@@ -506,14 +538,12 @@ interface EnrolledViewProps {
       : never
   >;
   scores: Record<string, number>;
-  onStartTask: () => void;
   onViewStats: () => void;
 }
 
 function EnrolledView({
   enrollment,
   scores,
-  onStartTask,
   onViewStats,
 }: EnrolledViewProps) {
   const streakDays =
@@ -577,94 +607,10 @@ function EnrolledView({
         </span>
       </div>
 
-      {/* ── Task hero card ── */}
-      <section
-        style={{
-          background:
-            "linear-gradient(135deg, oklch(93% 0.04 240) 0%, oklch(95% 0.02 245) 100%)",
-          borderRadius: 18,
-          border: "1px solid rgba(80,120,200,0.12)",
-          padding: "28px 26px 24px",
-          boxShadow:
-            "0 4px 32px rgba(80,110,180,0.1), 0 1.5px 6px rgba(80,120,200,0.05)",
-          animation: "fadeSlideUp 0.4s ease 0.15s both",
-        }}
-      >
-        <p
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            color: "oklch(52% 0.18 240)",
-            margin: "0 0 8px",
-          }}
-        >
-          Today&apos;s focus &mdash; {enrollment.course.title}
-        </p>
-
-        <h2
-          style={{
-            fontSize: 22,
-            fontWeight: 800,
-            color: "oklch(15% 0.09 245)",
-            margin: "0 0 10px",
-            letterSpacing: "-0.02em",
-          }}
-        >
-          Today&apos;s practice task
-        </h2>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
-            marginBottom: 20,
-          }}
-        >
-          <MetaBadge>
-            Day {enrollment.current_day_in_week}
-          </MetaBadge>
-          <MetaBadge>~10 min</MetaBadge>
-          <MetaBadge>{enrollment.course.target_level}</MetaBadge>
-        </div>
-
-        <button
-          onClick={onStartTask}
-          style={{
-            width: "100%",
-            padding: "14px 0",
-            borderRadius: 12,
-            border: "none",
-            background: "oklch(52% 0.18 240)",
-            color: "white",
-            fontSize: 15,
-            fontWeight: 700,
-            cursor: "pointer",
-            transition:
-              "background 0.15s ease, transform 0.15s ease",
-            letterSpacing: "-0.01em",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "oklch(46% 0.18 240)";
-            e.currentTarget.style.transform = "scale(1.01)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "oklch(52% 0.18 240)";
-            e.currentTarget.style.transform = "scale(1)";
-          }}
-          onMouseDown={(e) => {
-            e.currentTarget.style.transform = "scale(0.97)";
-          }}
-          onMouseUp={(e) => {
-            e.currentTarget.style.transform = "scale(1.01)";
-          }}
-        >
-          Start today&apos;s task &rarr;
-        </button>
-      </section>
+      <DailyTaskPanel
+        key={`${enrollment.current_week}-${enrollment.current_day_in_week}`}
+        enrollment={enrollment}
+      />
 
       {/* ── Skill scores ── */}
       <section
@@ -682,25 +628,5 @@ function EnrolledView({
         <SkillScorePreview scores={scores} onViewAll={onViewStats} />
       </section>
     </div>
-  );
-}
-
-/* ── Small meta badge ── */
-
-function MetaBadge({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      style={{
-        fontSize: 12,
-        fontWeight: 600,
-        color: "oklch(45% 0.07 240)",
-        background: "rgba(255,255,255,0.7)",
-        border: "1px solid rgba(80,120,200,0.1)",
-        padding: "3px 10px",
-        borderRadius: 6,
-      }}
-    >
-      {children}
-    </span>
   );
 }

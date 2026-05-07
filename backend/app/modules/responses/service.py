@@ -67,10 +67,10 @@ class ResponseService:
                 f"{user_task_id} (owner: {user_task.user_id})"
             )
 
-        # 3. State check — block only truly unsubmittable states (skipped)
-        if user_task.status == UserTaskStatus.SKIPPED:
+        # 3. State check — only open tasks can accept a response.
+        if user_task.status not in _SUBMITTABLE_STATUSES:
             raise UserTaskNotSubmittable(
-                f"UserTask {user_task_id} is skipped — cannot submit"
+                f"UserTask {user_task_id} is {user_task.status.value} — cannot submit"
             )
 
         # 4. Overwrite any previous response (+ cascade deletes evaluation,
@@ -171,6 +171,10 @@ class ResponseService:
 
         # ── Generated path — infer from content fingerprint ──────────
         # Check more-specific shapes first so there's no ambiguity.
+
+        if "speaking_prompt" in task_content and "target_tense" in task_content:
+            logger.debug("[evaluator] generated task fingerprint='speaking_prompt+target_tense' → speak_with_tense")
+            return "speak_with_tense"
 
         if "blanks" in task_content:
             logger.debug("[evaluator] generated task fingerprint='blanks' → fill_in_blanks")
@@ -297,5 +301,12 @@ class ResponseService:
 
         # 6. Embed response — best-effort, never blocks the user (commit 6)
         await self._embed_response(response=response)
+
+        # 6. Mark this assignment complete. The dashboard uses completed
+        # statuses to unlock the next task in the current day bundle.
+        user_task = self.user_task_repo.get_by_id(response.user_task_id)
+        if user_task is not None:
+            self.user_task_repo.mark_completed(user_task)
+            self.db.commit()
 
         return response, evaluation, feedback, updated_scores
