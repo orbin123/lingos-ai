@@ -103,8 +103,8 @@ class DiagnosisService:
             writing_expression=writing["expression_score"],
             writing_vocabulary=writing["vocabulary_score"],
             writing_tone=writing["tone_score"],
-            speech_fluency=speech["fluency_score"],
-            speech_clarity=speech["clarity_score"],
+            speech_fluency=speech.fluency_score,
+            speech_clarity=speech.clarity_score,
         )
 
         # 4. Upsert each score
