@@ -54,10 +54,11 @@ def _rename_enum_values_to_lower(conn, table: str, column: str, enum_name: str, 
     values_sql = ", ".join(f"'{v}'" for v in new_values)
     conn.execute(sa.text(f'CREATE TYPE {enum_name} AS ENUM ({values_sql})'))
 
-    # 6. Add the real column back, cast from TEXT to new enum
+    # 6. Add the real column back, then copy from TEXT to the new enum.
+    # PostgreSQL only supports USING with ALTER COLUMN TYPE, not ADD COLUMN.
+    conn.execute(sa.text(f'ALTER TABLE {table} ADD COLUMN {column} {enum_name}'))
     conn.execute(sa.text(
-        f'ALTER TABLE {table} ADD COLUMN {column} {enum_name} '
-        f'USING {column}_tmp::{enum_name}'
+        f'UPDATE {table} SET {column} = {column}_tmp::{enum_name}'
     ))
 
     # 7. Drop temp column and old enum

@@ -169,7 +169,69 @@ class UserProfile(Base, IDMixin, TimestampMixin):
         nullable=False,
     )
 
+    display_name: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    phone_number: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+
+    country: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+
+    native_language: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+
+    primary_goals: Mapped[str] = mapped_column(
+        String(500),
+        default="",
+        server_default="",
+        nullable=False,
+    )
+
+    personalisation_context: Mapped[str] = mapped_column(
+        String(500),
+        default="",
+        server_default="",
+        nullable=False,
+    )
+
     diagnosis_completed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
+
+    daily_practice_reminder: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
+        nullable=False,
+    )
+
+    streak_reminder: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
+        nullable=False,
+    )
+
+    weekly_progress_email: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
+
+    feature_announcements: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         server_default="false",

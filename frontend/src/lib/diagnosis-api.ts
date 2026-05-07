@@ -69,6 +69,9 @@ export interface DiagnosisResult {
 // ── API calls ──────────────────────────────────────────────────────────────
 
 export const diagnosisApi = {
+  start: (): Promise<{ next: string }> =>
+    api.post<{ next: string }>("/diagnosis/start").then((r) => r.data),
+
   /**
    * Upload an audio blob to Whisper transcription.
    * Called when the user finishes recording in StepReadAloud.

@@ -931,6 +931,7 @@ function HowItWorks() {
   ];
   return (
     <section
+      id="how-it-works"
       style={{
         padding: "100px 40px",
         background:
@@ -1299,6 +1300,7 @@ function Features() {
   ];
   return (
     <section
+      id="features"
       style={{ padding: "100px 40px", background: "oklch(93% 0.022 240)" }}
     >
       <div style={{ maxWidth: 1180, margin: "0 auto" }}>

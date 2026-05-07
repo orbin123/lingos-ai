@@ -63,6 +63,7 @@ class RotationEngine:
         day_in_week: int,
         skill_name_to_id: dict[str, int],
         history_by_skill_id: dict[int, TaskType | None],
+        allowed_activity_types: set[TaskType] | None = None,
     ) -> Plan:
         """Return today's plan.
 
@@ -72,6 +73,8 @@ class RotationEngine:
             skill_name_to_id: maps skill names ('grammar') to DB ids.
             history_by_skill_id: per-skill last activity. Missing skill = no
                 history yet for that skill.
+            allowed_activity_types: optional user preference filter over the
+                four core activity types.
 
         Raises:
             ValueError: invalid day_in_week, missing skill in name_to_id, or
@@ -82,20 +85,41 @@ class RotationEngine:
             raise ValueError(
                 f"day_in_week must be 1..7, got {day_in_week}"
             )
-        skill_name = WEEK_SCHEDULE[day_in_week]
+        skill_name: str | None = None
+        skill_id: int | None = None
+        allowed: list[TaskType] = []
 
-        if skill_name not in skill_name_to_id:
-            raise ValueError(
-                f"Skill {skill_name!r} not in DB. Did you run seed_skills?"
-            )
-        skill_id = skill_name_to_id[skill_name]
+        # Prefer the scheduled skill, but if the learner disabled every
+        # activity that can teach that skill, walk forward through the week
+        # until a compatible skill/activity pair exists.
+        for offset in range(7):
+            candidate_day = ((day_in_week - 1 + offset) % 7) + 1
+            candidate_skill = WEEK_SCHEDULE[candidate_day]
 
-        # ---- 2. Pick the activity (round-robin) ----
-        allowed = SKILL_ACTIVITIES.get(skill_name, [])
-        if not allowed:
-            raise ValueError(
-                f"No activities configured for skill {skill_name!r}"
+            if candidate_skill not in skill_name_to_id:
+                raise ValueError(
+                    f"Skill {candidate_skill!r} not in DB. Did you run seed_skills?"
+                )
+
+            configured = SKILL_ACTIVITIES.get(candidate_skill, [])
+            if not configured:
+                raise ValueError(
+                    f"No activities configured for skill {candidate_skill!r}"
+                )
+
+            filtered = (
+                [activity for activity in configured if activity in allowed_activity_types]
+                if allowed_activity_types is not None
+                else configured
             )
+            if filtered:
+                skill_name = candidate_skill
+                skill_id = skill_name_to_id[candidate_skill]
+                allowed = filtered
+                break
+
+        if skill_name is None or skill_id is None or not allowed:
+            raise ValueError("No enabled activities can be matched to this curriculum")
 
         last_activity = history_by_skill_id.get(skill_id)
         activity_type = self._next_activity(allowed, last_activity)

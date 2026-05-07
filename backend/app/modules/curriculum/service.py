@@ -8,7 +8,11 @@ Routes call this. Repos do the data work. Service decides:
 
 from sqlalchemy.orm import Session
 
-from app.modules.curriculum.exceptions import AlreadyEnrolled, CourseNotFound
+from app.modules.curriculum.exceptions import (
+    AlreadyEnrolled,
+    CourseNotFound,
+    NotEnrolled,
+)
 from app.modules.curriculum.models import UserEnrollment
 from app.modules.curriculum.repository import (
     CourseRepository,
@@ -55,3 +59,52 @@ class EnrollmentService:
         Pure read — no commit. Useful for /me/enrollment endpoints later.
         """
         return self.enrollment_repo.get_for_user(user_id)
+
+    def update_settings(
+        self,
+        *,
+        user_id: int,
+        tasks_per_day: int | None = None,
+        allow_reading: bool | None = None,
+        allow_writing: bool | None = None,
+        allow_listening: bool | None = None,
+        allow_speaking: bool | None = None,
+    ) -> UserEnrollment:
+        """Update daily practice preferences for the active enrollment.
+
+        Daily task count is 1..4. The learner must keep at least two core
+        activity types active so the rotation engine always has room to vary.
+        """
+        enrollment = self.enrollment_repo.get_for_user(user_id)
+        if enrollment is None:
+            raise NotEnrolled(f"User {user_id} is not enrolled in any course")
+
+        proposed = {
+            "allow_reading": (
+                enrollment.allow_reading if allow_reading is None else allow_reading
+            ),
+            "allow_writing": (
+                enrollment.allow_writing if allow_writing is None else allow_writing
+            ),
+            "allow_listening": (
+                enrollment.allow_listening
+                if allow_listening is None
+                else allow_listening
+            ),
+            "allow_speaking": (
+                enrollment.allow_speaking if allow_speaking is None else allow_speaking
+            ),
+        }
+        if sum(1 for enabled in proposed.values() if enabled) < 2:
+            raise ValueError("At least two core activities must stay enabled")
+
+        if tasks_per_day is not None:
+            enrollment.tasks_per_day = tasks_per_day
+        enrollment.allow_reading = proposed["allow_reading"]
+        enrollment.allow_writing = proposed["allow_writing"]
+        enrollment.allow_listening = proposed["allow_listening"]
+        enrollment.allow_speaking = proposed["allow_speaking"]
+
+        self.db.commit()
+        self.db.refresh(enrollment)
+        return enrollment

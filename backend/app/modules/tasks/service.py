@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -25,7 +26,13 @@ from app.modules.curriculum.repository import (
 )
 from app.modules.curriculum.rotation import RotationEngine
 from app.modules.skills.repository import SkillRepository, UserSkillScoreRepository
-from app.modules.tasks.models import Task, TaskStatus, UserTask
+from app.modules.tasks.models import (
+    Task,
+    TaskStatus,
+    TaskType,
+    UserTask,
+    UserTaskStatus,
+)
 from app.modules.tasks.repository import TaskRepository, UserTaskRepository
 from app.tasks.schemas import get_templates_for
 from app.tasks.schemas.base import Activity
@@ -81,12 +88,21 @@ class TaskService:
         comma-separated list of weak_areas.
         """
         scores = self.score_repo.get_for_user(user_id)
+        from app.modules.auth.repository import UserProfileRepository
+
+        profile = UserProfileRepository(self.db).get_by_user_id(user_id)
+        personalisation_context = (
+            profile.personalisation_context.strip()
+            if profile and profile.personalisation_context
+            else ""
+        )
         if not scores:
             # No diagnosis yet — return safe defaults
             return {
                 "sub_level": 3,
                 "weak_areas": "general grammar, basic vocabulary",
                 "topic": "workplace",
+                "personalisation_context": personalisation_context,
             }
 
         # Sort ascending so weakest come first
@@ -107,7 +123,22 @@ class TaskService:
             "sub_level": sub_level,
             "weak_areas": weak_areas,
             "topic": "workplace",  # hardcoded for MVP
+            "personalisation_context": personalisation_context,
         }
+
+    @staticmethod
+    def _enabled_activity_types(enrollment: UserEnrollment) -> set[TaskType]:
+        """Return the learner's enabled core activity types."""
+        enabled: set[TaskType] = set()
+        if enrollment.allow_reading:
+            enabled.add(TaskType.READING)
+        if enrollment.allow_writing:
+            enabled.add(TaskType.WRITING)
+        if enrollment.allow_listening:
+            enabled.add(TaskType.LISTENING)
+        if enrollment.allow_speaking:
+            enabled.add(TaskType.SPEAKING)
+        return enabled
 
     def _try_generate_task(
         self,
@@ -258,6 +289,7 @@ class TaskService:
             day_in_week=enrollment.current_day_in_week,
             skill_name_to_id=skill_name_to_id,
             history_by_skill_id=history_by_skill_id,
+            allowed_activity_types=self._enabled_activity_types(enrollment),
         )
 
         # --- Try LLM generation first ---
@@ -319,9 +351,9 @@ class TaskService:
     def get_or_create_day_bundle(self, *, user_id: int) -> list[UserTask]:
         """Return the user's current day bundle, creating tasks if needed.
 
-        Idempotent: if the bundle already has enrollment.tasks_per_day
-        non-completed tasks, returns them as-is. Otherwise creates more
-        until the bundle is full.
+        Idempotent: if the current-day bundle already has
+        enrollment.tasks_per_day tasks, returns them as-is. Otherwise creates
+        more until the bundle is full.
 
         Each new task in the bundle is created via the rotation engine,
         so tasks within the same day may have DIFFERENT activities for
@@ -335,9 +367,15 @@ class TaskService:
         """
         enrollment = self._load_enrollment(user_id)
 
-        # Check how many open tasks already exist for the current day
-        existing = self.user_task_repo.find_active_for_enrollment_day(
+        if enrollment.last_completed_on == datetime.now(timezone.utc).date():
+            return []
+
+        # Check how many tasks already exist for the current day. This includes
+        # completed tasks so a partially completed dashboard bundle cannot grow
+        # duplicates after a refetch.
+        existing = self.user_task_repo.list_for_enrollment_day(
             enrollment_id=enrollment.id,
+            day_started_at=enrollment.current_day_started_at,
         )
 
         needed = enrollment.tasks_per_day - len(existing)
@@ -399,7 +437,7 @@ class TaskService:
         from app.tasks.schemas import ALL_TEMPLATES
         from app.modules.tasks.models import TaskType as TT
 
-        enrollment = self._load_enrollment(user_id)
+        self._load_enrollment(user_id)
         user_profile = self._build_user_profile(user_id)
 
         # Find the first template that matches the requested task_type
@@ -525,6 +563,7 @@ class TaskService:
             day_in_week=day_in_week,
             skill_name_to_id=skill_name_to_id,
             history_by_skill_id=history_by_skill_id,
+            allowed_activity_types=self._enabled_activity_types(enrollment),
         )
 
         assignment = self._try_generate_task(
@@ -578,16 +617,26 @@ class TaskService:
         """
         enrollment = self._load_enrollment(user_id)
 
-        # Any open tasks left?
-        open_tasks = self.user_task_repo.find_active_for_enrollment_day(
+        today_tasks = self.user_task_repo.list_for_enrollment_day(
             enrollment_id=enrollment.id,
+            day_started_at=enrollment.current_day_started_at,
         )
-        if open_tasks:
+        if not today_tasks:
+            if enrollment.last_completed_on == datetime.now(timezone.utc).date():
+                return enrollment
             raise DayNotComplete(
-                f"{len(open_tasks)} task(s) still pending for the current day"
+                "No tasks have been assigned for the current day"
+            )
+        incomplete = [
+            task for task in today_tasks if task.status != UserTaskStatus.COMPLETED
+        ]
+        if incomplete:
+            raise DayNotComplete(
+                f"{len(incomplete)} task(s) still pending for the current day"
             )
 
         # Advance day
+        enrollment.last_completed_on = datetime.now(timezone.utc).date()
         enrollment = self.enrollment_repo.advance_day(enrollment)
 
         self.db.commit()
