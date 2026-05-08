@@ -23,6 +23,7 @@ the portable contract that future providers must satisfy.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -48,6 +49,16 @@ class ILLMClient(Protocol):
         Used for: debug pings, simple completions where we don't need a
         schema. NOT used for any agent that produces structured data.
         """
+        ...
+
+    def stream_text(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float | None = None,
+    ) -> AsyncIterator[str]:
+        """Stream a free-form text response in provider-sized chunks."""
         ...
 
     async def generate_structured(

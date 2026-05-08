@@ -50,7 +50,7 @@ interface FeedbackPayload {
 }
 
 type ChatEvent =
-  | { kind: "chat"; role: "ai" | "you"; content: string; actions?: string[] }
+  | { kind: "chat"; role: "ai" | "you"; content: string; actions?: string[]; streamId?: string; streaming?: boolean }
   | { kind: "section"; tone: "intro" | "task" | "score" | "feedback"; label: string }
   | { kind: "task"; payload: FillInBlanksPayload; submitted: boolean; answers: Record<string, string> }
   | { kind: "scorecard"; payload: ScorecardPayload }
@@ -58,6 +58,9 @@ type ChatEvent =
 
 type WSIncoming =
   | { type: "chat_message"; role?: string; content?: string; actions?: string[] }
+  | { type: "chat_stream_start"; role?: string; stream_id?: string; actions?: string[] }
+  | { type: "chat_stream_delta"; role?: string; stream_id?: string; content?: string }
+  | { type: "chat_stream_end"; role?: string; stream_id?: string; content?: string; actions?: string[] }
   | { type: "ui_event"; widget: string; payload: Record<string, unknown> }
   | { type: "error"; content?: string };
 
@@ -221,12 +224,14 @@ function ChatBubble({
   name,
   children,
   actions,
+  streaming,
   onAction,
 }: {
   role: "ai" | "you";
   name?: string;
   children: React.ReactNode;
   actions?: string[];
+  streaming?: boolean;
   onAction?: (label: string) => void;
 }) {
   const isAi = role === "ai";
@@ -268,6 +273,21 @@ function ChatBubble({
           }),
         }}>
           {children}
+          {isAi && streaming && (
+            <span
+              aria-hidden
+              style={{
+                display: "inline-block",
+                width: 7,
+                height: 16,
+                marginLeft: 3,
+                borderRadius: 999,
+                background: "oklch(52% 0.18 240)",
+                verticalAlign: "-3px",
+                animation: "streamPulse 0.9s ease-in-out infinite",
+              }}
+            />
+          )}
           {isAi && actions && actions.length > 0 && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
               {actions.map((label) => (
@@ -583,6 +603,7 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
   return (
     <div style={{
       borderRadius: 22,
+      marginBottom: 24,
       background: "rgba(255,255,255,0.85)",
       backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)",
       border: "1.5px solid rgba(255,255,255,0.92)",
@@ -742,6 +763,7 @@ function Composer({
 /* ── Main page ───────────────────────────────────────────────────────── */
 export default function ChatSessionPage() {
   const params = useParams<{ sessionId: string }>();
+  const router = useRouter();
   const sessionId = params?.sessionId;
 
   const initialConnectionState = useMemo<
@@ -756,9 +778,12 @@ export default function ChatSessionPage() {
   const [connectionState, setConnectionState] = useState(initialConnectionState);
   const [skillName, setSkillName] = useState("");
   const [phase, setPhase] = useState<"teaching" | "practice" | "submitted" | "ended">("teaching");
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const pendingSendsRef = useRef<WSOutgoing[]>([]);
   const stageRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   const lastTaskIdx = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i -= 1) {
@@ -769,6 +794,9 @@ export default function ChatSessionPage() {
 
   const handleIncoming = useCallback((msg: WSIncoming) => {
     if (msg.type === "chat_message") {
+      if (msg.actions?.includes("Go to dashboard")) {
+        setPhase("ended");
+      }
       setEvents((prev) => [
         ...prev,
         {
@@ -778,6 +806,88 @@ export default function ChatSessionPage() {
           actions: msg.actions,
         },
       ]);
+      return;
+    }
+    if (msg.type === "chat_stream_start") {
+      const streamId = msg.stream_id || `stream-${Date.now()}`;
+      const role = msg.role === "user" || msg.role === "you" ? "you" : "ai";
+      setEvents((prev) => [
+        ...prev,
+        {
+          kind: "chat",
+          role,
+          content: "",
+          streamId,
+          streaming: true,
+        },
+      ]);
+      return;
+    }
+    if (msg.type === "chat_stream_delta") {
+      const streamId = msg.stream_id;
+      const delta = msg.content || "";
+      if (!streamId || !delta) return;
+      setEvents((prev) => {
+        let found = false;
+        const next = prev.map((evt) => {
+          if (evt.kind !== "chat" || evt.streamId !== streamId) return evt;
+          found = true;
+          return { ...evt, content: evt.content + delta, streaming: true };
+        });
+        if (found) return next;
+        return [
+          ...prev,
+          {
+            kind: "chat",
+            role: "ai",
+            content: delta,
+            streamId,
+            streaming: true,
+          },
+        ];
+      });
+      return;
+    }
+    if (msg.type === "chat_stream_end") {
+      if (msg.actions?.includes("Go to dashboard")) {
+        setPhase("ended");
+      }
+      const streamId = msg.stream_id;
+      if (!streamId) {
+        if (msg.content) {
+          setEvents((prev) => [
+            ...prev,
+            { kind: "chat", role: "ai", content: msg.content || "", actions: msg.actions },
+          ]);
+        }
+        return;
+      }
+      setEvents((prev) => {
+        let found = false;
+        const next = prev.map((evt) => {
+          if (evt.kind !== "chat" || evt.streamId !== streamId) return evt;
+          found = true;
+          return {
+            ...evt,
+            content: msg.content ?? evt.content,
+            actions: msg.actions,
+            streaming: false,
+          };
+        });
+        if (found) return next;
+        if (!msg.content) return prev;
+        return [
+          ...prev,
+          {
+            kind: "chat",
+            role: "ai",
+            content: msg.content,
+            actions: msg.actions,
+            streamId,
+            streaming: false,
+          },
+        ];
+      });
       return;
     }
     if (msg.type === "ui_event") {
@@ -835,11 +945,21 @@ export default function ChatSessionPage() {
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
-    ws.onopen = () => setConnectionState("open");
-    ws.onclose = () => setConnectionState("closed");
-    ws.onerror = () => setConnectionState("error");
+    ws.onopen = () => {
+      if (wsRef.current !== ws) return;
+      setConnectionState("open");
+      const queued = pendingSendsRef.current.splice(0);
+      queued.forEach((payload) => ws.send(JSON.stringify(payload)));
+    };
+    ws.onclose = () => {
+      if (wsRef.current === ws) setConnectionState("closed");
+    };
+    ws.onerror = () => {
+      if (wsRef.current === ws) setConnectionState("error");
+    };
 
     ws.onmessage = (raw) => {
+      if (wsRef.current !== ws) return;
       try {
         const msg = JSON.parse(raw.data) as WSIncoming;
         handleIncoming(msg);
@@ -850,14 +970,23 @@ export default function ChatSessionPage() {
 
     return () => {
       ws.close();
-      wsRef.current = null;
+      if (wsRef.current === ws) wsRef.current = null;
     };
-  }, [sessionId, handleIncoming]);
+  }, [sessionId, handleIncoming, reconnectAttempt]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [events]);
 
   const send = useCallback((payload: WSOutgoing) => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify(payload));
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(payload));
+      return;
+    }
+    pendingSendsRef.current.push(payload);
+    setConnectionState("connecting");
+    setReconnectAttempt((attempt) => attempt + 1);
   }, []);
 
   function handleSendComposer() {
@@ -876,6 +1005,10 @@ export default function ChatSessionPage() {
   }
 
   function handleAction(label: string) {
+    if (label === "Go to dashboard") {
+      router.push("/dashboard");
+      return;
+    }
     setEvents((prev) => [...prev, { kind: "chat", role: "you", content: label }]);
     send({ type: "follow_up_action", action: label });
     if (label === "End session") setPhase("ended");
@@ -922,6 +1055,10 @@ export default function ChatSessionPage() {
           from { opacity: 0; transform: translateY(8px); }
           to   { opacity: 1; transform: translateY(0); }
         }
+        @keyframes streamPulse {
+          0%, 100% { opacity: 0.25; transform: scaleY(0.75); }
+          50% { opacity: 1; transform: scaleY(1); }
+        }
         strong { font-weight: 700; }
         em { font-style: italic; }
       `}</style>
@@ -964,6 +1101,7 @@ export default function ChatSessionPage() {
                   role={evt.role}
                   name={i === 0 && evt.role === "ai" ? "LingosAI" : undefined}
                   actions={evt.actions}
+                  streaming={evt.streaming}
                   onAction={handleAction}
                 >
                   {evt.content}
@@ -1002,7 +1140,7 @@ export default function ChatSessionPage() {
             return null;
           })}
 
-          <div style={{ height: 60 }} />
+          <div ref={bottomRef} style={{ height: 60 }} />
         </main>
 
         <Composer

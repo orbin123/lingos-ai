@@ -109,8 +109,7 @@ async def learning_session_ws(
 
     try:
         if not session.messages:
-            initial = await service.initial_messages(session_id)
-            for msg in initial:
+            async for msg in service.initial_messages_stream(session_id):
                 await _send(websocket, msg)
 
         while True:
@@ -128,7 +127,9 @@ async def learning_session_ws(
                 continue
 
             try:
-                outgoing = await service.process_message(session_id, incoming)
+                stream = service.process_message_stream(session_id, incoming)
+                async for msg in stream:
+                    await _send(websocket, msg)
             except Exception as exc:  # pragma: no cover — unexpected
                 logger.exception(
                     "ws process_message failed session_id=%s", session_id
@@ -138,9 +139,6 @@ async def learning_session_ws(
                     WSOutgoingMessage(type="error", content=str(exc)),
                 )
                 continue
-
-            for msg in outgoing:
-                await _send(websocket, msg)
 
     except WebSocketDisconnect:
         return

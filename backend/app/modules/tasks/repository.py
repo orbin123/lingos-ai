@@ -229,7 +229,7 @@ class UserTaskRepository:
                 ),
             )
             .options(joinedload(UserTask.task))
-            .order_by(UserTask.created_at.asc())
+            .order_by(UserTask.created_at.asc(), UserTask.id.asc())
             .all()
         )
 

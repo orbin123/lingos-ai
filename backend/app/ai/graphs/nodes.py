@@ -9,70 +9,35 @@ are intentionally small — heavy lifting lives in the existing agents
 from __future__ import annotations
 
 import logging
-import re
+from collections.abc import AsyncIterator
 from typing import Any
 
 from app.ai.agents.evaluator import EvaluationService
 from app.ai.agents.feedback import generate_feedback
+from app.ai.agents.teacher import generate_teaching_turn
 from app.ai.graphs.state import LearningSessionState
 from app.ai.llm import get_default_llm_client
 
 logger = logging.getLogger(__name__)
 
 
-_TEACH_SYSTEM_PROMPT = (
-    "You are a friendly, encouraging English tutor who chats one-on-one. "
-    "Reply ONLY with the chat messages the learner should see, separated by "
-    "the literal delimiter '<<<MSG>>>'. Do not include numbering, headers, "
-    "or markdown — just plain conversational sentences."
-)
-
-
-def _split_teaching_messages(raw: str) -> list[str]:
-    """Split LLM output on the delimiter, falling back to paragraph splits."""
-    if "<<<MSG>>>" in raw:
-        chunks = [c.strip() for c in raw.split("<<<MSG>>>")]
-    else:
-        chunks = [c.strip() for c in re.split(r"\n\s*\n", raw)]
-    chunks = [c for c in chunks if c]
-    if not chunks:
-        chunks = [raw.strip()] if raw.strip() else []
-    return chunks[:3] if len(chunks) > 3 else chunks
-
-
 async def teach_node(state: LearningSessionState) -> dict[str, Any]:
-    """Produce 2-3 conversational teaching messages about `state['topic']`."""
+    """Produce a short concept-teaching turn before practice starts."""
     topic = state.get("topic") or "today's English topic"
     user_level = int(state.get("user_level", 5))
+    task_type = state.get("task_type") or "fill_in_blanks"
+    skill_name = state.get("skill_name") or "grammar"
+    learner_profile = state.get("learner_profile") or {}
 
-    user_prompt = (
-        f"Teach the concept '{topic}' to a learner at English sub-level "
-        f"{user_level}/10 (1=A1 beginner, 10=C2 expert). Use 2 to 3 short "
-        "chat messages. Be conversational and warm. Use one or two simple "
-        "examples. End with a question that asks if they are ready to "
-        "practice. Separate each chat message with '<<<MSG>>>' on its own "
-        "line."
+    teaching = await generate_teaching_turn(
+        topic=topic,
+        sub_skill=skill_name,
+        task_type=task_type,
+        user_level=user_level,
+        learner_profile=learner_profile,
+        conversation=list(state.get("messages", [])),
     )
-
-    client = get_default_llm_client()
-    try:
-        raw = await client.generate_text(
-            system_prompt=_TEACH_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            temperature=0.6,
-        )
-    except Exception:
-        logger.exception("teach_node LLM call failed; using fallback messages")
-        raw = (
-            f"Today we'll work on {topic}. <<<MSG>>> "
-            "I'll show a quick example and then we'll practice together. "
-            "<<<MSG>>> Ready to try a short task?"
-        )
-
-    chat_messages = _split_teaching_messages(raw) or [
-        f"Today we'll work on {topic}.",
-        "Ready to try a short task?",
-    ]
+    chat_messages = teaching.messages
 
     outgoing = [
         {"type": "chat_message", "role": "assistant", "content": msg}
@@ -261,7 +226,12 @@ async def followup_node(state: LearningSessionState) -> dict[str, Any]:
         return {
             "phase": "ended",
             "outgoing_events": [
-                {"type": "chat_message", "role": "assistant", "content": farewell}
+                {
+                    "type": "chat_message",
+                    "role": "assistant",
+                    "content": farewell,
+                    "actions": ["Go to dashboard"],
+                }
             ],
             "messages": new_messages,
         }
@@ -332,6 +302,39 @@ async def _answer_question(state: LearningSessionState, question: str) -> str:
     except Exception:
         logger.exception("followup Q&A LLM call failed; using fallback")
         return (
+            "Good question — let's revisit that next session when I can pull "
+            "up extra examples."
+        )
+
+
+async def stream_answer_question(
+    state: LearningSessionState, question: str
+) -> AsyncIterator[str]:
+    """Stream free-form Q&A grounded in the current topic."""
+    topic = state.get("topic") or "the current English topic"
+    user_level = int(state.get("user_level", 5))
+
+    if not question.strip():
+        yield "Sure — what would you like to know?"
+        return
+
+    system = (
+        "You are a friendly English tutor answering a learner's follow-up "
+        f"question about '{topic}'. The learner is at sub-level {user_level}/10. "
+        "Reply with a short, clear chat message (1-3 sentences). Use simple "
+        "language and one example if helpful."
+    )
+    try:
+        client = get_default_llm_client()
+        async for chunk in client.stream_text(
+            system_prompt=system,
+            user_prompt=question,
+            temperature=0.4,
+        ):
+            yield chunk
+    except Exception:
+        logger.exception("followup Q&A streaming LLM call failed; using fallback")
+        yield (
             "Good question — let's revisit that next session when I can pull "
             "up extra examples."
         )
