@@ -27,6 +27,335 @@ function getInitials(name: string | undefined): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+// Mock streak data — will be wired to real enrollment data later
+const MOCK_STREAK = {
+  streak: 5,
+  best: 21,
+  frozen: false,
+  days: [
+    { d: "M", n: 5, st: "done" },
+    { d: "T", n: 6, st: "done" },
+    { d: "W", n: 7, st: "done" },
+    { d: "T", n: 8, st: "done" },
+    { d: "F", n: 9, st: "today" },
+    { d: "S", n: 10, st: "future" },
+    { d: "S", n: 11, st: "future" },
+  ],
+};
+
+function FlameIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <path
+        d="M8 14.5c2.7 0 4.8-2 4.8-4.7 0-2.2-1.1-3.3-2.2-4.8 0 1.5-.7 2-1.5 2 0-1.6-1-3.2-2.7-4.7 0 3.2-3.2 4.2-3.2 7.5C3.2 12.5 5.3 14.5 8 14.5z"
+        fill="white"
+      />
+    </svg>
+  );
+}
+
+function FlakeIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="white"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+    >
+      <path d="M8 2v12M2 8h12M3.5 3.5l9 9M12.5 3.5l-9 9" />
+      <path d="M8 4l-1.5 1.5M8 4l1.5 1.5M8 12l-1.5-1.5M8 12l1.5-1.5M4 8l1.5-1.5M4 8l1.5 1.5M12 8l-1.5-1.5M12 8l-1.5 1.5" />
+    </svg>
+  );
+}
+
+function StreakPill() {
+  const [open, setOpen] = useState(false);
+  const { streak, best, frozen, days } = MOCK_STREAK;
+
+  const circleStyle: React.CSSProperties = {
+    width: 30,
+    height: 30,
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    position: "relative",
+    background: frozen
+      ? "linear-gradient(135deg, #93c4e8, #c8e0f4)"
+      : "linear-gradient(135deg, #ff7a18, #ffb547)",
+    boxShadow: frozen
+      ? "0 2px 8px rgba(147,196,232,0.5), inset 0 1px 0 rgba(255,255,255,0.6)"
+      : "0 2px 8px rgba(255,122,24,0.4), inset 0 1px 0 rgba(255,255,255,0.4)",
+  };
+
+  function dayColor(st: string) {
+    if (st === "done") return "linear-gradient(135deg, #ff7a18, #ffb547)";
+    if (st === "today") return "linear-gradient(135deg, #ff7a18, #ffb547)";
+    if (st === "miss") return "oklch(94% 0.02 240)";
+    return "transparent";
+  }
+
+  function dayBorder(st: string) {
+    if (st === "today") return "2px solid #0070C4";
+    if (st === "future") return "1.5px dashed oklch(80% 0.03 240)";
+    return "none";
+  }
+
+  function dayTextColor(st: string) {
+    if (st === "done" || st === "today") return "white";
+    if (st === "miss") return "oklch(60% 0.04 240)";
+    return "oklch(65% 0.03 240)";
+  }
+
+  return (
+    <div
+      style={{ position: "relative" }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      {/* Pill trigger */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "5px 14px 5px 5px",
+          borderRadius: 999,
+          background: "white",
+          border: `1.5px solid ${frozen ? "rgba(140,180,220,0.4)" : open ? "rgba(255,140,50,0.4)" : "oklch(86% 0.025 240)"}`,
+          boxShadow: open
+            ? frozen
+              ? "0 4px 12px rgba(140,180,220,0.18)"
+              : "0 4px 12px rgba(255,140,50,0.15)"
+            : "none",
+          cursor: "default",
+          transition: "border-color 0.15s, box-shadow 0.15s",
+        }}
+      >
+        <div style={circleStyle}>
+          {frozen ? <FlakeIcon /> : <FlameIcon />}
+          <span
+            style={{
+              position: "absolute",
+              fontSize: 11,
+              fontWeight: 800,
+              color: "white",
+            }}
+          >
+            {streak}
+          </span>
+        </div>
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: frozen
+              ? "oklch(50% 0.04 230)"
+              : "oklch(20% 0.09 245)",
+            letterSpacing: "0.01em",
+          }}
+        >
+          {frozen ? "Frozen" : `${streak} day${streak === 1 ? "" : "s"}`}
+        </span>
+      </div>
+
+      {/* Hover panel */}
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 10px)",
+            right: 0,
+            width: 300,
+            background: "white",
+            borderRadius: 18,
+            border: "1.5px solid oklch(86% 0.025 240)",
+            boxShadow: "0 12px 40px rgba(40,80,150,0.15)",
+            padding: 18,
+            zIndex: 60,
+          }}
+        >
+          {/* Arrow */}
+          <div
+            style={{
+              position: "absolute",
+              top: -7,
+              right: 22,
+              width: 14,
+              height: 14,
+              background: "white",
+              borderTop: "1.5px solid oklch(86% 0.025 240)",
+              borderLeft: "1.5px solid oklch(86% 0.025 240)",
+              transform: "rotate(45deg)",
+            }}
+          />
+
+          {/* Head */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              marginBottom: 14,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "oklch(45% 0.07 240)",
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Current streak
+              </div>
+              <div
+                style={{
+                  fontSize: 30,
+                  fontWeight: 800,
+                  color: "oklch(20% 0.09 245)",
+                  letterSpacing: "-0.03em",
+                  lineHeight: 1,
+                  marginTop: 4,
+                }}
+              >
+                {streak}
+                <span
+                  style={{
+                    fontSize: 14,
+                    color: "oklch(45% 0.07 240)",
+                    fontWeight: 600,
+                    marginLeft: 4,
+                  }}
+                >
+                  day{streak === 1 ? "" : "s"}
+                </span>
+              </div>
+            </div>
+            <div
+              style={{
+                background: "oklch(96% 0.04 60)",
+                borderRadius: 10,
+                padding: "8px 10px",
+                textAlign: "right",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 18,
+                  fontWeight: 800,
+                  color: "oklch(45% 0.18 60)",
+                  lineHeight: 1,
+                }}
+              >
+                {best}
+              </div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "oklch(45% 0.1 60)",
+                  fontWeight: 700,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                  marginTop: 3,
+                }}
+              >
+                Personal best
+              </div>
+            </div>
+          </div>
+
+          {/* Week grid */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, 1fr)",
+              gap: 6,
+              marginBottom: 14,
+            }}
+          >
+            {days.map((day, i) => (
+              <div
+                key={i}
+                style={{
+                  aspectRatio: "1",
+                  borderRadius: 10,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  background: dayColor(day.st),
+                  color: dayTextColor(day.st),
+                  border: dayBorder(day.st),
+                  boxShadow:
+                    day.st === "done" || day.st === "today"
+                      ? "0 2px 6px rgba(255,122,24,0.3)"
+                      : "none",
+                  position: "relative",
+                }}
+              >
+                <span style={{ fontSize: 9, opacity: 0.85 }}>{day.d}</span>
+                <span style={{ fontSize: 12, fontWeight: 800, marginTop: 1 }}>
+                  {day.n}
+                </span>
+                {day.st === "done" && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 2,
+                      right: 3,
+                      fontSize: 7,
+                    }}
+                  >
+                    🔥
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Footer note */}
+          <div
+            style={{
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "oklch(45% 0.07 240)",
+              paddingTop: 12,
+              borderTop: "1px dashed oklch(88% 0.02 240)",
+            }}
+          >
+            {frozen ? (
+              <>
+                Streak frozen.{" "}
+                <strong style={{ color: "oklch(20% 0.09 245)", fontWeight: 700 }}>
+                  Show up today
+                </strong>{" "}
+                to thaw it and rebuild — your record is {best}.
+              </>
+            ) : (
+              <>
+                You&apos;re{" "}
+                <strong style={{ color: "oklch(20% 0.09 245)", fontWeight: 700 }}>
+                  {streak} days strong
+                </strong>
+                . Keep going — your personal best is {best}.
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Navbar({ user, onSignOut }: NavbarProps) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -49,33 +378,34 @@ export function Navbar({ user, onSignOut }: NavbarProps) {
         position: "sticky",
         top: 0,
         zIndex: 50,
-        background: "rgba(255,255,255,0.8)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        borderBottom: "1px solid rgba(80,120,200,0.12)",
+        backdropFilter: "blur(24px)",
+        WebkitBackdropFilter: "blur(24px)",
+        background: "rgba(232,240,252,0.55)",
+        borderBottom: "1px solid rgba(140,170,220,0.14)",
         animation: "slideDown 0.3s ease both",
         fontFamily: "'Plus Jakarta Sans', sans-serif",
       }}
     >
       <div
         style={{
-          maxWidth: 1180,
+          maxWidth: 1240,
           margin: "0 auto",
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
           height: 64,
-          padding: "0 24px",
+          padding: "0 32px",
+          gap: 14,
         }}
       >
-        {/* Left — Logo */}
+        {/* Logo */}
         <Link
           href="/dashboard"
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: 10,
             textDecoration: "none",
+            flexShrink: 0,
           }}
         >
           <img
@@ -85,18 +415,18 @@ export function Navbar({ user, onSignOut }: NavbarProps) {
           />
           <span
             style={{
-              fontWeight: 700,
               fontSize: 17,
-              color: "oklch(18% 0.09 245)",
-              letterSpacing: "-0.3px",
+              fontWeight: 800,
+              letterSpacing: "-0.02em",
+              color: "oklch(20% 0.09 245)",
             }}
           >
             LingosAI
           </span>
         </Link>
 
-        {/* Center — Nav links */}
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        {/* Nav links */}
+        <div style={{ display: "flex", gap: 4, margin: "0 28px" }}>
           {NAV_LINKS.map((link) => {
             const isActive = pathname === link.href;
             return (
@@ -104,202 +434,180 @@ export function Navbar({ user, onSignOut }: NavbarProps) {
                 key={link.href}
                 href={link.href}
                 style={{
-                  position: "relative",
-                  padding: "6px 14px",
-                  borderRadius: 8,
+                  padding: "9px 18px",
+                  borderRadius: 999,
                   fontSize: 14,
-                  fontWeight: isActive ? 600 : 500,
+                  fontWeight: isActive ? 700 : 600,
                   color: isActive
-                    ? "oklch(52% 0.18 240)"
+                    ? "#00599e"
                     : "oklch(45% 0.07 240)",
-                  background: isActive
-                    ? "oklch(93% 0.025 250)"
-                    : "transparent",
+                  background: isActive ? "#d6e8f7" : "transparent",
                   textDecoration: "none",
-                  transition:
-                    "background 0.15s ease, color 0.15s ease",
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background =
-                      "oklch(95% 0.015 250)";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) {
-                    e.currentTarget.style.background = "transparent";
-                  }
+                  transition: "all 0.15s",
                 }}
               >
                 {link.label}
-                {isActive && (
-                  <span
-                    style={{
-                      position: "absolute",
-                      bottom: -1,
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      width: 20,
-                      height: 2,
-                      borderRadius: 1,
-                      background: "oklch(52% 0.18 240)",
-                    }}
-                  />
-                )}
               </Link>
             );
           })}
         </div>
 
-        {/* Right — Account menu */}
-        <div ref={menuRef} style={{ position: "relative", flexShrink: 0 }}>
-          <button
-            type="button"
-            aria-label="Open profile menu"
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((open) => !open)}
-            style={{
-              height: 40,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              border: "1px solid rgba(80,120,200,0.18)",
-              borderRadius: 999,
-              background: "rgba(255,255,255,0.72)",
-              padding: "2px 8px 2px 2px",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              boxShadow: menuOpen
-                ? "0 8px 24px rgba(80,110,180,0.14)"
-                : "0 1px 4px rgba(80,110,180,0.06)",
-              transition: "box-shadow 0.15s ease, border-color 0.15s ease",
-            }}
-          >
-            <span
+        <span style={{ flex: 1 }} />
+
+        {/* Right actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <StreakPill />
+
+          {/* Avatar / account menu */}
+          <div ref={menuRef} style={{ position: "relative", flexShrink: 0 }}>
+            <button
+              type="button"
+              aria-label="Open profile menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((open) => !open)}
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: "50%",
+                height: 40,
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                background: "oklch(52% 0.18 240)",
-                color: "white",
-                fontSize: 13,
-                fontWeight: 700,
-                letterSpacing: "0.5px",
+                gap: 6,
+                border: "1.5px solid oklch(86% 0.025 240)",
+                borderRadius: 999,
+                background: "white",
+                padding: "4px 10px 4px 4px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                transition: "box-shadow 0.15s ease",
               }}
             >
-              {getInitials(user?.name)}
-            </span>
-            <ChevronDown
-              size={16}
-              strokeWidth={2.2}
-              color="oklch(42% 0.08 240)"
-              style={{
-                transform: menuOpen ? "rotate(180deg)" : "rotate(0deg)",
-                transition: "transform 0.15s ease",
-              }}
-            />
-          </button>
-
-          {menuOpen && (
-            <div
-              role="menu"
-              style={{
-                position: "absolute",
-                top: 48,
-                right: 0,
-                width: 220,
-                borderRadius: 8,
-                border: "1px solid rgba(80,120,200,0.14)",
-                background: "rgba(255,255,255,0.96)",
-                boxShadow:
-                  "0 18px 44px rgba(55,75,130,0.16), 0 2px 8px rgba(80,120,200,0.08)",
-                padding: 8,
-              }}
-            >
-              <div
+              <span
                 style={{
-                  padding: "8px 10px 10px",
-                  borderBottom: "1px solid rgba(80,120,200,0.1)",
-                  marginBottom: 6,
-                }}
-              >
-                <div
-                  style={{
-                    color: "oklch(18% 0.09 245)",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {user?.name ?? "Your account"}
-                </div>
-                <div
-                  style={{
-                    color: "oklch(48% 0.06 240)",
-                    fontSize: 12,
-                    marginTop: 2,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {user?.email ?? "Profile menu"}
-                </div>
-              </div>
-
-              <AccountMenuLink href="/profile" label="Profile" icon={<User size={16} />} />
-              <AccountMenuLink
-                href="/settings"
-                label="Settings"
-                icon={<Settings size={16} />}
-              />
-
-              <div
-                style={{
-                  height: 1,
-                  background: "rgba(80,120,200,0.1)",
-                  margin: "6px 0",
-                }}
-              />
-
-              <button
-                type="button"
-                role="menuitem"
-                onClick={onSignOut}
-                style={{
-                  width: "100%",
-                  minHeight: 38,
+                  width: 30,
+                  height: 30,
+                  borderRadius: "50%",
                   display: "flex",
                   alignItems: "center",
-                  gap: 10,
-                  border: "none",
-                  borderRadius: 6,
-                  background: "transparent",
-                  color: "oklch(48% 0.18 28)",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: 14,
-                  fontWeight: 650,
-                  padding: "8px 10px",
-                  textAlign: "left",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "oklch(96% 0.025 28)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
+                  justifyContent: "center",
+                  background: "#0070C4",
+                  color: "white",
+                  fontSize: 12,
+                  fontWeight: 800,
                 }}
               >
-                <LogOut size={16} />
-                Sign out
-              </button>
-            </div>
-          )}
+                {getInitials(user?.name)}
+              </span>
+              <ChevronDown
+                size={14}
+                strokeWidth={2.2}
+                color="oklch(42% 0.08 240)"
+                style={{
+                  transform: menuOpen ? "rotate(180deg)" : "rotate(0deg)",
+                  transition: "transform 0.15s ease",
+                }}
+              />
+            </button>
+
+            {menuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: 48,
+                  right: 0,
+                  width: 220,
+                  borderRadius: 8,
+                  border: "1px solid rgba(80,120,200,0.14)",
+                  background: "rgba(255,255,255,0.96)",
+                  boxShadow:
+                    "0 18px 44px rgba(55,75,130,0.16), 0 2px 8px rgba(80,120,200,0.08)",
+                  padding: 8,
+                }}
+              >
+                <div
+                  style={{
+                    padding: "8px 10px 10px",
+                    borderBottom: "1px solid rgba(80,120,200,0.1)",
+                    marginBottom: 6,
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "oklch(18% 0.09 245)",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {user?.name ?? "Your account"}
+                  </div>
+                  <div
+                    style={{
+                      color: "oklch(48% 0.06 240)",
+                      fontSize: 12,
+                      marginTop: 2,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {user?.email ?? "Profile menu"}
+                  </div>
+                </div>
+
+                <AccountMenuLink
+                  href="/profile"
+                  label="Profile"
+                  icon={<User size={16} />}
+                />
+                <AccountMenuLink
+                  href="/settings"
+                  label="Settings"
+                  icon={<Settings size={16} />}
+                />
+
+                <div
+                  style={{
+                    height: 1,
+                    background: "rgba(80,120,200,0.1)",
+                    margin: "6px 0",
+                  }}
+                />
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={onSignOut}
+                  style={{
+                    width: "100%",
+                    minHeight: 38,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    border: "none",
+                    borderRadius: 6,
+                    background: "transparent",
+                    color: "oklch(48% 0.18 28)",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    fontSize: 14,
+                    fontWeight: 650,
+                    padding: "8px 10px",
+                    textAlign: "left",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "oklch(96% 0.025 28)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  <LogOut size={16} />
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </nav>
