@@ -79,7 +79,7 @@ export function Navbar({ user, onSignOut }: NavbarProps) {
           }}
         >
           <img
-            src="/lingos-logo2.png"
+            src="/lingosai_logo.png"
             alt="LingosAI Logo"
             style={{ height: 50, width: "auto", borderRadius: 8 }}
           />
