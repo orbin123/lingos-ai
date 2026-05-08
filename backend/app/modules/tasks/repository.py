@@ -1,5 +1,7 @@
 """Data access for Task templates and UserTask assignments"""
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
@@ -231,3 +233,24 @@ class UserTaskRepository:
             .all()
         )
 
+    def list_for_enrollment_day(
+        self,
+        *,
+        enrollment_id: int,
+        day_started_at: datetime,
+    ) -> list[UserTask]:
+        """Return every task assigned during the enrollment's current day.
+
+        Includes completed tasks so a partially completed bundle remains
+        stable if the dashboard refetches after task 1 or 2.
+        """
+        return (
+            self.db.query(UserTask)
+            .filter(
+                UserTask.enrollment_id == enrollment_id,
+                UserTask.created_at >= day_started_at,
+            )
+            .options(joinedload(UserTask.task))
+            .order_by(UserTask.created_at.asc())
+            .all()
+        )

@@ -24,6 +24,12 @@ export default function AuthCallbackPage() {
   useEffect(() => {
     const token = params.get("token");
     const next = params.get("next") ?? "dashboard";
+    const error = params.get("error");
+
+    if (error && next === "profile") {
+      router.replace(`/profile?error=${encodeURIComponent(error)}`);
+      return;
+    }
 
     if (!token) {
       // Something went wrong — send back to login

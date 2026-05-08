@@ -8,10 +8,12 @@ the rotation engine, based on:
   - week number → difficulty target
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 
 from sqlalchemy import (
+    Boolean,
+    Date,
     DateTime,
     Enum as SQLAlchemyEnum,
     ForeignKey,
@@ -120,6 +122,14 @@ class UserEnrollment(Base, IDMixin, TimestampMixin):
     current_week: Mapped[int] = mapped_column(nullable=False, default=1)
     current_day_in_week: Mapped[int] = mapped_column(nullable=False, default=1)
     tasks_per_day: Mapped[int] = mapped_column(nullable=False, default=2)
+    allow_reading: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_writing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_listening: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    allow_speaking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    current_day_started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[EnrollmentStatus] = mapped_column(
         SQLAlchemyEnum(
             EnrollmentStatus,

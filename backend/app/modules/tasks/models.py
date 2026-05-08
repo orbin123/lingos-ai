@@ -39,6 +39,7 @@ class TaskType(str, Enum):
     SENTENCE_TRANSFORMATION = "sentence_transformation"
     VOICE_CONVERSION = "voice_conversion"
     ERROR_CORRECTION = "error_correction"
+    SPEAK_WITH_TENSE = "speak_with_tense"
 
 
 class TaskStatus(str, Enum):

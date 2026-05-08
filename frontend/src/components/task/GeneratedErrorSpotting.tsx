@@ -52,7 +52,7 @@ function answerOptionsForSentence(
 
 interface Props {
   content: ErrorSpottingTaskContent;
-  onSubmit: (answers: Record<string, string>) => void;
+  onSubmit: (answers: Record<string, unknown>) => void;
   isPending: boolean;
 }
 

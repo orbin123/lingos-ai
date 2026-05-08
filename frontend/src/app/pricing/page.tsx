@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Check, X } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
+import { authApi } from "@/lib/auth-api";
 import { LandingNavbar } from "@/components/layout/LandingNavbar";
 import { LandingFooter } from "@/components/layout/LandingFooter";
+import { subscriptionsApi } from "@/lib/subscriptions-api";
+import { getApiErrorMessage } from "@/lib/errors";
 
 const ACCENT_HUE = 240;
+const PLANS = {
+  "beginner-24w": { name: "24-Week Intensive Program", price: 999 },
+  "beginner-48w": { name: "48-Week Complete Program", price: 1999 },
+} as const;
+
+type PlanId = keyof typeof PLANS;
 
 // Reusable UI components
 function GlassCard({
@@ -42,13 +52,58 @@ function GlassCard({
 
 export default function PricingPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthStore();
+  const [confirmPlan, setConfirmPlan] = useState<PlanId | null>(null);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
-  const handleBuyNow = () => {
+  // If already enrolled, no need to be on pricing
+  const { data: me } = useQuery({
+    queryKey: ["me"],
+    queryFn: authApi.me,
+    enabled: isAuthenticated,
+  });
+  useEffect(() => {
+    if (me?.enrollment) router.replace("/dashboard");
+  }, [me, router]);
+
+  const purchaseMutation = useMutation({
+    mutationFn: subscriptionsApi.purchase,
+  });
+
+  const handleConfirmPurchase = async () => {
+    if (!confirmPlan) return;
+
+    setPurchaseError(null);
+    const planId = confirmPlan;
+
+    try {
+      const purchase = await purchaseMutation.mutateAsync(planId);
+      const refreshedUser = await authApi.me();
+
+      queryClient.setQueryData(["purchase"], purchase);
+      queryClient.setQueryData(["me"], refreshedUser);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["purchase"] }),
+        queryClient.invalidateQueries({ queryKey: ["me"] }),
+      ]);
+
+      setConfirmPlan(null);
+      router.replace(
+        `/dashboard?purchase=success&plan=${encodeURIComponent(
+          purchase.plan_name,
+        )}`,
+      );
+    } catch (error) {
+      setPurchaseError(getApiErrorMessage(error));
+    }
+  };
+
+  const handleBuyNow = (planId: PlanId) => {
     if (!isAuthenticated) {
       router.push("/register");
     } else {
-      router.push("/dashboard");
+      setConfirmPlan(planId);
     }
   };
 
@@ -70,8 +125,29 @@ export default function PricingPage() {
       />
       <LandingNavbar showCTA={false} />
       <div style={{ maxWidth: 1000, margin: "0 auto", padding: "0 24px" }}>
-        {/* 1. Hero Section */}
+        {/* Hero Section */}
         <section style={{ textAlign: "center", marginBottom: 60 }}>
+          {isAuthenticated && (
+            <button
+              onClick={() => router.push("/dashboard")}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 14,
+                fontWeight: 600,
+                color: `oklch(40% 0.14 ${ACCENT_HUE})`,
+                background: `oklch(95% 0.05 ${ACCENT_HUE})`,
+                border: "none",
+                borderRadius: 50,
+                padding: "8px 16px",
+                cursor: "pointer",
+                marginBottom: 24,
+              }}
+            >
+              ← Back to dashboard
+            </button>
+          )}
           <h1
             style={{
               fontSize: "clamp(32px, 4vw, 48px)",
@@ -213,7 +289,7 @@ export default function PricingPage() {
             </ul>
 
             <button
-              onClick={handleBuyNow}
+              onClick={() => handleBuyNow("beginner-24w")}
               style={{
                 width: "100%",
                 padding: "16px 0",
@@ -236,7 +312,7 @@ export default function PricingPage() {
                 e.currentTarget.style.borderColor = `rgba(100,140,220,0.3)`;
               }}
             >
-              Start your free trial
+              {isAuthenticated ? "Purchase plan" : "Get started"}
             </button>
             <p style={{ textAlign: "center", fontSize: 13, color: "oklch(50% 0.05 240)", marginTop: 12 }}>
               7-day free trial without credit card
@@ -373,7 +449,7 @@ export default function PricingPage() {
             </ul>
 
             <button
-              onClick={handleBuyNow}
+              onClick={() => handleBuyNow("beginner-48w")}
               style={{
                 width: "100%",
                 padding: "16px 0",
@@ -396,7 +472,7 @@ export default function PricingPage() {
                 e.currentTarget.style.boxShadow = "0 6px 20px rgba(50,100,220,0.3)";
               }}
             >
-              Start your free trial
+              {isAuthenticated ? "Purchase plan" : "Get started"}
             </button>
             <p style={{ textAlign: "center", fontSize: 13, color: "oklch(50% 0.05 240)", marginTop: 12 }}>
               7-day free trial without credit card
@@ -471,7 +547,7 @@ export default function PricingPage() {
               lineHeight: 1.7,
             }}
           >
-            Language acquisition isn't about cramming; it's about consistency. A longer learning duration ensures that vocabulary and grammar rules move from short-term memory to long-term fluency. Committing to a 48-week journey builds the enduring habits needed for true mastery.
+            Language acquisition isn&apos;t about cramming; it&apos;s about consistency. A longer learning duration ensures that vocabulary and grammar rules move from short-term memory to long-term fluency. Committing to a 48-week journey builds the enduring habits needed for true mastery.
           </p>
         </section>
 
@@ -520,6 +596,108 @@ export default function PricingPage() {
           </button>
         </section>
       </div>
+      {confirmPlan && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 80,
+            background: "rgba(10,18,35,0.42)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 430,
+              background: "white",
+              borderRadius: 12,
+              padding: 24,
+              boxShadow: "0 24px 70px rgba(20,35,70,0.22)",
+            }}
+          >
+            <h2
+              style={{
+                margin: "0 0 9px",
+                color: "oklch(15% 0.09 245)",
+                fontSize: 21,
+                fontWeight: 800,
+              }}
+            >
+              Confirm purchase
+            </h2>
+            <p
+              style={{
+                margin: 0,
+                color: "oklch(42% 0.06 240)",
+                fontSize: 14,
+                lineHeight: 1.55,
+              }}
+            >
+              Confirm one-time purchase of {PLANS[confirmPlan].name} for ₹
+              {PLANS[confirmPlan].price}?
+            </p>
+            {purchaseError && (
+              <p
+                role="alert"
+                style={{
+                  margin: "14px 0 0",
+                  color: "oklch(45% 0.18 25)",
+                  fontSize: 13,
+                  lineHeight: 1.45,
+                  fontWeight: 600,
+                }}
+              >
+                {purchaseError}
+              </p>
+            )}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+                marginTop: 22,
+              }}
+            >
+              <button
+                onClick={() => setConfirmPlan(null)}
+                style={{
+                  borderRadius: 8,
+                  padding: "11px 15px",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  background: "white",
+                  border: "1px solid oklch(82% 0.03 245)",
+                  color: "oklch(28% 0.06 245)",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={purchaseMutation.isPending}
+                onClick={handleConfirmPurchase}
+                style={{
+                  borderRadius: 8,
+                  padding: "11px 15px",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: purchaseMutation.isPending ? "not-allowed" : "pointer",
+                  background: `oklch(52% 0.18 ${ACCENT_HUE})`,
+                  border: "1px solid transparent",
+                  color: "white",
+                  opacity: purchaseMutation.isPending ? 0.7 : 1,
+                }}
+              >
+                Confirm purchase
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <LandingFooter />
     </main>
   );

@@ -55,7 +55,7 @@ export function LandingNavbar({ onCTAClick, showCTA = false }: LandingNavbarProp
             <img
               src="/lingosai_logo.png"
               alt="LingosAI Logo"
-              style={{ height: 44, width: "auto", borderRadius: 8 }}
+              style={{ height: 50, width: "auto", borderRadius: 8 }}
             />
           </div>
           <span

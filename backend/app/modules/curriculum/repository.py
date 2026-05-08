@@ -73,13 +73,15 @@ class UserEnrollmentRepository:
         Caller (service) must check 'already enrolled' before calling this —
         the DB UNIQUE on user_id will raise if violated.
         """
+        now = datetime.now(timezone.utc)
         enrollment = UserEnrollment(
             user_id=user_id,
             course_id=course_id,
             current_week=1,
             current_day_in_week=1,
             status=EnrollmentStatus.ACTIVE,
-            started_at=datetime.now(timezone.utc),
+            started_at=now,
+            current_day_started_at=now,
         )
         self.db.add(enrollment)
         self.db.flush()
@@ -96,6 +98,7 @@ class UserEnrollmentRepository:
         else:
             enrollment.current_day_in_week = 1
             enrollment.current_week += 1
+        enrollment.current_day_started_at = datetime.now(timezone.utc)
         self.db.flush()
         return enrollment
     
