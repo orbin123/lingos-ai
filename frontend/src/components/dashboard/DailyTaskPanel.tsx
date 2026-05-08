@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, type CSSProperties } from "react";
+import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AxiosError } from "axios";
-import { Check, Lock, Play } from "lucide-react";
 
 import type { EnrollmentRead } from "@/lib/courses-api";
 import { getApiErrorMessage } from "@/lib/errors";
@@ -14,16 +13,38 @@ interface DailyTaskPanelProps {
   enrollment: EnrollmentRead;
 }
 
-const panelStyle: CSSProperties = {
-  background:
-    "linear-gradient(135deg, oklch(93% 0.04 240) 0%, oklch(95% 0.02 245) 100%)",
-  borderRadius: 18,
-  border: "1px solid rgba(80,120,200,0.12)",
-  padding: "28px 26px 24px",
-  boxShadow:
-    "0 4px 32px rgba(80,110,180,0.1), 0 1.5px 6px rgba(80,120,200,0.05)",
-  animation: "fadeSlideUp 0.4s ease 0.15s both",
-};
+function PlayIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M5 3.5v9l8-4.5-8-4.5z" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="4" y="7" width="8" height="6" rx="1.2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M5.8 7V5a2.2 2.2 0 0 1 4.4 0v2" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M4 8.5l2.5 2.5L12 5.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ArrowIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
   const router = useRouter();
@@ -38,217 +59,259 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
   const activeIndex = bundle.findIndex((task) => !isTaskComplete(task));
   const allComplete = bundle.length > 0 && activeIndex === -1;
 
-  if (taskQuery.isLoading) {
-    return (
-      <section style={panelStyle}>
-        <PanelHeading enrollment={enrollment} />
-        <LoadingBlock />
-      </section>
-    );
-  }
-
-  if (taskQuery.isError) {
-    const status = (taskQuery.error as AxiosError)?.response?.status;
-    return (
-      <section style={panelStyle}>
-        <PanelHeading enrollment={enrollment} />
-        <ErrorBlock
-          message={getApiErrorMessage(taskQuery.error)}
-          retryLabel={status === 503 ? "Try again" : "Retry"}
-          onRetry={() => taskQuery.refetch()}
-        />
-      </section>
-    );
-  }
-
-  if (bundle.length === 0 || allComplete) {
-    return (
-      <section style={panelStyle}>
-        <PanelHeading enrollment={enrollment} />
-        <CompletedTodayBlock />
-      </section>
-    );
-  }
-
   return (
-    <section style={panelStyle}>
-      <PanelHeading enrollment={enrollment} />
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {bundle.map((task, index) => {
-          const complete = isTaskComplete(task);
-          const active = !complete && index === activeIndex;
-          const locked = !complete && index > activeIndex;
-
-          return (
-            <button
-              key={task.id}
-              disabled={locked}
-              onClick={() => router.push(`/task/chat?id=${task.id}`)}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "32px 1fr auto",
-                gap: 12,
-                alignItems: "center",
-                padding: "13px 14px",
-                borderRadius: 12,
-                background: complete
-                  ? "oklch(96% 0.025 155)"
-                  : active
-                    ? "white"
-                    : "rgba(255,255,255,0.48)",
-                border: complete
-                  ? "1px solid oklch(86% 0.08 155)"
-                  : active
-                    ? "1px solid oklch(78% 0.09 240)"
-                    : "1px dashed rgba(80,120,200,0.22)",
-                opacity: locked ? 0.68 : 1,
-                cursor: locked ? "not-allowed" : "pointer",
-                textAlign: "left",
-                fontFamily: "inherit",
-                width: "100%",
-                transition: "transform 0.15s ease, box-shadow 0.15s ease",
-              }}
-              onMouseEnter={(e) => {
-                if (locked) return;
-                e.currentTarget.style.transform = "translateY(-1px)";
-                e.currentTarget.style.boxShadow =
-                  "0 4px 16px rgba(80,120,200,0.14)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "translateY(0)";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            >
-              <span
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: "50%",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  background: complete
-                    ? "oklch(55% 0.18 155)"
-                    : active
-                      ? "oklch(52% 0.18 240)"
-                      : "oklch(87% 0.025 240)",
-                  color: complete || active ? "white" : "oklch(45% 0.06 240)",
-                  flexShrink: 0,
-                }}
-              >
-                {complete ? (
-                  <Check size={17} />
-                ) : active ? (
-                  <Play size={15} fill="currentColor" />
-                ) : (
-                  <Lock size={15} />
-                )}
-              </span>
-              <div style={{ minWidth: 0 }}>
-                <p
-                  style={{
-                    margin: 0,
-                    color: "oklch(19% 0.08 245)",
-                    fontSize: 14,
-                    fontWeight: 800,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {task.task.title}
-                </p>
-                <p
-                  style={{
-                    margin: "3px 0 0",
-                    color: "oklch(48% 0.06 240)",
-                    fontSize: 12,
-                    textTransform: "capitalize",
-                  }}
-                >
-                  {task.task.task_type.replace(/_/g, " ")}
-                </p>
-              </div>
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 800,
-                  color: complete
-                    ? "oklch(43% 0.16 155)"
-                    : active
-                      ? "oklch(42% 0.15 240)"
-                      : "oklch(48% 0.05 240)",
-                  flexShrink: 0,
-                }}
-              >
-                {complete ? "Done" : active ? "Open" : "Locked"}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function PanelHeading({ enrollment }: { enrollment: EnrollmentRead }) {
-  return (
-    <div>
-      <p
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-          color: "oklch(52% 0.18 240)",
-          margin: "0 0 8px",
-        }}
-      >
-        Today&apos;s focus — {enrollment.course.title}
-      </p>
-      <h2
-        style={{
-          fontSize: 22,
-          fontWeight: 800,
-          color: "oklch(15% 0.09 245)",
-          margin: "0 0 12px",
-          letterSpacing: "-0.02em",
-        }}
-      >
-        Today&apos;s tasks
-      </h2>
+    <div
+      style={{
+        background: "rgba(255,255,255,0.85)",
+        backdropFilter: "blur(18px)",
+        WebkitBackdropFilter: "blur(18px)",
+        border: "1.5px solid rgba(255,255,255,0.92)",
+        borderRadius: 22,
+        padding: 24,
+        boxShadow: "0 4px 24px rgba(80,110,180,0.1)",
+        animation: "fadeSlideUp 0.4s ease both",
+      }}
+    >
+      {/* Card header */}
       <div
         style={{
           display: "flex",
-          alignItems: "center",
-          gap: 10,
-          flexWrap: "wrap",
-          marginBottom: 18,
+          justifyContent: "space-between",
+          alignItems: "flex-end",
+          marginBottom: 14,
         }}
       >
-        <MetaBadge>Day {enrollment.current_day_in_week}</MetaBadge>
-        <MetaBadge>{enrollment.tasks_per_day} per day</MetaBadge>
-        <MetaBadge>{enrollment.course.target_level}</MetaBadge>
+        <div>
+          <div
+            style={{
+              fontSize: 17,
+              fontWeight: 800,
+              color: "oklch(20% 0.09 245)",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Today&apos;s plan
+          </div>
+          <div
+            style={{
+              fontSize: 12.5,
+              color: "oklch(45% 0.07 240)",
+              marginTop: 3,
+            }}
+          >
+            {enrollment.course.title} · {enrollment.course.duration_weeks}-week plan
+          </div>
+        </div>
+        <button
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: "#0070C4",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            padding: 0,
+            fontFamily: "inherit",
+          }}
+        >
+          View week <ArrowIcon />
+        </button>
       </div>
-    </div>
-  );
-}
 
-function MetaBadge({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      style={{
-        fontSize: 12,
-        fontWeight: 700,
-        color: "oklch(45% 0.07 240)",
-        background: "rgba(255,255,255,0.72)",
-        border: "1px solid rgba(80,120,200,0.1)",
-        padding: "4px 10px",
-        borderRadius: 6,
-      }}
-    >
-      {children}
-    </span>
+      {/* Plan meta tags */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        <span
+          style={{
+            padding: "5px 12px",
+            borderRadius: 999,
+            background: "#d6e8f7",
+            color: "#00599e",
+            fontSize: 12,
+            fontWeight: 700,
+          }}
+        >
+          Day {enrollment.current_day_in_week}
+        </span>
+        <span
+          style={{
+            padding: "5px 12px",
+            borderRadius: 999,
+            background: "oklch(96% 0.04 290)",
+            color: "oklch(45% 0.16 290)",
+            fontSize: 12,
+            fontWeight: 700,
+          }}
+        >
+          {enrollment.course.target_level}
+        </span>
+        <span
+          style={{
+            padding: "5px 12px",
+            borderRadius: 999,
+            background: "oklch(96% 0.04 60)",
+            color: "oklch(45% 0.14 60)",
+            fontSize: 12,
+            fontWeight: 700,
+          }}
+        >
+          {enrollment.tasks_per_day} tasks
+        </span>
+      </div>
+
+      {/* Content */}
+      {taskQuery.isLoading && <LoadingBlock />}
+      {taskQuery.isError && (
+        <ErrorBlock
+          message={getApiErrorMessage(taskQuery.error as AxiosError)}
+          retryLabel={
+            (taskQuery.error as AxiosError)?.response?.status === 503
+              ? "Try again"
+              : "Retry"
+          }
+          onRetry={() => taskQuery.refetch()}
+        />
+      )}
+      {!taskQuery.isLoading && !taskQuery.isError && (bundle.length === 0 || allComplete) && (
+        <CompletedTodayBlock />
+      )}
+      {!taskQuery.isLoading && !taskQuery.isError && bundle.length > 0 && !allComplete && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {bundle.map((task, index) => {
+            const complete = isTaskComplete(task);
+            const active = !complete && index === activeIndex;
+            const locked = !complete && index > activeIndex;
+
+            let itemBg = "white";
+            let itemBorder = "1.5px solid oklch(88% 0.025 240)";
+            let itemOpacity = 1;
+
+            if (complete) {
+              itemBg = "oklch(97% 0.04 155)";
+              itemBorder = "1.5px solid oklch(80% 0.08 155)";
+            } else if (active) {
+              itemBg = "linear-gradient(135deg, white, #d6e8f7)";
+              itemBorder = "2px solid #0070C4";
+            } else if (locked) {
+              itemBg = "oklch(97% 0.02 240)";
+              itemOpacity = 0.65;
+            }
+
+            const iconBg = complete
+              ? "oklch(58% 0.16 155)"
+              : active
+              ? "#0070C4"
+              : "oklch(94% 0.02 240)";
+
+            const iconColor = complete || active ? "white" : "oklch(55% 0.04 240)";
+
+            return (
+              <button
+                key={task.id}
+                disabled={locked}
+                onClick={() => router.push(`/task/chat?id=${task.id}`)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  padding: "16px 18px",
+                  borderRadius: 16,
+                  border: itemBorder,
+                  background: itemBg,
+                  opacity: itemOpacity,
+                  cursor: locked ? "default" : "pointer",
+                  textAlign: "left",
+                  fontFamily: "inherit",
+                  width: "100%",
+                  transition: "transform 0.15s, box-shadow 0.15s",
+                  marginBottom: 0,
+                }}
+                onMouseEnter={(e) => {
+                  if (locked || complete) return;
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                  e.currentTarget.style.boxShadow =
+                    "0 6px 18px rgba(0,112,196,0.13)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "none";
+                }}
+              >
+                {/* Icon */}
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    background: iconBg,
+                    color: iconColor,
+                    boxShadow:
+                      active
+                        ? "0 4px 10px rgba(0,112,196,0.3)"
+                        : complete
+                        ? "0 4px 10px rgba(80,180,120,0.2)"
+                        : "none",
+                  }}
+                >
+                  {complete ? <CheckIcon /> : active ? <PlayIcon /> : <LockIcon />}
+                </div>
+
+                {/* Body */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: "oklch(20% 0.09 245)",
+                      marginBottom: 2,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {task.task.title}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 12.5,
+                      color: "oklch(45% 0.07 240)",
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {task.task.task_type.replace(/_/g, " ")}
+                  </div>
+                </div>
+
+                {/* CTA */}
+                <span
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: complete
+                      ? "oklch(43% 0.16 155)"
+                      : active
+                      ? "#0070C4"
+                      : "oklch(55% 0.04 240)",
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  {complete ? "Done" : active ? <>Start <ArrowIcon /></> : "Unlocks next"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -266,8 +329,8 @@ function CompletedTodayBlock() {
     >
       <span
         style={{
-          width: 58,
-          height: 58,
+          width: 54,
+          height: 54,
           borderRadius: "50%",
           display: "inline-flex",
           alignItems: "center",
@@ -276,14 +339,22 @@ function CompletedTodayBlock() {
           color: "white",
         }}
       >
-        <Check size={30} />
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M5 13l4 4L19 7"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </span>
       <div>
         <h3
           style={{
             margin: "0 0 6px",
-            color: "oklch(15% 0.09 245)",
-            fontSize: 22,
+            color: "oklch(20% 0.09 245)",
+            fontSize: 18,
             fontWeight: 800,
           }}
         >
@@ -297,7 +368,7 @@ function CompletedTodayBlock() {
             lineHeight: 1.6,
           }}
         >
-          Your next set will unlock on the next calendar day.
+          Your next set will unlock tomorrow.
         </p>
       </div>
     </div>
@@ -314,7 +385,7 @@ function LoadingBlock() {
           height: 36,
           borderRadius: "50%",
           border: "3px solid oklch(88% 0.03 240)",
-          borderTopColor: "oklch(52% 0.18 240)",
+          borderTopColor: "#0070C4",
           animation: "spin 0.8s linear infinite",
           marginBottom: 12,
         }}
@@ -356,11 +427,12 @@ function ErrorBlock({
           padding: "10px 24px",
           borderRadius: 10,
           border: "none",
-          background: "oklch(52% 0.18 240)",
+          background: "#0070C4",
           color: "white",
           fontSize: 13,
           fontWeight: 700,
           cursor: "pointer",
+          fontFamily: "inherit",
         }}
       >
         {retryLabel}

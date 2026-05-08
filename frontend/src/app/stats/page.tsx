@@ -1,79 +1,585 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, ArrowUpRight, Check, CheckCircle2 } from "lucide-react";
 import { authApi } from "@/lib/auth-api";
 import { progressApi, type RecentActivity, type SkillScoreSnapshot } from "@/lib/progress-api";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuthStore } from "@/store/authStore";
 
+// ─── CSS vars / tokens (matching existing app palette) ────────────────────────
+const T = {
+  navy: "oklch(20% 0.09 245)",
+  ink: "oklch(18% 0.06 240)",
+  inkMuted: "oklch(45% 0.07 240)",
+  line: "oklch(86% 0.025 240)",
+  primary: "#0070C4",
+  primaryDeep: "#00599e",
+  primarySoft: "#d6e8f7",
+  green: "oklch(58% 0.16 155)",
+  red: "oklch(58% 0.2 25)",
+  amber: "oklch(72% 0.16 65)",
+  bg: "oklch(91% 0.04 245)",
+};
+
+// ─── Mock data for sections not yet backed by the API ─────────────────────────
+const MOCK_SCORE_SERIES = [
+  { name: "Grammar",      color: "#0070C4", data: [4.8, 5.0, 5.2, 5.4, 5.6, 5.8, 6.0] },
+  { name: "Vocabulary",   color: "#7c3aed", data: [4.2, 4.4, 4.5, 4.6, 4.8, 4.9, 5.0] },
+  { name: "Fluency",      color: "#10b981", data: [4.5, 4.7, 5.0, 5.2, 5.3, 5.4, 5.5] },
+  { name: "Pronunciation",color: "#ef4444", data: [3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0] },
+];
+const MOCK_TIME_PRACTICED = "2h 18m";
+const MOCK_GOAL = { week: 1, total: 12, current: 5.4, target: 7.0 };
+const MOCK_DIFFICULTY = [
+  { name: "Beginner",     pct: 38, color: "#0070C4" },
+  { name: "Intermediate", pct: 44, color: "#7c3aed" },
+  { name: "Advanced",     pct: 18, color: "#f59e0b" },
+];
+const MOCK_PRACTICE = [
+  { num: "7:42", unit: "PM",  label: "Most active" },
+  { num: "11",   unit: "min", label: "Avg session" },
+  { num: "Tue",  unit: "",    label: "Best day" },
+  { num: "5.2x", unit: "",    label: "Per week" },
+];
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 const SKILL_AXES = [
-  { key: "grammar", label: "Grammar" },
-  { key: "vocabulary", label: "Vocabulary" },
-  { key: "pronunciation", label: "Pronunciation" },
-  { key: "fluency", label: "Fluency" },
-  { key: "thought", label: "Thought Org." },
-  { key: "listening", label: "Listening" },
-  { key: "tone", label: "Tone & Register" },
+  { key: "grammar",      label: "Grammar" },
+  { key: "vocabulary",   label: "Vocabulary" },
+  { key: "pronunciation",label: "Pronunciation" },
+  { key: "fluency",      label: "Fluency" },
+  { key: "thought",      label: "Thought Org." },
+  { key: "listening",    label: "Listening" },
+  { key: "tone",         label: "Tone & Register" },
 ] as const;
 
-const DEFAULT_AXIS_SCORES = [6, 5, 4, 5.5, 4.5, 7, 6.5];
+const DEFAULT_SCORES = [6, 5, 4, 5.5, 4.5, 5.8, 4.2];
 
-function normalizeSkillName(name: string) {
-  return name.toLowerCase().replace(/[_&.]/g, " ").replace(/\s+/g, " ").trim();
+function normalizeSkillName(n: string) {
+  return n.toLowerCase().replace(/[_&.]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function displaySkillName(name: string | null) {
-  if (!name) return "No data yet";
-  const normalized = normalizeSkillName(name);
-  if (normalized.includes("thought")) return "Thought Org.";
-  if (normalized.includes("tone")) return "Tone & Register";
-  return normalized
-    .split(" ")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+function displaySkillName(n: string | null) {
+  if (!n) return "No data yet";
+  const norm = normalizeSkillName(n);
+  if (norm.includes("thought")) return "Thought Org.";
+  if (norm.includes("tone")) return "Tone & Register";
+  return norm.split(" ").map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 }
 
 function axisScores(scores: SkillScoreSnapshot[]) {
-  return SKILL_AXES.map((axis, index) => {
-    const match = scores.find((score) => normalizeSkillName(score.skill_name).includes(axis.key));
-    return {
-      label: axis.label,
-      score: match?.score ?? DEFAULT_AXIS_SCORES[index],
-    };
+  return SKILL_AXES.map((axis, i) => {
+    const match = scores.find(s => normalizeSkillName(s.skill_name).includes(axis.key));
+    return { label: axis.label, score: match?.score ?? DEFAULT_SCORES[i] };
   });
 }
 
-function scoreColor(score: number) {
-  if (score >= 7) return { color: "oklch(43% 0.16 150)", bg: "oklch(94% 0.055 150)" };
-  if (score >= 5) return { color: "oklch(53% 0.14 82)", bg: "oklch(94% 0.07 88)" };
-  return { color: "oklch(48% 0.18 28)", bg: "oklch(95% 0.04 28)" };
+function formatTimestamp(v: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  }).format(new Date(v));
 }
 
 function activityChip(taskType: string) {
-  const type = taskType.toLowerCase();
-  if (type.includes("speak")) return "🗣️ Speak";
-  if (type.includes("listen")) return "🎧 Listen";
-  if (type.includes("read")) return "📖 Read";
-  return "✍️ Write";
+  const t = taskType.toLowerCase();
+  if (t.includes("speak")) return { emoji: "🗣️", label: "Speak" };
+  if (t.includes("listen")) return { emoji: "🎧", label: "Listen" };
+  if (t.includes("read")) return { emoji: "📖", label: "Read" };
+  return { emoji: "✍️", label: "Write" };
 }
 
-function formatTimestamp(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
+function scoreColor(score: number): { color: string; bg: string; cls: string } {
+  if (score >= 7) return { color: "oklch(35% 0.14 155)", bg: "oklch(94% 0.07 155)", cls: "high" };
+  if (score >= 5) return { color: "oklch(42% 0.1 240)", bg: "#d6e8f7", cls: "" };
+  return { color: "oklch(40% 0.18 25)", bg: "oklch(94% 0.06 25)", cls: "low" };
 }
 
+// ─── SVG Icons ────────────────────────────────────────────────────────────────
+const UpArrow = () => (
+  <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+    <path d="M3 7.5L6 4.5L9 7.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const DownArrow = () => (
+  <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+    <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const CheckIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+    <path d="M3.5 7.5L6 10L11 4.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const AlertIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+    <path d="M7 4v3.5M7 9.8v.2" stroke="white" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+);
+const ArrowRight = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+    <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const ArrowOut = () => (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+    <path d="M5 11L11 5M11 5H6M11 5v5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const DownloadIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+    <path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const PulseIcon = () => (
+  <span style={{
+    display: "inline-block", width: 6, height: 6, borderRadius: "50%",
+    background: T.primary, animation: "pulseDot 2s ease infinite",
+  }}/>
+);
+
+// ─── Card wrapper ─────────────────────────────────────────────────────────────
+function Card({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.85)",
+      backdropFilter: "blur(18px)",
+      border: "1.5px solid rgba(255,255,255,0.92)",
+      borderRadius: 22,
+      padding: 24,
+      boxShadow: "0 4px 24px rgba(80,110,180,0.1)",
+      marginBottom: 22,
+      ...style,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function CardHead({ title, sub, right }: { title: React.ReactNode; sub?: string; right?: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+      <div>
+        <div style={{ fontSize: 17, fontWeight: 800, color: T.navy, letterSpacing: "-0.01em" }}>{title}</div>
+        {sub && <div style={{ fontSize: 12.5, color: T.inkMuted, marginTop: 3 }}>{sub}</div>}
+      </div>
+      {right}
+    </div>
+  );
+}
+
+function AgentTag({ label, tone = "blue" }: { label: string; tone?: "blue" | "green" | "live" }) {
+  const styles: Record<string, React.CSSProperties> = {
+    blue: { background: T.primarySoft, color: T.primaryDeep },
+    green: { background: "oklch(94% 0.07 155)", color: "oklch(35% 0.14 155)" },
+    live: { background: T.primarySoft, color: T.primaryDeep },
+  };
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      padding: "5px 11px", borderRadius: 999,
+      fontSize: 11.5, fontWeight: 700,
+      ...styles[tone],
+    }}>
+      {tone === "live" && <PulseIcon />}
+      {label}
+    </span>
+  );
+}
+
+function CardLink({ children }: { children: React.ReactNode }) {
+  return (
+    <a href="#" style={{
+      fontSize: 13, fontWeight: 700, color: T.primary,
+      display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none",
+    }}>
+      {children}
+    </a>
+  );
+}
+
+// ─── Score progression chart ──────────────────────────────────────────────────
+function ProgressChart() {
+  const w = 600, h = 220, pad = { l: 32, r: 14, t: 14, b: 28 };
+  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const yMax = 8, yMin = 0;
+  const xStep = (w - pad.l - pad.r) / (labels.length - 1);
+  const yScale = (v: number) => pad.t + (h - pad.t - pad.b) * (1 - (v - yMin) / (yMax - yMin));
+  const xScale = (i: number) => pad.l + i * xStep;
+
+  return (
+    <div style={{ position: "relative", height: 220, marginBottom: 8 }}>
+      <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet">
+        {[0, 2, 4, 6, 8].map(v => (
+          <g key={v}>
+            <line x1={pad.l} x2={w - pad.r} y1={yScale(v)} y2={yScale(v)}
+              stroke="oklch(90% 0.02 240)" strokeDasharray="3 3"/>
+            <text x={pad.l - 8} y={yScale(v) + 4} textAnchor="end"
+              fontSize="10" fill="oklch(50% 0.04 240)" fontWeight="600">{v}</text>
+          </g>
+        ))}
+        {labels.map((l, i) => (
+          <text key={l} x={xScale(i)} y={h - 8} textAnchor="middle"
+            fontSize="11" fill="oklch(50% 0.04 240)" fontWeight="600">{l}</text>
+        ))}
+        {MOCK_SCORE_SERIES.map(s => {
+          const path = s.data.map((v, i) => `${i === 0 ? "M" : "L"} ${xScale(i)} ${yScale(v)}`).join(" ");
+          return (
+            <g key={s.name}>
+              <path d={path} fill="none" stroke={s.color} strokeWidth="2.5"
+                strokeLinecap="round" strokeLinejoin="round"/>
+              {s.data.map((v, i) => (
+                <circle key={i} cx={xScale(i)} cy={yScale(v)}
+                  r={i === s.data.length - 1 ? 4.5 : 3}
+                  fill="white" stroke={s.color} strokeWidth="2"/>
+              ))}
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ display: "flex", gap: 16, fontSize: 12, color: T.inkMuted, fontWeight: 600, flexWrap: "wrap", paddingLeft: 32 }}>
+        {MOCK_SCORE_SERIES.map(s => (
+          <span key={s.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: s.color }}/>
+            {s.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Radar chart ──────────────────────────────────────────────────────────────
+function Radar({ skills }: { skills: Array<{ label: string; score: number }> }) {
+  const cx = 180, cy = 180, R = 130;
+  const N = skills.length;
+  const angle = (i: number) => (Math.PI * 2 * i) / N - Math.PI / 2;
+  const point = (val: number, i: number): [number, number] => {
+    const r = (val / 10) * R;
+    return [cx + r * Math.cos(angle(i)), cy + r * Math.sin(angle(i))];
+  };
+  const polyPath = skills.map((s, i) => point(s.score, i)).map(([x, y]) => `${x},${y}`).join(" ");
+  const labels = skills.map((s, i) => {
+    const [x, y] = [cx + (R + 24) * Math.cos(angle(i)), cy + (R + 24) * Math.sin(angle(i))];
+    return { ...s, x, y };
+  });
+
+  return (
+    <svg width="360" height="360" viewBox="0 0 360 360" style={{ display: "block", margin: "0 auto" }}>
+      {[2, 4, 6, 8, 10].map(v => {
+        const pts = Array.from({ length: N }, (_, i) => {
+          const r = (v / 10) * R;
+          return `${cx + r * Math.cos(angle(i))},${cy + r * Math.sin(angle(i))}`;
+        }).join(" ");
+        return <polygon key={v} points={pts} fill="none" stroke="oklch(88% 0.02 240)" strokeWidth="1"/>;
+      })}
+      {skills.map((_, i) => {
+        const [x, y] = point(10, i);
+        return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke="oklch(88% 0.02 240)" strokeWidth="1"/>;
+      })}
+      <polygon points={polyPath} fill="rgba(0,112,196,0.18)" stroke="#0070C4" strokeWidth="2.5" strokeLinejoin="round"/>
+      {skills.map((s, i) => {
+        const [x, y] = point(s.score, i);
+        return <circle key={i} cx={x} cy={y} r="4" fill="#0070C4" stroke="white" strokeWidth="2"/>;
+      })}
+      {labels.map((l, i) => (
+        <g key={l.label}>
+          <text x={l.x} y={l.y - 2} textAnchor="middle" fontSize="11.5" fill={T.navy} fontWeight="700">{l.label}</text>
+          <text x={l.x} y={l.y + 12} textAnchor="middle" fontSize="11" fill="#0070C4" fontWeight="800">{l.score.toFixed(1)}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+// ─── Sub-skill bars ───────────────────────────────────────────────────────────
+const SKILL_BAR_ROWS = [
+  { name: "Grammar",       val: 6.0, trend: 8,  mark: "strong" },
+  { name: "Listening",     val: 5.8, trend: 4,  mark: "strong" },
+  { name: "Fluency",       val: 5.5, trend: 2,  mark: "" },
+  { name: "Vocabulary",    val: 5.0, trend: 3,  mark: "" },
+  { name: "Thought Org.",  val: 4.5, trend: 0,  mark: "weak" },
+  { name: "Tone & Reg.",   val: 4.2, trend: -1, mark: "weak" },
+  { name: "Pronunciation", val: 4.0, trend: 1,  mark: "weak" },
+];
+
+function skillBarColor(mark: string) {
+  if (mark === "strong") return `linear-gradient(to right, oklch(55% 0.16 155), oklch(70% 0.13 145))`;
+  if (mark === "weak") return `linear-gradient(to right, oklch(60% 0.18 25), oklch(72% 0.16 35))`;
+  return `linear-gradient(to right, ${T.primary}, oklch(72% 0.12 220))`;
+}
+
+function SkillBars({ scores }: { scores: Array<{ label: string; score: number }> }) {
+  // Merge real API scores on top of mock bar rows
+  const rows = SKILL_BAR_ROWS.map(row => {
+    const live = scores.find(s => s.label === row.name || s.label.startsWith(row.name.split(" ")[0]));
+    return { ...row, val: live?.score ?? row.val };
+  });
+
+  return (
+    <div>
+      {rows.map(s => (
+        <div key={s.name} style={{
+          display: "flex", alignItems: "center", gap: 14, padding: "13px 0",
+          borderBottom: `1px dashed oklch(88% 0.02 240)`,
+        }}>
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: T.navy, width: 110, flexShrink: 0 }}>{s.name}</span>
+          <div style={{ flex: 1, height: 8, borderRadius: 8, background: "oklch(94% 0.02 240)", overflow: "hidden" }}>
+            <div style={{ height: "100%", borderRadius: 8, width: `${s.val * 10}%`, background: skillBarColor(s.mark), transition: "width 0.6s ease" }}/>
+          </div>
+          <span style={{ fontSize: 13.5, fontWeight: 800, color: T.navy, width: 36, textAlign: "right" }}>{s.val.toFixed(1)}</span>
+          <span style={{
+            fontSize: 11.5, fontWeight: 700, padding: "3px 7px", borderRadius: 6, minWidth: 46, textAlign: "center",
+            background: s.trend > 0 ? "oklch(94% 0.07 155)" : s.trend < 0 ? "oklch(94% 0.06 25)" : "oklch(95% 0.015 240)",
+            color: s.trend > 0 ? "oklch(38% 0.14 155)" : s.trend < 0 ? "oklch(40% 0.18 25)" : T.inkMuted,
+          }}>
+            {s.trend > 0 ? `+${s.trend}` : s.trend === 0 ? "—" : s.trend} pts
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Activity rows ─────────────────────────────────────────────────────────────
+function ActivityRow({ activity }: { activity: RecentActivity }) {
+  const { color, bg } = scoreColor(activity.score);
+  const chip = activityChip(activity.task_type);
+  const iconBg: Record<string, string> = {
+    "🗣️": "oklch(94% 0.06 240)",
+    "🎧": "oklch(94% 0.07 155)",
+    "📖": "oklch(94% 0.06 290)",
+    "✍️": "oklch(94% 0.07 65)",
+  };
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 14,
+      padding: "14px 16px", borderRadius: 14,
+      background: "white", border: `1.5px solid ${T.line}`,
+      marginBottom: 8, transition: "all 0.15s", cursor: "default",
+    }}
+    onMouseEnter={e => {
+      (e.currentTarget as HTMLDivElement).style.borderColor = T.primary;
+      (e.currentTarget as HTMLDivElement).style.transform = "translateY(-1px)";
+      (e.currentTarget as HTMLDivElement).style.boxShadow = "0 4px 14px rgba(0,112,196,0.1)";
+    }}
+    onMouseLeave={e => {
+      (e.currentTarget as HTMLDivElement).style.borderColor = T.line;
+      (e.currentTarget as HTMLDivElement).style.transform = "";
+      (e.currentTarget as HTMLDivElement).style.boxShadow = "";
+    }}
+    >
+      <div style={{
+        width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: iconBg[chip.emoji] ?? "oklch(94% 0.025 240)",
+        fontSize: 18,
+      }}>
+        {chip.emoji}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: T.navy }}>{activity.task_name}</div>
+        <div style={{ fontSize: 12, color: T.inkMuted, marginTop: 2, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <span>{chip.label}</span>
+          <span>·</span>
+          <span>{formatTimestamp(activity.completed_at)}</span>
+          {activity.mistake_count > 0 && <><span>·</span><span>{activity.mistake_count} mistakes</span></>}
+        </div>
+      </div>
+      <span style={{
+        fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 8,
+        background: bg, color, flexShrink: 0,
+      }}>
+        {activity.score.toFixed(1)}
+      </span>
+    </div>
+  );
+}
+
+function MockActivityRow({ title, meta, scoreStr, scoreColor: sc }: {
+  title: string; meta: string[]; scoreStr: string; scoreColor: { bg: string; color: string };
+}) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 14,
+      padding: "14px 16px", borderRadius: 14,
+      background: "white", border: `1.5px solid ${T.line}`,
+      marginBottom: 8,
+    }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: T.navy }}>{title}</div>
+        <div style={{ fontSize: 12, color: T.inkMuted, marginTop: 2, display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {meta.map((m, j) => <span key={j}>{j > 0 && "· "}{m}</span>)}
+        </div>
+      </div>
+      <span style={{
+        fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 8,
+        background: sc.bg, color: sc.color, flexShrink: 0,
+      }}>
+        {scoreStr}
+      </span>
+    </div>
+  );
+}
+
+// ─── Insights (strengths / focus) ─────────────────────────────────────────────
+function InsightRow({ text, meta, tone }: { text: React.ReactNode; meta: string; tone: "ok" | "no" }) {
+  const isOk = tone === "ok";
+  return (
+    <div style={{
+      display: "flex", alignItems: "flex-start", gap: 8,
+      padding: "11px 0", borderBottom: `1px dashed oklch(88% 0.02 240)`,
+      fontSize: 13.5,
+    }}>
+      <div style={{
+        flexShrink: 0, width: 22, height: 22, borderRadius: "50%",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        background: isOk ? T.green : T.red, marginTop: 1,
+      }}>
+        {isOk ? <CheckIcon/> : <AlertIcon/>}
+      </div>
+      <div>
+        <div style={{ color: T.navy, lineHeight: 1.5 }}>{text}</div>
+        <div style={{ fontSize: 11.5, color: T.inkMuted, marginTop: 2 }}>{meta}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Goal card ────────────────────────────────────────────────────────────────
+function GoalCard() {
+  const pct = Math.round((MOCK_GOAL.week / MOCK_GOAL.total) * 100);
+  return (
+    <div style={{
+      background: `linear-gradient(135deg, ${T.primary}, oklch(45% 0.2 250))`,
+      color: "white", borderRadius: 22, padding: 22,
+      position: "relative", overflow: "hidden",
+      boxShadow: "0 8px 28px rgba(0,112,196,0.28)",
+      marginBottom: 22,
+    }}>
+      <div style={{
+        position: "absolute", top: -40, right: -30,
+        width: 160, height: 160, borderRadius: "50%",
+        background: "rgba(255,255,255,0.1)",
+      }}/>
+      <div style={{ fontSize: 12.5, fontWeight: 700, opacity: 0.85, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+        24-week milestone
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em", margin: "8px 0 14px", lineHeight: 1.25, position: "relative", zIndex: 1 }}>
+        Reach intermediate by Week 12
+      </div>
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <div style={{ height: 8, background: "rgba(255,255,255,0.25)", borderRadius: 8, overflow: "hidden", margin: "6px 0 10px" }}>
+          <div style={{ height: "100%", background: "white", borderRadius: 8, width: `${pct}%`, transition: "width 0.6s ease" }}/>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, opacity: 0.92 }}>
+          <span><strong>Week {MOCK_GOAL.week}</strong> of {MOCK_GOAL.total}</span>
+          <span>{MOCK_GOAL.current} / {MOCK_GOAL.target} target</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Donut chart ──────────────────────────────────────────────────────────────
+function Donut() {
+  const total = MOCK_DIFFICULTY.reduce((a, s) => a + s.pct, 0);
+  const r = 52, c = 2 * Math.PI * r;
+  let off = 0;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+      <svg width="130" height="130" viewBox="0 0 130 130">
+        <circle cx="65" cy="65" r={r} fill="none" stroke="oklch(94% 0.02 240)" strokeWidth="16"/>
+        {MOCK_DIFFICULTY.map((s, i) => {
+          const len = (s.pct / total) * c;
+          const dasharray = `${len} ${c - len}`;
+          const dashoffset = -off;
+          off += len;
+          return (
+            <circle key={i} cx="65" cy="65" r={r} fill="none" stroke={s.color} strokeWidth="16"
+              strokeDasharray={dasharray} strokeDashoffset={dashoffset}
+              transform="rotate(-90 65 65)" strokeLinecap="butt"/>
+          );
+        })}
+        <text x="65" y="62" textAnchor="middle" fontSize="22" fontWeight="800" fill={T.navy} letterSpacing="-1">28</text>
+        <text x="65" y="78" textAnchor="middle" fontSize="10" fontWeight="700" fill={T.inkMuted}>TASKS</text>
+      </svg>
+      <div style={{ flex: 1 }}>
+        {MOCK_DIFFICULTY.map(s => (
+          <div key={s.name} style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "7px 0", borderBottom: `1px dashed oklch(88% 0.02 240)`,
+            fontSize: 13,
+          }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, color: T.navy, fontWeight: 600 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color, display: "inline-block" }}/>
+              {s.name}
+            </span>
+            <span style={{ fontWeight: 800, color: T.navy }}>{s.pct}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── KPI Tile ─────────────────────────────────────────────────────────────────
+function KpiTile({
+  label, value, unit, delta, deltaDir,
+}: {
+  label: string; value: React.ReactNode; unit?: string;
+  delta: string; deltaDir: "up" | "down" | "flat";
+}) {
+  const deltaStyle: Record<string, React.CSSProperties> = {
+    up:   { background: "oklch(94% 0.07 155)", color: "oklch(38% 0.14 155)" },
+    down: { background: "oklch(94% 0.06 25)",  color: "oklch(40% 0.18 25)" },
+    flat: { background: "oklch(95% 0.015 240)",color: T.inkMuted },
+  };
+  return (
+    <div style={{
+      background: "rgba(255,255,255,0.85)", backdropFilter: "blur(18px)",
+      border: "1.5px solid rgba(255,255,255,0.92)", borderRadius: 18,
+      padding: "18px 20px", boxShadow: "0 4px 22px rgba(80,110,180,0.1)",
+    }}>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: T.inkMuted, letterSpacing: "0.02em" }}>{label}</div>
+      <div style={{
+        fontSize: 30, fontWeight: 800, color: T.navy, letterSpacing: "-0.02em",
+        lineHeight: 1.1, margin: "6px 0 4px", display: "flex", alignItems: "baseline", gap: 6,
+      }}>
+        {value}
+        {unit && <span style={{ fontSize: 14, fontWeight: 600, color: T.inkMuted }}>{unit}</span>}
+      </div>
+      <span style={{
+        display: "inline-flex", alignItems: "center", gap: 4,
+        fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 6,
+        ...deltaStyle[deltaDir],
+      }}>
+        {deltaDir === "up" && <UpArrow/>}
+        {deltaDir === "down" && <DownArrow/>}
+        {delta}
+      </span>
+    </div>
+  );
+}
+
+// ─── Range tabs ───────────────────────────────────────────────────────────────
+const RANGES = [["7d", "Week"], ["30d", "Month"], ["90d", "Quarter"], ["all", "All time"]] as const;
+
+// ─── Main page ─────────────────────────────────────────────────────────────────
 export default function StatsPage() {
   const router = useRouter();
   const { logout } = useAuthStore();
   const { isReady } = useRequireAuth();
+  const [range, setRange] = useState<string>("7d");
 
   const userQuery = useQuery({
     queryKey: ["me"],
@@ -101,655 +607,278 @@ export default function StatsPage() {
   const stats = statsQuery.data;
   const weekly = stats?.weekly_snapshot;
   const change = weekly?.overall_score_change ?? 0;
-  const changePositive = change >= 0;
+  const changeUp = change >= 0;
+  const skillScores = axisScores(stats?.skill_scores ?? []);
+  const strengths = stats?.feedback.strengths ?? [];
+  const focusAreas = stats?.feedback.focus_areas ?? [];
+  const activities = stats?.recent_activities ?? [];
+  const tasksCompleted = weekly?.tasks_completed ?? 0;
+  const tasksGoal = weekly?.weekly_task_goal ?? 7;
+  const bestSkill = displaySkillName(weekly?.best_skill_name ?? null);
+  const bestScore = weekly?.best_skill_score;
 
   return (
-    <div
-      style={{
+    <>
+      <style>{`
+        @keyframes pulseDot { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+        @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        .stats-fade { animation: fadeIn 0.4s ease both; }
+      `}</style>
+
+      <div style={{
         minHeight: "100vh",
         fontFamily: "'Plus Jakarta Sans', sans-serif",
-        background:
-          "radial-gradient(ellipse 80% 60% at 50% 0%, oklch(86% 0.07 240) 0%, oklch(90% 0.045 245) 50%, oklch(93% 0.025 250) 100%)",
+        background: T.bg,
         position: "relative",
-      }}
-    >
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
-      />
-      <div
-        aria-hidden="true"
-        style={{
-          position: "fixed",
-          inset: 0,
-          pointerEvents: "none",
-          backgroundImage:
-            "radial-gradient(circle, rgba(90,130,210,0.18) 1px, transparent 1px)",
-          backgroundSize: "22px 22px",
-          zIndex: 0,
-        }}
-      />
+      }}>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"/>
+        <div aria-hidden style={{
+          position: "fixed", inset: 0, pointerEvents: "none",
+          backgroundImage: "radial-gradient(circle, rgba(90,130,210,0.13) 1px, transparent 1px)",
+          backgroundSize: "22px 22px", zIndex: 0,
+        }}/>
 
-      <div style={{ position: "relative", zIndex: 1 }}>
-        <DashboardLayout
-          user={userQuery.data}
-          onSignOut={handleLogout}
-          mainStyle={{
-            maxWidth: 1060,
-            margin: "0 auto",
-            padding: "32px 20px 72px",
-          }}
-        >
-          {userQuery.isLoading || statsQuery.isLoading ? (
-            <LoadingCard />
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-              <section
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-                  gap: 14,
-                  background: "rgba(255,255,255,0.84)",
-                  border: "1px solid rgba(255,255,255,0.9)",
-                  borderRadius: 8,
-                  padding: 16,
-                  boxShadow:
-                    "0 4px 32px rgba(80,110,180,0.1), 0 1.5px 6px rgba(80,120,200,0.05)",
-                }}
-              >
-                <StatTile
-                  title="Overall score change"
-                  value={`${changePositive ? "+" : ""}${change.toFixed(1)} ${changePositive ? "↑" : "↓"}`}
-                  label="vs last week"
-                  note="Evaluator Agent weekly average"
-                  valueColor={changePositive ? "oklch(43% 0.16 150)" : "oklch(48% 0.18 28)"}
-                />
-                <StatTile
-                  title="Tasks completed"
-                  value={`${weekly?.tasks_completed ?? 0} / ${weekly?.weekly_task_goal ?? 7}`}
-                  label="this week"
-                  note="completed assigned tasks"
-                />
-                <StatTile
-                  title="Best skill this week"
-                  value={displaySkillName(weekly?.best_skill_name ?? null)}
-                  label={
-                    weekly?.best_skill_score != null
-                      ? `scored ${weekly.best_skill_score.toFixed(1)}`
-                      : "scored after tasks"
-                  }
-                  note="highest current sub-skill"
-                />
-              </section>
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <DashboardLayout user={userQuery.data} onSignOut={handleLogout}>
+            <main style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px 60px" }}>
 
-              <section
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-                  gap: 20,
-                }}
-              >
-                <RadarCard scores={axisScores(stats?.skill_scores ?? [])} />
-                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                  <FeedbackCard
-                    tone="strength"
-                    title="Your strengths"
-                    pill="Feedback Agent"
-                    items={stats?.feedback.strengths ?? []}
-                  />
-                  <FeedbackCard
-                    tone="focus"
-                    title="Focus areas"
-                    pill="Feedback Agent"
-                    items={stats?.feedback.focus_areas ?? []}
-                  />
+              {/* ── Page header ── */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24, flexWrap: "wrap", gap: 16 }}>
+                <div>
+                  <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em", color: T.navy, lineHeight: 1.15, margin: 0 }}>
+                    Your stats
+                  </h1>
+                  <p style={{ fontSize: 14.5, color: T.inkMuted, marginTop: 6 }}>
+                    Tracked by the Evaluator Agent · all scores on a 0–10 scale
+                  </p>
                 </div>
-              </section>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  {/* Range tabs */}
+                  <div style={{
+                    display: "inline-flex", padding: 4, background: "white",
+                    border: `1.5px solid ${T.line}`, borderRadius: 12, gap: 2,
+                  }}>
+                    {RANGES.map(([k, l]) => (
+                      <button key={k} onClick={() => setRange(k)} style={{
+                        padding: "7px 14px", borderRadius: 9,
+                        fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer",
+                        background: range === k ? T.primary : "transparent",
+                        color: range === k ? "white" : T.inkMuted,
+                        boxShadow: range === k ? "0 2px 6px rgba(0,112,196,0.3)" : "none",
+                        transition: "all 0.15s", fontFamily: "inherit",
+                      }}>
+                        {l}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Export */}
+                  <button title="Export report" style={{
+                    width: 38, height: 38, borderRadius: 10, background: "white",
+                    border: `1.5px solid ${T.line}`, display: "flex", alignItems: "center",
+                    justifyContent: "center", color: "oklch(28% 0.08 245)", cursor: "pointer",
+                  }}>
+                    <DownloadIcon/>
+                  </button>
+                </div>
+              </div>
 
-              <RecentActivities activities={stats?.recent_activities ?? []} />
-            </div>
-          )}
-        </DashboardLayout>
-      </div>
-    </div>
-  );
-}
+              {/* ── KPI row ── */}
+              <div className="stats-fade" style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 16, marginBottom: 22,
+              }}>
+                <KpiTile
+                  label="Overall score"
+                  value={<>{statsQuery.isLoading ? "…" : `${changeUp ? "+" : ""}${change.toFixed(1)}`}</>}
+                  unit="/ 10"
+                  delta={`${changeUp ? "+" : ""}${change.toFixed(1)} vs last week`}
+                  deltaDir={changeUp ? "up" : "down"}
+                />
+                <KpiTile
+                  label="Tasks completed"
+                  value={statsQuery.isLoading ? "…" : `${tasksCompleted}`}
+                  unit={`/ ${tasksGoal}`}
+                  delta={`${tasksGoal > 0 ? Math.round((tasksCompleted / tasksGoal) * 100) : 0}% completion`}
+                  deltaDir="up"
+                />
+                <KpiTile
+                  label="Time practiced"
+                  value={MOCK_TIME_PRACTICED}
+                  delta="+24m vs last week"
+                  deltaDir="up"
+                />
+                <KpiTile
+                  label="Best skill"
+                  value={<span style={{ fontSize: 24 }}>{statsQuery.isLoading ? "…" : bestSkill}</span>}
+                  delta={bestScore != null ? `Scored ${bestScore.toFixed(1)} · highest sub-skill` : "Scored after tasks"}
+                  deltaDir="flat"
+                />
+              </div>
 
-function LoadingCard() {
-  return (
-    <div
-      style={{
-        minHeight: 300,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "rgba(255,255,255,0.84)",
-        border: "1px solid rgba(255,255,255,0.9)",
-        borderRadius: 8,
-        color: "oklch(45% 0.07 240)",
-        fontSize: 15,
-      }}
-    >
-      Loading your stats...
-    </div>
-  );
-}
+              {/* ── Two-column grid ── */}
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 22 }}>
 
-function StatTile({
-  label,
-  note,
-  title,
-  value,
-  valueColor = "oklch(18% 0.09 245)",
-}: {
-  label: string;
-  note: string;
-  title: string;
-  value: string;
-  valueColor?: string;
-}) {
-  return (
-    <div
-      style={{
-        minHeight: 132,
-        display: "flex",
-        flexDirection: "column",
-        borderRadius: 8,
-        background: "oklch(94% 0.025 245)",
-        border: "1px solid rgba(80,120,200,0.1)",
-        padding: "18px 18px 14px",
-      }}
-    >
-      <div style={{ color: "oklch(45% 0.07 240)", fontSize: 12, fontWeight: 700 }}>
-        {title}
-      </div>
-      <div
-        style={{
-          marginTop: 12,
-          color: valueColor,
-          fontSize: 30,
-          fontWeight: 800,
-          letterSpacing: 0,
-          lineHeight: 1,
-        }}
-      >
-        {value}
-      </div>
-      <div style={{ marginTop: 8, color: "oklch(38% 0.08 240)", fontSize: 13 }}>
-        {label}
-      </div>
-      <div style={{ marginTop: "auto", color: "oklch(55% 0.05 240)", fontSize: 11 }}>
-        {note}
-      </div>
-    </div>
-  );
-}
+                {/* ── LEFT ── */}
+                <div>
+                  {/* Score progression */}
+                  <Card>
+                    <CardHead
+                      title="Score progression"
+                      sub="Sub-skills tracked daily by Evaluator Agent"
+                      right={<AgentTag label="Live" tone="live"/>}
+                    />
+                    <ProgressChart/>
+                  </Card>
 
-function RadarCard({
-  scores,
-}: {
-  scores: Array<{ label: string; score: number }>;
-}) {
-  const size = 500;
-  const center = size / 2;
-  const radius = 128;
-  const labelDistance = radius + 28;
-  const levels = [
-    { label: "Level 1", score: 3, color: "rgba(71, 149, 232, 0.12)" },
-    { label: "Level 2", score: 6, color: "rgba(52, 130, 222, 0.2)" },
-    { label: "Level 3", score: 10, color: "rgba(24, 104, 202, 0.32)" },
-  ];
-  const levelPolygons = levels.map((level) => ({
-    ...level,
-    points: scores
-      .map((_, index) => {
-        const angle = -Math.PI / 2 + (index * Math.PI * 2) / scores.length;
-        const distance = radius * level.score / 10;
-        return `${center + Math.cos(angle) * distance},${center + Math.sin(angle) * distance}`;
-      })
-      .join(" "),
-  }));
-  const polygonPointsForScore = (score: number) =>
-    scores.map((_, index) => {
-      const angle = -Math.PI / 2 + (index * Math.PI * 2) / scores.length;
-      const distance = radius * score / 10;
-      return {
-        x: center + Math.cos(angle) * distance,
-        y: center + Math.sin(angle) * distance,
-      };
-    });
-  const polygonPathForScore = (score: number) =>
-    polygonPointsForScore(score)
-      .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
-      .join(" ") + " Z";
-  const bandPath = (outerScore: number, innerScore: number) =>
-    `${polygonPathForScore(outerScore)} ${polygonPathForScore(innerScore)}`;
-  const points = scores.map((score, index) => {
-    const angle = -Math.PI / 2 + (index * Math.PI * 2) / scores.length;
-    const distance = radius * Math.min(Math.max(score.score, 0), 10) / 10;
-    const labelX = center + Math.cos(angle) * labelDistance;
-    const labelY = center + Math.sin(angle) * labelDistance;
-    const isLeft = labelX < center - 32;
-    const isRight = labelX > center + 32;
-    const textAnchor: "start" | "end" | "middle" = isLeft
-      ? "end"
-      : isRight
-        ? "start"
-        : "middle";
-    return {
-      ...score,
-      x: center + Math.cos(angle) * distance,
-      y: center + Math.sin(angle) * distance,
-      axisX: center + Math.cos(angle) * radius,
-      axisY: center + Math.sin(angle) * radius,
-      labelX,
-      labelY: Math.min(Math.max(labelY, 30), size - 30),
-      textAnchor,
-    };
-  });
-  const polygon = points.map((point) => `${point.x},${point.y}`).join(" ");
+                  {/* Sub-skill overview */}
+                  <Card>
+                    <CardHead
+                      title="Sub-skill overview"
+                      sub="Updated by Evaluator Agent"
+                      right={<CardLink>Drill into a skill <ArrowRight/></CardLink>}
+                    />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "center" }}>
+                      <Radar skills={skillScores}/>
+                      <SkillBars scores={skillScores}/>
+                    </div>
+                  </Card>
 
-  return (
-    <section
-      style={{
-        background: "rgba(255,255,255,0.84)",
-        border: "1px solid rgba(255,255,255,0.9)",
-        borderRadius: 8,
-        padding: 24,
-        boxShadow:
-          "0 4px 32px rgba(80,110,180,0.1), 0 1.5px 6px rgba(80,120,200,0.05)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          marginBottom: 12,
-        }}
-      >
-        <h2
-          style={{
-            margin: 0,
-            color: "oklch(15% 0.09 245)",
-            fontSize: 20,
-            fontWeight: 800,
-            letterSpacing: 0,
-          }}
-        >
-          Sub-skill overview
-        </h2>
-        <span
-          style={{
-            borderRadius: 999,
-            background: "oklch(92% 0.035 245)",
-            color: "oklch(45% 0.14 240)",
-            fontSize: 11,
-            fontWeight: 700,
-            padding: "6px 10px",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Updated by Evaluator Agent
-        </span>
-      </div>
+                  {/* Recent activities */}
+                  <Card style={{ marginBottom: 0 }}>
+                    <CardHead
+                      title="Recent activities"
+                      sub={`Last ${activities.length || 7} sessions`}
+                      right={<CardLink>View all <ArrowOut/></CardLink>}
+                    />
+                    {statsQuery.isLoading ? (
+                      <div style={{ padding: 24, color: T.inkMuted, fontSize: 14 }}>Loading activities…</div>
+                    ) : activities.length > 0 ? (
+                      activities.slice(0, 5).map(a => <ActivityRow key={a.id} activity={a}/>)
+                    ) : (
+                      <>
+                        <MockActivityRow
+                          title="Past simple — chat & drills"
+                          meta={["Grammar", "6m 42s", "Today, 9:14 AM"]}
+                          scoreStr="6.2"
+                          scoreColor={{ bg: "oklch(94% 0.07 155)", color: "oklch(35% 0.14 155)" }}
+                        />
+                        <MockActivityRow
+                          title="Read aloud — workplace email"
+                          meta={["Pronunciation", "4m 10s", "Yesterday, 8:02 PM"]}
+                          scoreStr="4.0"
+                          scoreColor={{ bg: "oklch(94% 0.06 25)", color: "oklch(40% 0.18 25)" }}
+                        />
+                        <MockActivityRow
+                          title="Vocabulary drill — interview verbs"
+                          meta={["Vocabulary", "5m 22s", "Yesterday, 7:30 PM"]}
+                          scoreStr="5.4"
+                          scoreColor={{ bg: T.primarySoft, color: T.primaryDeep }}
+                        />
+                        <MockActivityRow
+                          title="Mock interview — first 3 minutes"
+                          meta={["Fluency", "3m 02s", "Wed, 6:48 PM"]}
+                          scoreStr="5.5"
+                          scoreColor={{ bg: T.primarySoft, color: T.primaryDeep }}
+                        />
+                      </>
+                    )}
+                  </Card>
+                </div>
 
-      <svg viewBox={`0 0 ${size} ${size}`} width="100%" style={{ display: "block" }}>
-        <polygon points={levelPolygons[0].points} fill={levelPolygons[0].color} />
-        <path
-          d={bandPath(levels[1].score, levels[0].score)}
-          fill={levels[1].color}
-          fillRule="evenodd"
-        />
-        <path
-          d={bandPath(levels[2].score, levels[1].score)}
-          fill={levels[2].color}
-          fillRule="evenodd"
-        />
-        {levelPolygons.map((level) => (
-          <polygon
-            key={level.label}
-            points={level.points}
-            fill="none"
-            stroke="rgba(80,120,200,0.24)"
-            strokeWidth="1.2"
-          />
-        ))}
-        {points.map((point) => (
-          <line
-            key={point.label}
-            x1={center}
-            y1={center}
-            x2={point.axisX}
-            y2={point.axisY}
-            stroke="rgba(80,120,200,0.16)"
-            strokeWidth="1"
-          />
-        ))}
-        <polygon points={polygon} fill="rgba(70,125,220,0.1)" stroke="oklch(52% 0.18 240)" strokeWidth="3" />
-        {points.map((point) => (
-          <g key={point.label}>
-            <circle cx={point.x} cy={point.y} r="4.5" fill="oklch(52% 0.18 240)" />
-            <text
-              x={point.labelX}
-              y={point.labelY}
-              textAnchor={point.textAnchor}
-              dominantBaseline="middle"
-              fill="oklch(35% 0.07 240)"
-              fontSize="11"
-              fontWeight="700"
-            >
-              {point.label}
-            </text>
-          </g>
-        ))}
-      </svg>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          gap: 14,
-          flexWrap: "wrap",
-          marginTop: -12,
-        }}
-      >
-        {levels.map((level) => (
-          <div
-            key={level.label}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 7,
-              color: "oklch(38% 0.07 240)",
-              fontSize: 12,
-              fontWeight: 700,
-            }}
-          >
-            <span
-              style={{
-                width: 12,
-                height: 12,
-                borderRadius: 3,
-                background: level.color,
-                border: "1px solid rgba(80,120,200,0.24)",
-              }}
-            />
-            {level.label}
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
+                {/* ── RIGHT ── */}
+                <div>
+                  {/* Strengths */}
+                  <Card>
+                    <CardHead
+                      title={
+                        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: T.green, display: "inline-block" }}/>
+                          Your strengths
+                        </span>
+                      }
+                      sub="Where you're outperforming"
+                      right={<AgentTag label="Feedback Agent" tone="green"/>}
+                    />
+                    {strengths.length > 0 ? (
+                      strengths.slice(0, 3).map((s, i) => (
+                        <InsightRow key={i} text={s} meta="Feedback Agent · sustained" tone="ok"/>
+                      ))
+                    ) : (
+                      <>
+                        <InsightRow text={<>Past tense conjugation — <strong>92% accuracy</strong> over 5 sessions.</>} meta="Grammar · sustained" tone="ok"/>
+                        <InsightRow text={<>Pronunciation of /θ/ and /ð/ improving — <strong>+12% clarity</strong>.</>} meta="Pronunciation · trending up" tone="ok"/>
+                        <InsightRow text={<>Comprehension of formal phrasing tracking at <strong>2.1 above peers</strong>.</>} meta="Listening · benchmark" tone="ok"/>
+                      </>
+                    )}
+                  </Card>
 
-function FeedbackCard({
-  items,
-  pill,
-  title,
-  tone,
-}: {
-  items: string[];
-  pill: string;
-  title: string;
-  tone: "strength" | "focus";
-}) {
-  const isStrength = tone === "strength";
-  const color = isStrength ? "oklch(43% 0.16 150)" : "oklch(48% 0.18 28)";
-  const soft = isStrength ? "oklch(94% 0.055 150)" : "oklch(95% 0.04 28)";
-  const Icon = isStrength ? Check : AlertCircle;
+                  {/* Focus areas */}
+                  <Card>
+                    <CardHead
+                      title={
+                        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: T.red, display: "inline-block" }}/>
+                          Focus areas
+                        </span>
+                      }
+                      sub="Where extra reps will pay off"
+                      right={
+                        <span style={{
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                          padding: "5px 11px", borderRadius: 999,
+                          fontSize: 11.5, fontWeight: 700,
+                          background: "oklch(94% 0.06 25)", color: "oklch(40% 0.18 25)",
+                        }}>
+                          Feedback Agent
+                        </span>
+                      }
+                    />
+                    {focusAreas.length > 0 ? (
+                      focusAreas.slice(0, 3).map((f, i) => (
+                        <InsightRow key={i} text={f} meta="Feedback Agent" tone="no"/>
+                      ))
+                    ) : (
+                      <>
+                        <InsightRow text={<>Spend extra reps on <strong>tone control</strong> — formal vs casual.</>} meta="Tone & Register · 4.2" tone="no"/>
+                        <InsightRow text={<>Fluency dips when sentences exceed <strong>12 words</strong>.</>} meta="Fluency · pause patterns" tone="no"/>
+                        <InsightRow text={<>Stress patterns drop on multi-syllable verbs.</>} meta="Pronunciation · 4.0" tone="no"/>
+                      </>
+                    )}
+                  </Card>
 
-  return (
-    <section
-      style={{
-        flex: 1,
-        background: "rgba(255,255,255,0.84)",
-        border: "1px solid rgba(255,255,255,0.9)",
-        borderRadius: 8,
-        padding: 20,
-        boxShadow:
-          "0 4px 32px rgba(80,110,180,0.1), 0 1.5px 6px rgba(80,120,200,0.05)",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-        <span style={{ width: 9, height: 9, borderRadius: "50%", background: color }} />
-        <h2
-          style={{
-            margin: 0,
-            color: "oklch(15% 0.09 245)",
-            fontSize: 17,
-            fontWeight: 800,
-            letterSpacing: 0,
-          }}
-        >
-          {title}
-        </h2>
-      </div>
-      <span
-        style={{
-          display: "inline-flex",
-          marginTop: 12,
-          borderRadius: 999,
-          background: soft,
-          color,
-          fontSize: 11,
-          fontWeight: 700,
-          padding: "5px 9px",
-        }}
-      >
-        {pill}
-      </span>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 16 }}>
-        {(items.length ? items : ["Complete tasks to generate personalized feedback."]).slice(0, 3).map((item) => (
-          <div key={item} style={{ display: "flex", gap: 10, color: "oklch(32% 0.06 240)", fontSize: 13, lineHeight: 1.55 }}>
-            <Icon size={16} color={color} style={{ marginTop: 2, flexShrink: 0 }} />
-            <span>{item}</span>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
+                  {/* Goal progress */}
+                  <GoalCard/>
 
-function RecentActivities({ activities }: { activities: RecentActivity[] }) {
-  return (
-    <section
-      style={{
-        background: "rgba(255,255,255,0.84)",
-        border: "1px solid rgba(255,255,255,0.9)",
-        borderRadius: 8,
-        padding: 20,
-        boxShadow:
-          "0 4px 32px rgba(80,110,180,0.1), 0 1.5px 6px rgba(80,120,200,0.05)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 14,
-          marginBottom: 16,
-        }}
-      >
-        <h2
-          style={{
-            margin: 0,
-            color: "oklch(15% 0.09 245)",
-            fontSize: 20,
-            fontWeight: 800,
-            letterSpacing: 0,
-          }}
-        >
-          Recent activities
-        </h2>
-        <button
-          type="button"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            border: "1px solid rgba(80,120,200,0.16)",
-            borderRadius: 8,
-            background: "rgba(255,255,255,0.45)",
-            color: "oklch(42% 0.1 240)",
-            cursor: "pointer",
-            fontFamily: "inherit",
-            fontSize: 13,
-            fontWeight: 700,
-            padding: "8px 11px",
-          }}
-        >
-          View all
-          <ArrowUpRight size={15} />
-        </button>
-      </div>
+                  {/* Task difficulty */}
+                  <Card>
+                    <CardHead title="Task difficulty" sub="This week's mix"/>
+                    <Donut/>
+                  </Card>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {activities.length === 0 ? (
-          <div
-            style={{
-              borderRadius: 8,
-              background: "oklch(94% 0.025 245)",
-              border: "1px solid rgba(80,120,200,0.1)",
-              padding: 18,
-              color: "oklch(45% 0.07 240)",
-              fontSize: 14,
-            }}
-          >
-            Completed tasks will appear here after the Evaluator Agent scores your work.
-          </div>
-        ) : (
-          activities.slice(0, 3).map((activity) => <ActivityCard key={activity.id} activity={activity} />)
-        )}
-      </div>
-    </section>
-  );
-}
-
-function ActivityCard({ activity }: { activity: RecentActivity }) {
-  const colors = scoreColor(activity.score);
-
-  return (
-    <article
-      style={{
-        borderRadius: 8,
-        background: "oklch(98% 0.008 245)",
-        border: "1px solid rgba(80,120,200,0.1)",
-        padding: 16,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          gap: 16,
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-            <span
-              style={{
-                borderRadius: 999,
-                background: "oklch(92% 0.035 245)",
-                color: "oklch(42% 0.1 240)",
-                fontSize: 12,
-                fontWeight: 800,
-                padding: "5px 9px",
-              }}
-            >
-              {activityChip(activity.task_type)}
-            </span>
-            <strong style={{ color: "oklch(20% 0.08 245)", fontSize: 14 }}>
-              {activity.task_name}
-            </strong>
-            <span style={{ color: "oklch(55% 0.05 240)", fontSize: 12 }}>
-              {formatTimestamp(activity.completed_at)}
-            </span>
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <span
-            style={{
-              borderRadius: 999,
-              background: colors.bg,
-              color: colors.color,
-              fontSize: 12,
-              fontWeight: 800,
-              padding: "5px 9px",
-            }}
-          >
-            {activity.score.toFixed(1)}
-          </span>
-          <span style={{ color: "oklch(48% 0.06 240)", fontSize: 12 }}>
-            {activity.mistake_count} mistakes
-          </span>
+                  {/* Practice patterns */}
+                  <Card style={{ marginBottom: 0 }}>
+                    <CardHead title="Practice patterns" sub="Last 30 days"/>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      {MOCK_PRACTICE.map(p => (
+                        <div key={p.label} style={{ padding: 12, borderRadius: 12, background: "oklch(97% 0.02 240)" }}>
+                          <div style={{ fontSize: 22, fontWeight: 800, color: T.navy, letterSpacing: "-0.02em", lineHeight: 1 }}>
+                            {p.num}
+                            {p.unit && <span style={{ fontSize: 13, color: T.inkMuted, fontWeight: 700 }}> {p.unit}</span>}
+                          </div>
+                          <div style={{ fontSize: 11.5, color: T.inkMuted, fontWeight: 700, marginTop: 4, letterSpacing: "0.02em" }}>
+                            {p.label}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+              </div>
+            </main>
+          </DashboardLayout>
         </div>
       </div>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
-        {activity.score >= 8 && activity.strength ? (
-          <StrengthRow row={activity.strength} />
-        ) : activity.mistakes.length > 0 ? (
-          activity.mistakes.map((mistake, index) => <MistakeRow key={`${mistake.issue}-${index}`} row={mistake} />)
-        ) : (
-          <MistakeRow
-            row={{
-              label: "Mistake:",
-              issue: "No detailed mistake rows were returned for this task.",
-              correction: "Future Feedback Agent responses will fill this in.",
-            }}
-          />
-        )}
-      </div>
-    </article>
-  );
-}
-
-function MistakeRow({ row }: { row: { label: string; issue: string; correction: string | null } }) {
-  return (
-    <div
-      style={{
-        borderLeft: "3px solid oklch(55% 0.2 28)",
-        borderRadius: 6,
-        background: "oklch(96% 0.026 28)",
-        padding: "10px 12px",
-      }}
-    >
-      <div style={{ color: "oklch(45% 0.18 28)", fontSize: 13, lineHeight: 1.45 }}>
-        <strong>{row.label}</strong> {row.issue}
-      </div>
-      {row.correction && (
-        <div style={{ marginTop: 4, color: "oklch(45% 0.06 240)", fontSize: 12 }}>
-          {row.correction}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StrengthRow({ row }: { row: { label: string; issue: string; correction: string | null } }) {
-  return (
-    <div
-      style={{
-        borderLeft: "3px solid oklch(50% 0.16 150)",
-        borderRadius: 6,
-        background: "oklch(96% 0.04 150)",
-        padding: "10px 12px",
-      }}
-    >
-      <div style={{ display: "flex", gap: 8, color: "oklch(38% 0.15 150)", fontSize: 13, lineHeight: 1.45 }}>
-        <CheckCircle2 size={15} style={{ marginTop: 1, flexShrink: 0 }} />
-        <span>
-          <strong>{row.label}</strong> {row.issue}
-        </span>
-      </div>
-      {row.correction && (
-        <div style={{ marginTop: 4, color: "oklch(45% 0.06 240)", fontSize: 12 }}>
-          {row.correction}
-        </div>
-      )}
-    </div>
+    </>
   );
 }

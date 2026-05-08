@@ -20,57 +20,13 @@ const DEFAULT_SCORES: Record<string, number> = {
   tone: 6.5,
 };
 
-/* ── Inline SVG icons (no emoji, no external libs) ── */
-
-function LockIcon() {
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 24 24"
-      fill="none"
-      style={{ flexShrink: 0 }}
-    >
-      <rect
-        x="5"
-        y="11"
-        width="14"
-        height="10"
-        rx="2"
-        stroke="oklch(45% 0.07 240)"
-        strokeWidth="1.6"
-        fill="none"
-      />
-      <path
-        d="M8 11V7a4 4 0 1 1 8 0v4"
-        stroke="oklch(45% 0.07 240)"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
+function getGreeting(name: string | undefined): string {
+  const hour = new Date().getHours();
+  const first = name?.trim().split(/\s+/)[0] ?? "there";
+  if (hour < 12) return `Good morning, ${first}`;
+  if (hour < 17) return `Good afternoon, ${first}`;
+  return `Good evening, ${first}`;
 }
-
-function FireIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M12 2c.5 3.5-1.5 6-1.5 6s2 1 3 4c1 3-1 5.5-3.5 6.5C8 19.5 6.5 17 7 14c.5-3 2-4.5 2-4.5S8 7 12 2z"
-        fill="oklch(65% 0.2 55)"
-        stroke="oklch(55% 0.2 40)"
-        strokeWidth="1"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-/* ── Locked task card data ── */
-
-const LOCKED_TASKS = [
-  { type: "Writing task", skill: "Grammar & Sentence" },
-  { type: "Listening task", skill: "Comprehension & Tone" },
-] as const;
 
 function getInitialPurchaseToast() {
   if (typeof window === "undefined") return null;
@@ -78,6 +34,278 @@ function getInitialPurchaseToast() {
   if (params.get("purchase") !== "success") return null;
   const plan = params.get("plan") || "selected";
   return `You're now on the ${plan} plan. Let's go! 🎉`;
+}
+
+/* ── Mock data for right-column widgets ── */
+
+function GoalRing({ pct }: { pct: number }) {
+  const r = 28;
+  const c = 2 * Math.PI * r;
+  return (
+    <div style={{ width: 72, height: 72, position: "relative", flexShrink: 0 }}>
+      <svg width="72" height="72" viewBox="0 0 72 72">
+        <circle
+          cx="36"
+          cy="36"
+          r={r}
+          stroke="rgba(255,255,255,0.25)"
+          strokeWidth="6"
+          fill="none"
+        />
+        <circle
+          cx="36"
+          cy="36"
+          r={r}
+          stroke="white"
+          strokeWidth="6"
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c - (pct / 100) * c}
+          transform="rotate(-90 36 36)"
+          style={{ transition: "stroke-dashoffset 1s" }}
+        />
+      </svg>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <span
+          style={{ fontSize: 20, fontWeight: 800, lineHeight: 1, color: "white" }}
+        >
+          {pct}
+          <span style={{ fontSize: 10, opacity: 0.8 }}>%</span>
+        </span>
+        <span
+          style={{
+            fontSize: 8,
+            opacity: 0.85,
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            color: "white",
+            marginTop: 2,
+          }}
+        >
+          DONE
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ActivityHeatmap() {
+  const [cells] = useState(() =>
+    Array.from({ length: 91 }, () => {
+      const r = Math.random();
+      return r < 0.25 ? 0 : r < 0.5 ? 1 : r < 0.75 ? 2 : r < 0.92 ? 3 : 4;
+    }),
+  );
+
+  function cellColor(lvl: number) {
+    if (lvl === 0) return "oklch(94% 0.02 240)";
+    if (lvl === 1) return "oklch(88% 0.06 240)";
+    if (lvl === 2) return "oklch(78% 0.1 230)";
+    if (lvl === 3) return "oklch(62% 0.14 230)";
+    return "#0070C4";
+  }
+
+  return (
+    <>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(13, 1fr)",
+          gap: 4,
+          marginTop: 10,
+        }}
+      >
+        {cells.map((lvl, i) => (
+          <div
+            key={i}
+            style={{
+              aspectRatio: "1",
+              borderRadius: 4,
+              background: cellColor(lvl),
+            }}
+          />
+        ))}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          marginTop: 12,
+          fontSize: 11,
+          color: "oklch(45% 0.07 240)",
+          fontWeight: 600,
+        }}
+      >
+        <span>Less</span>
+        {[0, 1, 2, 3, 4].map((lvl) => (
+          <div
+            key={lvl}
+            style={{
+              width: 10,
+              height: 10,
+              borderRadius: 3,
+              background: cellColor(lvl),
+            }}
+          />
+        ))}
+        <span>More</span>
+        <span style={{ marginLeft: "auto" }}>Last 13 weeks</span>
+      </div>
+    </>
+  );
+}
+
+const QUICK_ACTIONS = [
+  {
+    label: "Free talk",
+    sub: "5 min · any topic",
+    color: "#d6e8f7",
+    textColor: "#0070C4",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <rect x="6" y="2" width="4" height="7" rx="2" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 13v1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    label: "Read aloud",
+    sub: "Pronunciation",
+    color: "oklch(94% 0.06 290)",
+    textColor: "oklch(45% 0.16 290)",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M3 3h5a2 2 0 0 1 2 2v8a1.5 1.5 0 0 0-1.5-1.5H3V3zM13 3H8a2 2 0 0 0-2 2v8a1.5 1.5 0 0 1 1.5-1.5H13V3z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    label: "Mock interview",
+    sub: "Career",
+    color: "oklch(94% 0.06 60)",
+    textColor: "oklch(45% 0.14 60)",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+        <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+      </svg>
+    ),
+  },
+  {
+    label: "Quick drill",
+    sub: "2-min warmup",
+    color: "oklch(94% 0.06 155)",
+    textColor: "oklch(45% 0.14 155)",
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M9 1L3 9h4l-1 6 6-8H8l1-6z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+] as const;
+
+const YESTERDAY_WINS = [
+  { badge: "+5", badgeColor: "#0070C4", text: "Grammar score climbed from 5.5 → 6.0" },
+  { badge: "★", badgeColor: "oklch(45% 0.16 60)", text: 'Fixed "go" → "went" pattern in 3 sentences' },
+  { badge: "14", badgeColor: "oklch(45% 0.16 290)", text: "New verbs added to your vocabulary deck" },
+] as const;
+
+/* ── Card wrapper ── */
+function Card({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div
+      style={{
+        background: "rgba(255,255,255,0.85)",
+        backdropFilter: "blur(18px)",
+        WebkitBackdropFilter: "blur(18px)",
+        border: "1.5px solid rgba(255,255,255,0.92)",
+        borderRadius: 22,
+        padding: 24,
+        boxShadow: "0 4px 24px rgba(80,110,180,0.1)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CardHead({
+  title,
+  sub,
+  link,
+}: {
+  title: string;
+  sub?: string;
+  link?: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-end",
+        marginBottom: 18,
+      }}
+    >
+      <div>
+        <div
+          style={{
+            fontSize: 17,
+            fontWeight: 800,
+            color: "oklch(20% 0.09 245)",
+            letterSpacing: "-0.01em",
+          }}
+        >
+          {title}
+        </div>
+        {sub && (
+          <div style={{ fontSize: 12.5, color: "oklch(45% 0.07 240)", marginTop: 3 }}>
+            {sub}
+          </div>
+        )}
+      </div>
+      {link && (
+        <button
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: "#0070C4",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            padding: 0,
+            fontFamily: "inherit",
+          }}
+        >
+          {link}{" "}
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
 }
 
 /* ── Page component ── */
@@ -88,13 +316,12 @@ export default function DashboardPage() {
   const { isReady } = useRequireAuth();
   const [toast, setToast] = useState<string | null>(getInitialPurchaseToast);
 
-  // Fetch user info using the token (proves token works)
   const { data: user, isLoading } = useQuery({
     queryKey: ["me"],
     queryFn: authApi.me,
     enabled: isReady,
   });
-  // If diagnosis not done, redirect to diagnosis flow
+
   useEffect(() => {
     if (user && !user.diagnosis_completed) router.replace("/diagnosis");
   }, [user, router]);
@@ -124,8 +351,7 @@ export default function DashboardPage() {
           alignItems: "center",
           justifyContent: "center",
           fontFamily: "'Plus Jakarta Sans', sans-serif",
-          background:
-            "radial-gradient(ellipse 80% 60% at 50% 0%, oklch(86% 0.07 240) 0%, oklch(90% 0.045 245) 50%, oklch(93% 0.025 250) 100%)",
+          background: "oklch(91% 0.04 245)",
         }}
       >
         <link
@@ -140,8 +366,6 @@ export default function DashboardPage() {
   }
 
   const enrollment = user?.enrollment;
-
-  // Use scores from user if available, fallback to demo values
   const userRecord = user as unknown as Record<string, unknown> | undefined;
   const rawScores = userRecord?.skill_scores;
   const scores =
@@ -154,8 +378,7 @@ export default function DashboardPage() {
       style={{
         minHeight: "100vh",
         fontFamily: "'Plus Jakarta Sans', sans-serif",
-        background:
-          "radial-gradient(ellipse 80% 60% at 50% 0%, oklch(86% 0.07 240) 0%, oklch(90% 0.045 245) 50%, oklch(93% 0.025 250) 100%)",
+        background: "oklch(91% 0.04 245)",
         position: "relative",
       }}
     >
@@ -164,7 +387,7 @@ export default function DashboardPage() {
         href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
       />
 
-      {/* Dotted pattern overlay */}
+      {/* Dot grid overlay */}
       <div
         aria-hidden="true"
         style={{
@@ -172,7 +395,7 @@ export default function DashboardPage() {
           inset: 0,
           pointerEvents: "none",
           backgroundImage:
-            "radial-gradient(circle, rgba(90,130,210,0.18) 1px, transparent 1px)",
+            "radial-gradient(circle, rgba(90,130,210,0.13) 1px, transparent 1px)",
           backgroundSize: "22px 22px",
           zIndex: 0,
         }}
@@ -200,34 +423,23 @@ export default function DashboardPage() {
             {toast}
           </div>
         )}
-        <DashboardLayout
-          user={user}
-          onSignOut={handleLogout}
-          mainStyle={{
-            maxWidth: 780,
-            margin: "0 auto",
-            padding: "32px 20px 64px",
-          }}
-        >
-          <div
-            style={{
-              animation: "fadeSlideUp 0.4s ease both",
-            }}
-          >
-            {enrollment ? (
-              <EnrolledView
-                enrollment={enrollment}
-                scores={scores}
-                onViewStats={() => router.push("/stats")}
-              />
-            ) : (
-              <NoEnrollmentView
-                scores={scores}
-                onChoosePlan={() => router.push("/pricing")}
-                onViewStats={() => router.push("/stats")}
-              />
-            )}
-          </div>
+
+        <DashboardLayout user={user} onSignOut={handleLogout}>
+          {enrollment ? (
+            <EnrolledView
+              enrollment={enrollment}
+              scores={scores}
+              onViewStats={() => router.push("/stats")}
+              userName={user?.name}
+            />
+          ) : (
+            <NoEnrollmentView
+              scores={scores}
+              onChoosePlan={() => router.push("/pricing")}
+              onViewStats={() => router.push("/stats")}
+              userName={user?.name}
+            />
+          )}
         </DashboardLayout>
       </div>
     </div>
@@ -235,200 +447,676 @@ export default function DashboardPage() {
 }
 
 /* ════════════════════════════════════════════════════════════════════
-   State A — No enrollment
+   Enrolled view — 2-column layout
+   ════════════════════════════════════════════════════════════════════ */
+
+interface EnrolledViewProps {
+  enrollment: NonNullable<
+    ReturnType<typeof import("@/lib/auth-api").authApi.me> extends Promise<
+      infer U
+    >
+      ? U extends { enrollment: infer E }
+        ? E
+        : never
+      : never
+  >;
+  scores: Record<string, number>;
+  onViewStats: () => void;
+  userName: string | undefined;
+}
+
+function EnrolledView({ enrollment, scores, onViewStats, userName }: EnrolledViewProps) {
+  return (
+    <div
+      style={{
+        maxWidth: 1240,
+        margin: "0 auto",
+        padding: "28px 32px 60px",
+        animation: "fadeSlideUp 0.4s ease both",
+      }}
+    >
+      {/* Page header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-end",
+          marginBottom: 24,
+        }}
+      >
+        <div>
+          <h1
+            style={{
+              fontSize: 28,
+              fontWeight: 800,
+              letterSpacing: "-0.02em",
+              color: "oklch(20% 0.09 245)",
+              lineHeight: 1.15,
+              margin: 0,
+            }}
+          >
+            {getGreeting(userName)} 👋
+          </h1>
+          <p
+            style={{
+              fontSize: 14.5,
+              color: "oklch(45% 0.07 240)",
+              marginTop: 6,
+              marginBottom: 0,
+            }}
+          >
+            Week {enrollment.current_week}, Day {enrollment.current_day_in_week} — keep the momentum going.
+          </p>
+        </div>
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 14px",
+            borderRadius: 12,
+            background: "white",
+            border: "1.5px solid oklch(88% 0.025 240)",
+            fontSize: 13,
+            fontWeight: 600,
+            color: "oklch(20% 0.09 245)",
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ color: "oklch(45% 0.07 240)" }}>Week</span>
+          <span style={{ color: "#0070C4", fontWeight: 800 }}>
+            {enrollment.current_week}
+          </span>
+          <span style={{ color: "oklch(45% 0.07 240)" }}>of</span>
+          <span style={{ fontWeight: 700 }}>{enrollment.course.duration_weeks}</span>
+        </div>
+      </div>
+
+      {/* 2-column grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "2fr 1fr",
+          gap: 22,
+        }}
+      >
+        {/* LEFT COLUMN */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+          <DailyTaskPanel
+            key={`${enrollment.current_week}-${enrollment.current_day_in_week}`}
+            enrollment={enrollment}
+          />
+
+          {/* Skill scores */}
+          <Card>
+            <CardHead
+              title="Your skill scores"
+              sub="Updated after every session · scale 0–10"
+              link="View full stats"
+            />
+            <SkillScorePreview scores={scores} onViewAll={onViewStats} />
+          </Card>
+        </div>
+
+        {/* RIGHT COLUMN */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+          {/* Weekly goal — gradient card */}
+          <div
+            style={{
+              background: "linear-gradient(135deg, #0070C4, oklch(45% 0.2 250))",
+              borderRadius: 22,
+              padding: 22,
+              position: "relative",
+              overflow: "hidden",
+              boxShadow: "0 8px 28px rgba(0,112,196,0.28)",
+            }}
+          >
+            <div
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                top: -40,
+                right: -30,
+                width: 160,
+                height: 160,
+                borderRadius: "50%",
+                background: "rgba(255,255,255,0.1)",
+              }}
+            />
+            <div
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                bottom: -50,
+                left: -30,
+                width: 130,
+                height: 130,
+                borderRadius: "50%",
+                background: "rgba(255,255,255,0.06)",
+              }}
+            />
+            <div
+              style={{
+                fontSize: 12.5,
+                fontWeight: 700,
+                opacity: 0.85,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "white",
+              }}
+            >
+              Weekly goal
+            </div>
+            <div
+              style={{
+                fontSize: 20,
+                fontWeight: 800,
+                letterSpacing: "-0.02em",
+                margin: "8px 0 14px",
+                lineHeight: 1.2,
+                position: "relative",
+                zIndex: 1,
+                color: "white",
+              }}
+            >
+              Reach {enrollment.course.target_level} by Friday
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                position: "relative",
+                zIndex: 1,
+              }}
+            >
+              <GoalRing pct={42} />
+              <div style={{ fontSize: 13, lineHeight: 1.5, color: "white" }}>
+                <div>
+                  <strong style={{ fontSize: 16, fontWeight: 800 }}>3</strong> of 7 sessions
+                </div>
+                <div style={{ opacity: 0.85 }}>4 more this week</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Activity heatmap */}
+          <Card>
+            <div style={{ marginBottom: 6 }}>
+              <div
+                style={{
+                  fontSize: 17,
+                  fontWeight: 800,
+                  color: "oklch(20% 0.09 245)",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                Activity
+              </div>
+              <div style={{ fontSize: 12.5, color: "oklch(45% 0.07 240)", marginTop: 3 }}>
+                Sessions per day
+              </div>
+            </div>
+            <ActivityHeatmap />
+          </Card>
+
+          {/* Quick actions */}
+          <Card>
+            <div
+              style={{
+                fontSize: 17,
+                fontWeight: 800,
+                color: "oklch(20% 0.09 245)",
+                letterSpacing: "-0.01em",
+                marginBottom: 14,
+              }}
+            >
+              Practice anything
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+              }}
+            >
+              {QUICK_ACTIONS.map((action) => (
+                <button
+                  key={action.label}
+                  style={{
+                    padding: "14px 12px",
+                    borderRadius: 14,
+                    background: "white",
+                    border: "1.5px solid oklch(88% 0.025 240)",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = "#0070C4";
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,112,196,0.12)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = "oklch(88% 0.025 240)";
+                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 9,
+                      background: action.color,
+                      color: action.textColor,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginBottom: 8,
+                    }}
+                  >
+                    {action.icon}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: "oklch(20% 0.09 245)",
+                    }}
+                  >
+                    {action.label}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "oklch(45% 0.07 240)",
+                      marginTop: 2,
+                    }}
+                  >
+                    {action.sub}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          {/* Yesterday's wins */}
+          <Card>
+            <div
+              style={{
+                fontSize: 17,
+                fontWeight: 800,
+                color: "oklch(20% 0.09 245)",
+                letterSpacing: "-0.01em",
+                marginBottom: 12,
+              }}
+            >
+              Yesterday&apos;s wins
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {YESTERDAY_WINS.map((item, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "9px 10px",
+                    borderRadius: 10,
+                    background: "oklch(97% 0.02 240)",
+                    fontSize: 12.5,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: 8,
+                      background: "white",
+                      border: "1px solid oklch(88% 0.025 240)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                      fontWeight: 800,
+                      fontSize: 11,
+                      color: item.badgeColor,
+                    }}
+                  >
+                    {item.badge}
+                  </div>
+                  <span
+                    style={{
+                      color: "oklch(20% 0.09 245)",
+                      fontWeight: 600,
+                      flex: 1,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {item.text}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   No enrollment view
    ════════════════════════════════════════════════════════════════════ */
 
 interface NoEnrollmentViewProps {
   scores: Record<string, number>;
   onChoosePlan: () => void;
   onViewStats: () => void;
+  userName: string | undefined;
 }
 
-function NoEnrollmentView({
-  scores,
-  onChoosePlan,
-  onViewStats,
-}: NoEnrollmentViewProps) {
+function NoEnrollmentView({ scores, onChoosePlan, onViewStats, userName }: NoEnrollmentViewProps) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-      {/* ── Section 1: Plan banner ── */}
-      <section
-        style={{
-          background: "rgba(255,255,255,0.85)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          borderRadius: 16,
-          border: "1px solid rgba(255,255,255,0.9)",
-          borderLeft: "4px solid oklch(52% 0.18 240)",
-          padding: "28px 28px 24px",
-          boxShadow:
-            "0 4px 32px rgba(80,110,180,0.1), 0 1.5px 6px rgba(80,120,200,0.05)",
-          animation: "fadeSlideUp 0.4s ease 0.2s both",
-        }}
-      >
-        {/* Badge */}
-        <span
+    <div
+      style={{
+        maxWidth: 1240,
+        margin: "0 auto",
+        padding: "28px 32px 60px",
+        animation: "fadeSlideUp 0.4s ease both",
+      }}
+    >
+      {/* Page header */}
+      <div style={{ marginBottom: 24 }}>
+        <h1
           style={{
-            display: "inline-block",
-            fontSize: 12,
-            fontWeight: 700,
-            color: "oklch(45% 0.16 70)",
-            background: "oklch(92% 0.06 80)",
-            padding: "3px 10px",
-            borderRadius: 20,
-            marginBottom: 12,
-            letterSpacing: "0.3px",
-          }}
-        >
-          Next step
-        </span>
-
-        <h2
-          style={{
-            fontSize: 22,
+            fontSize: 28,
             fontWeight: 800,
-            color: "oklch(15% 0.09 245)",
-            margin: "0 0 6px",
             letterSpacing: "-0.02em",
+            color: "oklch(20% 0.09 245)",
+            lineHeight: 1.15,
+            margin: 0,
           }}
         >
-          Choose your learning plan
-        </h2>
+          {getGreeting(userName)} 👋
+        </h1>
         <p
           style={{
-            fontSize: 14,
+            fontSize: 14.5,
             color: "oklch(45% 0.07 240)",
-            margin: "0 0 20px",
-            lineHeight: 1.5,
+            marginTop: 6,
+            marginBottom: 0,
           }}
         >
-          Your diagnosis is complete. Pick a plan to start your personalized
-          tasks.
+          Your diagnosis is complete — choose a plan to unlock your daily tasks.
         </p>
+      </div>
 
-        {/* Plan cards */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, 1fr)",
-            gap: 14,
-          }}
-        >
-          <PlanCard
-            weeks={24}
-            label="Accelerated plan"
-            taskFrequency="5 tasks / week"
-            onClick={onChoosePlan}
-          />
-          <PlanCard
-            weeks={48}
-            label="Steady plan"
-            taskFrequency="3 tasks / week"
-            onClick={onChoosePlan}
-          />
-        </div>
-      </section>
-
-      {/* ── Section 2: Locked tasks ── */}
-      <section>
-        <h3
-          style={{
-            fontSize: 16,
-            fontWeight: 700,
-            color: "oklch(18% 0.09 245)",
-            margin: "0 0 14px",
-          }}
-        >
-          Today&apos;s tasks
-        </h3>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, 1fr)",
-            gap: 14,
-          }}
-        >
-          {LOCKED_TASKS.map((task, i) => (
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "2fr 1fr",
+          gap: 22,
+        }}
+      >
+        {/* Left column */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+          {/* Plan picker card */}
+          <Card>
+            <CardHead title="Choose your learning plan" />
             <div
-              key={i}
               style={{
-                border: "1.5px dashed rgba(80,120,200,0.25)",
-                borderRadius: 14,
-                padding: "22px 20px",
-                opacity: 0.65,
-                animation: "pulse-soft 2.5s ease-in-out infinite",
-                animationDelay: `${i * 0.3}s`,
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
+                display: "grid",
+                gridTemplateColumns: "repeat(2, 1fr)",
+                gap: 14,
               }}
             >
-              <LockIcon />
-              <span
-                style={{
-                  fontSize: 14,
-                  fontWeight: 600,
-                  color: "oklch(45% 0.07 240)",
-                  filter: "blur(0.4px)",
-                }}
-              >
-                {task.type}
-              </span>
-              <span
-                style={{
-                  fontSize: 12,
-                  fontWeight: 500,
-                  color: "oklch(50% 0.05 240)",
-                }}
-              >
-                {task.skill}
-              </span>
+              <PlanCard
+                weeks={24}
+                label="Accelerated plan"
+                taskFrequency="5 tasks / week"
+                onClick={onChoosePlan}
+              />
+              <PlanCard
+                weeks={48}
+                label="Steady plan"
+                taskFrequency="3 tasks / week"
+                onClick={onChoosePlan}
+              />
             </div>
-          ))}
+          </Card>
+
+          {/* Locked tasks preview */}
+          <Card>
+            <CardHead title="Today's tasks" sub="Unlock by enrolling in a plan" />
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[
+                { type: "Speaking task", skill: "Grammar & Fluency" },
+                { type: "Writing task", skill: "Sentence structure" },
+              ].map((task, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 14,
+                    padding: "16px 18px",
+                    borderRadius: 16,
+                    border: "1.5px solid oklch(88% 0.025 240)",
+                    background: "oklch(97% 0.02 240)",
+                    opacity: 0.65,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 12,
+                      background: "oklch(94% 0.02 240)",
+                      color: "oklch(55% 0.04 240)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <rect x="4" y="7" width="8" height="6" rx="1.2" stroke="currentColor" strokeWidth="1.5" />
+                      <path d="M5.8 7V5a2.2 2.2 0 0 1 4.4 0v2" stroke="currentColor" strokeWidth="1.5" />
+                    </svg>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 700,
+                        color: "oklch(45% 0.07 240)",
+                        filter: "blur(0.4px)",
+                      }}
+                    >
+                      {task.type}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: "oklch(55% 0.05 240)" }}>
+                      {task.skill}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "oklch(55% 0.04 240)" }}>
+                    Locked
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {/* Skill scores */}
+          <Card>
+            <CardHead
+              title="Your skill scores"
+              sub="From your diagnosis · scale 0–10"
+              link="View full stats"
+            />
+            <SkillScorePreview scores={scores} onViewAll={onViewStats} />
+          </Card>
         </div>
 
-        <p
-          style={{
-            textAlign: "center",
-            fontSize: 13,
-            color: "oklch(45% 0.07 240)",
-            marginTop: 14,
-          }}
-        >
-          Enroll in a plan to unlock your personalized daily tasks
-        </p>
-      </section>
+        {/* Right column — same mock widgets */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+          {/* Teaser goal card */}
+          <div
+            style={{
+              background: "linear-gradient(135deg, #0070C4, oklch(45% 0.2 250))",
+              borderRadius: 22,
+              padding: 22,
+              position: "relative",
+              overflow: "hidden",
+              boxShadow: "0 8px 28px rgba(0,112,196,0.28)",
+            }}
+          >
+            <div
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                top: -40,
+                right: -30,
+                width: 160,
+                height: 160,
+                borderRadius: "50%",
+                background: "rgba(255,255,255,0.1)",
+              }}
+            />
+            <div
+              style={{
+                fontSize: 12.5,
+                fontWeight: 700,
+                opacity: 0.85,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "white",
+              }}
+            >
+              Weekly goal
+            </div>
+            <div
+              style={{
+                fontSize: 20,
+                fontWeight: 800,
+                letterSpacing: "-0.02em",
+                margin: "8px 0 14px",
+                lineHeight: 1.2,
+                color: "white",
+                opacity: 0.75,
+              }}
+            >
+              Enroll to set your first goal
+            </div>
+            <button
+              onClick={onChoosePlan}
+              style={{
+                padding: "10px 20px",
+                borderRadius: 10,
+                border: "none",
+                background: "rgba(255,255,255,0.2)",
+                color: "white",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Choose a plan →
+            </button>
+          </div>
 
-      {/* ── Section 3: Skill scores ── */}
-      <section
-        style={{
-          background: "rgba(255,255,255,0.85)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          borderRadius: 16,
-          border: "1px solid rgba(255,255,255,0.9)",
-          padding: 24,
-          boxShadow:
-            "0 4px 32px rgba(80,110,180,0.1), 0 1.5px 6px rgba(80,120,200,0.05)",
-        }}
-      >
-        <SkillScorePreview scores={scores} onViewAll={onViewStats} />
-      </section>
+          {/* Quick actions */}
+          <Card>
+            <div
+              style={{
+                fontSize: 17,
+                fontWeight: 800,
+                color: "oklch(20% 0.09 245)",
+                letterSpacing: "-0.01em",
+                marginBottom: 14,
+              }}
+            >
+              Practice anything
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+              }}
+            >
+              {QUICK_ACTIONS.map((action) => (
+                <button
+                  key={action.label}
+                  style={{
+                    padding: "14px 12px",
+                    borderRadius: 14,
+                    background: "white",
+                    border: "1.5px solid oklch(88% 0.025 240)",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = "#0070C4";
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                    e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,112,196,0.12)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = "oklch(88% 0.025 240)";
+                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = "none";
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 9,
+                      background: action.color,
+                      color: action.textColor,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginBottom: 8,
+                    }}
+                  >
+                    {action.icon}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "oklch(20% 0.09 245)" }}>
+                    {action.label}
+                  </div>
+                  <div style={{ fontSize: 11, color: "oklch(45% 0.07 240)", marginTop: 2 }}>
+                    {action.sub}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }
 
 /* ── Plan card ── */
 
-interface PlanCardProps {
+function PlanCard({
+  weeks,
+  label,
+  taskFrequency,
+  onClick,
+}: {
   weeks: number;
   label: string;
   taskFrequency: string;
   onClick: () => void;
-}
-
-function PlanCard({ weeks, label, taskFrequency, onClick }: PlanCardProps) {
+}) {
   return (
     <div
       style={{
@@ -439,13 +1127,12 @@ function PlanCard({ weeks, label, taskFrequency, onClick }: PlanCardProps) {
         display: "flex",
         flexDirection: "column",
         gap: 10,
-        transition: "transform 0.2s ease, box-shadow 0.2s ease",
         cursor: "pointer",
+        transition: "transform 0.2s ease, box-shadow 0.2s ease",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-3px)";
-        e.currentTarget.style.boxShadow =
-          "0 8px 28px rgba(80,130,220,0.14), 0 2px 8px rgba(80,120,200,0.08)";
+        e.currentTarget.style.boxShadow = "0 8px 28px rgba(80,130,220,0.14)";
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = "translateY(0)";
@@ -462,13 +1149,7 @@ function PlanCard({ weeks, label, taskFrequency, onClick }: PlanCardProps) {
       >
         {weeks} weeks
       </span>
-      <span
-        style={{
-          fontSize: 14,
-          fontWeight: 600,
-          color: "oklch(40% 0.07 240)",
-        }}
-      >
+      <span style={{ fontSize: 14, fontWeight: 600, color: "oklch(40% 0.07 240)" }}>
         {label}
       </span>
       <span
@@ -476,7 +1157,7 @@ function PlanCard({ weeks, label, taskFrequency, onClick }: PlanCardProps) {
           display: "inline-block",
           fontSize: 12,
           fontWeight: 600,
-          color: "oklch(52% 0.18 240)",
+          color: "#0070C4",
           background: "oklch(95% 0.02 240)",
           padding: "3px 10px",
           borderRadius: 20,
@@ -496,137 +1177,22 @@ function PlanCard({ weeks, label, taskFrequency, onClick }: PlanCardProps) {
           padding: "10px 0",
           borderRadius: 10,
           border: "none",
-          background: "oklch(52% 0.18 240)",
+          background: "#0070C4",
           color: "white",
           fontSize: 13,
           fontWeight: 700,
           cursor: "pointer",
-          transition:
-            "background 0.15s ease, transform 0.1s ease",
+          fontFamily: "inherit",
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = "oklch(46% 0.18 240)";
+          e.currentTarget.style.background = "#00599e";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = "oklch(52% 0.18 240)";
-        }}
-        onMouseDown={(e) => {
-          e.currentTarget.style.transform = "scale(0.97)";
-        }}
-        onMouseUp={(e) => {
-          e.currentTarget.style.transform = "scale(1)";
+          e.currentTarget.style.background = "#0070C4";
         }}
       >
         Choose this plan
       </button>
-    </div>
-  );
-}
-
-/* ════════════════════════════════════════════════════════════════════
-   State B — Enrolled
-   ════════════════════════════════════════════════════════════════════ */
-
-interface EnrolledViewProps {
-  enrollment: NonNullable<
-    ReturnType<typeof import("@/lib/auth-api").authApi.me> extends Promise<
-      infer U
-    >
-      ? U extends { enrollment: infer E }
-        ? E
-        : never
-      : never
-  >;
-  scores: Record<string, number>;
-  onViewStats: () => void;
-}
-
-function EnrolledView({
-  enrollment,
-  scores,
-  onViewStats,
-}: EnrolledViewProps) {
-  const streakDays =
-    (enrollment.current_week - 1) * 7 + enrollment.current_day_in_week;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
-      {/* ── Top row: streak + plan info ── */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 10,
-        }}
-      >
-        {/* Streak chip */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            background: "oklch(92% 0.06 80)",
-            padding: "6px 14px",
-            borderRadius: 20,
-          }}
-        >
-          <span
-            style={{
-              display: "inline-block",
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: "oklch(65% 0.2 55)",
-              animation: "pulse-soft 2s ease-in-out infinite",
-            }}
-          />
-          <FireIcon />
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: "oklch(40% 0.15 60)",
-            }}
-          >
-            Day {streakDays} streak
-          </span>
-        </div>
-
-        {/* Week / plan label */}
-        <span
-          style={{
-            fontSize: 13,
-            fontWeight: 500,
-            color: "oklch(45% 0.07 240)",
-          }}
-        >
-          Week {enrollment.current_week} &middot;{" "}
-          {enrollment.course.duration_weeks}-week plan
-        </span>
-      </div>
-
-      <DailyTaskPanel
-        key={`${enrollment.current_week}-${enrollment.current_day_in_week}`}
-        enrollment={enrollment}
-      />
-
-      {/* ── Skill scores ── */}
-      <section
-        style={{
-          background: "rgba(255,255,255,0.85)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          borderRadius: 16,
-          border: "1px solid rgba(255,255,255,0.9)",
-          padding: 24,
-          boxShadow:
-            "0 4px 32px rgba(80,110,180,0.1), 0 1.5px 6px rgba(80,120,200,0.05)",
-        }}
-      >
-        <SkillScorePreview scores={scores} onViewAll={onViewStats} />
-      </section>
     </div>
   );
 }
