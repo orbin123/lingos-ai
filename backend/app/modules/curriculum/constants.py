@@ -14,19 +14,16 @@ from app.modules.tasks.models import TaskType
 
 # Day-of-week → which sub-skill the user practices that day.
 # Day 1 = first day of the user's week (NOT calendar Monday).
-# Days 6 & 7 are revision of the most-practiced skills.
-#
-# Pronunciation and fluency are excluded from MVP because they require
-# audio infrastructure (Whisper STT, ElevenLabs TTS) that does not exist yet.
-# When audio lands, we'll re-balance this schedule.
+# This is a fixed seven-day sub-skill loop. Activity choice rotates by week,
+# but the sub-skill assigned to each day does not move.
 WEEK_SCHEDULE: dict[int, str] = {
     1: "grammar",
     2: "vocabulary",
-    3: "expression",
-    4: "comprehension",
-    5: "tone",
-    6: "grammar",       # revision day
-    7: "vocabulary",    # revision day
+    3: "pronunciation",
+    4: "fluency",
+    5: "expression",
+    6: "comprehension",
+    7: "tone",
 }
 
 
@@ -37,8 +34,8 @@ WEEK_SCHEDULE: dict[int, str] = {
 SKILL_ACTIVITIES: dict[str, list[TaskType]] = {
     "grammar":       [TaskType.READING, TaskType.WRITING, TaskType.SPEAKING],
     "vocabulary":    [TaskType.READING, TaskType.WRITING, TaskType.SPEAKING],
-    "pronunciation": [TaskType.SPEAKING, TaskType.LISTENING],   # MVP: not used
-    "fluency":       [TaskType.SPEAKING, TaskType.LISTENING],   # MVP: not used
+    "pronunciation": [TaskType.SPEAKING, TaskType.LISTENING],
+    "fluency":       [TaskType.SPEAKING, TaskType.LISTENING],
     "expression":    [TaskType.READING, TaskType.WRITING, TaskType.SPEAKING],
     "comprehension": [TaskType.READING, TaskType.LISTENING],
     "tone":          [TaskType.READING, TaskType.WRITING, TaskType.SPEAKING],

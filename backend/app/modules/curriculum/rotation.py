@@ -12,7 +12,7 @@ Inputs:
   - week_number          : 1..duration_weeks
   - day_in_week          : 1..7
   - skill_name_to_id     : {'grammar': 1, 'vocabulary': 2, ...}
-  - history_by_skill_id  : {skill_id: last_activity_type or None}
+  - history_by_skill_id  : legacy input, not used by the weekly rotation
 
 Output:
   - Plan(skill_id, activity_type, target_difficulty)
@@ -36,6 +36,8 @@ class Plan:
     skill_name: str          # convenience for logging / future LLM prompts
     activity_type: TaskType
     target_difficulty: int
+    activity_cycle_length: int
+    week_number: int
 
     def __repr__(self) -> str:
         return (
@@ -50,9 +52,8 @@ class RotationEngine:
 
     Decision flow:
       1. Pick the skill — fixed by day_in_week (WEEK_SCHEDULE).
-      2. Pick the activity — round-robin from SKILL_ACTIVITIES[skill].
-         Look at history.last_activity_type and pick the NEXT one in the list.
-         If no history yet → start with the first allowed activity.
+      2. Pick the activity — weekly round-robin from SKILL_ACTIVITIES[skill].
+         Week 1 uses the first allowed activity, week 2 the next, and so on.
       3. Pick the difficulty — from the week-number curve.
     """
 
@@ -71,8 +72,9 @@ class RotationEngine:
             week_number: 1-based, 1..duration_weeks of the course.
             day_in_week: 1..7. Day 1 is the first day of the week.
             skill_name_to_id: maps skill names ('grammar') to DB ids.
-            history_by_skill_id: per-skill last activity. Missing skill = no
-                history yet for that skill.
+            history_by_skill_id: legacy per-skill activity memory. The weekly
+                rotation does not read it, but services still pass it while
+                existing history rows are kept for analytics/backward data.
             allowed_activity_types: optional user preference filter over the
                 four core activity types.
 
@@ -85,44 +87,28 @@ class RotationEngine:
             raise ValueError(
                 f"day_in_week must be 1..7, got {day_in_week}"
             )
-        skill_name: str | None = None
-        skill_id: int | None = None
-        allowed: list[TaskType] = []
-
-        # Prefer the scheduled skill, but if the learner disabled every
-        # activity that can teach that skill, walk forward through the week
-        # until a compatible skill/activity pair exists.
-        for offset in range(7):
-            candidate_day = ((day_in_week - 1 + offset) % 7) + 1
-            candidate_skill = WEEK_SCHEDULE[candidate_day]
-
-            if candidate_skill not in skill_name_to_id:
-                raise ValueError(
-                    f"Skill {candidate_skill!r} not in DB. Did you run seed_skills?"
-                )
-
-            configured = SKILL_ACTIVITIES.get(candidate_skill, [])
-            if not configured:
-                raise ValueError(
-                    f"No activities configured for skill {candidate_skill!r}"
-                )
-
-            filtered = (
-                [activity for activity in configured if activity in allowed_activity_types]
-                if allowed_activity_types is not None
-                else configured
+        skill_name = WEEK_SCHEDULE[day_in_week]
+        if skill_name not in skill_name_to_id:
+            raise ValueError(
+                f"Skill {skill_name!r} not in DB. Did you run seed_skills?"
             )
-            if filtered:
-                skill_name = candidate_skill
-                skill_id = skill_name_to_id[candidate_skill]
-                allowed = filtered
-                break
 
-        if skill_name is None or skill_id is None or not allowed:
-            raise ValueError("No enabled activities can be matched to this curriculum")
+        skill_id = skill_name_to_id[skill_name]
+        configured = SKILL_ACTIVITIES.get(skill_name, [])
+        if not configured:
+            raise ValueError(f"No activities configured for skill {skill_name!r}")
 
-        last_activity = history_by_skill_id.get(skill_id)
-        activity_type = self._next_activity(allowed, last_activity)
+        allowed = (
+            [activity for activity in configured if activity in allowed_activity_types]
+            if allowed_activity_types is not None
+            else configured
+        )
+        if not allowed:
+            raise ValueError(
+                f"No enabled activities can be matched to scheduled skill {skill_name!r}"
+            )
+
+        activity_type = self._activity_for_week(allowed, week_number)
 
         # ---- 3. Pick the difficulty ----
         target_difficulty = difficulty_for_week(week_number)
@@ -132,22 +118,21 @@ class RotationEngine:
             skill_name=skill_name,
             activity_type=activity_type,
             target_difficulty=target_difficulty,
+            activity_cycle_length=len(allowed),
+            week_number=week_number,
         )
 
     @staticmethod
-    def _next_activity(
+    def _activity_for_week(
         allowed: list[TaskType],
-        last: TaskType | None,
+        week_number: int,
     ) -> TaskType:
-        """Round-robin: return the activity AFTER `last` in `allowed`.
+        """Weekly round-robin through the allowed activities.
 
-        - No history (last is None) → first activity
-        - last not in allowed (e.g. config changed) → first activity
-        - last is the final element → wrap around to first
+        - Week 1 → first activity
+        - Week 2 → second activity
+        - Week N beyond the list length → wrap around
         """
-        if last is None or last not in allowed:
-            return allowed[0]
-        idx = allowed.index(last)
-        next_idx = (idx + 1) % len(allowed)
-        return allowed[next_idx]
+        week_index = max(week_number, 1) - 1
+        return allowed[week_index % len(allowed)]
     

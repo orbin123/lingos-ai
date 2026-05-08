@@ -37,9 +37,10 @@ class WSIncomingMessage(BaseModel):
 class WSOutgoingMessage(BaseModel):
     """Message shape sent FROM the backend back to the frontend."""
 
-    type: str  # "chat_message" | "ui_event" | "error"
+    type: str  # "chat_message" | "chat_stream_*" | "ui_event" | "error"
     role: Optional[str] = None
     content: Optional[str] = None
+    stream_id: Optional[str] = None
     widget: Optional[str] = None
     payload: Optional[dict] = None
     actions: Optional[list[str]] = None

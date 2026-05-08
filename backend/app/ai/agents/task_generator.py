@@ -76,7 +76,8 @@ class TaskGeneratorAgent:
             user_profile: Must include at minimum:
                 - sub_level (int): 1–10
                 - weak_areas (str): comma-separated weak grammar areas
-                - topic (str): context topic, e.g. "workplace"
+                - course_topic (str): the curriculum topic of the day
+                - topic (str): learner-facing context/theme fallback
 
         Returns:
             A dict (the validated Pydantic model dumped to a dict),
@@ -111,8 +112,48 @@ class TaskGeneratorAgent:
             if modifiers is None:
                 modifiers = {}
 
-        # 3. Fill the prompt template with user profile + tier modifiers
-        prompt_vars = {**user_profile, **modifiers}
+        # 3. Fill the prompt template with user profile + tier modifiers.
+        #    Defaults keep older templates/callers working while newer
+        #    templates can use richer course + personalisation context.
+        course_topic = (
+            user_profile.get("course_topic")
+            or user_profile.get("topic_of_day")
+            or user_profile.get("topic")
+            or "today's English topic"
+        )
+        interests = str(user_profile.get("interests") or "").strip()
+        primary_goals = str(user_profile.get("primary_goals") or "").strip()
+        personalisation_context = str(
+            user_profile.get("personalisation_context") or ""
+        ).strip()
+        content_guidance = str(user_profile.get("content_guidance") or "").strip()
+        if not content_guidance:
+            if interests:
+                content_guidance = (
+                    "Use one of the learner's interests as a fresh scenario "
+                    "only when it fits naturally."
+                )
+            else:
+                content_guidance = (
+                    "Use a fresh, everyday scenario appropriate for the course topic."
+                )
+
+        prompt_vars = {
+            **user_profile,
+            "course_topic": course_topic,
+            "topic_of_day": course_topic,
+            "topic": user_profile.get("topic") or course_topic,
+            "interests": interests or "not specified",
+            "primary_goals": primary_goals or "general English improvement",
+            "personalisation_context": personalisation_context or "none",
+            "content_guidance": content_guidance,
+            "avoid_example_reuse_instruction": (
+                "Do not copy any seed/example passage, office story, names, "
+                "setting, or sentence pattern. Keep the schema, but create "
+                "new personalized content."
+            ),
+            **modifiers,
+        }
         try:
             filled_prompt = template.llm_prompt_template.format(**prompt_vars)
         except KeyError as exc:

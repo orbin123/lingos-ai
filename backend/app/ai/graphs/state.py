@@ -28,5 +28,6 @@ class LearningSessionState(TypedDict, total=False):
     user_submission: Optional[dict]
     evaluation: Optional[dict]
     feedback: Optional[Any]
+    learner_profile: dict[str, Any]
     understanding_confirmed: bool
     outgoing_events: list[dict]

@@ -22,6 +22,7 @@ Design notes:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from functools import lru_cache
 from typing import Any, TypeVar
 
@@ -108,6 +109,31 @@ class OpenAILLMClient:
         self._log_response_usage(response)
         # ChatOpenAI returns an AIMessage; .content is the string.
         return str(response.content)
+
+    # ------------------------------------------------------------------
+    # Public — stream_text
+    # ------------------------------------------------------------------
+    async def stream_text(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float | None = None,
+    ) -> AsyncIterator[str]:
+        """Stream a plain text assistant reply chunk-by-chunk."""
+        chat = self._maybe_rebind_temperature(temperature)
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
+
+        try:
+            async for chunk in chat.astream(messages):
+                text = self._chunk_content_to_text(getattr(chunk, "content", ""))
+                if text:
+                    yield text
+        except Exception as exc:
+            raise self._translate_exception(exc) from exc
 
     # ------------------------------------------------------------------
     # Public — generate_structured (the workhorse)
@@ -216,6 +242,22 @@ class OpenAILLMClient:
                 cost_usd=cost,
             )
         )
+
+    @classmethod
+    def _chunk_content_to_text(cls, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text = item.get("text") or item.get("content")
+                    if isinstance(text, str):
+                        parts.append(text)
+            return "".join(parts)
+        return str(content) if content else ""
 
     @staticmethod
     def _translate_exception(exc: Exception) -> LLMError:

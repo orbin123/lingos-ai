@@ -25,6 +25,7 @@ from app.modules.curriculum.repository import (
     UserEnrollmentRepository,
 )
 from app.modules.curriculum.rotation import RotationEngine
+from app.modules.curriculum.topics import CourseTopic, get_course_topic
 from app.modules.skills.repository import SkillRepository, UserSkillScoreRepository
 from app.modules.tasks.models import (
     Task,
@@ -81,11 +82,20 @@ class TaskService:
             )
         return enrollment
 
-    def _build_user_profile(self, user_id: int) -> dict:
+    def _build_user_profile(
+        self,
+        user_id: int,
+        *,
+        enrollment: UserEnrollment | None = None,
+        plan: "RotationEngine.Plan | None" = None,  # noqa: F821
+        week: int | None = None,
+        day: int | None = None,
+    ) -> dict:
         """Assemble the user_profile dict the TaskGeneratorAgent needs.
 
-        Includes sub_level (derived from weakest skill score) and a
-        comma-separated list of weak_areas.
+        Includes sub_level, course topic, profile personalisation fields,
+        and a small content guidance string. Broad weak skill areas are kept
+        for older templates but should not drive grammar concept selection.
         """
         scores = self.score_repo.get_for_user(user_id)
         from app.modules.auth.repository import UserProfileRepository
@@ -96,13 +106,43 @@ class TaskService:
             if profile and profile.personalisation_context
             else ""
         )
+        interests = profile.interests.strip() if profile and profile.interests else ""
+        primary_goals = (
+            profile.primary_goals.strip() if profile and profile.primary_goals else ""
+        )
+        self_assessed_level = (
+            profile.self_assessed_level.value
+            if profile and profile.self_assessed_level
+            else "beginner"
+        )
+        course_topic = self._course_topic_for(
+            enrollment=enrollment,
+            plan=plan,
+            week=week,
+            day=day,
+        )
+        topic_name = course_topic.topic_name if course_topic else (
+            plan.skill_name if plan else "today's English topic"
+        )
+        topic_sub_level = course_topic.sub_level if course_topic else None
+        content_guidance = self._content_guidance(
+            interests=interests,
+            primary_goals=primary_goals,
+            course_topic=topic_name,
+        )
         if not scores:
             # No diagnosis yet — return safe defaults
             return {
-                "sub_level": 3,
+                "sub_level": topic_sub_level or 3,
                 "weak_areas": "general grammar, basic vocabulary",
-                "topic": "workplace",
+                "topic": topic_name,
+                "course_topic": topic_name,
+                "topic_id": course_topic.topic_id if course_topic else "",
+                "interests": interests,
+                "primary_goals": primary_goals,
+                "self_assessed_level": self_assessed_level,
                 "personalisation_context": personalisation_context,
+                "content_guidance": content_guidance,
             }
 
         # Sort ascending so weakest come first
@@ -120,11 +160,57 @@ class TaskService:
         weak_areas = ", ".join(weak_area_names) if weak_area_names else "general grammar"
 
         return {
-            "sub_level": sub_level,
+            "sub_level": topic_sub_level or sub_level,
             "weak_areas": weak_areas,
-            "topic": "workplace",  # hardcoded for MVP
+            "topic": topic_name,
+            "course_topic": topic_name,
+            "topic_id": course_topic.topic_id if course_topic else "",
+            "interests": interests,
+            "primary_goals": primary_goals,
+            "self_assessed_level": self_assessed_level,
             "personalisation_context": personalisation_context,
+            "content_guidance": content_guidance,
         }
+
+    @staticmethod
+    def _course_topic_for(
+        *,
+        enrollment: UserEnrollment | None,
+        plan: "RotationEngine.Plan | None" = None,  # noqa: F821
+        week: int | None = None,
+        day: int | None = None,
+    ) -> CourseTopic | None:
+        if enrollment is None or enrollment.course is None:
+            return None
+        topic = get_course_topic(
+            duration_weeks=enrollment.course.duration_weeks,
+            week=week or enrollment.current_week,
+            day=day or enrollment.current_day_in_week,
+        )
+        if topic is None or plan is None:
+            return topic
+        return topic if topic.sub_skill == plan.skill_name else topic
+
+    @staticmethod
+    def _content_guidance(
+        *,
+        interests: str,
+        primary_goals: str,
+        course_topic: str,
+    ) -> str:
+        parts = [
+            f"Keep the grammar concept anchored on '{course_topic}'.",
+        ]
+        if interests:
+            parts.append(
+                f"Use one learner interest as the surface context when natural: {interests}."
+            )
+        if primary_goals:
+            parts.append(f"Prefer situations that support this goal: {primary_goals}.")
+        parts.append(
+            "Avoid generic office content unless the learner profile clearly points there."
+        )
+        return " ".join(parts)
 
     @staticmethod
     def _enabled_activity_types(enrollment: UserEnrollment) -> set[TaskType]:
@@ -148,6 +234,7 @@ class TaskService:
         enrollment: UserEnrollment,
         user_profile: dict,
         skill_name_to_id: dict[str, int],
+        sequence_index: int = 0,
     ) -> UserTask | None:
         """Attempt to generate a task via the LLM.
 
@@ -189,16 +276,16 @@ class TaskService:
             )
             return None
 
-        # Pick the first template that supports the user's sub_level
+        # Pick one concrete template format for this weekly slot. Example:
+        # grammar+write has multiple formats, so each time the weekly
+        # activity cycle lands on write, we move to the next write format.
         sub_level = user_profile.get("sub_level", 5)
-        template = None
-        for tpl in templates:
-            lo, hi = tpl.difficulty_range
-            if lo <= sub_level <= hi:
-                template = tpl
-                break
-        if template is None:
-            template = templates[0]  # fallback to first template
+        template = self._select_template_for_plan(
+            templates=templates,
+            plan=plan,
+            sub_level=sub_level,
+            sequence_index=sequence_index,
+        )
 
         logger.info(
             "Attempting LLM generation: skill=%s activity=%s template=%s user_profile=%s",
@@ -274,6 +361,94 @@ class TaskService:
         )
         return assignment
 
+    @staticmethod
+    def _select_template_for_plan(
+        *,
+        templates: list,
+        plan: "RotationEngine.Plan",  # noqa: F821
+        sub_level: int,
+        sequence_index: int = 0,
+    ):
+        """Choose the concrete activity format for this weekly plan.
+
+        The rotation engine chooses the core activity (read/write/speak/listen).
+        This helper rotates through the available template formats for that
+        core activity on each repeat of that activity.
+        """
+        supported = [
+            tpl
+            for tpl in templates
+            if tpl.difficulty_range[0] <= sub_level <= tpl.difficulty_range[1]
+        ]
+        candidates = supported or templates
+        activity_cycle_length = max(plan.activity_cycle_length, 1)
+        occurrence_index = (max(plan.week_number, 1) - 1) // activity_cycle_length
+        template_index = occurrence_index + max(sequence_index, 0)
+        return candidates[template_index % len(candidates)]
+
+    @staticmethod
+    def _template_order_for_plan(
+        *,
+        plan: "RotationEngine.Plan",  # noqa: F821
+        sub_level: int,
+    ) -> list[str]:
+        """Return generated task_type order for an already-decided plan."""
+        from app.tasks.schemas.base import SubSkill
+
+        skill_name_to_subskill = {
+            "grammar": SubSkill.GRAMMAR,
+            "vocabulary": SubSkill.VOCABULARY,
+            "pronunciation": SubSkill.PRONUNCIATION,
+            "fluency": SubSkill.FLUENCY,
+            "expression": SubSkill.THOUGHT_ORGANIZATION,
+            "comprehension": SubSkill.LISTENING,
+            "tone": SubSkill.TONE,
+        }
+        sub_skill = skill_name_to_subskill.get(plan.skill_name)
+        schema_activity = _TASK_TYPE_TO_ACTIVITY.get(plan.activity_type.value)
+        if sub_skill is None or schema_activity is None:
+            return []
+
+        templates = get_templates_for(sub_skill, schema_activity)
+        if not templates:
+            return []
+
+        supported = [
+            tpl
+            for tpl in templates
+            if tpl.difficulty_range[0] <= sub_level <= tpl.difficulty_range[1]
+        ]
+        candidates = supported or templates
+        activity_cycle_length = max(plan.activity_cycle_length, 1)
+        occurrence_index = (max(plan.week_number, 1) - 1) // activity_cycle_length
+        rotated = candidates[occurrence_index:] + candidates[:occurrence_index]
+        return [tpl.task_type for tpl in rotated]
+
+    @staticmethod
+    def _sort_day_bundle_for_plan(
+        *,
+        bundle: list[UserTask],
+        plan: "RotationEngine.Plan",  # noqa: F821
+        sub_level: int,
+    ) -> list[UserTask]:
+        """Keep today's list stable and aligned with the selected plan."""
+        template_order = TaskService._template_order_for_plan(
+            plan=plan,
+            sub_level=sub_level,
+        )
+        priority = {task_type: index for index, task_type in enumerate(template_order)}
+        fallback_priority = len(priority)
+
+        def sort_key(user_task: UserTask) -> tuple[int, datetime, int]:
+            task_type = user_task.task.task_type.value
+            return (
+                priority.get(task_type, fallback_priority),
+                user_task.created_at,
+                user_task.id,
+            )
+
+        return sorted(bundle, key=sort_key)
+
     def _create_one_task(
         self,
         *,
@@ -281,6 +456,7 @@ class TaskService:
         enrollment: UserEnrollment,
         skill_name_to_id: dict[str, int],
         history_by_skill_id: dict[int, str | None],
+        sequence_index: int = 0,
     ) -> UserTask:
         """Run the rotation engine once, try LLM generation first, then
         fall back to the seeded task pool. Does NOT commit."""
@@ -293,13 +469,18 @@ class TaskService:
         )
 
         # --- Try LLM generation first ---
-        user_profile = self._build_user_profile(user_id)
+        user_profile = self._build_user_profile(
+            user_id,
+            enrollment=enrollment,
+            plan=plan,
+        )
         assignment = self._try_generate_task(
             user_id=user_id,
             plan=plan,
             enrollment=enrollment,
             user_profile=user_profile,
             skill_name_to_id=skill_name_to_id,
+            sequence_index=sequence_index,
         )
         if assignment is not None:
             # Update rotation memory
@@ -355,9 +536,9 @@ class TaskService:
         enrollment.tasks_per_day tasks, returns them as-is. Otherwise creates
         more until the bundle is full.
 
-        Each new task in the bundle is created via the rotation engine,
-        so tasks within the same day may have DIFFERENT activities for
-        the same skill (round-robin advances after each assignment).
+        Each new task in the bundle uses the same daily sub-skill/activity
+        plan. When multiple generated templates exist for that slot, they
+        are assigned in template order.
 
         Raises:
             NotEnrolled: user has no enrollment.
@@ -378,24 +559,41 @@ class TaskService:
             day_started_at=enrollment.current_day_started_at,
         )
 
-        needed = enrollment.tasks_per_day - len(existing)
-        if needed <= 0:
-            return existing
-
         # Build lookup maps once
         skill_name_to_id = self.skill_repo.name_to_id_map()
         history_rows = self.history_repo.list_for_enrollment(enrollment.id)
         history_by_skill_id = {
             h.skill_id: h.last_activity_type for h in history_rows
         }
+        plan = self.engine.decide(
+            week_number=enrollment.current_week,
+            day_in_week=enrollment.current_day_in_week,
+            skill_name_to_id=skill_name_to_id,
+            history_by_skill_id=history_by_skill_id,
+            allowed_activity_types=self._enabled_activity_types(enrollment),
+        )
+        user_profile = self._build_user_profile(
+            user_id,
+            enrollment=enrollment,
+            plan=plan,
+        )
+
+        needed = enrollment.tasks_per_day - len(existing)
+        if needed <= 0:
+            return self._sort_day_bundle_for_plan(
+                bundle=existing,
+                plan=plan,
+                sub_level=user_profile.get("sub_level", 5),
+            )
 
         new_tasks: list[UserTask] = []
-        for _ in range(needed):
+        for offset in range(needed):
             assignment = self._create_one_task(
                 user_id=user_id,
                 enrollment=enrollment,
                 skill_name_to_id=skill_name_to_id,
                 history_by_skill_id=history_by_skill_id,
+                sequence_index=len(existing) + offset,
             )
             new_tasks.append(assignment)
 
@@ -416,7 +614,11 @@ class TaskService:
             self.db.refresh(ut)
             self.db.refresh(ut.task)
 
-        return bundle
+        return self._sort_day_bundle_for_plan(
+            bundle=bundle,
+            plan=plan,
+            sub_level=user_profile.get("sub_level", 5),
+        )
 
     def superuser_jump_by_type(
         self,
@@ -437,8 +639,12 @@ class TaskService:
         from app.tasks.schemas import ALL_TEMPLATES
         from app.modules.tasks.models import TaskType as TT
 
-        self._load_enrollment(user_id)
-        user_profile = self._build_user_profile(user_id)
+        enrollment = self._load_enrollment(user_id)
+        try:
+            user_profile = self._build_user_profile(user_id, enrollment=enrollment)
+        except TypeError:
+            # Some focused tests monkeypatch the old one-argument helper.
+            user_profile = self._build_user_profile(user_id)
 
         # Find the first template that matches the requested task_type
         template = next(
@@ -556,14 +762,19 @@ class TaskService:
         # is deterministic for UI testing regardless of prior usage.
         history_by_skill_id: dict[int, None] = {}
 
-        user_profile = self._build_user_profile(user_id)
-
         plan = self.engine.decide(
             week_number=week,
             day_in_week=day_in_week,
             skill_name_to_id=skill_name_to_id,
             history_by_skill_id=history_by_skill_id,
             allowed_activity_types=self._enabled_activity_types(enrollment),
+        )
+        user_profile = self._build_user_profile(
+            user_id,
+            enrollment=enrollment,
+            plan=plan,
+            week=week,
+            day=day_in_week,
         )
 
         assignment = self._try_generate_task(

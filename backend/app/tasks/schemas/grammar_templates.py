@@ -256,18 +256,22 @@ You are an English teacher creating a grammar exercise for a learner.
 
 LEARNER PROFILE
 - Sub-level: {sub_level} (1=A1 beginner, 10=C2 expert)
-- Weak grammar areas: {weak_areas}
-- Topic of interest: {topic}
+- Course topic of the day: {course_topic}
+- Learner interests: {interests}
+- Learner goals: {primary_goals}
+- Personalisation notes: {personalisation_context}
 
 TASK
 Create a fill-in-the-blanks passage following these rules:
 1. Passage length: {min_words}–{max_words} words
 2. Number of blanks: {blank_count}
-3. Each blank tests a SPECIFIC grammar rule
-4. Prioritize the learner's weak areas: {weak_areas}
+3. The passage must teach/practice the course topic of the day: {course_topic}
+4. Each blank tests a SPECIFIC grammar rule connected to the course topic
 5. Provide exactly 4 multiple-choice options per blank (1 correct + 3 plausible distractors)
 6. Include a 1-sentence explanation for each correct answer
 7. Use vocabulary appropriate to {vocab_level}
+8. Personalize the surface story: {content_guidance}
+9. {avoid_example_reuse_instruction}
 
 Return ONLY valid JSON matching the FillInBlanksTask schema. No prose, no markdown fences.
 """,
