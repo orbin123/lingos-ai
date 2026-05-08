@@ -21,3 +21,4 @@ from app.modules.responses.models import (  # noqa: F401
 )
 from app.modules.progress.models import ProgressLog  # noqa: F401
 from app.modules.subscriptions.models import Purchase  # noqa: F401
+from app.modules.learning_session.models import LearningSession  # noqa: F401
