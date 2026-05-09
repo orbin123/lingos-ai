@@ -8,6 +8,28 @@ Usage:
 
 As we add more sub-skills (vocab, pronunciation, etc.), each gets its own
 *_templates.py file. We extend ALL_TEMPLATES + ALL_OUTPUT_MODELS here.
+
+NOTE — TWO TEMPLATE FAMILIES COEXIST
+────────────────────────────────────
+1. Sub-skill specific templates: GRAMMAR_TEMPLATES, VOCABULARY_TEMPLATES, ...
+   ~56 templates, fixed task formats (e.g. voice_conversion, error_spotting).
+   Each lives in its own *_templates.py file.
+
+2. Curriculum-driven templates: FULL_TASK_TEMPLATES (28 total)
+   One template per (sub_skill, activity) pair. Adapts to ANY topic from
+   the curriculum JSON. Lives in full_tasks_templates.py.
+
+Both families register into ALL_TEMPLATES and ALL_OUTPUT_MODELS, so the
+TaskGeneratorAgent works with either kind. Pick the family that fits your
+generation strategy (curriculum-day-driven vs. weakness-driven).
+
+NAMING NOTE: A few class names are intentionally duplicated across the two
+families (e.g. BlankItem, EssaySection, StoryboardScene, RoleplayTurn).
+The two definitions are NOT interchangeable — they belong to different
+output models. To avoid silent overwrites, the curriculum-driven shared
+items are re-exported from this __init__.py with a `Full` prefix
+(e.g. FullBlankItem). The legacy class names continue to point at the
+original sub-skill-specific definitions.
 """
 
 from app.tasks.schemas.base import (
@@ -177,6 +199,66 @@ from app.tasks.schemas.tone_templates import (
 
 
 # ─────────────────────────────────────────────────────────────────────
+# CURRICULUM-DRIVEN TEMPLATES (the 28-template family)
+#
+# Imported with `as` aliases for shared item classes that would otherwise
+# collide with the legacy sub-skill-specific files (BlankItem, EssaySection,
+# StoryboardScene, RoleplayTurn). Original names continue to point at the
+# legacy classes; the curriculum-driven versions are exposed as
+# Full*-prefixed names.
+# ─────────────────────────────────────────────────────────────────────
+from app.tasks.schemas.full_tasks_templates import (
+    # The 8-widget enum + helpers
+    UIWidget,
+    ListenInnerWidget,
+    get_full_template,
+    list_full_templates_by_widget,
+    TEMPLATE_TO_WIDGET,
+    # Curriculum-aware base
+    FullTaskBase,
+    # Shared item classes — aliased to avoid clobbering legacy names
+    MCQItem as FullMCQItem,
+    BlankItem as FullBlankItem,
+    OpenTextItem as FullOpenTextItem,
+    EssaySection as FullEssaySection,
+    StoryboardScene as FullStoryboardScene,
+    RoleplayTurn as FullRoleplayTurn,
+    # 28 task output models
+    GrammarReadTask,
+    GrammarWriteTask,
+    GrammarListenTask,
+    GrammarSpeakTask,
+    VocabularyReadTask,
+    VocabularyWriteTask,
+    VocabularyListenTask,
+    VocabularySpeakTask,
+    PronunciationReadTask,
+    PronunciationWriteTask,
+    PronunciationListenTask,
+    PronunciationSpeakTask,
+    FluencyReadTask,
+    FluencyWriteTask,
+    FluencyListenTask,
+    FluencySpeakTask,
+    ExpressionReadTask,
+    ExpressionWriteTask,
+    ExpressionListenTask,
+    ExpressionSpeakTask,
+    ComprehensionReadTask,
+    ComprehensionWriteTask,
+    ComprehensionListenTask,
+    ComprehensionSpeakTask,
+    ToneReadTask,
+    ToneWriteTask,
+    ToneListenTask,
+    ToneSpeakTask,
+    # Registries
+    FULL_TASK_TEMPLATES,
+    FULL_TASK_OUTPUT_MODELS,
+)
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Aggregate registries — extend these as more sub-skills are added
 # ─────────────────────────────────────────────────────────────────────
 
@@ -189,6 +271,8 @@ ALL_TEMPLATES: list[TaskTemplate] = [
     *THOUGHT_ORG_TEMPLATES,
     *LISTENING_TEMPLATES,
     *TONE_TEMPLATES,
+    # Curriculum-driven (28 templates, one per sub_skill × activity pair)
+    *FULL_TASK_TEMPLATES,
 ]
 
 ALL_OUTPUT_MODELS: dict[str, type[GeneratedTaskBase]] = {
@@ -199,6 +283,10 @@ ALL_OUTPUT_MODELS: dict[str, type[GeneratedTaskBase]] = {
     **THOUGHT_ORG_OUTPUT_MODELS,
     **LISTENING_OUTPUT_MODELS,
     **TONE_OUTPUT_MODELS,
+    # Curriculum-driven output models — model class names are unique
+    # (GrammarReadTask, ExpressionSpeakTask, etc.) so they do NOT collide
+    # with any legacy model-class name.
+    **FULL_TASK_OUTPUT_MODELS,
 }
 
 
@@ -240,11 +328,14 @@ __all__ = [
     "StructurePattern", "ParaphraseStyle", "EssaySectionName",
     "ComprehensionQuestionType", "AudioGenre", "TrueFalseNotGiven",
     "Register", "ToneLabel", "SocialScenario",
+    "UIWidget", "ListenInnerWidget",
     # Base classes
-    "TaskTemplate", "GeneratedTaskBase",
+    "TaskTemplate", "GeneratedTaskBase", "FullTaskBase",
     # Helpers
     "difficulty_tier_for_sublevel",
     "get_templates_for", "get_template_by_id", "get_output_model",
+    "get_full_template", "list_full_templates_by_widget",
+    "TEMPLATE_TO_WIDGET",
     # Registries
     "ALL_TEMPLATES", "ALL_OUTPUT_MODELS",
     "GRAMMAR_TEMPLATES", "GRAMMAR_OUTPUT_MODELS",
@@ -254,6 +345,7 @@ __all__ = [
     "THOUGHT_ORG_TEMPLATES", "THOUGHT_ORG_OUTPUT_MODELS",
     "LISTENING_TEMPLATES", "LISTENING_OUTPUT_MODELS",
     "TONE_TEMPLATES", "TONE_OUTPUT_MODELS",
+    "FULL_TASK_TEMPLATES", "FULL_TASK_OUTPUT_MODELS",
     # Grammar Pydantic models
     "FillInBlanksTask", "BlankItem",
     "ErrorSpottingTask", "ErrorItem",
@@ -316,4 +408,20 @@ __all__ = [
     "RegisterMismatchTask", "DialogueLine",
     "RoleplayScenarioTask", "RoleplayTurn",
     "AssertivenessDrillTask", "AssertivenessChallenge",
+    # Curriculum-driven Pydantic models (28 task classes)
+    "GrammarReadTask", "GrammarWriteTask", "GrammarListenTask", "GrammarSpeakTask",
+    "VocabularyReadTask", "VocabularyWriteTask",
+    "VocabularyListenTask", "VocabularySpeakTask",
+    "PronunciationReadTask", "PronunciationWriteTask",
+    "PronunciationListenTask", "PronunciationSpeakTask",
+    "FluencyReadTask", "FluencyWriteTask",
+    "FluencyListenTask", "FluencySpeakTask",
+    "ExpressionReadTask", "ExpressionWriteTask",
+    "ExpressionListenTask", "ExpressionSpeakTask",
+    "ComprehensionReadTask", "ComprehensionWriteTask",
+    "ComprehensionListenTask", "ComprehensionSpeakTask",
+    "ToneReadTask", "ToneWriteTask", "ToneListenTask", "ToneSpeakTask",
+    # Curriculum-driven shared item models (Full-prefixed to avoid clash)
+    "FullMCQItem", "FullBlankItem", "FullOpenTextItem",
+    "FullEssaySection", "FullStoryboardScene", "FullRoleplayTurn",
 ]
