@@ -59,6 +59,7 @@ async def task_delivery_node(state: LearningSessionState) -> dict[str, Any]:
     """Hand the pre-generated task to the frontend as a UI widget."""
     task_content = state.get("task_content") or {}
     task_type = state.get("task_type") or "fill_in_blanks"
+    widget = task_content.get("widget") or task_type
 
     intro = "Great! Here is your practice task."
 
@@ -66,7 +67,7 @@ async def task_delivery_node(state: LearningSessionState) -> dict[str, Any]:
         {"type": "chat_message", "role": "assistant", "content": intro},
         {
             "type": "ui_event",
-            "widget": task_type,
+            "widget": widget,
             "payload": task_content,
         },
     ]
@@ -88,6 +89,10 @@ async def task_delivery_node(state: LearningSessionState) -> dict[str, Any]:
     }
 
 
+# Task types that require the LLM-based async writing evaluator
+_OPEN_TEXT_TASK_TYPES = frozenset({"curriculum_grammar_open_text"})
+
+
 async def evaluation_node(state: LearningSessionState) -> dict[str, Any]:
     """Score the user's submission and emit a scorecard widget."""
     task_content = state.get("task_content") or {}
@@ -97,11 +102,20 @@ async def evaluation_node(state: LearningSessionState) -> dict[str, Any]:
     topic = state.get("topic", "")
 
     evaluator = EvaluationService()
-    evaluation = evaluator.evaluate(
-        activity_type=task_type,
-        task_content=task_content,
-        user_answers=user_submission,
-    )
+
+    if task_type in _OPEN_TEXT_TASK_TYPES:
+        evaluation = await evaluator.evaluate_open_text_writing(
+            task_content=task_content,
+            user_answers=user_submission,
+            user_level=int(state.get("user_level") or 5),
+            learner_profile=state.get("learner_profile") or {},
+        )
+    else:
+        evaluation = evaluator.evaluate(
+            activity_type=task_type,
+            task_content=task_content,
+            user_answers=user_submission,
+        )
 
     overall_score = int(round(float(evaluation.get("percentage", 0.0))))
     payload = {
@@ -111,6 +125,7 @@ async def evaluation_node(state: LearningSessionState) -> dict[str, Any]:
         "total": evaluation.get("total", 0),
         "correct_count": evaluation.get("correct_count", 0),
         "questions": evaluation.get("questions", {}),
+        "subskill_score": evaluation.get("subskill_score"),  # None for rule-based tasks
     }
 
     outgoing = [
@@ -252,7 +267,7 @@ async def followup_node(state: LearningSessionState) -> dict[str, Any]:
             "messages": new_messages,
         }
 
-    if any(sig in action for sig in question_signals) and not raw_action.strip():
+    if action in question_signals:
         prompt_msg = "Sure — what would you like to know?"
         new_messages = messages + [
             {"role": "ai", "content": prompt_msg, "type": "chat"}
@@ -266,6 +281,8 @@ async def followup_node(state: LearningSessionState) -> dict[str, Any]:
         }
 
     answer = await _answer_question(state, raw_action)
+    if "clarify" not in answer.lower() and "doubt" not in answer.lower():
+        answer = f"{answer.rstrip()} Did that clarify your doubt?"
     new_messages = messages + [
         {"role": "ai", "content": answer, "type": "chat"}
     ]

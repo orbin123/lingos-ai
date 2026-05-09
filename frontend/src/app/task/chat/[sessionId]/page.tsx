@@ -2,23 +2,59 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 
 /* ── Types from backend ───────────────────────────────────────────────── */
 interface BlankItem {
-  blank_id: string;
+  item_id?: string;
+  blank_id?: string;
   sentence_with_blank: string;
   correct_answer: string;
-  options: string[];
-  grammar_rule: string;
+  distractors?: string[];
+  options?: string[];
+  grammar_rule?: string;
   explanation: string;
 }
 
 interface FillInBlanksPayload {
+  task_intro?: string;
+  estimated_time_minutes?: number;
+  widget?: "fill_in_blanks";
+  topic_id?: string;
+  topic_name?: string;
+  sub_skill?: string;
+  sub_level?: number;
+  activity?: string;
+  instructions?: string;
+  grammar_rule_explained?: string;
   passage_title?: string;
-  passage?: string;
-  blanks: BlankItem[];
+  passage?: string | null;
+  blanks?: BlankItem[];
+  items?: BlankItem[];
   total_blanks?: number;
   topic?: string;
+}
+
+interface OpenTextItem {
+  item_id: string;
+  prompt: string;
+  sample_answer: string;
+  answer_hints: string[];
+}
+
+interface OpenTextPayload {
+  task_intro?: string;
+  estimated_time_minutes?: number;
+  widget: "open_text";
+  topic_id?: string;
+  topic_name?: string;
+  sub_skill?: string;
+  sub_level?: number;
+  activity?: string;
+  instructions?: string;
+  grammar_rule_explained?: string;
+  common_mistakes?: string[];
+  items: OpenTextItem[];
 }
 
 interface ScorecardPayload {
@@ -28,6 +64,7 @@ interface ScorecardPayload {
   total: number;
   correct_count: number;
   questions: Record<string, unknown>;
+  subskill_score?: number | null;  // 0-10 for AI-evaluated writing tasks
 }
 
 interface FeedbackError {
@@ -49,10 +86,12 @@ interface FeedbackPayload {
   practice_suggestion: string;
 }
 
+type TaskPayload = FillInBlanksPayload | OpenTextPayload;
+
 type ChatEvent =
   | { kind: "chat"; role: "ai" | "you"; content: string; actions?: string[]; streamId?: string; streaming?: boolean }
   | { kind: "section"; tone: "intro" | "task" | "score" | "feedback"; label: string }
-  | { kind: "task"; payload: FillInBlanksPayload; submitted: boolean; answers: Record<string, string> }
+  | { kind: "task"; payload: TaskPayload; submitted: boolean; answers: Record<string, string> }
   | { kind: "scorecard"; payload: ScorecardPayload }
   | { kind: "feedback"; payload: FeedbackPayload };
 
@@ -346,50 +385,141 @@ function SectionMarker({
   );
 }
 
+function blankId(blank: BlankItem) {
+  return blank.item_id || blank.blank_id || blank.sentence_with_blank;
+}
+
 function PassageWithBlanks({
   passage,
   blanks,
   answers,
+  setAnswers,
+  submitted,
 }: {
   passage: string;
   blanks: BlankItem[];
   answers: Record<string, string>;
+  setAnswers: (next: Record<string, string>) => void;
+  submitted: boolean;
 }) {
-  // Replace each blank's sentence_with_blank "___" with the user's answer.
-  // The passage is a single string; blanks are inline within. We render the
-  // passage as-is but highlight chosen answers as a dictionary lookup chip.
+  const parts = passage.split("___");
+  const hasInlineBlanks = parts.length > 1;
+
+  const inputForBlank = (blank: BlankItem, index: number) => {
+    const id = blankId(blank);
+    const value = answers[id] ?? "";
+    const isCorrect = submitted && value.trim().toLowerCase() === blank.correct_answer.trim().toLowerCase();
+
+    return (
+      <span
+        key={`${id}-${index}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          margin: "0 4px",
+          verticalAlign: "baseline",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: "50%",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: submitted
+              ? isCorrect
+                ? "oklch(55% 0.16 155)"
+                : "oklch(58% 0.2 25)"
+              : "oklch(52% 0.18 240)",
+            color: "white",
+            fontSize: 12,
+            fontWeight: 800,
+            lineHeight: 1,
+            flexShrink: 0,
+          }}
+        >
+          {index + 1}
+        </span>
+        <input
+          aria-label={`Blank ${index + 1}`}
+          disabled={submitted}
+          value={value}
+          onChange={(e) => {
+            if (!submitted) setAnswers({ ...answers, [id]: e.target.value });
+          }}
+          placeholder="answer"
+          style={{
+            width: "clamp(88px, 18vw, 150px)",
+            height: 34,
+            padding: "6px 10px",
+            borderRadius: 9,
+            border: submitted
+              ? isCorrect
+                ? "1.5px solid oklch(60% 0.16 155)"
+                : "1.5px solid oklch(60% 0.18 25)"
+              : "1.5px solid oklch(75% 0.06 240)",
+            background: submitted
+              ? isCorrect
+                ? "oklch(94% 0.07 155)"
+                : "oklch(94% 0.06 25)"
+              : "white",
+            color: "oklch(20% 0.09 245)",
+            fontSize: 14,
+            fontWeight: 700,
+            fontFamily: "inherit",
+            outline: "none",
+            boxShadow: submitted ? "none" : "0 2px 8px rgba(80,110,180,0.08)",
+          }}
+        />
+      </span>
+    );
+  };
+
   return (
     <div style={{
       background: "oklch(96% 0.03 245)",
       borderLeft: "3px solid oklch(52% 0.18 240)",
       borderRadius: 10,
-      padding: "14px 16px",
-      fontSize: 14.5, lineHeight: 1.7,
+      padding: "18px 18px",
+      fontSize: 16, lineHeight: 1.9,
       color: "oklch(20% 0.09 245)",
       marginBottom: 18,
       whiteSpace: "pre-wrap",
     }}>
-      {passage}
-      {blanks.length > 0 && (
-        <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {blanks.map((b, i) => (
-            <span
-              key={b.blank_id}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "3px 8px", borderRadius: 6,
-                background: "white", border: "1px solid oklch(85% 0.025 240)",
-                fontSize: 12.5, fontWeight: 600,
-                color: answers[b.blank_id] ? "oklch(52% 0.18 240)" : "oklch(60% 0.04 240)",
-              }}
-            >
-              <span style={{ fontWeight: 800 }}>{i + 1}.</span>
-              <span style={{ fontStyle: "italic" }}>
-                {answers[b.blank_id] || "___"}
-              </span>
-            </span>
-          ))}
-        </div>
+      {hasInlineBlanks ? (
+        parts.map((part, index) => (
+          <span key={`part-${index}`}>
+            {part}
+            {index < blanks.length ? inputForBlank(blanks[index], index) : null}
+          </span>
+        ))
+      ) : (
+        <>
+          {passage}
+          <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
+            {blanks.map((blank, index) => (
+              <label
+                key={blankId(blank)}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr)",
+                  gap: 6,
+                  fontSize: 13.5,
+                  fontWeight: 700,
+                  color: "oklch(22% 0.07 240)",
+                }}
+              >
+                <span>{index + 1}. {blank.sentence_with_blank}</span>
+                {inputForBlank(blank, index)}
+              </label>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -408,8 +538,8 @@ function TaskCard({
   submitted: boolean;
   onSubmit: () => void;
 }) {
-  const blanks = payload.blanks ?? [];
-  const allAnswered = blanks.every((b) => !!answers[b.blank_id]);
+  const blanks = payload.items ?? payload.blanks ?? [];
+  const allAnswered = blanks.every((b) => !!answers[blankId(b)]);
 
   return (
     <div style={{
@@ -426,72 +556,58 @@ function TaskCard({
         marginBottom: 14, paddingBottom: 12,
         borderBottom: "1px solid oklch(85% 0.025 240)",
       }}>
-        <TaskIcon /> {payload.passage_title || "Fill in the correct word"}
+        <TaskIcon /> {payload.topic_name || payload.passage_title || "Fill in the correct word"}
       </div>
+
+      {(payload.task_intro || payload.instructions) && (
+        <div style={{
+          fontSize: 14, lineHeight: 1.6,
+          color: "oklch(35% 0.07 240)",
+          marginBottom: 14,
+        }}>
+          {payload.task_intro || payload.instructions}
+        </div>
+      )}
 
       <PassageWithBlanks
         passage={payload.passage ?? ""}
         blanks={blanks}
         answers={answers}
+        setAnswers={setAnswers}
+        submitted={submitted}
       />
 
-      {blanks.map((b, idx) => {
-        const sel = answers[b.blank_id];
-        return (
-          <div key={b.blank_id} style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "oklch(18% 0.06 240)", marginBottom: 8, lineHeight: 1.5 }}>
-              <strong>{idx + 1}.</strong> {b.sentence_with_blank}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-              {b.options.map((opt) => {
-                let bg = "white";
-                let border = "1.5px solid oklch(85% 0.025 240)";
-                let color = "oklch(20% 0.09 245)";
-                let textDecoration = "none";
-
-                if (submitted) {
-                  if (opt === b.correct_answer) {
-                    bg = "oklch(94% 0.07 155)";
-                    border = "1.5px solid oklch(60% 0.16 155)";
-                    color = "oklch(28% 0.14 155)";
-                  } else if (opt === sel && opt !== b.correct_answer) {
-                    bg = "oklch(94% 0.06 25)";
-                    border = "1.5px solid oklch(60% 0.18 25)";
-                    color = "oklch(35% 0.16 25)";
-                    textDecoration = "line-through";
-                  }
-                } else if (sel === opt) {
-                  bg = "oklch(52% 0.18 240)";
-                  border = "1.5px solid oklch(52% 0.18 240)";
-                  color = "white";
-                }
-
-                return (
-                  <button
-                    key={opt}
-                    disabled={submitted}
-                    onClick={() => {
-                      if (!submitted) setAnswers({ ...answers, [b.blank_id]: opt });
-                    }}
-                    style={{
-                      padding: "10px 8px", borderRadius: 10,
-                      background: bg, border, color,
-                      fontSize: 13.5, fontWeight: 600,
-                      cursor: submitted ? "default" : "pointer",
-                      transition: "all 0.15s",
-                      textDecoration,
-                      fontFamily: "inherit",
-                      ...(sel === opt && !submitted ? { boxShadow: "0 4px 12px rgba(60,100,200,0.28)" } : {}),
-                    }}
-                  >
-                    {opt}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+      {submitted && (
+        <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
+          {blanks.map((b, idx) => {
+            const id = blankId(b);
+            const answer = answers[id] ?? "";
+            const isCorrect = answer.trim().toLowerCase() === b.correct_answer.trim().toLowerCase();
+            return (
+              <div
+                key={id}
+                style={{
+                  display: "grid",
+                  gap: 4,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  background: "rgba(255,255,255,0.72)",
+                  border: "1px solid oklch(87% 0.025 240)",
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  color: "oklch(45% 0.07 240)",
+                }}
+              >
+                <div style={{ color: "oklch(20% 0.09 245)", fontWeight: 800 }}>
+                  Blank {idx + 1}
+                  {!isCorrect && <span>: correct answer is {b.correct_answer}</span>}
+                </div>
+                <div>{b.explanation}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {!submitted && (
         <button
@@ -511,6 +627,202 @@ function TaskCard({
           }}
         >
           <SparkIcon /> Submit answers
+        </button>
+      )}
+    </div>
+  );
+}
+
+function OpenTextTaskCard({
+  payload,
+  answers,
+  setAnswers,
+  submitted,
+  onSubmit,
+}: {
+  payload: OpenTextPayload;
+  answers: Record<string, string>;
+  setAnswers: (next: Record<string, string>) => void;
+  submitted: boolean;
+  onSubmit: () => void;
+}) {
+  const items = payload.items ?? [];
+  const allFilled = items.every((it) => (answers[it.item_id] ?? "").trim().length >= 5);
+
+  return (
+    <div style={{
+      borderRadius: 22, padding: "22px 24px",
+      background: "rgba(255,255,255,0.82)",
+      backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)",
+      border: "1.5px solid rgba(255,255,255,0.92)",
+      boxShadow: "0 6px 28px rgba(80,110,180,0.12)",
+      marginTop: 4, animation: "fadeIn 0.4s ease both",
+    }}>
+      {/* Header */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        fontSize: 13, fontWeight: 700, color: "oklch(52% 0.18 240)",
+        marginBottom: 14, paddingBottom: 12,
+        borderBottom: "1px solid oklch(85% 0.025 240)",
+      }}>
+        <TaskIcon />
+        {payload.topic_name || "Writing task"}
+        {payload.sub_skill && (
+          <span style={{
+            marginLeft: "auto", fontSize: 11, fontWeight: 600,
+            color: "oklch(45% 0.07 240)", textTransform: "capitalize",
+          }}>
+            {payload.sub_skill} · {payload.activity}
+          </span>
+        )}
+      </div>
+
+      {/* Instructions */}
+      {payload.instructions && (
+        <div style={{ fontSize: 14, lineHeight: 1.6, color: "oklch(35% 0.07 240)", marginBottom: 14 }}>
+          {payload.instructions}
+        </div>
+      )}
+
+      {/* Grammar rule callout — shown before items so learner knows what to practice */}
+      {payload.grammar_rule_explained && (
+        <div style={{
+          background: "oklch(94% 0.06 240)", borderLeft: "3px solid oklch(52% 0.18 240)",
+          borderRadius: 10, padding: "12px 14px", marginBottom: 18,
+          fontSize: 13.5, lineHeight: 1.6, color: "oklch(25% 0.08 245)",
+        }}>
+          <span style={{ fontWeight: 700, color: "oklch(40% 0.14 240)" }}>Rule: </span>
+          {payload.grammar_rule_explained}
+        </div>
+      )}
+
+      {/* Items */}
+      <div style={{ display: "grid", gap: 18, marginBottom: 20 }}>
+        {items.map((item, idx) => {
+          const val = answers[item.item_id] ?? "";
+          const hasContent = val.trim().length >= 5;
+          return (
+            <div key={item.item_id}>
+              {/* Prompt */}
+              <div style={{
+                fontSize: 14, fontWeight: 700, color: "oklch(22% 0.07 240)",
+                marginBottom: 8, lineHeight: 1.5,
+                display: "flex", gap: 8, alignItems: "flex-start",
+              }}>
+                <span style={{
+                  minWidth: 22, height: 22, borderRadius: "50%",
+                  background: "oklch(52% 0.18 240)", color: "white",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 11, fontWeight: 800, flexShrink: 0, marginTop: 1,
+                }}>
+                  {idx + 1}
+                </span>
+                <span>{item.prompt}</span>
+              </div>
+
+              {/* Textarea */}
+              {!submitted && (
+                <textarea
+                  rows={3}
+                  value={val}
+                  onChange={(e) => setAnswers({ ...answers, [item.item_id]: e.target.value })}
+                  placeholder="Write your answer here…"
+                  style={{
+                    width: "100%", resize: "vertical",
+                    padding: "12px 14px", borderRadius: 12,
+                    border: hasContent
+                      ? "1.5px solid oklch(60% 0.14 240)"
+                      : "1.5px solid oklch(78% 0.05 240)",
+                    background: "oklch(97% 0.02 245)", color: "oklch(18% 0.06 240)",
+                    fontSize: 14, lineHeight: 1.6, fontFamily: "inherit",
+                    outline: "none",
+                    boxShadow: "0 2px 8px rgba(80,110,180,0.06)",
+                    transition: "border-color 0.15s",
+                  }}
+                />
+              )}
+
+              {/* Post-submission: show user answer + sample + hints */}
+              {submitted && (
+                <div style={{ display: "grid", gap: 8, marginLeft: 30 }}>
+                  {/* User's answer */}
+                  <div style={{
+                    padding: "10px 12px", borderRadius: 10,
+                    background: "oklch(95% 0.03 245)",
+                    border: "1px solid oklch(84% 0.03 245)",
+                    fontSize: 13.5, color: "oklch(30% 0.07 240)", lineHeight: 1.55,
+                  }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "oklch(50% 0.07 240)", display: "block", marginBottom: 4 }}>YOUR ANSWER</span>
+                    {val || <em style={{ color: "oklch(60% 0.05 240)" }}>No answer</em>}
+                  </div>
+
+                  {/* Sample answer */}
+                  <div style={{
+                    padding: "10px 12px", borderRadius: 10,
+                    background: "oklch(94% 0.07 155)",
+                    border: "1px solid oklch(80% 0.1 155)",
+                    fontSize: 13.5, color: "oklch(22% 0.1 155)", lineHeight: 1.55,
+                  }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "oklch(35% 0.13 155)", display: "block", marginBottom: 4 }}>SAMPLE ANSWER</span>
+                    {item.sample_answer}
+                  </div>
+
+                  {/* Hints (if any) */}
+                  {item.answer_hints && item.answer_hints.length > 0 && (
+                    <div style={{
+                      padding: "8px 12px", borderRadius: 10,
+                      background: "oklch(96% 0.04 60)",
+                      border: "1px solid oklch(84% 0.08 60)",
+                      fontSize: 13, color: "oklch(30% 0.1 60)", lineHeight: 1.55,
+                    }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "oklch(38% 0.12 60)", display: "block", marginBottom: 4 }}>HINTS</span>
+                      <ul style={{ margin: 0, paddingLeft: 16 }}>
+                        {item.answer_hints.map((h, hi) => <li key={hi}>{h}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Common mistakes — shown after submission */}
+      {submitted && payload.common_mistakes && payload.common_mistakes.length > 0 && (
+        <div style={{
+          padding: "12px 14px", borderRadius: 12, marginBottom: 14,
+          background: "oklch(95% 0.05 30)",
+          border: "1px solid oklch(82% 0.1 30)",
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "oklch(38% 0.14 30)", marginBottom: 6, letterSpacing: "0.04em" }}>
+            COMMON MISTAKES TO WATCH FOR
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "oklch(28% 0.1 30)", lineHeight: 1.6 }}>
+            {payload.common_mistakes.map((m, i) => <li key={i}>{m}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {/* Submit button */}
+      {!submitted && (
+        <button
+          disabled={!allFilled}
+          onClick={onSubmit}
+          style={{
+            width: "100%", padding: "14px 0",
+            borderRadius: 14, border: "none",
+            background: "oklch(20% 0.09 245)", color: "white",
+            fontSize: 14.5, fontWeight: 700,
+            boxShadow: "0 6px 20px rgba(20,40,90,0.25)",
+            cursor: allFilled ? "pointer" : "not-allowed",
+            opacity: allFilled ? 1 : 0.5,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            fontFamily: "inherit",
+            transition: "transform 0.15s",
+          }}
+        >
+          <SparkIcon /> Submit writing
         </button>
       )}
     </div>
@@ -573,7 +885,9 @@ function Scorecard({ payload }: { payload: ScorecardPayload }) {
             {payload.skill_name} — {payload.topic}
           </div>
           <div style={{ fontSize: 13, color: "oklch(45% 0.07 240)", marginTop: 3 }}>
-            {payload.correct_count} of {payload.total} correct
+            {payload.subskill_score != null
+              ? `Grammar score: ${payload.subskill_score}/10`
+              : `${payload.correct_count} of ${payload.total} correct`}
           </div>
         </div>
         <ScoreRing pct={pct} />
@@ -581,9 +895,15 @@ function Scorecard({ payload }: { payload: ScorecardPayload }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 16 }}>
         {[
-          { num: `${payload.correct_count}`, lbl: "Correct" },
-          { num: `${payload.total - payload.correct_count}`, lbl: "To review" },
-          { num: `${pct}%`, lbl: "Accuracy" },
+          {
+            num: payload.subskill_score != null ? `${payload.subskill_score}/10` : `${payload.correct_count}`,
+            lbl: payload.subskill_score != null ? "Skill score" : "Correct",
+          },
+          {
+            num: payload.subskill_score != null ? `${payload.correct_count}/${payload.total}` : `${payload.total - payload.correct_count}`,
+            lbl: payload.subskill_score != null ? "Items done" : "To review",
+          },
+          { num: `${pct}%`, lbl: "Score" },
         ].map((s) => (
           <div key={s.lbl} style={{
             background: "white", borderRadius: 12, padding: "12px 14px",
@@ -764,6 +1084,7 @@ function Composer({
 export default function ChatSessionPage() {
   const params = useParams<{ sessionId: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const sessionId = params?.sessionId;
 
   const initialConnectionState = useMemo<
@@ -893,10 +1214,21 @@ export default function ChatSessionPage() {
     if (msg.type === "ui_event") {
       if (msg.widget === "fill_in_blanks") {
         const payload = msg.payload as unknown as FillInBlanksPayload;
-        setSkillName((curr) => curr || payload.topic || "");
+        setSkillName((curr) => curr || payload.topic_name || payload.topic || "");
         setEvents((prev) => [
           ...prev,
           { kind: "section", tone: "task", label: "Fill in the blanks" },
+          { kind: "task", payload, submitted: false, answers: {} },
+        ]);
+        setPhase("practice");
+        return;
+      }
+      if (msg.widget === "open_text") {
+        const payload = msg.payload as unknown as OpenTextPayload;
+        setSkillName((curr) => curr || payload.topic_name || "");
+        setEvents((prev) => [
+          ...prev,
+          { kind: "section", tone: "task", label: "Writing task" },
           { kind: "task", payload, submitted: false, answers: {} },
         ]);
         setPhase("practice");
@@ -1006,6 +1338,8 @@ export default function ChatSessionPage() {
 
   function handleAction(label: string) {
     if (label === "Go to dashboard") {
+      queryClient.invalidateQueries({ queryKey: ["task", "next"] });
+      queryClient.invalidateQueries({ queryKey: ["me"] });
       router.push("/dashboard");
       return;
     }
@@ -1120,10 +1454,22 @@ export default function ChatSessionPage() {
               );
             }
             if (evt.kind === "task") {
+              if (evt.payload.widget === "open_text") {
+                return (
+                  <OpenTextTaskCard
+                    key={i}
+                    payload={evt.payload as OpenTextPayload}
+                    answers={evt.answers}
+                    setAnswers={(next) => setTaskAnswers(i, next)}
+                    submitted={evt.submitted}
+                    onSubmit={() => handleSubmitTask(i)}
+                  />
+                );
+              }
               return (
                 <TaskCard
                   key={i}
-                  payload={evt.payload}
+                  payload={evt.payload as FillInBlanksPayload}
                   answers={evt.answers}
                   setAnswers={(next) => setTaskAnswers(i, next)}
                   submitted={evt.submitted}

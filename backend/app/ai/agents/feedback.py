@@ -86,11 +86,22 @@ YOUR RULES (follow exactly):
    - wrong_error_type: say the learner correctly spotted an error, but
      chose the wrong grammar label.
    - Include correction when the evaluation report provides it.
+8. For open_text writing reports (task_type = curriculum_grammar_open_text):
+   - The evaluation report contains "main_mistakes" (top mistakes across all items)
+     and per-question "mistakes" lists with specific grammar errors.
+   - Create one ErrorExplanation entry per item that has non-empty "mistakes".
+   - question_id: use the item number (e.g. "Item 1", "Item 2").
+   - user_answer: the learner's full written answer for that item.
+   - correct_answer: the sample_answer from that item in the task.
+   - Build why_wrong and rule from the specific mistakes listed.
+   - Acknowledge the subskill_score (if present) in overall_message
+     (e.g. "Grammar score: 7/10").
 
 You will receive:
 - The original task (passage + questions)
 - The user's answers
-- An evaluation report (which answers are right/wrong, error types)
+- An evaluation report (which answers are right/wrong, error types,
+  and for writing tasks: subskill_score, main_mistakes, per-item mistakes)
 
 Return your response in the required JSON schema. Nothing else.
 """

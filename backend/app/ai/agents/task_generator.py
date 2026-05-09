@@ -16,6 +16,7 @@ Public surface (the only thing callers should import):
 from __future__ import annotations
 
 import logging
+import re
 
 from app.ai.llm import LLMError, get_default_llm_client
 from app.ai.llm.exceptions import LLMValidationError
@@ -140,6 +141,7 @@ class TaskGeneratorAgent:
 
         prompt_vars = {
             **user_profile,
+            "tier": tier.value,
             "course_topic": course_topic,
             "topic_of_day": course_topic,
             "topic": user_profile.get("topic") or course_topic,
@@ -223,6 +225,20 @@ class TaskGeneratorAgent:
         modifiers: dict,
     ) -> None:
         """Validate template-owned invariants that are not in static schemas."""
+        if template.template_id == "full_grammar_read_v1":
+            TaskGeneratorAgent._validate_fill_in_blank_passage_contract(
+                content,
+                expected_item_count=modifiers.get("item_count"),
+            )
+            return
+
+        if template.template_id == "grammar_read_fill_blanks_v1":
+            TaskGeneratorAgent._validate_fill_in_blank_passage_contract(
+                content,
+                expected_item_count=modifiers.get("blank_count"),
+            )
+            return
+
         if template.template_id != "grammar_read_error_spotting_v1":
             return
 
@@ -243,6 +259,63 @@ class TaskGeneratorAgent:
             raise LLMValidationError(
                 "ErrorSpottingTask error count mismatch: "
                 f"expected {expected_error_count}, got {actual_error_count}"
+            )
+
+    @staticmethod
+    def _normalize_for_passage_match(text: str) -> str:
+        return " ".join(text.strip().lower().split())
+
+    @staticmethod
+    def _validate_fill_in_blank_passage_contract(
+        content: dict,
+        *,
+        expected_item_count: int | None = None,
+    ) -> None:
+        """Ensure fill-in-blanks is a true typed-blank reading passage."""
+        passage = content.get("passage")
+        if not isinstance(passage, str) or not passage.strip():
+            raise LLMValidationError(
+                "Fill-in-blanks task must include a passage with the blanks inside it"
+            )
+
+        items = content.get("items") or content.get("blanks") or []
+        if not items:
+            raise LLMValidationError("Fill-in-blanks task must include blank items")
+
+        if expected_item_count is not None and len(items) != expected_item_count:
+            raise LLMValidationError(
+                "Fill-in-blanks item count mismatch: "
+                f"expected {expected_item_count}, got {len(items)}"
+            )
+
+        passage_norm = TaskGeneratorAgent._normalize_for_passage_match(passage)
+        passage_blank_count = len(re.findall(r"___", passage))
+        if passage_blank_count != len(items):
+            raise LLMValidationError(
+                "Fill-in-blanks passage blank count mismatch: "
+                f"expected {len(items)}, got {passage_blank_count}"
+            )
+
+        missing: list[str] = []
+        for item in items:
+            if item.get("distractors") or item.get("options"):
+                raise LLMValidationError(
+                    "Fill-in-blanks must be typed answers, "
+                    "not MCQ options or distractors"
+                )
+            sentence = item.get("sentence_with_blank")
+            if not isinstance(sentence, str) or "___" not in sentence:
+                raise LLMValidationError(
+                    "Fill-in-blanks item is missing sentence_with_blank with ___"
+                )
+            sentence_norm = TaskGeneratorAgent._normalize_for_passage_match(sentence)
+            if sentence_norm not in passage_norm:
+                missing.append(str(item.get("item_id") or sentence))
+
+        if missing:
+            raise LLMValidationError(
+                "Fill-in-blanks items must be copied from the passage. "
+                f"Unlinked items: {missing}"
             )
 
 

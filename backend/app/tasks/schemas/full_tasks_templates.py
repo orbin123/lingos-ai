@@ -27,7 +27,7 @@ THE 8 UI WIDGETS (the stable rendering layer)
 Widget                  │ Input              │ Output                  │ AI Tools
 ────────────────────────┼────────────────────┼─────────────────────────┼─────────────────────────
 1. mcq                  │ text prompt        │ 4-option button choice  │ LLM
-2. fill_in_blanks       │ passage with gaps  │ MCQ or typed blanks     │ LLM
+2. fill_in_blanks       │ passage with gaps  │ typed blank answers     │ LLM
 3. open_text            │ prompt             │ typed answer(s)         │ LLM (gen + eval)
 4. timed_text           │ prompt + timer     │ typed answer            │ LLM (gen + eval)
 5. structured_essay     │ multi-section      │ multi-section answer    │ LLM (gen + eval)
@@ -156,10 +156,6 @@ class BlankItem(BaseModel):
     item_id: str
     sentence_with_blank: str = Field(..., description="Use ___ to mark the blank")
     correct_answer: str
-    distractors: list[str] = Field(
-        default_factory=list,
-        description="Optional wrong-answer options if rendering as MCQ blanks",
-    )
     explanation: str
 
 
@@ -205,9 +201,13 @@ class FullTaskBase(GeneratedTaskBase):
 
 class GrammarReadTask(FullTaskBase):
     instructions: str
-    passage: str | None = Field(
-        None,
-        description="Optional context passage (3–6 sentences) using the target rule",
+    passage: str = Field(
+        ...,
+        min_length=40,
+        description=(
+            "Required 5–6 sentence reading passage containing the same ___ "
+            "blank sentences listed in items"
+        ),
     )
     items: list[BlankItem] = Field(..., min_length=4, max_length=8)
     grammar_rule_explained: str = Field(
@@ -703,6 +703,25 @@ _TIER_DEFAULTS = {
     },
 }
 
+_GRAMMAR_READ_DEFAULTS = {
+    **_TIER_DEFAULTS,
+    "beginner": {
+        **_TIER_DEFAULTS["beginner"],
+        "item_count": 5,
+        "passage_word_count": 95,
+    },
+    "intermediate": {
+        **_TIER_DEFAULTS["intermediate"],
+        "item_count": 5,
+        "passage_word_count": 150,
+    },
+    "advanced": {
+        **_TIER_DEFAULTS["advanced"],
+        "item_count": 6,
+        "passage_word_count": 220,
+    },
+}
+
 
 # ─── #01 Grammar / Read ───────────────────────────────────────────────
 
@@ -718,16 +737,25 @@ FULL_GRAMMAR_READ_V1 = TaskTemplate(
 
 WIDGET: fill_in_blanks
 TASK
-1. Briefly explain the grammar rule covered by "{topic_name}" in 1–2 plain sentences.
-2. Optionally write a short context passage ({passage_word_count} words) that uses
-   the rule naturally — only include if it helps the learner.
-3. Generate {item_count} blank items (BlankItem) where each blank tests
-   "{topic_name}" specifically.
-   - Use "___" to mark the blank in `sentence_with_blank`.
+1. Write ONE coherent reading passage of 5–6 sentences and about
+   {passage_word_count} words. The passage is the task, not decoration.
+2. Put exactly {item_count} blanks directly INSIDE the passage using "___".
+   Each blank must test "{topic_name}" specifically.
+3. The passage must use "{topic_name}" naturally from beginning to end.
+   Do not add a separate teaching paragraph, rule card, or unrelated
+   example paragraph.
+4. Generate {item_count} BlankItem objects from that same passage.
+   - Each `sentence_with_blank` MUST be copied exactly from one sentence in
+     the passage, including the same "___" blank.
+   - Do not create any blank item that is not directly present in the passage.
    - Provide ONE correct_answer (lowercase if a verb form, otherwise as written).
-   - Add 3 plausible distractors of the same grammatical category.
+   - Do NOT provide distractors, options, choices, or multiple-choice answers.
    - Include a 1-sentence explanation per item.
-4. Sentences must use vocabulary at sub-level {sub_level}.
+5. Set `instructions` to tell the learner to read the paragraph and type the
+   numbered answers into the blanks.
+6. Set `grammar_rule_explained` to a short rule summary for feedback only.
+   It must not be a second passage.
+7. Sentences must use vocabulary at sub-level {sub_level}.
 
 Output JSON matching GrammarReadTask. Set:
   widget="fill_in_blanks", topic_id="{topic_id}", topic_name="{topic_name}",
@@ -740,7 +768,7 @@ Output JSON matching GrammarReadTask. Set:
         "passing_threshold": 0.7,
         "metrics_returned": ["accuracy", "per_item_correctness"],
     },
-    difficulty_modifiers=_TIER_DEFAULTS,
+    difficulty_modifiers=_GRAMMAR_READ_DEFAULTS,
 )
 
 

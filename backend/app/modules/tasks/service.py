@@ -37,6 +37,7 @@ from app.modules.tasks.models import (
 from app.modules.tasks.repository import TaskRepository, UserTaskRepository
 from app.tasks.schemas import get_templates_for
 from app.tasks.schemas.base import Activity
+from app.tasks.schemas.full_tasks_templates import get_full_template
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,17 @@ _TASK_TYPE_TO_ACTIVITY = {
     "writing": Activity.WRITE,
     "listening": Activity.LISTEN,
     "speaking": Activity.SPEAK,
+}
+
+# Fixed order used to cycle activities within a single day's task bundle.
+# sequence_index 0→READ, 1→WRITE, 2→LISTEN, 3→SPEAK, then wraps.
+_DAY_ACTIVITY_CYCLE = [Activity.READ, Activity.WRITE, Activity.LISTEN, Activity.SPEAK]
+
+_ACTIVITY_LABELS = {
+    Activity.READ: "Reading",
+    Activity.WRITE: "Writing",
+    Activity.LISTEN: "Listening",
+    Activity.SPEAK: "Speaking",
 }
 
 
@@ -261,31 +273,31 @@ class TaskService:
             logger.warning("No SubSkill mapping for %r, skipping LLM gen", plan.skill_name)
             return None
 
-        # Map plan.activity_type (TaskType) → schema Activity
-        schema_activity = _TASK_TYPE_TO_ACTIVITY.get(plan.activity_type.value)
-        if schema_activity is None:
-            logger.warning("No Activity mapping for %r, skipping LLM gen", plan.activity_type)
-            return None
+        # Cycle READ→WRITE→LISTEN→SPEAK across the day's task bundle.
+        # sequence_index 0 = first task, 1 = second task, etc.
+        schema_activity = _DAY_ACTIVITY_CYCLE[sequence_index % len(_DAY_ACTIVITY_CYCLE)]
 
-        # Find matching templates
-        templates = get_templates_for(sub_skill, schema_activity)
-        if not templates:
-            logger.info(
-                "No templates for sub_skill=%s activity=%s, skipping LLM gen",
+        # Look up the single curriculum-driven template for this (sub_skill, activity) pair
+        try:
+            template = get_full_template(sub_skill, schema_activity)
+        except KeyError:
+            logger.warning(
+                "No full curriculum template for sub_skill=%s activity=%s, skipping LLM gen",
                 sub_skill.value, schema_activity.value,
             )
             return None
 
-        # Pick one concrete template format for this weekly slot. Example:
-        # grammar+write has multiple formats, so each time the weekly
-        # activity cycle lands on write, we move to the next write format.
+        # Enrich user_profile with curriculum-specific vars the new templates need
         sub_level = user_profile.get("sub_level", 5)
-        template = self._select_template_for_plan(
-            templates=templates,
-            plan=plan,
-            sub_level=sub_level,
-            sequence_index=sequence_index,
-        )
+        user_profile = {
+            **user_profile,
+            "topic_name": user_profile.get("course_topic") or user_profile.get("topic") or "today's English topic",
+            "week": plan.week_number,
+            "day": plan.day_in_week,
+            "sub_skill": sub_skill.value,
+            "plan_type": f"{enrollment.course.duration_weeks}w" if enrollment.course else "24w",
+            "domain": "general",
+        }
 
         logger.info(
             "Attempting LLM generation: skill=%s activity=%s template=%s user_profile=%s",
@@ -327,8 +339,10 @@ class TaskService:
             generated_task_type = plan.activity_type
 
         # Create a new Task row with the generated content
+        topic_name = user_profile.get("topic_name") or plan.skill_name.title()
+        activity_label = _ACTIVITY_LABELS.get(schema_activity, schema_activity.value.title())
         task = Task(
-            title=f"{plan.skill_name.title()} – {template.task_type.replace('_', ' ').title()} (AI)",
+            title=f"{topic_name} — {activity_label}",
             task_type=generated_task_type,
             difficulty=sub_level,
             status=TaskStatus.ACTIVE,
@@ -668,6 +682,18 @@ class TaskService:
             "[superuser_jump_by_type] task_type=%r template=%s skill=%s",
             task_type, template.template_id, template.sub_skill.value,
         )
+
+        # Curriculum-driven templates need extra vars not present in the normal profile
+        if task_type.startswith("curriculum_"):
+            user_profile = {
+                **user_profile,
+                "topic_name": user_profile.get("course_topic") or user_profile.get("topic") or "today's English topic",
+                "week": enrollment.current_week,
+                "day": enrollment.current_day_in_week,
+                "sub_skill": template.sub_skill.value,
+                "plan_type": f"{enrollment.course.duration_weeks}w" if enrollment.course else "24w",
+                "domain": "general",
+            }
 
         # Attempt LLM generation
         try:

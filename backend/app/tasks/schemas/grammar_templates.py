@@ -63,15 +63,12 @@ class BlankItem(BaseModel):
     blank_id: str = Field(..., description="e.g. 'b1', 'b2'")
     sentence_with_blank: str = Field(..., description="Sentence containing ___")
     correct_answer: str
-    options: list[str] = Field(..., min_length=4, max_length=4)
+    options: list[str] = Field(
+        default_factory=list,
+        description="Legacy compatibility only. Fill-in-blanks is typed, not MCQ.",
+    )
     grammar_rule: GrammarRule
     explanation: str = Field(..., min_length=10, max_length=200)
-
-    @model_validator(mode="after")
-    def correct_answer_must_be_an_option(self) -> "BlankItem":
-        if self.correct_answer not in self.options:
-            raise ValueError("correct_answer must be included in options")
-        return self
 
 
 class FillInBlanksTask(GeneratedTaskBase):
@@ -265,13 +262,15 @@ TASK
 Create a fill-in-the-blanks passage following these rules:
 1. Passage length: {min_words}–{max_words} words
 2. Number of blanks: {blank_count}
-3. The passage must teach/practice the course topic of the day: {course_topic}
-4. Each blank tests a SPECIFIC grammar rule connected to the course topic
-5. Provide exactly 4 multiple-choice options per blank (1 correct + 3 plausible distractors)
-6. Include a 1-sentence explanation for each correct answer
-7. Use vocabulary appropriate to {vocab_level}
-8. Personalize the surface story: {content_guidance}
-9. {avoid_example_reuse_instruction}
+3. Write ONE coherent 5–6 sentence paragraph. The blanks must appear directly inside that paragraph.
+4. The paragraph must teach/practice the course topic of the day: {course_topic}
+5. Each blank tests a SPECIFIC grammar rule connected to the course topic
+6. Do NOT create multiple-choice answers. The learner will type each answer.
+7. For each blank, provide the correct_answer and a 1-sentence explanation.
+8. Leave options as an empty array if that field is present.
+9. Use vocabulary appropriate to {vocab_level}
+10. Personalize the surface story: {content_guidance}
+11. {avoid_example_reuse_instruction}
 
 Return ONLY valid JSON matching the FillInBlanksTask schema. No prose, no markdown fences.
 """,
@@ -288,8 +287,8 @@ Return ONLY valid JSON matching the FillInBlanksTask schema. No prose, no markdo
     },
     difficulty_modifiers={
         "beginner": {"min_words": 60, "max_words": 100, "blank_count": 5, "vocab_level": "basic"},
-        "intermediate": {"min_words": 120, "max_words": 200, "blank_count": 7, "vocab_level": "intermediate"},
-        "advanced": {"min_words": 200, "max_words": 350, "blank_count": 10, "vocab_level": "advanced"},
+        "intermediate": {"min_words": 120, "max_words": 200, "blank_count": 5, "vocab_level": "intermediate"},
+        "advanced": {"min_words": 200, "max_words": 320, "blank_count": 6, "vocab_level": "advanced"},
     },
 )
 

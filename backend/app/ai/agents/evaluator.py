@@ -3,19 +3,19 @@
 Scores a user's answer against an answer key. Returns a structured
 evaluation report with per-question correctness and an overall score.
 
-Implementation: rule-based for fill-in-the-blanks (FIB).
-For FIB an LLM is overkill — there is exactly ONE correct answer per
-question. Simple string compare with normalization is fast, free, and
-deterministic.
-
-Later activity types (writing/speaking) will add an LLM-backed evaluator
-behind the same `EvaluationService` interface — callers won't change.
+Rule-based for discrete tasks (fill-in-blanks, MCQ, etc.).
+LLM-backed for open-ended writing tasks where correctness isn't binary.
 
 This module is PURE: data in, data out. No DB, no commits.
 Persistence happens in the service layer (responses/service.py).
 """
 
+import logging
 from typing import Literal
+
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +184,106 @@ def _score_paraphrase(
         "error_type": "needs_review",
         "score": 0.7,
     }
+
+
+# ---------------------------------------------------------------------------
+# LLM output schemas — used ONLY by evaluate_open_text_writing
+# ---------------------------------------------------------------------------
+
+class _ItemWritingEval(BaseModel):
+    """Per-item result from the LLM writing evaluator."""
+    item_id: str
+    mistakes: list[str] = Field(
+        default_factory=list,
+        description="Specific grammar mistakes found in this answer",
+    )
+    score: float = Field(..., ge=0.0, le=1.0, description="Item score 0-1")
+
+
+class _OpenTextWritingEval(BaseModel):
+    """Full LLM evaluation of a writing task."""
+    subskill_score: int = Field(
+        ..., ge=0, le=10,
+        description="Grammar sub-skill score 0-10, calibrated to the learner's level",
+    )
+    items: list[_ItemWritingEval]
+    main_mistakes: list[str] = Field(
+        ...,
+        description=(
+            "Top 3-5 specific grammar mistakes across all answers. "
+            "Each entry should quote the learner's phrase and name the rule violated. "
+            "These are passed directly to the feedback agent."
+        ),
+    )
+    overall_level: Literal["needs_work", "okay", "good", "excellent"]
+
+
+_OPEN_TEXT_EVAL_SYSTEM = """\
+You are an expert English grammar evaluator assessing a non-native learner's writing.
+
+EVALUATION RULES
+1. Focus exclusively on whether the learner correctly applied the grammar rule being practiced.
+2. Calibrate grading to the learner's level (provided as X/10):
+   - Beginner (1-3): be lenient with style and vocabulary; grade primarily on core rule application.
+   - Intermediate (4-6): grade on rule accuracy + sentence structure.
+   - Advanced (7-10): grade on rule accuracy + structure + naturalness.
+3. subskill_score (0-10) must reflect: accuracy of grammar rule application × level expectations.
+   A beginner making 1 mistake on a 3-item task might score 6/10; an advanced learner the same score 4/10.
+4. main_mistakes: list 3-5 SPECIFIC mistakes, quoting the learner's exact phrase.
+   Example: "Missing -s on third-person verb: 'he go' → should be 'he goes'"
+5. Per item: list concrete mistakes only for that answer; empty list if the answer is correct.
+6. Never penalize for spelling errors unless they change meaning.
+
+Return JSON matching the schema. Nothing else.
+"""
+
+
+def _build_open_text_user_message(
+    *,
+    task_content: dict,
+    user_answers: dict,
+    user_level: int,
+    learner_profile: dict,
+) -> str:
+    """Format the writing task evaluation prompt."""
+    tier = (
+        "Beginner (1-3)" if user_level <= 3
+        else "Intermediate (4-6)" if user_level <= 6
+        else "Advanced (7-10)"
+    )
+    self_assessed = learner_profile.get("self_assessed_level", "unknown")
+
+    grammar_rule = task_content.get("grammar_rule_explained", "See task instructions")
+    common_mistakes = task_content.get("common_mistakes") or []
+    common_text = (
+        "\n".join(f"- {m}" for m in common_mistakes)
+        if common_mistakes
+        else "None specified"
+    )
+
+    items = task_content.get("items") or []
+    items_lines: list[str] = []
+    for idx, item in enumerate(items, 1):
+        item_id = item.get("item_id", f"item_{idx}")
+        prompt = item.get("prompt", "")
+        sample = item.get("sample_answer", "")
+        user_ans = user_answers.get(item_id, "").strip()
+        items_lines.append(
+            f"Item {idx} (id={item_id})\n"
+            f"  Prompt: {prompt}\n"
+            f"  Sample answer: {sample}\n"
+            f"  Learner's answer: {user_ans if user_ans else '[no answer]'}"
+        )
+    items_text = "\n\n".join(items_lines)
+
+    return (
+        f"LEARNER LEVEL: {user_level}/10 ({tier})\n"
+        f"SELF-ASSESSED: {self_assessed}\n\n"
+        f"GRAMMAR RULE BEING PRACTICED:\n{grammar_rule}\n\n"
+        f"COMMON MISTAKES TO WATCH FOR:\n{common_text}\n\n"
+        f"TASK ITEMS AND ANSWERS:\n{items_text}\n\n"
+        "Evaluate the learner's grammar writing. Return your assessment."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -410,22 +510,26 @@ class EvaluationService:
         The user submits answers keyed by blank_id:
             user_answers = {"b1": "went", "b2": "has"}
         """
-        blanks: list[dict] = task_content.get("blanks", [])
+        blanks: list[dict] = task_content.get("blanks") or task_content.get("items", [])
         if not blanks:
             raise ValueError(
-                "Generated fill_in_blanks task has no 'blanks' in content"
+                "Generated fill_in_blanks task has no 'blanks' or 'items' in content"
             )
 
         per_question: dict[str, dict] = {}
         correct_count = 0
 
         for blank in blanks:
-            bid = blank["blank_id"]
+            bid = blank.get("blank_id") or blank["item_id"]
             correct = blank["correct_answer"]
             user_ans = user_answers.get(bid, "")
             result = _check_one(user_ans, correct)
             # Also store the grammar_rule so the feedback agent can use it
-            result["grammar_rule"] = blank.get("grammar_rule", "")
+            result["grammar_rule"] = (
+                blank.get("grammar_rule")
+                or task_content.get("grammar_rule_explained")
+                or ""
+            )
             result["sentence"] = blank.get("sentence_with_blank", "")
             per_question[bid] = result
             if result["correct"]:
@@ -981,6 +1085,129 @@ class EvaluationService:
         }
 
     # ------------------------------------------------------------------
+    # Open-text writing evaluator — LLM-backed, async.
+    #
+    # Used for curriculum_grammar_open_text (and future open_text tasks).
+    # Returns the same report envelope as the rule-based methods so
+    # evaluation_node + feedback_node need no special-casing.
+    # ------------------------------------------------------------------
+    async def evaluate_open_text_writing(
+        self,
+        *,
+        task_content: dict,
+        user_answers: dict,
+        user_level: int = 5,
+        learner_profile: dict | None = None,
+    ) -> dict:
+        """LLM-based evaluation for open_text writing tasks.
+
+        Calls the LLM with the task prompts, user answers, and learner
+        profile (level, self-assessed tier) to get:
+          - subskill_score (0-10, level-calibrated)
+          - per-item mistakes
+          - main_mistakes list (fed straight to the feedback agent)
+
+        Falls back to a safe structural stub if the LLM call fails, so
+        the session flow never breaks.
+        """
+        from app.ai.llm import get_default_llm_client
+
+        profile = learner_profile or {}
+        items = task_content.get("items") or []
+
+        user_message = _build_open_text_user_message(
+            task_content=task_content,
+            user_answers=user_answers,
+            user_level=user_level,
+            learner_profile=profile,
+        )
+
+        llm_result: _OpenTextWritingEval | None = None
+        try:
+            client = get_default_llm_client()
+            llm_result = await client.generate_structured(
+                system_prompt=_OPEN_TEXT_EVAL_SYSTEM,
+                user_prompt=user_message,
+                output_model=_OpenTextWritingEval,
+                temperature=0.2,
+            )
+        except Exception:
+            logger.exception(
+                "evaluate_open_text_writing LLM call failed; using fallback"
+            )
+
+        if llm_result is None:
+            # Structural fallback: answered = 1.0, empty = 0.0
+            answered = sum(
+                1 for it in items
+                if user_answers.get(it.get("item_id", ""), "").strip()
+            )
+            total = len(items) or 1
+            subskill_score = round((answered / total) * 7)  # max 7 for fallback
+            per_item = {
+                it.get("item_id", f"item_{idx}"): {
+                    "correct": bool(user_answers.get(it.get("item_id", ""), "").strip()),
+                    "user_answer": user_answers.get(it.get("item_id", ""), ""),
+                    "mistakes": [],
+                    "score": 1.0 if user_answers.get(it.get("item_id", ""), "").strip() else 0.0,
+                    "error_type": (
+                        "needs_ai_review"
+                        if user_answers.get(it.get("item_id", ""), "").strip()
+                        else "missing_answer"
+                    ),
+                }
+                for idx, it in enumerate(items, 1)
+            }
+            return {
+                "task_type": "curriculum_grammar_open_text",
+                "total": total,
+                "correct_count": answered,
+                "percentage": subskill_score * 10.0,
+                "subskill_score": subskill_score,
+                "main_mistakes": ["Evaluation service temporarily unavailable."],
+                "questions": per_item,
+            }
+
+        # Build the standard per-question dict from LLM result
+        item_eval_by_id = {ev.item_id: ev for ev in llm_result.items}
+        per_question: dict[str, dict] = {}
+        correct_count = 0
+
+        for idx, item in enumerate(items, 1):
+            item_id = item.get("item_id", f"item_{idx}")
+            user_ans = user_answers.get(item_id, "")
+            ev = item_eval_by_id.get(item_id)
+            score = ev.score if ev else (0.0 if not user_ans.strip() else 0.7)
+            mistakes = ev.mistakes if ev else []
+            is_correct = score >= 0.6
+
+            per_question[item_id] = {
+                "correct": is_correct,
+                "user_answer": user_ans,
+                "correct_answer": item.get("sample_answer", ""),
+                "mistakes": mistakes,
+                "score": score,
+                "error_type": "correct" if is_correct else "needs_review",
+                "prompt": item.get("prompt", ""),
+            }
+            if is_correct:
+                correct_count += 1
+
+        total = len(items) or 1
+        percentage = llm_result.subskill_score * 10.0
+
+        return {
+            "task_type": "curriculum_grammar_open_text",
+            "total": total,
+            "correct_count": correct_count,
+            "percentage": percentage,
+            "subskill_score": llm_result.subskill_score,
+            "main_mistakes": llm_result.main_mistakes,
+            "overall_level": llm_result.overall_level,
+            "questions": per_question,
+        }
+
+    # ------------------------------------------------------------------
     # Dispatcher — the ONE method service code should call.
     # ------------------------------------------------------------------
     def evaluate(
@@ -1003,7 +1230,7 @@ class EvaluationService:
             return self.evaluate_fill_in_blanks(
                 task_content=task_content, user_answers=user_answers
             )
-        if activity_type == "fill_in_blanks":
+        if activity_type in ("fill_in_blanks", "curriculum_grammar_fill_blanks"):
             # Generated task shape — blanks[] not activities[]
             return self.evaluate_generated_fill_in_blanks(
                 task_content=task_content, user_answers=user_answers

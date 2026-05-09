@@ -32,6 +32,11 @@ class LearningSession(Base, IDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
+    user_task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user_tasks.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     phase: Mapped[str] = mapped_column(
         String(32), nullable=False, default="teaching"
     )

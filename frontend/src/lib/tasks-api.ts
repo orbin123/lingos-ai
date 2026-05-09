@@ -214,7 +214,7 @@ const GENERATED_TASK_TYPES: Set<string> = new Set([
 
 /** Check if a task_type string is a generated (LLM) task type */
 export function isGeneratedTaskType(taskType: string): taskType is GeneratedTaskType {
-  return GENERATED_TASK_TYPES.has(taskType);
+  return GENERATED_TASK_TYPES.has(taskType) || taskType.startsWith("curriculum_");
 }
 
 // ═══════════════════════════════════════════════════════════════════

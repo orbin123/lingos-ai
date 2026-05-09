@@ -6,25 +6,7 @@
 > does, and what gets sent back to the backend. Build the widgets once;
 > let the LLM-generated content flow through them.
 
----
 
-## Table of contents
-
-1. [Big-picture data flow](#big-picture-data-flow)
-2. [Common envelope (every task carries this)](#common-envelope-every-task-carries-this)
-3. [The 8 widgets — full I/O spec](#the-8-widgets--full-io-spec)
-   - [Widget 1: `mcq`](#widget-1-mcq)
-   - [Widget 2: `fill_in_blanks`](#widget-2-fill_in_blanks)
-   - [Widget 3: `open_text`](#widget-3-open_text)
-   - [Widget 4: `timed_text`](#widget-4-timed_text)
-   - [Widget 5: `structured_essay`](#widget-5-structured_essay)
-   - [Widget 6: `speak_and_record`](#widget-6-speak_and_record)
-   - [Widget 7: `listen_and_respond`](#widget-7-listen_and_respond)
-   - [Widget 8: `storyboard`](#widget-8-storyboard)
-4. [The 28 task → widget mapping](#the-28-task--widget-mapping)
-5. [Build order recommendation](#build-order-recommendation)
-
----
 
 ## Big-picture data flow
 
@@ -171,11 +153,11 @@ interface MCQResponse {
 interface FillInBlanksTask extends TaskEnvelope {
   widget: "fill_in_blanks"
   instructions: string
-  passage: string | null                       // optional context text — show if present
+  passage: string                              // required reading passage containing the blanks
   grammar_rule_explained: string               // 1–2 sentences explaining the rule
   items: Array<{
     item_id: string
-    sentence_with_blank: string                // contains literal "___" where blank goes
+    sentence_with_blank: string                // copied exactly from passage; contains "___"
     correct_answer: string                     // for grading
     distractors: string[]                      // optional MCQ options (may be empty)
     explanation: string                        // shown after submit
@@ -189,7 +171,7 @@ interface FillInBlanksTask extends TaskEnvelope {
 | --------------- | ------------------------------------------------------------ |
 | Header          | `<TaskHeader />`                                             |
 | Rule callout    | `grammar_rule_explained` in a soft tinted box                |
-| Passage         | `passage` rendered as paragraph (skip if null)               |
+| Passage         | `passage` rendered as the reading text; it must contain the same blanks listed in `items` |
 | Items           | Each item shows `sentence_with_blank` with the `___` replaced by an inline input (or 4-button MCQ if `distractors.length === 3`) |
 | Submit & review | Same pattern as MCQ                                          |
 
@@ -217,6 +199,7 @@ interface FillInBlanksResponse {
 
 #### Notes
 
+- For `GrammarReadTask`, never show an unrelated passage. The passage is required and every `items[i].sentence_with_blank` must be copied from that passage.
 - Inline input width should auto-grow with the answer
 - Trim whitespace, lowercase before client-side hint comparison; backend does the same on grading
 - After submit, color the input green (correct) or red (wrong) and show `correct_answer` faded next to wrong ones

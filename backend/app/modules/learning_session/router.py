@@ -26,11 +26,15 @@ from app.modules.curriculum.exceptions import (
     NotEnrolled,
 )
 from app.modules.learning_session.schemas import (
+    StartSessionRequest,
     StartSessionResponse,
     WSIncomingMessage,
     WSOutgoingMessage,
 )
-from app.modules.learning_session.service import LearningSessionService
+from app.modules.learning_session.service import (
+    LearningSessionService,
+    LearningSessionTaskUnavailable,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +50,25 @@ rest_router = APIRouter(prefix="/learning", tags=["learning_session"])
     status_code=status.HTTP_201_CREATED,
 )
 async def start_session(
+    payload: StartSessionRequest | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StartSessionResponse:
     service = LearningSessionService(db)
     try:
-        return await service.create_session(user_id=current_user.id)
+        return await service.create_session(
+            user_id=current_user.id,
+            user_task_id=payload.user_task_id if payload else None,
+        )
     except NotEnrolled as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except EnrollmentNotActive as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except LearningSessionTaskUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover — unexpected
         logger.exception("start_session failed for user_id=%s", current_user.id)
