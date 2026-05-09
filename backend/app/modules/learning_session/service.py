@@ -58,8 +58,10 @@ from app.modules.learning_session.schemas import (
 )
 from app.modules.skills.repository import SkillRepository, UserSkillScoreRepository
 from app.modules.tasks.models import TaskType
+from app.modules.tasks.models import UserTaskStatus
+from app.modules.tasks.repository import UserTaskRepository
 from app.tasks.schemas import ALL_TEMPLATES, get_templates_for
-from app.tasks.schemas.base import Activity, SubSkill
+from app.tasks.schemas.base import Activity, SubSkill, TaskTemplate
 
 logger = logging.getLogger(__name__)
 
@@ -86,15 +88,23 @@ _SKILL_NAME_TO_SUBSKILL = {
 }
 
 
-_UNDERSTANDING_PHRASES = (
-    "yes", "yeah", "yep", "sure", "ok", "okay", "ready", "let's go",
-    "lets go", "i understand", "understand", "got it", "i got it",
-    "i'm ready", "im ready", "go ahead", "begin", "start",
+_ACKNOWLEDGEMENT_PHRASES = (
+    "yes", "yeah", "yep", "sure", "ok", "okay",
 )
 
-_UNDERSTANDING_PATTERNS = tuple(
+_ACKNOWLEDGEMENT_PATTERNS = tuple(
     re.compile(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])")
-    for phrase in _UNDERSTANDING_PHRASES
+    for phrase in _ACKNOWLEDGEMENT_PHRASES
+)
+
+_EXPLICIT_UNDERSTANDING_PHRASES = (
+    "ready", "let's go", "lets go", "i understand", "understand", "got it",
+    "i got it", "i'm ready", "im ready", "go ahead", "begin", "start",
+)
+
+_EXPLICIT_UNDERSTANDING_PATTERNS = tuple(
+    re.compile(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])")
+    for phrase in _EXPLICIT_UNDERSTANDING_PHRASES
 )
 
 _NON_UNDERSTANDING_PHRASES = (
@@ -116,13 +126,67 @@ _QUESTION_START_PATTERN = re.compile(
     r"^\s*(what|why|how|when|where|which|who|can you|could you|would you)\b"
 )
 
+_READINESS_PROMPT_PATTERNS = (
+    re.compile(r"\b(do you|does this|is this|that|it)\s+(feel\s+)?(clear|make sense)\b"),
+    re.compile(r"\b(are you|do you feel|feel)\s+ready\b"),
+    re.compile(r"\bready\s+(for|to)\s+(practice|try|start|begin)\b"),
+    re.compile(r"\bif\s+(that|this|it)\s+feels\s+clear\b"),
+    re.compile(r"\bif\s+you\s+(feel\s+)?(ready|clear)\b"),
+    re.compile(r"\bsay\s+['\"]?(ready|yes|okay|ok)['\"]?\b"),
+)
+
+_DOUBT_CLARIFIED_PATTERNS = (
+    re.compile(r"\b(did|does)\s+(that|this|it)\s+(answer|clarify|clear)\b"),
+    re.compile(r"\b(is|was)\s+(that|this|it|your doubt)\s+(clear|clarified)\b"),
+    re.compile(r"\b(is|was)\s+your\s+doubt\s+(clear|clarified)\b"),
+    re.compile(r"\bdo\s+you\s+understand\s+(now|that|this|it)?\b"),
+)
+
 _TEACHING_STREAM_FIRST_CHUNK_TIMEOUT_S = 8.0
 _TEACHING_STREAM_CHUNK_TIMEOUT_S = 20.0
 _FOLLOWUP_STREAM_FIRST_CHUNK_TIMEOUT_S = 8.0
 _FOLLOWUP_STREAM_CHUNK_TIMEOUT_S = 20.0
 
 
-def _looks_like_understanding(text: str) -> bool:
+class LearningSessionTaskUnavailable(Exception):
+    """Raised when a requested dashboard task cannot start a chat session."""
+
+
+def _last_tutor_message(messages: list[dict]) -> str:
+    for message in reversed(messages):
+        if message.get("role") in ("ai", "assistant"):
+            return str(message.get("content") or "").strip()
+    return ""
+
+
+def _tutor_asked_readiness(text: str) -> bool:
+    cleaned = (text or "").strip().lower()
+    if not cleaned:
+        return False
+    return any(pattern.search(cleaned) for pattern in _READINESS_PROMPT_PATTERNS)
+
+
+def _tutor_asked_doubt_clarified(text: str) -> bool:
+    cleaned = (text or "").strip().lower()
+    if not cleaned:
+        return False
+    return any(pattern.search(cleaned) for pattern in _DOUBT_CLARIFIED_PATTERNS)
+
+
+def _looks_like_acknowledgement(text: str) -> bool:
+    cleaned = (text or "").strip().lower()
+    if not cleaned:
+        return False
+    return cleaned in _ACKNOWLEDGEMENT_PHRASES or any(
+        pattern.search(cleaned) for pattern in _ACKNOWLEDGEMENT_PATTERNS
+    )
+
+
+def _looks_like_understanding(
+    text: str,
+    *,
+    previous_tutor_message: str = "",
+) -> bool:
     cleaned = (text or "").strip().lower()
     if not cleaned:
         return False
@@ -130,9 +194,33 @@ def _looks_like_understanding(text: str) -> bool:
         return False
     if "?" in cleaned and _QUESTION_START_PATTERN.search(cleaned):
         return False
-    if cleaned in _UNDERSTANDING_PHRASES:
+    if cleaned in _EXPLICIT_UNDERSTANDING_PHRASES:
         return True
-    return any(pattern.search(cleaned) for pattern in _UNDERSTANDING_PATTERNS)
+    if any(pattern.search(cleaned) for pattern in _EXPLICIT_UNDERSTANDING_PATTERNS):
+        return True
+    if _looks_like_acknowledgement(cleaned):
+        return _tutor_asked_readiness(previous_tutor_message)
+    return False
+
+
+def _learner_turn_count(messages: list[dict]) -> int:
+    return sum(1 for message in messages if message.get("role") == "user")
+
+
+def _readiness_turn_threshold(topic: str) -> int:
+    normalized = (topic or "").lower()
+    if "present simple" in normalized or "simple present" in normalized:
+        return 4
+    return 3
+
+
+def _needs_clarification(text: str) -> bool:
+    cleaned = (text or "").strip().lower()
+    if not cleaned:
+        return False
+    if any(pattern.search(cleaned) for pattern in _NON_UNDERSTANDING_PATTERNS):
+        return True
+    return "?" in cleaned and _QUESTION_START_PATTERN.search(cleaned) is not None
 
 
 class LearningSessionService:
@@ -143,14 +231,27 @@ class LearningSessionService:
         self.skill_repo = SkillRepository(db)
         self.score_repo = UserSkillScoreRepository(db)
         self.session_repo = LearningSessionRepository(db)
+        self.user_task_repo = UserTaskRepository(db)
         self.rotation = RotationEngine()
         self.generator = TaskGeneratorAgent()
 
     # ------------------------------------------------------------------
     # Session creation
     # ------------------------------------------------------------------
-    async def create_session(self, *, user_id: int) -> StartSessionResponse:
+    async def create_session(
+        self,
+        *,
+        user_id: int,
+        user_task_id: int | None = None,
+    ) -> StartSessionResponse:
         enrollment = self._load_enrollment(user_id)
+        if user_task_id is not None:
+            return self._create_session_from_user_task(
+                user_id=user_id,
+                enrollment=enrollment,
+                user_task_id=user_task_id,
+            )
+
         plan = self._decide_plan(enrollment)
 
         course_topic = self._course_topic_for(enrollment)
@@ -181,6 +282,7 @@ class LearningSessionService:
             session_id=session_id,
             user_id=user_id,
             enrollment_id=enrollment.id,
+            user_task_id=None,
             topic=topic,
             skill_name=plan.skill_name,
             activity_type=plan.activity_type.value,
@@ -202,6 +304,74 @@ class LearningSessionService:
             topic=topic,
             skill_name=plan.skill_name,
             task_type=template.task_type,
+            user_task_id=None,
+            message="Session ready",
+        )
+
+    def _create_session_from_user_task(
+        self,
+        *,
+        user_id: int,
+        enrollment: UserEnrollment,
+        user_task_id: int,
+    ) -> StartSessionResponse:
+        user_task = self.user_task_repo.get_by_id(user_task_id)
+        if user_task is None:
+            raise LookupError(f"UserTask {user_task_id} does not exist")
+        if user_task.user_id != user_id:
+            raise PermissionError(
+                f"User {user_id} cannot start UserTask {user_task_id}"
+            )
+        if user_task.enrollment_id not in (None, enrollment.id):
+            raise LearningSessionTaskUnavailable(
+                f"UserTask {user_task_id} is not part of the active enrollment"
+            )
+        if user_task.status in (UserTaskStatus.COMPLETED, UserTaskStatus.SKIPPED):
+            raise LearningSessionTaskUnavailable(
+                f"UserTask {user_task_id} is already {user_task.status.value}"
+            )
+
+        task = user_task.task
+        task_content = dict(task.content or {})
+        topic = (
+            task_content.get("topic_name")
+            or task_content.get("topic")
+            or task.title
+        )
+        skill_name = str(task_content.get("sub_skill") or "").strip()
+        activity_type = str(task_content.get("activity") or "").strip()
+
+        if not skill_name and task.task_skills:
+            linked_skill = task.task_skills[0].skill
+            skill_name = linked_skill.name if linked_skill else ""
+        if not activity_type:
+            activity_type = task.task_type.value
+
+        session_id = uuid.uuid4().hex
+        self.session_repo.create(
+            session_id=session_id,
+            user_id=user_id,
+            enrollment_id=enrollment.id,
+            user_task_id=user_task.id,
+            topic=str(topic),
+            skill_name=skill_name or "grammar",
+            activity_type=activity_type,
+            task_type=task.task_type.value,
+            user_level=int(task_content.get("sub_level") or task.difficulty or 5),
+            pre_generated_tasks=task_content,
+        )
+
+        if user_task.status == UserTaskStatus.PENDING:
+            user_task.status = UserTaskStatus.IN_PROGRESS
+
+        self.db.commit()
+
+        return StartSessionResponse(
+            session_id=session_id,
+            topic=str(topic),
+            skill_name=skill_name or "grammar",
+            task_type=task.task_type.value,
+            user_task_id=user_task.id,
             message="Session ready",
         )
 
@@ -342,6 +512,35 @@ class LearningSessionService:
             f"Default template {_DEFAULT_TEMPLATE_ID!r} not found in ALL_TEMPLATES"
         )
 
+    @staticmethod
+    def _template_for_retry(session: LearningSession) -> TaskTemplate:
+        user_level = int(session.user_level or 5)
+        matching = [
+            tpl
+            for tpl in ALL_TEMPLATES
+            if tpl.task_type == session.task_type
+            and tpl.difficulty_range[0] <= user_level <= tpl.difficulty_range[1]
+        ]
+        if matching:
+            return matching[0]
+
+        fallback = next(
+            (tpl for tpl in ALL_TEMPLATES if tpl.task_type == session.task_type),
+            None,
+        )
+        if fallback is not None:
+            return fallback
+
+        default = next(
+            (tpl for tpl in ALL_TEMPLATES if tpl.template_id == _DEFAULT_TEMPLATE_ID),
+            None,
+        )
+        if default is None:
+            raise RuntimeError(
+                f"Default template {_DEFAULT_TEMPLATE_ID!r} not found in ALL_TEMPLATES"
+            )
+        return default
+
     def _user_sub_level(self, user_id: int) -> int:
         scores = self.score_repo.get_for_user(user_id)
         if not scores:
@@ -424,6 +623,111 @@ class LearningSessionService:
             "content_guidance": " ".join(content_guidance_parts),
         }
 
+    def _retry_generation_profile(
+        self,
+        *,
+        session: LearningSession,
+        template: TaskTemplate,
+    ) -> dict:
+        enrollment = self._load_enrollment(session.user_id)
+        course_topic = self._course_topic_for(enrollment)
+        current_content = dict(session.pre_generated_tasks or {})
+        topic = (
+            current_content.get("topic_name")
+            or current_content.get("topic")
+            or session.topic
+        )
+        user_level = int(session.user_level or current_content.get("sub_level") or 5)
+
+        profile = self._generation_profile(
+            user_id=session.user_id,
+            user_level=user_level,
+            topic=str(topic),
+            course_topic=course_topic,
+        )
+        plan_weeks = getattr(getattr(enrollment, "course", None), "duration_weeks", None)
+        previous_passage = str(current_content.get("passage") or "").strip()
+        previous_title = str(
+            current_content.get("passage_title")
+            or current_content.get("topic_name")
+            or current_content.get("title")
+            or ""
+        ).strip()
+        avoid_previous = (
+            "This is an extra feedback-only practice task. Generate fresh "
+            "content at the same level and for the same learning target. "
+            "Do not reuse the previous title, story, names, examples, blank "
+            "sentences, or passage."
+        )
+        if previous_title:
+            avoid_previous += f" Previous title/topic text to avoid copying: {previous_title!r}."
+        if previous_passage:
+            avoid_previous += f" Previous passage to avoid copying: {previous_passage[:500]!r}."
+
+        profile.update(
+            {
+                "topic_name": str(topic),
+                "topic_id": (
+                    current_content.get("topic_id")
+                    or (course_topic.topic_id if course_topic else "")
+                ),
+                "week": enrollment.current_week,
+                "day": enrollment.current_day_in_week,
+                "sub_skill": current_content.get("sub_skill") or session.skill_name,
+                "sub_level": user_level,
+                "activity": current_content.get("activity") or template.activity.value,
+                "plan_type": f"{plan_weeks}w" if plan_weeks else "custom",
+                "domain": "general",
+                "content_guidance": (
+                    f"{profile.get('content_guidance', '')} {avoid_previous}"
+                ).strip(),
+            }
+        )
+        return profile
+
+    async def _build_retry_task_update(
+        self,
+        session: LearningSession,
+        state: LearningSessionState,
+    ) -> dict[str, Any]:
+        template = self._template_for_retry(session)
+        user_profile = self._retry_generation_profile(
+            session=session,
+            template=template,
+        )
+        task_content = await self.generator.generate(template, user_profile)
+        next_index = int(state.get("current_task_index") or session.current_task_index or 0) + 1
+        intro = (
+            "Here is another practice task at the same level. This one is for "
+            "feedback only, so it will not change today's score."
+        )
+        widget = task_content.get("widget") or template.task_type
+        messages = list(state.get("messages", []))
+        messages.append({"role": "ai", "content": intro, "type": "chat"})
+        messages.append(
+            {
+                "role": "ai",
+                "content": f"[extra feedback-only task delivered: {template.task_type}]",
+                "type": "ui_event",
+            }
+        )
+        return {
+            "phase": "practice_task",
+            "task_content": task_content,
+            "task_type": template.task_type,
+            "current_task_index": next_index,
+            "user_submission": None,
+            "outgoing_events": [
+                {"type": "chat_message", "role": "assistant", "content": intro},
+                {
+                    "type": "ui_event",
+                    "widget": widget,
+                    "payload": task_content,
+                },
+            ],
+            "messages": messages,
+        }
+
     def _enrich_state_with_profile(
         self,
         state: LearningSessionState,
@@ -455,6 +759,8 @@ class LearningSessionService:
         return {
             "session_id": session.session_id,
             "user_id": session.user_id,
+            "user_task_id": session.user_task_id,
+            "current_task_index": session.current_task_index,
             "phase": session.phase,
             "messages": list(session.messages or []),
             "topic": session.topic,
@@ -481,9 +787,32 @@ class LearningSessionService:
             session.evaluation = update["evaluation"]
         if "feedback" in update:
             session.feedback = update["feedback"]
+        if "task_content" in update:
+            session.pre_generated_tasks = update["task_content"] or {}
+        if "task_type" in update:
+            session.task_type = str(update["task_type"] or session.task_type)
+        if "current_task_index" in update:
+            session.current_task_index = int(update["current_task_index"] or 0)
+        if "user_submission" in update:
+            session.user_submission = update["user_submission"]
         if "understanding_confirmed" in update:
             session.understanding_confirmed = bool(update["understanding_confirmed"])
         self.session_repo.save(session)
+
+    def _mark_bound_task_complete(self, session: LearningSession) -> None:
+        """Complete the dashboard assignment attached to this chat session."""
+        user_task_id = getattr(session, "user_task_id", None)
+        if user_task_id is None or not hasattr(self, "user_task_repo"):
+            return
+
+        user_task = self.user_task_repo.get_by_id(user_task_id)
+        if user_task is None:
+            return
+        if user_task.status == UserTaskStatus.COMPLETED:
+            return
+        if user_task.status == UserTaskStatus.SKIPPED:
+            return
+        self.user_task_repo.mark_completed(user_task)
 
     @staticmethod
     def _render_outgoing(events: list[dict]) -> list[WSOutgoingMessage]:
@@ -535,6 +864,33 @@ class LearningSessionService:
                     yield msg
             else:
                 yield WSOutgoingMessage(**event)
+
+    @staticmethod
+    def _readiness_checkpoint_message(state: LearningSessionState) -> str | None:
+        messages = list(state.get("messages", []))
+        if _learner_turn_count(messages) < _readiness_turn_threshold(
+            state.get("topic") or ""
+        ):
+            return None
+
+        latest_user = next(
+            (m for m in reversed(messages) if m.get("role") == "user"),
+            {},
+        )
+        latest_text = str(latest_user.get("content") or "")
+        if _needs_clarification(latest_text):
+            return None
+
+        previous_tutor_message = _last_tutor_message(messages[:-1])
+        if _tutor_asked_readiness(previous_tutor_message):
+            return None
+
+        topic = state.get("topic") or "this topic"
+        return (
+            f"You have practiced the main idea for {topic}: find the subject, "
+            "look for time or frequency clues, and choose the verb form. "
+            "Does this feel clear enough to start the practice task?"
+        )
 
     @staticmethod
     async def _timed_chunks(
@@ -717,6 +1073,16 @@ class LearningSessionService:
                     content=chunk,
                 )
 
+        clarification_check = " Did that clarify your doubt?"
+        if content and not _tutor_asked_doubt_clarified(content):
+            content = f"{content.rstrip()}{clarification_check}"
+            yield WSOutgoingMessage(
+                type="chat_stream_delta",
+                role="assistant",
+                stream_id=stream_id,
+                content=clarification_check,
+            )
+
         messages = list(state.get("messages", []))
         messages.append({"role": "ai", "content": content, "type": "chat"})
         self._apply_update(
@@ -751,7 +1117,11 @@ class LearningSessionService:
         session.messages = messages
 
         if state.get("phase") in ("teaching", None):
-            confirmed = _looks_like_understanding(text)
+            previous_tutor_message = _last_tutor_message(messages[:-1])
+            confirmed = _looks_like_understanding(
+                text,
+                previous_tutor_message=previous_tutor_message,
+            )
             session.understanding_confirmed = (
                 session.understanding_confirmed or confirmed
             )
@@ -759,7 +1129,24 @@ class LearningSessionService:
             if confirmed:
                 update = await task_delivery_node(state)
             else:
-                update = await teach_node(state)
+                checkpoint = self._readiness_checkpoint_message(state)
+                if checkpoint:
+                    messages.append(
+                        {"role": "ai", "content": checkpoint, "type": "chat"}
+                    )
+                    update = {
+                        "phase": "teaching",
+                        "messages": messages,
+                        "outgoing_events": [
+                            {
+                                "type": "chat_message",
+                                "role": "assistant",
+                                "content": checkpoint,
+                            }
+                        ],
+                    }
+                else:
+                    update = await teach_node(state)
             self._apply_update(session, update)
             self.db.commit()
             return self._render_outgoing(update.get("outgoing_events", []))
@@ -767,6 +1154,8 @@ class LearningSessionService:
         if state.get("phase") in ("feedback", "follow_up", "scorecard"):
             update = await followup_node(state)
             self._apply_update(session, update)
+            if update.get("phase") == "ended":
+                self._mark_bound_task_complete(session)
             self.db.commit()
             return self._render_outgoing(update.get("outgoing_events", []))
 
@@ -798,7 +1187,11 @@ class LearningSessionService:
         session.messages = messages
 
         if state.get("phase") in ("teaching", None):
-            confirmed = _looks_like_understanding(text)
+            previous_tutor_message = _last_tutor_message(messages[:-1])
+            confirmed = _looks_like_understanding(
+                text,
+                previous_tutor_message=previous_tutor_message,
+            )
             session.understanding_confirmed = (
                 session.understanding_confirmed or confirmed
             )
@@ -812,8 +1205,24 @@ class LearningSessionService:
                 ):
                     yield msg
             else:
-                async for msg in self._stream_teaching_turn(session, state):
-                    yield msg
+                checkpoint = self._readiness_checkpoint_message(state)
+                if checkpoint:
+                    messages.append(
+                        {"role": "ai", "content": checkpoint, "type": "chat"}
+                    )
+                    self._apply_update(
+                        session,
+                        {
+                            "phase": "teaching",
+                            "messages": messages,
+                        },
+                    )
+                    self.db.commit()
+                    async for msg in self._stream_chat_text(checkpoint):
+                        yield msg
+                else:
+                    async for msg in self._stream_teaching_turn(session, state):
+                        yield msg
             return
 
         if state.get("phase") in ("feedback", "follow_up", "scorecard"):
@@ -843,18 +1252,25 @@ class LearningSessionService:
         session.user_submission = answers
         state["user_submission"] = answers
 
+        messages_before_eval = list(state.get("messages", []))
         eval_update = await evaluation_node(state)
-        self._apply_update(session, eval_update)
+        feedback_only = int(state.get("current_task_index") or 0) > 0
+        if not feedback_only:
+            self._apply_update(session, eval_update)
         # Merge evaluation back into state for the feedback node
         state["evaluation"] = eval_update.get("evaluation")
         state["phase"] = eval_update.get("phase", state.get("phase"))
-        state["messages"] = eval_update.get("messages", state.get("messages", []))
+        state["messages"] = (
+            messages_before_eval
+            if feedback_only
+            else eval_update.get("messages", state.get("messages", []))
+        )
 
         feedback_update = await feedback_node(state)
         self._apply_update(session, feedback_update)
         self.db.commit()
 
-        events = list(eval_update.get("outgoing_events", []))
+        events = [] if feedback_only else list(eval_update.get("outgoing_events", []))
         events.extend(feedback_update.get("outgoing_events", []))
         return self._render_outgoing(events)
 
@@ -868,14 +1284,22 @@ class LearningSessionService:
         session.user_submission = answers
         state["user_submission"] = answers
 
+        messages_before_eval = list(state.get("messages", []))
         eval_update = await evaluation_node(state)
-        self._apply_update(session, eval_update)
+        feedback_only = int(state.get("current_task_index") or 0) > 0
+        if not feedback_only:
+            self._apply_update(session, eval_update)
         state["evaluation"] = eval_update.get("evaluation")
         state["phase"] = eval_update.get("phase", state.get("phase"))
-        state["messages"] = eval_update.get("messages", state.get("messages", []))
+        state["messages"] = (
+            messages_before_eval
+            if feedback_only
+            else eval_update.get("messages", state.get("messages", []))
+        )
 
-        for event in eval_update.get("outgoing_events", []):
-            yield WSOutgoingMessage(**event)
+        if not feedback_only:
+            for event in eval_update.get("outgoing_events", []):
+                yield WSOutgoingMessage(**event)
 
         feedback_update = await feedback_node(state)
         self._apply_update(session, feedback_update)
@@ -898,8 +1322,58 @@ class LearningSessionService:
         state["messages"] = messages
         session.messages = messages
 
+        action = action_text.strip().lower()
+        if any(sig in action for sig in ("try another task", "another task", "next task", "more")):
+            update = await self._build_retry_task_update(session, state)
+            self._apply_update(session, update)
+            self.db.commit()
+            return self._render_outgoing(update.get("outgoing_events", []))
+
+        if action in ("ask a question", "question", "doubt", "clarif"):
+            prompt_msg = "Sure — what would you like to know?"
+            messages.append({"role": "ai", "content": prompt_msg, "type": "chat"})
+            self._apply_update(
+                session,
+                {
+                    "phase": "follow_up",
+                    "messages": messages,
+                },
+            )
+            self.db.commit()
+            return [
+                WSOutgoingMessage(
+                    type="chat_message",
+                    role="assistant",
+                    content=prompt_msg,
+                )
+            ]
+
+        previous_tutor_message = _last_tutor_message(messages[:-1])
+        if _tutor_asked_doubt_clarified(previous_tutor_message):
+            if _looks_like_understanding(
+                action_text,
+                previous_tutor_message=previous_tutor_message,
+            ) or _looks_like_acknowledgement(action_text):
+                prompt_msg = "Good. What would you like to do next?"
+                messages.append({"role": "ai", "content": prompt_msg, "type": "chat"})
+                self._apply_update(
+                    session,
+                    {"phase": "feedback", "messages": messages},
+                )
+                self.db.commit()
+                return [
+                    WSOutgoingMessage(
+                        type="chat_message",
+                        role="assistant",
+                        content=prompt_msg,
+                        actions=["Try another task", "Ask a question", "End session"],
+                    )
+                ]
+
         update = await followup_node(state)
         self._apply_update(session, update)
+        if update.get("phase") == "ended":
+            self._mark_bound_task_complete(session)
         self.db.commit()
         return self._render_outgoing(update.get("outgoing_events", []))
 
@@ -933,6 +1407,47 @@ class LearningSessionService:
         another_signals = ("try another task", "another task", "next task", "more")
         question_signals = ("ask a question", "question", "doubt", "clarif")
 
+        previous_tutor_message = _last_tutor_message(messages)
+        if _tutor_asked_doubt_clarified(previous_tutor_message):
+            if _looks_like_understanding(
+                raw_action,
+                previous_tutor_message=previous_tutor_message,
+            ) or _looks_like_acknowledgement(raw_action):
+                prompt_msg = "Good. What would you like to do next?"
+                messages.append({"role": "ai", "content": prompt_msg, "type": "chat"})
+                self._apply_update(
+                    session,
+                    {
+                        "phase": "feedback",
+                        "messages": messages,
+                    },
+                )
+                self.db.commit()
+                async for msg in self._stream_chat_text(
+                    prompt_msg,
+                    actions=["Try another task", "Ask a question", "End session"],
+                ):
+                    yield msg
+                return
+
+            if any(pattern.search(action) for pattern in _NON_UNDERSTANDING_PATTERNS):
+                prompt_msg = (
+                    "No problem. What part is still confusing? Ask it in one "
+                    "sentence and I will explain it another way."
+                )
+                messages.append({"role": "ai", "content": prompt_msg, "type": "chat"})
+                self._apply_update(
+                    session,
+                    {
+                        "phase": "follow_up",
+                        "messages": messages,
+                    },
+                )
+                self.db.commit()
+                async for msg in self._stream_chat_text(prompt_msg):
+                    yield msg
+                return
+
         if any(sig in action for sig in end_signals):
             farewell = "Great work today! See you tomorrow."
             messages.append({"role": "ai", "content": farewell, "type": "chat"})
@@ -943,6 +1458,7 @@ class LearningSessionService:
                     "messages": messages,
                 },
             )
+            self._mark_bound_task_complete(session)
             self.db.commit()
             async for msg in self._stream_chat_text(
                 farewell,
@@ -952,20 +1468,12 @@ class LearningSessionService:
             return
 
         if any(sig in action for sig in another_signals):
-            prompt_msg = (
-                "Awesome — want to keep practicing the same topic, or move to "
-                "the next concept?"
-            )
-            messages.append({"role": "ai", "content": prompt_msg, "type": "chat"})
-            self._apply_update(
-                session,
-                {
-                    "phase": "teaching",
-                    "messages": messages,
-                },
-            )
+            update = await self._build_retry_task_update(session, state)
+            self._apply_update(session, update)
             self.db.commit()
-            async for msg in self._stream_chat_text(prompt_msg):
+            async for msg in self._stream_outgoing_events(
+                update.get("outgoing_events", [])
+            ):
                 yield msg
             return
 

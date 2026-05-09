@@ -13,6 +13,55 @@ interface DailyTaskPanelProps {
   enrollment: EnrollmentRead;
 }
 
+// ── Activity helpers ────────────────────────────────────────────────────────
+
+type Activity = "read" | "write" | "listen" | "speak";
+
+const ACTIVITY_LABELS: Record<Activity, string> = {
+  read: "Reading",
+  write: "Writing",
+  listen: "Listening",
+  speak: "Speaking",
+};
+
+const ACTIVITY_COLORS: Record<Activity, { bg: string; text: string }> = {
+  read:   { bg: "#dbeafe", text: "#1d4ed8" },
+  write:  { bg: "#ede9fe", text: "#6d28d9" },
+  listen: { bg: "#ffedd5", text: "#c2410c" },
+  speak:  { bg: "#dcfce7", text: "#15803d" },
+};
+
+function ActivityBadge({ activity }: { activity: string }) {
+  const a = activity as Activity;
+  const colors = ACTIVITY_COLORS[a] ?? { bg: "#e5e7eb", text: "#374151" };
+  const label = ACTIVITY_LABELS[a] ?? activity;
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "2px 8px",
+        borderRadius: 999,
+        background: colors.bg,
+        color: colors.text,
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: "0.02em",
+      }}
+    >
+      {label}
+    </span>
+  );
+}
+
+/** Extract the activity string from task content if present (curriculum tasks). */
+function getActivity(content: unknown): string | null {
+  if (content && typeof content === "object" && "activity" in content) {
+    const a = (content as Record<string, unknown>).activity;
+    if (typeof a === "string") return a;
+  }
+  return null;
+}
+
 function PlayIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -269,7 +318,7 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
                       fontSize: 15,
                       fontWeight: 700,
                       color: "oklch(20% 0.09 245)",
-                      marginBottom: 2,
+                      marginBottom: 4,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
@@ -277,15 +326,22 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
                   >
                     {task.task.title}
                   </div>
-                  <div
-                    style={{
-                      fontSize: 12.5,
-                      color: "oklch(45% 0.07 240)",
-                      textTransform: "capitalize",
-                    }}
-                  >
-                    {task.task.task_type.replace(/_/g, " ")}
-                  </div>
+                  {(() => {
+                    const activity = getActivity(task.task.content);
+                    return activity ? (
+                      <ActivityBadge activity={activity} />
+                    ) : (
+                      <div
+                        style={{
+                          fontSize: 12.5,
+                          color: "oklch(45% 0.07 240)",
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {task.task.task_type.replace(/^curriculum_/, "").replace(/_/g, " ")}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* CTA */}

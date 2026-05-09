@@ -10,6 +10,7 @@ interface StartSessionResponse {
   topic: string;
   skill_name: string;
   task_type: string;
+  user_task_id?: number | null;
   message: string;
 }
 
@@ -22,9 +23,16 @@ export default function ChatEntryPage() {
     setBusy(true);
     setError(null);
     try {
+      const taskIdParam =
+        typeof window !== "undefined"
+          ? new URLSearchParams(window.location.search).get("id")
+          : null;
+      const taskId = taskIdParam ? Number(taskIdParam) : null;
       const res = await api.post<StartSessionResponse>(
         "/api/learning/sessions/start",
-        {},
+        taskId !== null && Number.isFinite(taskId) && taskId > 0
+          ? { user_task_id: taskId }
+          : {},
       );
       router.push(`/task/chat/${res.data.session_id}`);
     } catch (err: unknown) {

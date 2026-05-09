@@ -38,6 +38,7 @@ class Plan:
     target_difficulty: int
     activity_cycle_length: int
     week_number: int
+    day_in_week: int
 
     def __repr__(self) -> str:
         return (
@@ -120,6 +121,7 @@ class RotationEngine:
             target_difficulty=target_difficulty,
             activity_cycle_length=len(allowed),
             week_number=week_number,
+            day_in_week=day_in_week,
         )
 
     @staticmethod

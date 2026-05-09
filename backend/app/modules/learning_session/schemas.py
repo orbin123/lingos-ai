@@ -9,9 +9,14 @@ from pydantic import BaseModel
 
 
 class StartSessionRequest(BaseModel):
-    """Empty body — everything is derived from the JWT + active enrollment."""
+    """Start a chat session.
 
-    pass
+    When ``user_task_id`` is supplied, the session practices that exact
+    dashboard task. Without it, the service keeps the older behavior of
+    generating a fresh session from the active enrollment.
+    """
+
+    user_task_id: Optional[int] = None
 
 
 class StartSessionResponse(BaseModel):
@@ -19,6 +24,7 @@ class StartSessionResponse(BaseModel):
     topic: str
     skill_name: str
     task_type: str
+    user_task_id: Optional[int] = None
     message: str = "Session ready"
 
 

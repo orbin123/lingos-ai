@@ -21,6 +21,40 @@ def test_learning_readiness_accepts_explicit_ready_phrases() -> None:
     assert _looks_like_understanding("I understand") is True
 
 
+def test_learning_readiness_rejects_plain_yes_after_concept_question() -> None:
+    assert (
+        _looks_like_understanding(
+            "yes",
+            previous_tutor_message="What kind of routines do you have?",
+        )
+        is False
+    )
+    assert (
+        _looks_like_understanding(
+            "okay",
+            previous_tutor_message="How would this sentence change with she?",
+        )
+        is False
+    )
+
+
+def test_learning_readiness_accepts_ack_after_readiness_question() -> None:
+    assert (
+        _looks_like_understanding(
+            "yes",
+            previous_tutor_message="Does this feel clear? Are you ready to practice?",
+        )
+        is True
+    )
+    assert (
+        _looks_like_understanding(
+            "okay",
+            previous_tutor_message="If that feels clear, say ready and I will give you the task.",
+        )
+        is True
+    )
+
+
 def test_learning_readiness_rejects_negated_understanding() -> None:
     assert (
         _looks_like_understanding(
@@ -44,6 +78,10 @@ class _FakeSessionRepo:
         return session
 
 
+class _FakeSession(SimpleNamespace):
+    current_task_index: int = 0
+
+
 def _streaming_service() -> LearningSessionService:
     service = LearningSessionService.__new__(LearningSessionService)
     service.db = _FakeDB()
@@ -52,10 +90,11 @@ def _streaming_service() -> LearningSessionService:
 
 
 def _teaching_session():
-    return SimpleNamespace(
+    return _FakeSession(
         messages=[{"role": "ai", "content": "What do you do on weekends?", "type": "chat"}],
         understanding_confirmed=False,
         phase="teaching",
+        current_task_index=0,
     )
 
 
@@ -155,6 +194,105 @@ def test_teacher_fallback_advances_by_learner_turn_count() -> None:
 
 
 @pytest.mark.asyncio
+async def test_teacher_forces_readiness_checkpoint_after_enough_concept_turns(
+    monkeypatch,
+) -> None:
+    async def should_not_stream_teaching_turn(**kwargs):
+        raise AssertionError("teacher should ask readiness, not another probe")
+        yield ""
+
+    monkeypatch.setattr(
+        service_module, "stream_teaching_turn", should_not_stream_teaching_turn
+    )
+    service = _streaming_service()
+    session = _FakeSession(
+        messages=[
+            {"role": "ai", "content": "What routine do you have?", "type": "chat"},
+            {"role": "user", "content": "yes", "type": "chat"},
+            {"role": "ai", "content": "Use we with a base verb.", "type": "chat"},
+            {"role": "user", "content": "we play cricket", "type": "chat"},
+            {"role": "ai", "content": "Now try he or she.", "type": "chat"},
+            {"role": "user", "content": "he sings well", "type": "chat"},
+            {"role": "ai", "content": "Add a frequency word.", "type": "chat"},
+        ],
+        understanding_confirmed=False,
+        phase="teaching",
+        current_task_index=0,
+    )
+    state = {
+        "phase": "teaching",
+        "messages": list(session.messages),
+        "topic": "Present Simple",
+        "skill_name": "grammar",
+        "task_type": "fill_in_blanks",
+        "user_level": 5,
+        "learner_profile": {},
+    }
+
+    events = [
+        event
+        async for event in service._handle_user_message_stream(
+            session,
+            state,
+            WSIncomingMessage(type="user_message", content="he sings often"),
+        )
+    ]
+
+    assert events[-1].type == "chat_stream_end"
+    assert "Does this feel clear enough to start the practice task?" in events[-1].content
+    assert session.phase == "teaching"
+
+
+@pytest.mark.asyncio
+async def test_teacher_does_not_force_readiness_when_latest_turn_is_question(
+    monkeypatch,
+) -> None:
+    async def fake_stream_teaching_turn(**kwargs):
+        yield "Good question. "
+        yield "The subject is the person or thing doing the action."
+
+    monkeypatch.setattr(
+        service_module, "stream_teaching_turn", fake_stream_teaching_turn
+    )
+    service = _streaming_service()
+    session = _FakeSession(
+        messages=[
+            {"role": "ai", "content": "What routine do you have?", "type": "chat"},
+            {"role": "user", "content": "we play cricket", "type": "chat"},
+            {"role": "ai", "content": "Now try he or she.", "type": "chat"},
+            {"role": "user", "content": "he sings well", "type": "chat"},
+            {"role": "ai", "content": "Add a frequency word.", "type": "chat"},
+            {"role": "user", "content": "he sings often", "type": "chat"},
+            {"role": "ai", "content": "Find the subject first.", "type": "chat"},
+        ],
+        understanding_confirmed=False,
+        phase="teaching",
+        current_task_index=0,
+    )
+    state = {
+        "phase": "teaching",
+        "messages": list(session.messages),
+        "topic": "Present Simple",
+        "skill_name": "grammar",
+        "task_type": "fill_in_blanks",
+        "user_level": 5,
+        "learner_profile": {},
+    }
+
+    events = [
+        event
+        async for event in service._handle_user_message_stream(
+            session,
+            state,
+            WSIncomingMessage(type="user_message", content="what is subject?"),
+        )
+    ]
+
+    assert events[-1].type == "chat_stream_end"
+    assert "person or thing doing the action" in events[-1].content
+
+
+@pytest.mark.asyncio
 async def test_end_session_farewell_offers_dashboard_action() -> None:
     service = _streaming_service()
     session = _teaching_session()
@@ -176,6 +314,171 @@ async def test_end_session_farewell_offers_dashboard_action() -> None:
     assert events[-1].type == "chat_stream_end"
     assert events[-1].actions == ["Go to dashboard"]
     assert session.phase == "ended"
+
+
+@pytest.mark.asyncio
+async def test_try_another_task_streams_feedback_only_retry_task() -> None:
+    service = _streaming_service()
+    session = _FakeSession(messages=[], phase="feedback", current_task_index=0)
+    state = {"messages": [{"role": "user", "content": "Try another task", "type": "chat"}]}
+
+    async def fake_retry_update(session, state):
+        return {
+            "phase": "practice_task",
+            "current_task_index": 1,
+            "task_content": {"widget": "fill_in_blanks", "items": []},
+            "outgoing_events": [
+                {
+                    "type": "chat_message",
+                    "role": "assistant",
+                    "content": "Here is another practice task at the same level. This one is for feedback only.",
+                },
+                {
+                    "type": "ui_event",
+                    "widget": "fill_in_blanks",
+                    "payload": {"widget": "fill_in_blanks", "items": []},
+                },
+            ],
+            "messages": [],
+        }
+
+    service._build_retry_task_update = fake_retry_update
+
+    events = [
+        event
+        async for event in service._stream_followup_response(
+            session,
+            state,
+            "Try another task",
+        )
+    ]
+
+    assert events[0].type == "chat_stream_start"
+    assert any(event.type == "chat_stream_end" for event in events)
+    assert events[-1].type == "ui_event"
+    assert events[-1].widget == "fill_in_blanks"
+    assert session.phase == "practice_task"
+    assert session.current_task_index == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_submission_suppresses_scorecard(monkeypatch) -> None:
+    async def fake_evaluation_node(state):
+        return {
+            "phase": "scorecard",
+            "evaluation": {"percentage": 50, "total": 2, "correct_count": 1},
+            "outgoing_events": [
+                {
+                    "type": "ui_event",
+                    "widget": "scorecard",
+                    "payload": {"overall_score": 50},
+                }
+            ],
+            "messages": list(state.get("messages", []))
+            + [{"role": "ai", "content": "[scorecard delivered]", "type": "ui_event"}],
+        }
+
+    async def fake_feedback_node(state):
+        return {
+            "phase": "feedback",
+            "feedback": {"overall_message": "Review this one.", "errors": [], "score": 50},
+            "outgoing_events": [
+                {
+                    "type": "ui_event",
+                    "widget": "feedback_card",
+                    "payload": {"overall_message": "Review this one.", "errors": [], "score": 50},
+                },
+                {
+                    "type": "chat_message",
+                    "role": "assistant",
+                    "content": "Review this one.",
+                    "actions": ["Try another task", "Ask a question", "End session"],
+                },
+            ],
+            "messages": list(state.get("messages", [])),
+        }
+
+    monkeypatch.setattr(service_module, "evaluation_node", fake_evaluation_node)
+    monkeypatch.setattr(service_module, "feedback_node", fake_feedback_node)
+
+    service = _streaming_service()
+    session = _FakeSession(
+        messages=[],
+        user_submission=None,
+        phase="practice_task",
+        current_task_index=1,
+    )
+    state = {
+        "messages": [],
+        "current_task_index": 1,
+        "task_content": {"items": []},
+        "task_type": "fill_in_blanks",
+    }
+
+    events = [
+        event
+        async for event in service._handle_task_submission_stream(
+            session,
+            state,
+            WSIncomingMessage(type="task_submission", answers={"b1": "go"}),
+        )
+    ]
+
+    assert [event.widget for event in events if event.type == "ui_event"] == [
+        "feedback_card"
+    ]
+    assert all(event.widget != "scorecard" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_question_answer_checks_if_doubt_is_clarified(monkeypatch) -> None:
+    async def fake_stream_answer_question(state, question):
+        yield "A tense shows when an action happens."
+
+    monkeypatch.setattr(
+        service_module,
+        "stream_answer_question",
+        fake_stream_answer_question,
+    )
+    service = _streaming_service()
+    session = _FakeSession(messages=[], phase="follow_up", current_task_index=0)
+    state = {"messages": [{"role": "user", "content": "What is tense?", "type": "chat"}]}
+
+    events = [
+        event
+        async for event in service._stream_followup_response(
+            session,
+            state,
+            "What is tense?",
+        )
+    ]
+
+    assert events[-1].content.endswith("Did that clarify your doubt?")
+    assert session.phase == "follow_up"
+
+
+@pytest.mark.asyncio
+async def test_yes_after_clarified_doubt_shows_followup_actions() -> None:
+    service = _streaming_service()
+    session = _FakeSession(messages=[], phase="follow_up", current_task_index=0)
+    state = {
+        "messages": [
+            {
+                "role": "ai",
+                "content": "A tense shows when an action happens. Did that clarify your doubt?",
+                "type": "chat",
+            },
+            {"role": "user", "content": "yes", "type": "chat"},
+        ]
+    }
+
+    events = [
+        event
+        async for event in service._stream_followup_response(session, state, "yes")
+    ]
+
+    assert events[-1].actions == ["Try another task", "Ask a question", "End session"]
+    assert session.phase == "feedback"
 
 
 def test_teacher_prompt_uses_recent_turns_and_blocks_repetition() -> None:
@@ -211,6 +514,24 @@ def test_teacher_prompt_uses_recent_turns_and_blocks_repetition() -> None:
     assert "Do not restate the opening explanation" in prompt
     assert "Ask a new probing question" in prompt
     assert "not another personal preference question" in prompt
+
+
+def test_teacher_prompt_warns_against_treating_ack_as_concept_answer() -> None:
+    prompt = _build_user_prompt(
+        topic="Present Simple",
+        sub_skill="grammar",
+        task_type="fill_in_blanks",
+        user_level=5,
+        learner_profile={},
+        conversation=[
+            {"role": "ai", "content": "What kind of routines do you have?", "type": "chat"},
+            {"role": "user", "content": "yes", "type": "chat"},
+        ],
+        stream_text=True,
+    )
+
+    assert "Plain acknowledgements like \"yes\", \"yeah\", \"ok\", or \"okay\"" in prompt
+    assert "Do not treat them as answers to concept-check questions" in prompt
 
 
 def test_teacher_prompt_advances_to_next_concept_after_multiple_turns() -> None:

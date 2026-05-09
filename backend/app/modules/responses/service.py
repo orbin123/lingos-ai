@@ -172,6 +172,10 @@ class ResponseService:
         # ── Generated path — infer from content fingerprint ──────────
         # Check more-specific shapes first so there's no ambiguity.
 
+        if task_content.get("widget") == "fill_in_blanks":
+            logger.debug("[evaluator] generated task widget='fill_in_blanks' → fill_in_blanks")
+            return "fill_in_blanks"
+
         if "speaking_prompt" in task_content and "target_tense" in task_content:
             logger.debug("[evaluator] generated task fingerprint='speaking_prompt+target_tense' → speak_with_tense")
             return "speak_with_tense"
