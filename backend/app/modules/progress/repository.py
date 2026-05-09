@@ -1,10 +1,10 @@
-"""Data access for ProgressLog — append-only history of skill score changes."""
+"""Data access for ProgressLog — append-only history of skill score changes, plus points-based tracking."""
 
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from app.modules.progress.models import ProgressLog
+from app.modules.progress.models import ProgressLog, SkillPoints, SkillPointsLog
 
 
 class ProgressLogRepository:
@@ -61,3 +61,101 @@ class ProgressLogRepository:
         self.db.add(row)
         self.db.flush()
         return row
+
+
+class SkillPointsRepository:
+    """CRUD for points-based skill tracking.
+
+    One row per (user, skill). Mutable — points and display_score
+    are updated on every relevant task.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    # Reads
+    def get_one(self, user_id: int, skill_id: int) -> SkillPoints | None:
+        """Single (user, skill) row, or None if not yet initialised."""
+        return (
+            self.db.query(SkillPoints)
+            .filter(
+                SkillPoints.user_id == user_id,
+                SkillPoints.skill_id == skill_id,
+            )
+            .first()
+        )
+
+    # Writes
+    def upsert_points(
+        self,
+        *,
+        user_id: int,
+        skill_id: int,
+        points: int,
+    ) -> SkillPoints:
+        """Insert or update points, auto-capping at 10000."""
+        points = min(points, 10000)
+
+        existing = self.get_one(user_id, skill_id)
+        if existing is not None:
+            existing.points = points
+            existing.display_score = min(10.0, points / 1000.0)
+            self.db.flush()
+            return existing
+
+        new_row = SkillPoints(
+            user_id=user_id,
+            skill_id=skill_id,
+            points=points,
+            display_score=min(10.0, points / 1000.0),
+        )
+        self.db.add(new_row)
+        self.db.flush()
+        return new_row
+
+
+class SkillPointsLogRepository:
+    """Append-only audit log of points earned per task."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    # Reads
+    def list_for_user(
+        self,
+        *,
+        user_id: int,
+        skill_id: int | None = None,
+        limit: int = 50,
+    ) -> list[SkillPointsLog]:
+        """Return recent points gains, newest first. Optionally filter by skill."""
+        q = (
+            self.db.query(SkillPointsLog)
+            .filter(SkillPointsLog.user_id == user_id)
+            .order_by(SkillPointsLog.created_at.desc())
+        )
+        if skill_id is not None:
+            q = q.filter(SkillPointsLog.skill_id == skill_id)
+        return q.limit(limit).all()
+
+    # Writes
+    def create(
+        self,
+        *,
+        user_id: int,
+        skill_id: int,
+        points_earned: int,
+        reason: str,
+        user_task_id: int | None = None,
+    ) -> SkillPointsLog:
+        """Insert one log row. Service layer handles the commit."""
+        log = SkillPointsLog(
+            user_id=user_id,
+            skill_id=skill_id,
+            points_earned=points_earned,
+            reason=reason,
+            user_task_id=user_task_id,
+        )
+        self.db.add(log)
+        self.db.flush()
+        return log

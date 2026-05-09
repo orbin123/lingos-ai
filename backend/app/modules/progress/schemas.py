@@ -73,3 +73,34 @@ class StatsDashboard(BaseModel):
     skill_scores: list[SkillScoreSnapshot]
     feedback: StatsFeedback
     recent_activities: list[RecentActivity]
+
+
+class SkillPointsRead(BaseModel):
+    """Current points for one (user, skill) pair."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    skill_id: int
+    points: int
+    display_score: float
+
+
+class SkillPointsLogRead(BaseModel):
+    """One row from the points-earned audit log."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    skill_id: int
+    points_earned: int
+    reason: str
+    created_at: datetime
+
+
+class SkillWithPointsRead(BaseModel):
+    """Combined WMA + points view for a single skill (dashboard-friendly)."""
+
+    skill_id: int
+    skill_name: str
+    wma_score: float
+    points_score: float
+    points: int
