@@ -19,6 +19,6 @@ from app.modules.tasks.models import Task, TaskSkill, UserTask  # noqa: F401
 from app.modules.responses.models import (  # noqa: F401
     UserResponse, Evaluation, Feedback,
 )
-from app.modules.progress.models import ProgressLog  # noqa: F401
+from app.modules.progress.models import ProgressLog, SkillPoints, SkillPointsLog  # noqa: F401
 from app.modules.subscriptions.models import Purchase  # noqa: F401
 from app.modules.learning_session.models import LearningSession  # noqa: F401

@@ -14,3 +14,8 @@ class TaskHasNoTargetSkills(Exception):
     We surface it loudly instead of silently doing nothing.
     """
     pass
+
+
+class EnrollmentNotFound(Exception):
+    """Raised when the user has no active enrollment — cannot determine course length."""
+    pass

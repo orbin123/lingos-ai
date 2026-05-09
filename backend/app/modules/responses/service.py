@@ -6,7 +6,7 @@ import logging
 
 from app.ai.embeddings import EmbeddingError, EmbeddingService
 from app.ai.agents import EvaluationService
-from app.modules.progress.service import ScoreUpdaterService
+from app.modules.progress.service import PointsUpdaterService, ScoreUpdaterService
 from app.modules.responses.exceptions import (
     NotResponseOwner,
     UserTaskNotFound,
@@ -292,6 +292,14 @@ class ResponseService:
 
         # 4. Update skill scores + log progress (commit 4)
         updated_scores = self.score_updater.apply(evaluation.id)
+
+        # 4b. Best-effort points tracking (non-blocking — points failure
+        #     never prevents the user from seeing feedback).
+        try:
+            points_updater = PointsUpdaterService(self.db)
+            points_updater.apply(evaluation.id)
+        except Exception:
+            logger.exception("Points update failed for evaluation %s (non-blocking)", evaluation.id)
 
         # 5. Mark the assignment completed so /tasks/complete-day can advance.
         user_task = self.user_task_repo.get_by_id(user_task_id)

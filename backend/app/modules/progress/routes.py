@@ -9,10 +9,13 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
-from app.modules.progress.repository import ProgressLogRepository
+from app.modules.progress.models import SkillPoints
+from app.modules.progress.repository import ProgressLogRepository, SkillPointsLogRepository
 from app.modules.progress.schemas import (
     ProgressLogPoint,
     RecentActivity,
+    SkillPointsLogRead,
+    SkillPointsRead,
     SkillScoreSnapshot,
     StatsDashboard,
     StatsFeedback,
@@ -312,3 +315,50 @@ def get_stats_dashboard(
         ),
         recent_activities=recent_activities,
     )
+
+
+@router.get(
+    "/skill-points",
+    response_model=list[SkillPointsRead],
+    status_code=status.HTTP_200_OK,
+)
+def get_skill_points(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[SkillPointsRead]:
+    """Return points-based progress for every skill.
+
+    Used by the dashboard to display the gamified progress bars.
+    Returns an empty list if the user has no points rows yet.
+    """
+    rows = (
+        db.query(SkillPoints)
+        .filter(SkillPoints.user_id == current_user.id)
+        .all()
+    )
+    return [SkillPointsRead.model_validate(row) for row in rows]
+
+
+@router.get(
+    "/points-history",
+    response_model=list[SkillPointsLogRead],
+    status_code=status.HTTP_200_OK,
+)
+def get_points_history(
+    skill_id: int | None = Query(None, gt=0, description="Filter by skill"),
+    limit: int = Query(50, ge=1, le=200, description="Max rows to return"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[SkillPointsLogRead]:
+    """Return recent points gains, newest first.
+
+    Optionally filtered by skill_id. Used for "You earned +X points!"
+    notifications and the points history timeline.
+    """
+    repo = SkillPointsLogRepository(db)
+    rows = repo.list_for_user(
+        user_id=current_user.id,
+        skill_id=skill_id,
+        limit=limit,
+    )
+    return [SkillPointsLogRead.model_validate(row) for row in rows]
