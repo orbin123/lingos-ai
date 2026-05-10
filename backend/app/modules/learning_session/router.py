@@ -26,6 +26,7 @@ from app.modules.curriculum.exceptions import (
     NotEnrolled,
 )
 from app.modules.learning_session.schemas import (
+    LearningSessionSnapshotRead,
     StartSessionRequest,
     StartSessionResponse,
     WSIncomingMessage,
@@ -73,6 +74,53 @@ async def start_session(
     except Exception as exc:  # pragma: no cover — unexpected
         logger.exception("start_session failed for user_id=%s", current_user.id)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@rest_router.get(
+    "/sessions/by-task/{user_task_id}",
+    response_model=LearningSessionSnapshotRead,
+    status_code=status.HTTP_200_OK,
+)
+def get_session_by_task(
+    user_task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LearningSessionSnapshotRead:
+    """Return the most recent learning session linked to a user task.
+
+    Used by the history page to show a read-only chat snapshot when the
+    task was completed via chat rather than the standard task form.
+
+    Errors:
+      404 — no session found for this task belonging to the current user
+    """
+    from app.modules.learning_session.models import LearningSession
+
+    session = (
+        db.query(LearningSession)
+        .filter(
+            LearningSession.user_task_id == user_task_id,
+            LearningSession.user_id == current_user.id,
+        )
+        .order_by(LearningSession.id.desc())
+        .first()
+    )
+    if session is None:
+        raise HTTPException(status_code=404, detail="No session found for this task")
+
+    return LearningSessionSnapshotRead(
+        session_id=session.session_id,
+        topic=session.topic,
+        skill_name=session.skill_name,
+        task_type=session.task_type,
+        phase=session.phase,
+        messages=session.messages or [],
+        pre_generated_tasks=session.pre_generated_tasks,
+        user_submission=session.user_submission,
+        evaluation=session.evaluation,
+        feedback=session.feedback,
+        created_at=session.created_at,
+    )
 
 
 # --- WebSocket --------------------------------------------------------

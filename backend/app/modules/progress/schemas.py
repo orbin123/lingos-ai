@@ -68,6 +68,7 @@ class RecentActivity(BaseModel):
     """Completed task summary with evaluator and feedback details."""
 
     id: int
+    user_task_id: int
     task_name: str
     task_type: str
     completed_at: datetime

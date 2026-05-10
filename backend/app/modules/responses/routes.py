@@ -111,6 +111,59 @@ async def submit_response(
     )
 
 
+@router.get(
+    "/by-task/{user_task_id}",
+    response_model=ResponseGradedRead,
+    status_code=status.HTTP_200_OK,
+)
+def get_response_by_task(
+    user_task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ResponseGradedRead:
+    """Return the stored graded result for a completed task.
+
+    Used by the history/snapshot page to display a read-only view of what
+    the user submitted and how it was scored.
+
+    Errors:
+      403 — task belongs to a different user
+      404 — task, response, evaluation, or feedback not found
+    """
+    from app.modules.tasks.models import UserTask
+    from app.modules.responses.models import UserResponse, Evaluation, Feedback
+    from app.modules.skills.models import UserSkillScore
+
+    user_task = db.query(UserTask).filter(UserTask.id == user_task_id).first()
+    if user_task is None:
+        raise HTTPException(status_code=404, detail="UserTask not found")
+    if user_task.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    response = (
+        db.query(UserResponse)
+        .filter(UserResponse.user_task_id == user_task_id)
+        .first()
+    )
+    if response is None:
+        raise HTTPException(status_code=404, detail="No response found for this task")
+
+    evaluation = response.evaluation
+    if evaluation is None:
+        raise HTTPException(status_code=404, detail="No evaluation found for this task")
+
+    feedback = evaluation.feedback
+    if feedback is None:
+        raise HTTPException(status_code=404, detail="No feedback found for this task")
+
+    return ResponseGradedRead(
+        response=ResponseRead.model_validate(response),
+        evaluation=EvaluationRead.model_validate(evaluation),
+        feedback=FeedbackRead.model_validate(feedback),
+        skill_scores=[],
+    )
+
+
 class TranscribeAudioResponse(BaseModel):
     transcript: str
     audio_url: str

@@ -76,19 +76,51 @@ export default function TaskPage() {
   // ─── Step state ────────────────────────────────────────────
   const [currentStep, setCurrentStep] = useState(0);
   const [results, setResults] = useState<(ResponseGraded | null)[]>([]);
+  const [prefetchedResults, setPrefetchedResults] = useState<Record<number, ResponseGraded>>({});
   const [reviewResult, setReviewResult] = useState<ResponseGraded | null>(null);
   const [dayComplete, setDayComplete] = useState(false);
 
-  // Reset step when bundle changes
+  // Reset step when bundle changes — jump to first incomplete task,
+  // or show day-complete immediately if all are already done.
   useEffect(() => {
     if (bundle.length > 0) {
+      const firstPending = bundle.findIndex((t) => t.status !== "completed");
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCurrentStep(0);
       setResults(new Array(bundle.length).fill(null));
       setReviewResult(null);
-      setDayComplete(false);
+      if (firstPending === -1) {
+        // All tasks already completed (returning after reload)
+        setCurrentStep(0);
+        setDayComplete(true);
+      } else {
+        setCurrentStep(firstPending);
+        setDayComplete(false);
+      }
     }
   }, [bundle.length]);
+
+  // Pre-fetch results for completed tasks so DayCompleteScreen can show scores.
+  useEffect(() => {
+    const completedTasks = bundle.filter((t) => t.status === "completed");
+    if (completedTasks.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      completedTasks.map((t) =>
+        tasksApi
+          .getTaskResult(t.id)
+          .then((r) => ({ id: t.id, result: r }))
+          .catch(() => null),
+      ),
+    ).then((items) => {
+      if (cancelled) return;
+      const record: Record<number, ResponseGraded> = {};
+      for (const item of items) {
+        if (item) record[item.id] = item.result;
+      }
+      setPrefetchedResults(record);
+    });
+    return () => { cancelled = true; };
+  }, [bundle]);
 
   const currentTask = bundle[currentStep] ?? null;
   const isLastTask = currentStep === totalTasks - 1;
@@ -273,11 +305,17 @@ export default function TaskPage() {
       ? (enrollment.current_week - 1) * 7 + enrollment.current_day_in_week
       : 0;
 
+    // Merge in-session results with pre-fetched results for tasks already
+    // completed before this session (e.g. user returned after reload).
+    const effectiveResults = bundle.map(
+      (task, i) => results[i] ?? prefetchedResults[task.id] ?? null,
+    );
+
     return (
       <PageShell>
         <DayCompleteScreen
           dayNum={dayNum}
-          results={results}
+          results={effectiveResults}
           bundle={bundle}
           isCompleting={completeDayMutation.isPending}
           onFinish={finishDayOrJump}

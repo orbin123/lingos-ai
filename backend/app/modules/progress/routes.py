@@ -375,6 +375,7 @@ def get_stats_dashboard(
         recent_activities.append(
             RecentActivity(
                 id=user_task.id,
+                user_task_id=user_task.id,
                 task_name=user_task.task.title,
                 task_type=_task_type_value(user_task.task.task_type),
                 completed_at=user_task.completed_at or user_task.created_at,
@@ -409,6 +410,60 @@ def get_stats_dashboard(
         ),
         recent_activities=recent_activities,
     )
+
+
+@router.get(
+    "/activities",
+    response_model=list[RecentActivity],
+    status_code=status.HTTP_200_OK,
+)
+def get_all_activities(
+    limit: int = Query(50, ge=1, le=200, description="Max rows to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[RecentActivity]:
+    """Return all completed activities for the current user, newest first."""
+    rows = (
+        db.query(UserTask)
+        .filter(
+            UserTask.user_id == current_user.id,
+            UserTask.status == UserTaskStatus.COMPLETED,
+        )
+        .options(joinedload(UserTask.task))
+        .order_by(UserTask.completed_at.desc().nullslast(), UserTask.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    activities: list[RecentActivity] = []
+    for user_task in rows:
+        response = (
+            db.query(UserResponse)
+            .filter(UserResponse.user_task_id == user_task.id)
+            .first()
+        )
+        evaluation = response.evaluation if response is not None else None
+        feedback = evaluation.feedback if evaluation is not None else None
+        body = feedback.body if feedback is not None else {}
+
+        score = float(evaluation.overall_score) if evaluation is not None else 0.0
+        mistakes = _mistakes_from_feedback(body)
+        activities.append(
+            RecentActivity(
+                id=user_task.id,
+                user_task_id=user_task.id,
+                task_name=user_task.task.title,
+                task_type=_task_type_value(user_task.task.task_type),
+                completed_at=user_task.completed_at or user_task.created_at,
+                score=score,
+                mistake_count=len(mistakes),
+                mistakes=[] if score >= 8 else mistakes,
+                strength=_strength_from_feedback(body, score) if score >= 8 else None,
+            )
+        )
+    return activities
 
 
 @router.get(

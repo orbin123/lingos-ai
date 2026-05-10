@@ -9,6 +9,7 @@ interface BlankItem {
   item_id?: string;
   blank_id?: string;
   sentence_with_blank: string;
+  base_verb?: string | null;
   correct_answer: string;
   distractors?: string[];
   options?: string[];
@@ -476,6 +477,17 @@ function PassageWithBlanks({
             boxShadow: submitted ? "none" : "0 2px 8px rgba(80,110,180,0.08)",
           }}
         />
+        {!submitted && blank.base_verb && (
+          <span style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: "oklch(52% 0.18 240)",
+            fontStyle: "italic",
+            whiteSpace: "nowrap",
+          }}>
+            ({blank.base_verb})
+          </span>
+        )}
       </span>
     );
   };
@@ -499,27 +511,17 @@ function PassageWithBlanks({
           </span>
         ))
       ) : (
-        <>
-          {passage}
-          <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
-            {blanks.map((blank, index) => (
-              <label
-                key={blankId(blank)}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr)",
-                  gap: 6,
-                  fontSize: 13.5,
-                  fontWeight: 700,
-                  color: "oklch(22% 0.07 240)",
-                }}
-              >
-                <span>{index + 1}. {blank.sentence_with_blank}</span>
-                {inputForBlank(blank, index)}
-              </label>
-            ))}
-          </div>
-        </>
+        blanks.map((blank, index) => {
+          const sentenceParts = blank.sentence_with_blank.split("___");
+          return (
+            <div key={blankId(blank)} style={{ marginBottom: 8 }}>
+              <span style={{ fontWeight: 700, marginRight: 6, color: "oklch(52% 0.18 240)" }}>{index + 1}.</span>
+              {sentenceParts[0]}
+              {inputForBlank(blank, index)}
+              {sentenceParts[1] ?? ""}
+            </div>
+          );
+        })
       )}
     </div>
   );
@@ -1382,6 +1384,10 @@ export default function ChatSessionPage() {
 
   return (
     <>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
+      />
       <style>{`
         *, *::before, *::after { box-sizing: border-box; }
         body { overflow-x: hidden; }

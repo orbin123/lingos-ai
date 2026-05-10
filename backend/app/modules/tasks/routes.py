@@ -101,6 +101,43 @@ def superuser_jump(
 
 
 @router.post(
+    "/{user_task_id}/retry",
+    response_model=UserTaskRead,
+    status_code=status.HTTP_200_OK,
+)
+def retry_task(
+    user_task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserTaskRead:
+    """Reset a completed task so the user can attempt it again.
+
+    Deletes the previous response, evaluation and feedback rows so the
+    next completion overwrites all derived stats for this activity.
+    Only COMPLETED tasks can be retried.
+
+    Errors:
+      403 — task belongs to a different user
+      404 — task not found
+      409 — task is not in completed state
+    """
+    service = TaskService(db)
+    try:
+        user_task = service.reset_for_retry(
+            user_id=current_user.id,
+            user_task_id=user_task_id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+    return UserTaskRead.model_validate(user_task)
+
+
+@router.post(
     "/complete-day",
     response_model=EnrollmentRead,
     status_code=status.HTTP_200_OK,

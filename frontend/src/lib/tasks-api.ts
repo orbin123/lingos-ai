@@ -331,6 +331,24 @@ export interface ResponseGraded {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// LEARNING SESSION SNAPSHOT (chat history view)
+// ════════════════════════════════════════════════════════════════════
+
+export interface LearningSessionSnapshot {
+  session_id: string;
+  topic: string;
+  skill_name: string;
+  task_type: string;
+  phase: string;
+  messages: Array<{ role: string; content: string; [key: string]: unknown }>;
+  pre_generated_tasks: Record<string, unknown> | null;
+  user_submission: Record<string, unknown> | null;
+  evaluation: Record<string, unknown> | null;
+  feedback: Record<string, unknown> | null;
+  created_at: string;
+}
+
+// ════════════════════════════════════════════════════════════════════
 // API calls
 // ════════════════════════════════════════════════════════════════════
 
@@ -338,6 +356,18 @@ export const tasksApi = {
   // Backend endpoint is POST /tasks/next — returns the day bundle (array)
   getNext: () =>
     api.post<UserTask[]>("/tasks/next").then((r) => r.data),
+
+  /** Fetch the stored graded result for a completed task (read-only history). */
+  getTaskResult: (user_task_id: number) =>
+    api
+      .get<ResponseGraded>(`/responses/by-task/${user_task_id}`)
+      .then((r) => r.data),
+
+  /** Fetch the learning session snapshot for a task completed via chat. */
+  getSessionByTask: (user_task_id: number) =>
+    api
+      .get<LearningSessionSnapshot>(`/api/learning/sessions/by-task/${user_task_id}`)
+      .then((r) => r.data),
 
   submitResponse: (payload: {
     user_task_id: number;
@@ -362,6 +392,10 @@ export const tasksApi = {
       )
       .then((r) => r.data);
   },
+
+  /** Reset a completed task so it can be attempted again. */
+  retryTask: (user_task_id: number) =>
+    api.post<UserTask>(`/tasks/${user_task_id}/retry`).then((r) => r.data),
 
   // Mark the entire day as complete after all tasks in the bundle are submitted
   completeDay: () =>

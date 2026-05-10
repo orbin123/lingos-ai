@@ -879,3 +879,43 @@ class TaskService:
         self.db.commit()
         self.db.refresh(enrollment)
         return enrollment
+
+    def reset_for_retry(self, *, user_id: int, user_task_id: int) -> UserTask:
+        """Reset a completed UserTask so the user can attempt it again.
+
+        Deletes the existing UserResponse row (cascades to Evaluation and
+        Feedback) so the next completion fully overwrites the previous score
+        in recent activities and sub-skill bars.
+
+        Raises:
+            LookupError: task not found.
+            PermissionError: task belongs to a different user.
+            ValueError: task is not in COMPLETED status.
+        """
+        from app.modules.responses.repository import ResponseRepository
+
+        user_task = self.user_task_repo.get_by_id(user_task_id)
+        if user_task is None:
+            raise LookupError(f"UserTask {user_task_id} does not exist")
+        if user_task.user_id != user_id:
+            raise PermissionError(
+                f"UserTask {user_task_id} belongs to a different user"
+            )
+        if user_task.status != UserTaskStatus.COMPLETED:
+            raise ValueError(
+                f"UserTask {user_task_id} is {user_task.status.value} — only completed tasks can be retried"
+            )
+
+        # Delete old response (cascades to Evaluation, Feedback).
+        existing = ResponseRepository(self.db).get_by_user_task_id(user_task_id)
+        if existing is not None:
+            self.db.delete(existing)
+            self.db.flush()
+
+        # Reset task status.
+        user_task.status = UserTaskStatus.PENDING
+        user_task.completed_at = None
+
+        self.db.commit()
+        self.db.refresh(user_task)
+        return user_task

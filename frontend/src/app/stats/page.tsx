@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { authApi } from "@/lib/auth-api";
@@ -184,14 +184,19 @@ function AgentTag({ label, tone = "blue" }: { label: string; tone?: "blue" | "gr
   );
 }
 
-function CardLink({ children }: { children: React.ReactNode }) {
+function CardLink({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
   return (
-    <a href="#" style={{
-      fontSize: 13, fontWeight: 700, color: T.primary,
-      display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none",
-    }}>
+    <button
+      onClick={onClick}
+      style={{
+        fontSize: 13, fontWeight: 700, color: T.primary,
+        display: "inline-flex", alignItems: "center", gap: 4,
+        background: "none", border: "none", cursor: "pointer",
+        padding: 0, fontFamily: "inherit",
+      }}
+    >
       {children}
-    </a>
+    </button>
   );
 }
 
@@ -287,7 +292,7 @@ function Radar({ skills }: { skills: Array<{ label: string; score: number }> }) 
   });
 
   return (
-    <svg width="360" height="360" viewBox="0 0 360 360" style={{ display: "block", margin: "0 auto" }}>
+    <svg width="360" height="360" viewBox="0 0 360 360" overflow="visible" style={{ display: "block", margin: "0 auto" }}>
       {[2, 4, 6, 8, 10].map(v => {
         const pts = Array.from({ length: N }, (_, i) => {
           const r = (v / 10) * R;
@@ -345,7 +350,7 @@ function SkillBars({
             </div>
             <span style={{ fontSize: 13.5, fontWeight: 800, color: T.navy, width: 36, textAlign: "right" }}>{s.score.toFixed(1)}</span>
             <span style={{
-              fontSize: 11.5, fontWeight: 700, padding: "3px 7px", borderRadius: 6, minWidth: 50, textAlign: "center",
+              fontSize: 10.5, fontWeight: 700, padding: "3px 6px", borderRadius: 6, minWidth: 64, textAlign: "center",
               background: pts > 0 ? "oklch(94% 0.07 155)" : "oklch(95% 0.015 240)",
               color: pts > 0 ? "oklch(38% 0.14 155)" : T.inkMuted,
             }}>
@@ -359,7 +364,7 @@ function SkillBars({
 }
 
 // ─── Activity rows ─────────────────────────────────────────────────────────────
-function ActivityRow({ activity }: { activity: RecentActivity }) {
+function ActivityRow({ activity, onClick }: { activity: RecentActivity; onClick: () => void }) {
   const { color, bg } = scoreColor(activity.score);
   const chip = activityChip(activity.task_type);
   const iconBg: Record<string, string> = {
@@ -370,22 +375,27 @@ function ActivityRow({ activity }: { activity: RecentActivity }) {
   };
 
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 14,
-      padding: "14px 16px", borderRadius: 14,
-      background: "white", border: `1.5px solid ${T.line}`,
-      marginBottom: 8, transition: "all 0.15s", cursor: "default",
-    }}
-    onMouseEnter={e => {
-      (e.currentTarget as HTMLDivElement).style.borderColor = T.primary;
-      (e.currentTarget as HTMLDivElement).style.transform = "translateY(-1px)";
-      (e.currentTarget as HTMLDivElement).style.boxShadow = "0 4px 14px rgba(0,112,196,0.1)";
-    }}
-    onMouseLeave={e => {
-      (e.currentTarget as HTMLDivElement).style.borderColor = T.line;
-      (e.currentTarget as HTMLDivElement).style.transform = "";
-      (e.currentTarget as HTMLDivElement).style.boxShadow = "";
-    }}
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => e.key === "Enter" && onClick()}
+      style={{
+        display: "flex", alignItems: "center", gap: 14,
+        padding: "14px 16px", borderRadius: 14,
+        background: "white", border: `1.5px solid ${T.line}`,
+        marginBottom: 8, transition: "all 0.15s", cursor: "pointer",
+      }}
+      onMouseEnter={e => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = T.primary;
+        (e.currentTarget as HTMLDivElement).style.transform = "translateY(-1px)";
+        (e.currentTarget as HTMLDivElement).style.boxShadow = "0 4px 14px rgba(0,112,196,0.1)";
+      }}
+      onMouseLeave={e => {
+        (e.currentTarget as HTMLDivElement).style.borderColor = T.line;
+        (e.currentTarget as HTMLDivElement).style.transform = "";
+        (e.currentTarget as HTMLDivElement).style.boxShadow = "";
+      }}
     >
       <div style={{
         width: 38, height: 38, borderRadius: 10, flexShrink: 0,
@@ -601,6 +611,12 @@ export default function StatsPage() {
   const { isReady } = useRequireAuth();
   const [range, setRange] = useState<string>("7d");
 
+  const handleActivityClick = useCallback(
+    (userTaskId: number) => router.push(`/task/history/${userTaskId}`),
+    [router],
+  );
+  const handleViewAll = useCallback(() => router.push("/stats/activities"), [router]);
+
   const userQuery = useQuery({
     queryKey: ["me"],
     queryFn: authApi.me,
@@ -774,12 +790,18 @@ export default function StatsPage() {
                     <CardHead
                       title="Recent activities"
                       sub={`Last ${activities.length || 7} sessions`}
-                      right={<CardLink>View all <ArrowOut/></CardLink>}
+                      right={<CardLink onClick={handleViewAll}>View all <ArrowOut/></CardLink>}
                     />
                     {statsQuery.isLoading ? (
                       <div style={{ padding: 24, color: T.inkMuted, fontSize: 14 }}>Loading activities…</div>
                     ) : activities.length > 0 ? (
-                      activities.slice(0, 5).map(a => <ActivityRow key={a.id} activity={a}/>)
+                      activities.slice(0, 10).map(a => (
+                        <ActivityRow
+                          key={a.id}
+                          activity={a}
+                          onClick={() => handleActivityClick(a.user_task_id)}
+                        />
+                      ))
                     ) : (
                       <>
                         <MockActivityRow

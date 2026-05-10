@@ -246,7 +246,7 @@ class LearningSessionService:
     ) -> StartSessionResponse:
         enrollment = self._load_enrollment(user_id)
         if user_task_id is not None:
-            return self._create_session_from_user_task(
+            return await self._create_session_from_user_task(
                 user_id=user_id,
                 enrollment=enrollment,
                 user_task_id=user_task_id,
@@ -308,7 +308,7 @@ class LearningSessionService:
             message="Session ready",
         )
 
-    def _create_session_from_user_task(
+    async def _create_session_from_user_task(
         self,
         *,
         user_id: int,
@@ -329,6 +329,42 @@ class LearningSessionService:
         if user_task.status in (UserTaskStatus.COMPLETED, UserTaskStatus.SKIPPED):
             raise LearningSessionTaskUnavailable(
                 f"UserTask {user_task_id} is already {user_task.status.value}"
+            )
+
+        # Auto-resume: if an active (not yet fully completed) session exists
+        # for this task, return it instead of creating a new one.
+        existing = (
+            self.db.query(LearningSession)
+            .filter(
+                LearningSession.user_task_id == user_task_id,
+                LearningSession.user_id == user_id,
+                LearningSession.feedback.is_(None),
+            )
+            .order_by(LearningSession.id.desc())
+            .first()
+        )
+        if existing is not None:
+            template = self._template_for_retry(existing)
+            user_profile = self._retry_generation_profile(
+                session=existing,
+                template=template,
+            )
+            task_content = await self.generator.generate(template, user_profile)
+            existing.pre_generated_tasks = task_content
+            existing.messages = []
+            existing.phase = "teaching"
+            existing.user_submission = None
+            existing.evaluation = None
+            existing.understanding_confirmed = False
+            existing.current_task_index = 0
+            self.db.commit()
+            return StartSessionResponse(
+                session_id=existing.session_id,
+                topic=existing.topic,
+                skill_name=existing.skill_name,
+                task_type=existing.task_type,
+                user_task_id=user_task_id,
+                message="Session restarted",
             )
 
         task = user_task.task
@@ -812,7 +848,65 @@ class LearningSessionService:
             return
         if user_task.status == UserTaskStatus.SKIPPED:
             return
+
+        self._persist_session_scores(session, user_task_id)
         self.user_task_repo.mark_completed(user_task)
+
+    def _persist_session_scores(
+        self, session: LearningSession, user_task_id: int
+    ) -> None:
+        """Persist UserResponse + Evaluation rows and update skill scores.
+
+        Chat sessions store evaluation results in LearningSession.evaluation
+        (JSON) but never write UserResponse/Evaluation DB rows, so the stats
+        page shows 0.0 and points never update. This method bridges that gap
+        when the session ends.
+        """
+        from app.modules.progress.service import PointsUpdaterService, ScoreUpdaterService
+        from app.modules.responses.repository import EvaluationRepository, ResponseRepository
+
+        evaluation_data = session.evaluation
+        if not evaluation_data:
+            return
+
+        response_repo = ResponseRepository(self.db)
+        evaluation_repo = EvaluationRepository(self.db)
+
+        # Idempotent: skip if already persisted (e.g. double-end-session call).
+        if response_repo.get_by_user_task_id(user_task_id) is not None:
+            return
+
+        percentage = float(evaluation_data.get("percentage", 0.0))
+        overall_score = round(percentage / 10.0, 2)
+        user_submission = session.user_submission or {}
+
+        response = response_repo.create(
+            user_task_id=user_task_id,
+            content=user_submission,
+            raw_text=None,
+        )
+        evaluation = evaluation_repo.create(
+            response_id=response.id,
+            overall_score=overall_score,
+            percentage=percentage,
+            report=evaluation_data,
+        )
+
+        # ScoreUpdaterService.apply commits internally.
+        try:
+            ScoreUpdaterService(self.db).apply(evaluation.id)
+        except Exception:
+            logger.exception(
+                "WMA score update failed for learning session task %s", user_task_id
+            )
+
+        # PointsUpdaterService.apply commits internally.
+        try:
+            PointsUpdaterService(self.db).apply(evaluation.id)
+        except Exception:
+            logger.exception(
+                "Points update failed for learning session task %s", user_task_id
+            )
 
     @staticmethod
     def _render_outgoing(events: list[dict]) -> list[WSOutgoingMessage]:

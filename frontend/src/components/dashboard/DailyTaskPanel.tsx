@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AxiosError } from "axios";
 
 import type { EnrollmentRead } from "@/lib/courses-api";
 import { getApiErrorMessage } from "@/lib/errors";
 import { useNextTask } from "@/hooks/useNextTask";
-import type { UserTask } from "@/lib/tasks-api";
+import { tasksApi, type UserTask } from "@/lib/tasks-api";
 
 interface DailyTaskPanelProps {
   enrollment: EnrollmentRead;
@@ -95,10 +95,32 @@ function ArrowIcon() {
   );
 }
 
+function RetryIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+      <path
+        d="M2.5 8A5.5 5.5 0 0 1 13 5.5"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <path d="M11 3l2 2.5-2.5 1.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M13.5 8A5.5 5.5 0 0 1 3 10.5"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <path d="M5 13l-2-2.5 2.5-1.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
   const router = useRouter();
   const taskQuery = useNextTask(true);
   const bundle = taskQuery.data ?? [];
+  const [retryingId, setRetryingId] = useState<number | null>(null);
 
   const isTaskComplete = useCallback(
     (task: UserTask) => task.status === "completed",
@@ -107,6 +129,21 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
 
   const activeIndex = bundle.findIndex((task) => !isTaskComplete(task));
   const allComplete = bundle.length > 0 && activeIndex === -1;
+
+  const handleRetry = useCallback(
+    async (e: React.MouseEvent, taskId: number) => {
+      e.stopPropagation();
+      setRetryingId(taskId);
+      try {
+        await tasksApi.retryTask(taskId);
+        await taskQuery.refetch();
+        router.push(`/task/chat?id=${taskId}`);
+      } catch {
+        setRetryingId(null);
+      }
+    },
+    [taskQuery, router],
+  );
 
   return (
     <div
@@ -228,6 +265,7 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
       )}
       {!taskQuery.isLoading && !taskQuery.isError && bundle.length > 0 && !allComplete && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           {bundle.map((task, index) => {
             const complete = isTaskComplete(task);
             const active = !complete && index === activeIndex;
@@ -257,10 +295,8 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
             const iconColor = complete || active ? "white" : "oklch(55% 0.04 240)";
 
             return (
-              <button
+              <div
                 key={task.id}
-                disabled={locked}
-                onClick={() => router.push(`/task/chat?id=${task.id}`)}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -270,99 +306,160 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
                   border: itemBorder,
                   background: itemBg,
                   opacity: itemOpacity,
-                  cursor: locked ? "default" : "pointer",
-                  textAlign: "left",
-                  fontFamily: "inherit",
-                  width: "100%",
-                  transition: "transform 0.15s, box-shadow 0.15s",
-                  marginBottom: 0,
-                }}
-                onMouseEnter={(e) => {
-                  if (locked || complete) return;
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                  e.currentTarget.style.boxShadow =
-                    "0 6px 18px rgba(0,112,196,0.13)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.transform = "translateY(0)";
-                  e.currentTarget.style.boxShadow = "none";
+                  position: "relative",
                 }}
               >
-                {/* Icon */}
-                <div
+                {/* Main clickable area */}
+                <button
+                  disabled={locked}
+                  onClick={() => !complete && router.push(`/task/chat?id=${task.id}`)}
                   style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 12,
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    background: iconBg,
-                    color: iconColor,
-                    boxShadow:
-                      active
-                        ? "0 4px 10px rgba(0,112,196,0.3)"
-                        : complete
-                        ? "0 4px 10px rgba(80,180,120,0.2)"
-                        : "none",
+                    gap: 14,
+                    flex: 1,
+                    minWidth: 0,
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: locked || complete ? "default" : "pointer",
+                    textAlign: "left",
+                    fontFamily: "inherit",
+                    transition: "transform 0.15s, box-shadow 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (locked || complete) return;
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translateY(0)";
                   }}
                 >
-                  {complete ? <CheckIcon /> : active ? <PlayIcon /> : <LockIcon />}
-                </div>
-
-                {/* Body */}
-                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* Icon */}
                   <div
                     style={{
-                      fontSize: 15,
-                      fontWeight: 700,
-                      color: "oklch(20% 0.09 245)",
-                      marginBottom: 4,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+                      width: 44,
+                      height: 44,
+                      borderRadius: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                      background: iconBg,
+                      color: iconColor,
+                      boxShadow:
+                        active
+                          ? "0 4px 10px rgba(0,112,196,0.3)"
+                          : complete
+                          ? "0 4px 10px rgba(80,180,120,0.2)"
+                          : "none",
                     }}
                   >
-                    {task.task.title}
+                    {complete ? <CheckIcon /> : active ? <PlayIcon /> : <LockIcon />}
                   </div>
-                  {(() => {
-                    const activity = getActivity(task.task.content);
-                    return activity ? (
-                      <ActivityBadge activity={activity} />
-                    ) : (
-                      <div
-                        style={{
-                          fontSize: 12.5,
-                          color: "oklch(45% 0.07 240)",
-                          textTransform: "capitalize",
-                        }}
-                      >
-                        {task.task.task_type.replace(/^curriculum_/, "").replace(/_/g, " ")}
-                      </div>
-                    );
-                  })()}
-                </div>
 
-                {/* CTA */}
-                <span
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: complete
-                      ? "oklch(43% 0.16 155)"
-                      : active
-                      ? "#0070C4"
-                      : "oklch(55% 0.04 240)",
-                    flexShrink: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                  }}
-                >
-                  {complete ? "Done" : active ? <>Start <ArrowIcon /></> : "Unlocks next"}
-                </span>
-              </button>
+                  {/* Body */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 700,
+                        color: "oklch(20% 0.09 245)",
+                        marginBottom: 4,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {task.task.title}
+                    </div>
+                    {(() => {
+                      const activity = getActivity(task.task.content);
+                      return activity ? (
+                        <ActivityBadge activity={activity} />
+                      ) : (
+                        <div
+                          style={{
+                            fontSize: 12.5,
+                            color: "oklch(45% 0.07 240)",
+                            textTransform: "capitalize",
+                          }}
+                        >
+                          {task.task.task_type.replace(/^curriculum_/, "").replace(/_/g, " ")}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* CTA */}
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: complete
+                        ? "oklch(43% 0.16 155)"
+                        : active
+                        ? "#0070C4"
+                        : "oklch(55% 0.04 240)",
+                      flexShrink: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    {complete ? "Done" : active ? <>Start <ArrowIcon /></> : "Unlocks next"}
+                  </span>
+                </button>
+
+                {/* Retry button — only on completed tasks */}
+                {complete && (
+                  <button
+                    onClick={(e) => handleRetry(e, task.id)}
+                    disabled={retryingId === task.id}
+                    title="Retry this task"
+                    style={{
+                      flexShrink: 0,
+                      width: 30,
+                      height: 30,
+                      borderRadius: 8,
+                      border: "1.5px solid oklch(75% 0.06 155)",
+                      background: retryingId === task.id ? "oklch(94% 0.04 155)" : "white",
+                      color: "oklch(43% 0.16 155)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: retryingId === task.id ? "default" : "pointer",
+                      marginLeft: 6,
+                      transition: "background 0.15s, transform 0.15s",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (retryingId === task.id) return;
+                      e.currentTarget.style.background = "oklch(94% 0.06 155)";
+                      e.currentTarget.style.transform = "scale(1.1)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "white";
+                      e.currentTarget.style.transform = "scale(1)";
+                    }}
+                  >
+                    {retryingId === task.id ? (
+                      <span
+                        style={{
+                          width: 11,
+                          height: 11,
+                          borderRadius: "50%",
+                          border: "2px solid oklch(75% 0.06 155)",
+                          borderTopColor: "oklch(43% 0.16 155)",
+                          display: "inline-block",
+                          animation: "spin 0.7s linear infinite",
+                        }}
+                      />
+                    ) : (
+                      <RetryIcon />
+                    )}
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>

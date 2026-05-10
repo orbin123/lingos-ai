@@ -155,6 +155,10 @@ class BlankItem(BaseModel):
 
     item_id: str
     sentence_with_blank: str = Field(..., description="Use ___ to mark the blank")
+    base_verb: str | None = Field(
+        None,
+        description="Base (infinitive) form of the target verb shown as a hint, e.g. 'go'",
+    )
     correct_answer: str
     explanation: str
 
@@ -749,6 +753,8 @@ TASK
      the passage, including the same "___" blank.
    - Do not create any blank item that is not directly present in the passage.
    - Provide ONE correct_answer (lowercase if a verb form, otherwise as written).
+   - Set `base_verb` to the base (infinitive) form of the target word shown
+     as a learner hint, e.g. "go" when the answer is "goes". Always include it.
    - Do NOT provide distractors, options, choices, or multiple-choice answers.
    - Include a 1-sentence explanation per item.
 5. Set `instructions` to tell the learner to read the paragraph and type the

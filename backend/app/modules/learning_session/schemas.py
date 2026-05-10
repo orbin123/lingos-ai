@@ -1,11 +1,28 @@
 """Pydantic schemas for learning session HTTP + WebSocket payloads."""
 
-from typing import Optional
+from datetime import datetime
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
 
 # --- REST -------------------------------------------------------------
+
+
+class LearningSessionSnapshotRead(BaseModel):
+    """Read-only snapshot of a completed chat session for the history page."""
+
+    session_id: str
+    topic: str
+    skill_name: str
+    task_type: str
+    phase: str
+    messages: list[dict[str, Any]]
+    pre_generated_tasks: dict[str, Any] | None
+    user_submission: dict[str, Any] | None
+    evaluation: dict[str, Any] | None
+    feedback: dict[str, Any] | None
+    created_at: datetime
 
 
 class StartSessionRequest(BaseModel):

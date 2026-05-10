@@ -23,6 +23,7 @@ export interface StatsMistake {
 
 export interface RecentActivity {
   id: number;
+  user_task_id: number;
   task_name: string;
   task_type: string;
   completed_at: string;
@@ -63,4 +64,8 @@ export interface StatsDashboard {
 
 export const progressApi = {
   getStats: () => api.get<StatsDashboard>("/progress/stats").then((r) => r.data),
+  getActivities: (limit = 50, offset = 0) =>
+    api
+      .get<RecentActivity[]>("/progress/activities", { params: { limit, offset } })
+      .then((r) => r.data),
 };
