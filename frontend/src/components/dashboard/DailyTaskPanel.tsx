@@ -391,73 +391,96 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
                     })()}
                   </div>
 
-                  {/* CTA */}
+                  {/* CTA / Retry */}
+                  {complete ? (
+                    <span
+                      onClick={(e) => handleRetry(e, task.id)}
+                      style={{
+                        flexShrink: 0,
+                        width: 30,
+                        height: 30,
+                        borderRadius: 8,
+                        border: "1.5px solid oklch(75% 0.06 155)",
+                        background: retryingId === task.id ? "oklch(94% 0.04 155)" : "white",
+                        color: "oklch(43% 0.16 155)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: retryingId === task.id ? "default" : "pointer",
+                        transition: "background 0.15s, transform 0.15s",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (retryingId === task.id) return;
+                        e.currentTarget.style.background = "oklch(94% 0.06 155)";
+                        e.currentTarget.style.transform = "scale(1.1)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "white";
+                        e.currentTarget.style.transform = "scale(1)";
+                      }}
+                    >
+                      {retryingId === task.id ? (
+                        <span
+                          style={{
+                            width: 11,
+                            height: 11,
+                            borderRadius: "50%",
+                            border: "2px solid oklch(75% 0.06 155)",
+                            borderTopColor: "oklch(43% 0.16 155)",
+                            display: "inline-block",
+                            animation: "spin 0.7s linear infinite",
+                          }}
+                        />
+                      ) : (
+                        <RetryIcon />
+                      )}
+                    </span>
+                  ) : active ? (
+                    <span
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#0070C4",
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      Start <ArrowIcon />
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "oklch(55% 0.04 240)",
+                        flexShrink: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                    >
+                      Unlocks next
+                    </span>
+                  )}
+                </button>
+
+                {/* Done label */}
+                {complete && (
                   <span
                     style={{
                       fontSize: 13,
                       fontWeight: 700,
-                      color: complete
-                        ? "oklch(43% 0.16 155)"
-                        : active
-                        ? "#0070C4"
-                        : "oklch(55% 0.04 240)",
+                      color: "oklch(43% 0.16 155)",
                       flexShrink: 0,
                       display: "flex",
                       alignItems: "center",
                       gap: 4,
                     }}
                   >
-                    {complete ? "Done" : active ? <>Start <ArrowIcon /></> : "Unlocks next"}
+                    Done
                   </span>
-                </button>
-
-                {/* Retry button — only on completed tasks */}
-                {complete && (
-                  <button
-                    onClick={(e) => handleRetry(e, task.id)}
-                    disabled={retryingId === task.id}
-                    title="Retry this task"
-                    style={{
-                      flexShrink: 0,
-                      width: 30,
-                      height: 30,
-                      borderRadius: 8,
-                      border: "1.5px solid oklch(75% 0.06 155)",
-                      background: retryingId === task.id ? "oklch(94% 0.04 155)" : "white",
-                      color: "oklch(43% 0.16 155)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: retryingId === task.id ? "default" : "pointer",
-                      marginLeft: 6,
-                      transition: "background 0.15s, transform 0.15s",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (retryingId === task.id) return;
-                      e.currentTarget.style.background = "oklch(94% 0.06 155)";
-                      e.currentTarget.style.transform = "scale(1.1)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "white";
-                      e.currentTarget.style.transform = "scale(1)";
-                    }}
-                  >
-                    {retryingId === task.id ? (
-                      <span
-                        style={{
-                          width: 11,
-                          height: 11,
-                          borderRadius: "50%",
-                          border: "2px solid oklch(75% 0.06 155)",
-                          borderTopColor: "oklch(43% 0.16 155)",
-                          display: "inline-block",
-                          animation: "spin 0.7s linear infinite",
-                        }}
-                      />
-                    ) : (
-                      <RetryIcon />
-                    )}
-                  </button>
                 )}
               </div>
             );
