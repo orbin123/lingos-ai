@@ -172,7 +172,7 @@ POINTS_TABLE: dict[CourseLength, dict[PerformanceRating, int]] = {
     CourseLength.WEEKS_24: {
         PerformanceRating.EXCELLENT: 55,
         PerformanceRating.GOOD: 40,
-        PerformanceRating.AVERAGE: 25,
+        PerformanceRating.AVERAGE: 24,
         PerformanceRating.POOR: 10,
         PerformanceRating.VERY_POOR: 0,
     },
@@ -192,13 +192,13 @@ class PointsCalculator:
     @staticmethod
     def _rate_performance(score_0_to_10: Decimal) -> PerformanceRating:
         """Map numeric score (0.0–10.0) to performance tier."""
-        if score_0_to_10 >= Decimal("9.0"):
+        if score_0_to_10 >= Decimal("8.0"):
             return PerformanceRating.EXCELLENT
-        elif score_0_to_10 >= Decimal("7.0"):
+        elif score_0_to_10 >= Decimal("6.0"):
             return PerformanceRating.GOOD
-        elif score_0_to_10 >= Decimal("5.0"):
+        elif score_0_to_10 >= Decimal("4.0"):
             return PerformanceRating.AVERAGE
-        elif score_0_to_10 >= Decimal("3.0"):
+        elif score_0_to_10 >= Decimal("2.0"):
             return PerformanceRating.POOR
         else:
             return PerformanceRating.VERY_POOR

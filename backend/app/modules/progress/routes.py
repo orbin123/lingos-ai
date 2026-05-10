@@ -1,6 +1,7 @@
 """HTTP endpoints for the progress module."""
 
-from datetime import datetime, time, timedelta, timezone
+from collections import defaultdict
+from datetime import date, datetime, time, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func
@@ -9,11 +10,13 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
-from app.modules.progress.models import SkillPoints
-from app.modules.progress.repository import ProgressLogRepository, SkillPointsLogRepository
+from app.modules.progress.models import ProgressLog, SkillPoints, SkillPointsLog
+from app.modules.progress.repository import ProgressLogRepository, SkillPointsLogRepository, SkillPointsRepository
 from app.modules.progress.schemas import (
+    DifficultyDistribution,
     ProgressLogPoint,
     RecentActivity,
+    SkillHistorySeries,
     SkillPointsLogRead,
     SkillPointsRead,
     SkillScoreSnapshot,
@@ -23,7 +26,7 @@ from app.modules.progress.schemas import (
     WeeklySnapshot,
 )
 from app.modules.responses.models import Evaluation, UserResponse
-from app.modules.skills.repository import UserSkillScoreRepository
+from app.modules.skills.models import Skill
 from app.modules.tasks.models import UserTask, UserTaskStatus
 
 router = APIRouter(prefix="/progress", tags=["progress"])
@@ -154,12 +157,12 @@ def get_current_scores(
     Used by the dashboard spider chart. Returns an empty list if the
     user has not completed diagnosis yet (no rows seeded).
     """
-    rows = UserSkillScoreRepository(db).get_for_user(current_user.id)
+    rows = SkillPointsRepository(db).get_all_for_user(current_user.id)
     return [
         SkillScoreSnapshot(
             skill_id=row.skill_id,
-            skill_name=row.skill.name,
-            score=float(row.score),
+            skill_name=db.get(Skill, row.skill_id).name,
+            score=float(row.display_score),
         )
         for row in rows
     ]
@@ -210,16 +213,22 @@ def get_stats_dashboard(
     current_week_start = _week_start(now)
     previous_week_start = current_week_start - timedelta(days=7)
 
+    # ── Skill scores from SkillPoints (gamification display score) ──
+    skill_points_rows = SkillPointsRepository(db).get_all_for_user(current_user.id)
     scores = [
         SkillScoreSnapshot(
             skill_id=row.skill_id,
-            skill_name=row.skill.name,
-            score=float(row.score),
+            skill_name=db.get(Skill, row.skill_id).name,
+            score=float(row.display_score),
         )
-        for row in UserSkillScoreRepository(db).get_for_user(current_user.id)
+        for row in skill_points_rows
     ]
 
-    def average_score(start: datetime, end: datetime) -> float | None:
+    # ── Overall score: average across all skills ──
+    overall_score = round(sum(s.score for s in scores) / len(scores), 1) if scores else 0.0
+
+    # ── Weekly score change based on evaluation averages ──
+    def average_eval_score(start: datetime, end: datetime) -> float | None:
         value = (
             db.query(func.avg(Evaluation.overall_score))
             .join(UserResponse, UserResponse.id == Evaluation.response_id)
@@ -233,14 +242,15 @@ def get_stats_dashboard(
         )
         return float(value) if value is not None else None
 
-    current_average = average_score(current_week_start, now)
-    previous_average = average_score(previous_week_start, current_week_start)
+    current_average = average_eval_score(current_week_start, now)
+    previous_average = average_eval_score(previous_week_start, current_week_start)
     score_change = (
         round(current_average - previous_average, 1)
         if current_average is not None and previous_average is not None
         else 0.0
     )
 
+    # ── Tasks completed this week ──
     tasks_completed = (
         db.query(func.count(UserTask.id))
         .filter(
@@ -252,8 +262,87 @@ def get_stats_dashboard(
         or 0
     )
 
-    best_skill = max(scores, key=lambda score: score.score, default=None)
+    best_skill = max(scores, key=lambda s: s.score, default=None)
 
+    # ── Weekly points earned per skill (for skill bar trend column) ──
+    weekly_points_rows = (
+        db.query(SkillPointsLog.skill_id, func.sum(SkillPointsLog.points_earned))
+        .filter(
+            SkillPointsLog.user_id == current_user.id,
+            SkillPointsLog.created_at >= current_week_start,
+        )
+        .group_by(SkillPointsLog.skill_id)
+        .all()
+    )
+    weekly_points_by_skill: dict[int, int] = {skill_id: int(pts) for skill_id, pts in weekly_points_rows}
+
+    # ── Difficulty distribution across all completed tasks ──
+    difficulty_rows = (
+        db.query(UserTask)
+        .filter(
+            UserTask.user_id == current_user.id,
+            UserTask.status == UserTaskStatus.COMPLETED,
+        )
+        .options(joinedload(UserTask.task))
+        .all()
+    )
+    beginner = intermediate = advanced = 0
+    for ut in difficulty_rows:
+        d = ut.task.difficulty if ut.task else 1
+        if d <= 3:
+            beginner += 1
+        elif d <= 7:
+            intermediate += 1
+        else:
+            advanced += 1
+    difficulty_distribution = DifficultyDistribution(
+        beginner=beginner,
+        intermediate=intermediate,
+        advanced=advanced,
+        total=beginner + intermediate + advanced,
+    )
+
+    # ── Score progression history (last 7 days, per skill) ──
+    history_start = now - timedelta(days=6)
+    history_start = history_start.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_labels = [(history_start + timedelta(days=i)).strftime("%a") for i in range(7)]
+    day_dates: list[date] = [(history_start + timedelta(days=i)).date() for i in range(7)]
+
+    log_rows = (
+        db.query(ProgressLog)
+        .filter(
+            ProgressLog.user_id == current_user.id,
+            ProgressLog.created_at >= history_start,
+        )
+        .order_by(ProgressLog.skill_id, ProgressLog.created_at.asc())
+        .all()
+    )
+
+    # Group logs by (skill_id, date) → last score of that day
+    logs_by_skill_date: dict[int, dict[date, float]] = defaultdict(dict)
+    for log in log_rows:
+        d = log.created_at.date()
+        logs_by_skill_date[log.skill_id][d] = float(log.score)
+
+    # For each skill build a 7-element series, forward-filling from the current display_score
+    skill_id_to_display: dict[int, float] = {row.skill_id: float(row.display_score) for row in skill_points_rows}
+    skill_history: list[SkillHistorySeries] = []
+    for sp_row in skill_points_rows:
+        sid = sp_row.skill_id
+        daily_map = logs_by_skill_date.get(sid, {})
+        series: list[float] = []
+        last_val = skill_id_to_display.get(sid, 0.0)
+        for d in day_dates:
+            if d in daily_map:
+                last_val = daily_map[d]
+            series.append(round(last_val, 1))
+        skill_history.append(SkillHistorySeries(
+            skill_id=sid,
+            skill_name=db.get(Skill, sid).name,
+            scores=series,
+        ))
+
+    # ── Recent activities ──
     recent_rows = (
         db.query(UserTask)
         .filter(
@@ -262,7 +351,7 @@ def get_stats_dashboard(
         )
         .options(joinedload(UserTask.task))
         .order_by(UserTask.completed_at.desc().nullslast(), UserTask.created_at.desc())
-        .limit(3)
+        .limit(5)
         .all()
     )
 
@@ -302,6 +391,7 @@ def get_stats_dashboard(
 
     return StatsDashboard(
         weekly_snapshot=WeeklySnapshot(
+            overall_score=overall_score,
             overall_score_change=score_change,
             tasks_completed=int(tasks_completed),
             weekly_task_goal=WEEKLY_TASK_GOAL,
@@ -309,6 +399,10 @@ def get_stats_dashboard(
             best_skill_score=best_skill.score if best_skill else None,
         ),
         skill_scores=scores,
+        weekly_points_by_skill=weekly_points_by_skill,
+        difficulty_distribution=difficulty_distribution,
+        skill_history_labels=day_labels,
+        skill_history=skill_history,
         feedback=StatsFeedback(
             strengths=strengths[:3],
             focus_areas=focus_areas[:3],

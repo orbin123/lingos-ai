@@ -21,6 +21,7 @@ from app.modules.diagnosis.schemas import (
     ReadAloudAnalysisOut,
 )
 from app.modules.diagnosis.scoring import compute_skill_scores
+from app.modules.progress.repository import SkillPointsRepository
 from app.modules.skills.repository import (
     SkillRepository,
     UserSkillScoreRepository,
@@ -107,14 +108,20 @@ class DiagnosisService:
             speech_clarity=speech.clarity_score,
         )
 
-        # 4. Upsert each score
+        # 4. Upsert each score and seed SkillPoints from diagnosis values
         name_to_id = self.skills.name_to_id_map()
+        points_repo = SkillPointsRepository(self.db)
         for skill_name, score in skill_scores.items():
             self.scores.upsert_score(
                 user_id=user_id,
                 skill_id=name_to_id[skill_name],
                 score=score,
                 is_estimated=skill_name in self.ESTIMATED_SKILLS,
+            )
+            points_repo.upsert_points(
+                user_id=user_id,
+                skill_id=name_to_id[skill_name],
+                points=round(score * 1000),
             )
 
         # 5. Update profile

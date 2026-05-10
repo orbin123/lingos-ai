@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { authApi } from "@/lib/auth-api";
-import { progressApi, type RecentActivity, type SkillScoreSnapshot } from "@/lib/progress-api";
+import { progressApi, type DifficultyDistribution, type RecentActivity, type SkillHistorySeries, type SkillScoreSnapshot } from "@/lib/progress-api";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuthStore } from "@/store/authStore";
@@ -24,25 +24,14 @@ const T = {
   bg: "oklch(91% 0.04 245)",
 };
 
-// ─── Mock data for sections not yet backed by the API ─────────────────────────
-const MOCK_SCORE_SERIES = [
-  { name: "Grammar",      color: "#0070C4", data: [4.8, 5.0, 5.2, 5.4, 5.6, 5.8, 6.0] },
-  { name: "Vocabulary",   color: "#7c3aed", data: [4.2, 4.4, 4.5, 4.6, 4.8, 4.9, 5.0] },
-  { name: "Fluency",      color: "#10b981", data: [4.5, 4.7, 5.0, 5.2, 5.3, 5.4, 5.5] },
-  { name: "Pronunciation",color: "#ef4444", data: [3.4, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0] },
-];
-const MOCK_TIME_PRACTICED = "2h 18m";
+// ─── Mocks for sections with no tracking data yet ─────────────────────────────
+const MOCK_TIME_PRACTICED = "–";
 const MOCK_GOAL = { week: 1, total: 12, current: 5.4, target: 7.0 };
-const MOCK_DIFFICULTY = [
-  { name: "Beginner",     pct: 38, color: "#0070C4" },
-  { name: "Intermediate", pct: 44, color: "#7c3aed" },
-  { name: "Advanced",     pct: 18, color: "#f59e0b" },
-];
 const MOCK_PRACTICE = [
-  { num: "7:42", unit: "PM",  label: "Most active" },
-  { num: "11",   unit: "min", label: "Avg session" },
-  { num: "Tue",  unit: "",    label: "Best day" },
-  { num: "5.2x", unit: "",    label: "Per week" },
+  { num: "–",   unit: "",    label: "Most active" },
+  { num: "–",   unit: "",    label: "Avg session" },
+  { num: "–",   unit: "",    label: "Best day" },
+  { num: "–",   unit: "",    label: "Per week" },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -73,7 +62,7 @@ function displaySkillName(n: string | null) {
 function axisScores(scores: SkillScoreSnapshot[]) {
   return SKILL_AXES.map((axis, i) => {
     const match = scores.find(s => normalizeSkillName(s.skill_name).includes(axis.key));
-    return { label: axis.label, score: match?.score ?? DEFAULT_SCORES[i] };
+    return { label: axis.label, score: match?.score ?? DEFAULT_SCORES[i], skill_id: match?.skill_id ?? 0 };
   });
 }
 
@@ -207,18 +196,42 @@ function CardLink({ children }: { children: React.ReactNode }) {
 }
 
 // ─── Score progression chart ──────────────────────────────────────────────────
-function ProgressChart() {
+const SKILL_COLORS: Record<string, string> = {
+  grammar: "#0070C4",
+  vocabulary: "#7c3aed",
+  fluency: "#10b981",
+  pronunciation: "#ef4444",
+  thought: "#f59e0b",
+  listening: "#06b6d4",
+  tone: "#ec4899",
+};
+
+function skillColor(name: string) {
+  const key = name.toLowerCase().split(/[\s_&]/)[0];
+  return SKILL_COLORS[key] ?? "#888";
+}
+
+function ProgressChart({ labels = [], series = [] }: { labels?: string[]; series?: SkillHistorySeries[] }) {
   const w = 600, h = 220, pad = { l: 32, r: 14, t: 14, b: 28 };
-  const labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const yMax = 8, yMin = 0;
+  if (!series.length || !labels.length) {
+    return (
+      <div style={{ height: 220, display: "flex", alignItems: "center", justifyContent: "center", color: T.inkMuted, fontSize: 13 }}>
+        Complete tasks to see score progression
+      </div>
+    );
+  }
+  const allVals = series.flatMap(s => s.scores);
+  const yMin = 0;
+  const yMax = Math.max(8, ...allVals);
   const xStep = (w - pad.l - pad.r) / (labels.length - 1);
   const yScale = (v: number) => pad.t + (h - pad.t - pad.b) * (1 - (v - yMin) / (yMax - yMin));
   const xScale = (i: number) => pad.l + i * xStep;
+  const gridVals = [0, 2, 4, 6, Math.ceil(yMax / 2) * 2].filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => a - b);
 
   return (
     <div style={{ position: "relative", height: 220, marginBottom: 8 }}>
       <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet">
-        {[0, 2, 4, 6, 8].map(v => (
+        {gridVals.map(v => (
           <g key={v}>
             <line x1={pad.l} x2={w - pad.r} y1={yScale(v)} y2={yScale(v)}
               stroke="oklch(90% 0.02 240)" strokeDasharray="3 3"/>
@@ -230,26 +243,27 @@ function ProgressChart() {
           <text key={l} x={xScale(i)} y={h - 8} textAnchor="middle"
             fontSize="11" fill="oklch(50% 0.04 240)" fontWeight="600">{l}</text>
         ))}
-        {MOCK_SCORE_SERIES.map(s => {
-          const path = s.data.map((v, i) => `${i === 0 ? "M" : "L"} ${xScale(i)} ${yScale(v)}`).join(" ");
+        {series.map(s => {
+          const color = skillColor(s.skill_name);
+          const path = s.scores.map((v, i) => `${i === 0 ? "M" : "L"} ${xScale(i)} ${yScale(v)}`).join(" ");
           return (
-            <g key={s.name}>
-              <path d={path} fill="none" stroke={s.color} strokeWidth="2.5"
+            <g key={s.skill_id}>
+              <path d={path} fill="none" stroke={color} strokeWidth="2.5"
                 strokeLinecap="round" strokeLinejoin="round"/>
-              {s.data.map((v, i) => (
+              {s.scores.map((v, i) => (
                 <circle key={i} cx={xScale(i)} cy={yScale(v)}
-                  r={i === s.data.length - 1 ? 4.5 : 3}
-                  fill="white" stroke={s.color} strokeWidth="2"/>
+                  r={i === s.scores.length - 1 ? 4.5 : 3}
+                  fill="white" stroke={color} strokeWidth="2"/>
               ))}
             </g>
           );
         })}
       </svg>
       <div style={{ display: "flex", gap: 16, fontSize: 12, color: T.inkMuted, fontWeight: 600, flexWrap: "wrap", paddingLeft: 32 }}>
-        {MOCK_SCORE_SERIES.map(s => (
-          <span key={s.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: s.color }}/>
-            {s.name}
+        {series.map(s => (
+          <span key={s.skill_id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: skillColor(s.skill_name) }}/>
+            {displaySkillName(s.skill_name)}
           </span>
         ))}
       </div>
@@ -301,50 +315,45 @@ function Radar({ skills }: { skills: Array<{ label: string; score: number }> }) 
 }
 
 // ─── Sub-skill bars ───────────────────────────────────────────────────────────
-const SKILL_BAR_ROWS = [
-  { name: "Grammar",       val: 6.0, trend: 8,  mark: "strong" },
-  { name: "Listening",     val: 5.8, trend: 4,  mark: "strong" },
-  { name: "Fluency",       val: 5.5, trend: 2,  mark: "" },
-  { name: "Vocabulary",    val: 5.0, trend: 3,  mark: "" },
-  { name: "Thought Org.",  val: 4.5, trend: 0,  mark: "weak" },
-  { name: "Tone & Reg.",   val: 4.2, trend: -1, mark: "weak" },
-  { name: "Pronunciation", val: 4.0, trend: 1,  mark: "weak" },
-];
-
-function skillBarColor(mark: string) {
-  if (mark === "strong") return `linear-gradient(to right, oklch(55% 0.16 155), oklch(70% 0.13 145))`;
-  if (mark === "weak") return `linear-gradient(to right, oklch(60% 0.18 25), oklch(72% 0.16 35))`;
+function barGradient(score: number) {
+  if (score >= 6.5) return `linear-gradient(to right, oklch(55% 0.16 155), oklch(70% 0.13 145))`;
+  if (score < 4.0) return `linear-gradient(to right, oklch(60% 0.18 25), oklch(72% 0.16 35))`;
   return `linear-gradient(to right, ${T.primary}, oklch(72% 0.12 220))`;
 }
 
-function SkillBars({ scores }: { scores: Array<{ label: string; score: number }> }) {
-  // Merge real API scores on top of mock bar rows
-  const rows = SKILL_BAR_ROWS.map(row => {
-    const live = scores.find(s => s.label === row.name || s.label.startsWith(row.name.split(" ")[0]));
-    return { ...row, val: live?.score ?? row.val };
-  });
+function SkillBars({
+  scores,
+  weeklyPts = {},
+}: {
+  scores: Array<{ label: string; score: number; skill_id: number }>;
+  weeklyPts?: Record<number, number>;
+}) {
+  const sorted = [...scores].sort((a, b) => b.score - a.score);
 
   return (
     <div>
-      {rows.map(s => (
-        <div key={s.name} style={{
-          display: "flex", alignItems: "center", gap: 14, padding: "13px 0",
-          borderBottom: `1px dashed oklch(88% 0.02 240)`,
-        }}>
-          <span style={{ fontSize: 13.5, fontWeight: 600, color: T.navy, width: 110, flexShrink: 0 }}>{s.name}</span>
-          <div style={{ flex: 1, height: 8, borderRadius: 8, background: "oklch(94% 0.02 240)", overflow: "hidden" }}>
-            <div style={{ height: "100%", borderRadius: 8, width: `${s.val * 10}%`, background: skillBarColor(s.mark), transition: "width 0.6s ease" }}/>
-          </div>
-          <span style={{ fontSize: 13.5, fontWeight: 800, color: T.navy, width: 36, textAlign: "right" }}>{s.val.toFixed(1)}</span>
-          <span style={{
-            fontSize: 11.5, fontWeight: 700, padding: "3px 7px", borderRadius: 6, minWidth: 46, textAlign: "center",
-            background: s.trend > 0 ? "oklch(94% 0.07 155)" : s.trend < 0 ? "oklch(94% 0.06 25)" : "oklch(95% 0.015 240)",
-            color: s.trend > 0 ? "oklch(38% 0.14 155)" : s.trend < 0 ? "oklch(40% 0.18 25)" : T.inkMuted,
+      {sorted.map(s => {
+        const pts = weeklyPts[s.skill_id] ?? 0;
+        return (
+          <div key={s.skill_id || s.label} style={{
+            display: "flex", alignItems: "center", gap: 14, padding: "13px 0",
+            borderBottom: `1px dashed oklch(88% 0.02 240)`,
           }}>
-            {s.trend > 0 ? `+${s.trend}` : s.trend === 0 ? "—" : s.trend} pts
-          </span>
-        </div>
-      ))}
+            <span style={{ fontSize: 13.5, fontWeight: 600, color: T.navy, width: 110, flexShrink: 0 }}>{s.label}</span>
+            <div style={{ flex: 1, height: 8, borderRadius: 8, background: "oklch(94% 0.02 240)", overflow: "hidden" }}>
+              <div style={{ height: "100%", borderRadius: 8, width: `${s.score * 10}%`, background: barGradient(s.score), transition: "width 0.6s ease" }}/>
+            </div>
+            <span style={{ fontSize: 13.5, fontWeight: 800, color: T.navy, width: 36, textAlign: "right" }}>{s.score.toFixed(1)}</span>
+            <span style={{
+              fontSize: 11.5, fontWeight: 700, padding: "3px 7px", borderRadius: 6, minWidth: 50, textAlign: "center",
+              background: pts > 0 ? "oklch(94% 0.07 155)" : "oklch(95% 0.015 240)",
+              color: pts > 0 ? "oklch(38% 0.14 155)" : T.inkMuted,
+            }}>
+              {pts > 0 ? `+${pts}` : "—"} pts
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -491,16 +500,27 @@ function GoalCard() {
 }
 
 // ─── Donut chart ──────────────────────────────────────────────────────────────
-function Donut() {
-  const total = MOCK_DIFFICULTY.reduce((a, s) => a + s.pct, 0);
+const DIFFICULTY_SLICES = [
+  { key: "beginner" as const,     name: "Beginner",     color: "#0070C4" },
+  { key: "intermediate" as const, name: "Intermediate", color: "#7c3aed" },
+  { key: "advanced" as const,     name: "Advanced",     color: "#f59e0b" },
+];
+
+function Donut({ dist }: { dist: DifficultyDistribution | null }) {
+  const slices = DIFFICULTY_SLICES.map(s => ({
+    ...s,
+    count: dist?.[s.key] ?? 0,
+    pct: dist && dist.total > 0 ? Math.round((dist[s.key] / dist.total) * 100) : 0,
+  }));
+  const total = dist?.total ?? 0;
   const r = 52, c = 2 * Math.PI * r;
   let off = 0;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
       <svg width="130" height="130" viewBox="0 0 130 130">
         <circle cx="65" cy="65" r={r} fill="none" stroke="oklch(94% 0.02 240)" strokeWidth="16"/>
-        {MOCK_DIFFICULTY.map((s, i) => {
-          const len = (s.pct / total) * c;
+        {total > 0 && slices.map((s, i) => {
+          const len = (s.count / total) * c;
           const dasharray = `${len} ${c - len}`;
           const dashoffset = -off;
           off += len;
@@ -510,11 +530,11 @@ function Donut() {
               transform="rotate(-90 65 65)" strokeLinecap="butt"/>
           );
         })}
-        <text x="65" y="62" textAnchor="middle" fontSize="22" fontWeight="800" fill={T.navy} letterSpacing="-1">28</text>
+        <text x="65" y="62" textAnchor="middle" fontSize="22" fontWeight="800" fill={T.navy} letterSpacing="-1">{total}</text>
         <text x="65" y="78" textAnchor="middle" fontSize="10" fontWeight="700" fill={T.inkMuted}>TASKS</text>
       </svg>
       <div style={{ flex: 1 }}>
-        {MOCK_DIFFICULTY.map(s => (
+        {slices.map(s => (
           <div key={s.name} style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
             padding: "7px 0", borderBottom: `1px dashed oklch(88% 0.02 240)`,
@@ -606,6 +626,7 @@ export default function StatsPage() {
 
   const stats = statsQuery.data;
   const weekly = stats?.weekly_snapshot;
+  const overallScore = weekly?.overall_score ?? 0;
   const change = weekly?.overall_score_change ?? 0;
   const changeUp = change >= 0;
   const skillScores = axisScores(stats?.skill_scores ?? []);
@@ -614,6 +635,10 @@ export default function StatsPage() {
   const activities = stats?.recent_activities ?? [];
   const tasksCompleted = weekly?.tasks_completed ?? 0;
   const tasksGoal = weekly?.weekly_task_goal ?? 7;
+  const weeklyPts = stats?.weekly_points_by_skill ?? {};
+  const historyLabels = stats?.skill_history_labels;
+  const skillHistory = stats?.skill_history;
+  const difficultyDist = stats?.difficulty_distribution;
   const bestSkill = displaySkillName(weekly?.best_skill_name ?? null);
   const bestScore = weekly?.best_skill_score;
 
@@ -690,10 +715,10 @@ export default function StatsPage() {
               }}>
                 <KpiTile
                   label="Overall score"
-                  value={<>{statsQuery.isLoading ? "…" : `${changeUp ? "+" : ""}${change.toFixed(1)}`}</>}
+                  value={<>{statsQuery.isLoading ? "…" : overallScore.toFixed(1)}</>}
                   unit="/ 10"
-                  delta={`${changeUp ? "+" : ""}${change.toFixed(1)} vs last week`}
-                  deltaDir={changeUp ? "up" : "down"}
+                  delta={change === 0 ? "No change vs last week" : `${changeUp ? "+" : ""}${change.toFixed(1)} vs last week`}
+                  deltaDir={change > 0 ? "up" : change < 0 ? "down" : "flat"}
                 />
                 <KpiTile
                   label="Tasks completed"
@@ -728,7 +753,7 @@ export default function StatsPage() {
                       sub="Sub-skills tracked daily by Evaluator Agent"
                       right={<AgentTag label="Live" tone="live"/>}
                     />
-                    <ProgressChart/>
+                    <ProgressChart labels={historyLabels} series={skillHistory}/>
                   </Card>
 
                   {/* Sub-skill overview */}
@@ -740,7 +765,7 @@ export default function StatsPage() {
                     />
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "center" }}>
                       <Radar skills={skillScores}/>
-                      <SkillBars scores={skillScores}/>
+                      <SkillBars scores={skillScores} weeklyPts={weeklyPts}/>
                     </div>
                   </Card>
 
@@ -852,8 +877,8 @@ export default function StatsPage() {
 
                   {/* Task difficulty */}
                   <Card>
-                    <CardHead title="Task difficulty" sub="This week's mix"/>
-                    <Donut/>
+                    <CardHead title="Task difficulty" sub="All sessions so far"/>
+                    <Donut dist={difficultyDist ?? null}/>
                   </Card>
 
                   {/* Practice patterns */}

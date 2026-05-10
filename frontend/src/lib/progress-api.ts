@@ -7,6 +7,7 @@ export interface SkillScoreSnapshot {
 }
 
 export interface WeeklySnapshot {
+  overall_score: number;
   overall_score_change: number;
   tasks_completed: number;
   weekly_task_goal: number;
@@ -36,9 +37,26 @@ export interface StatsFeedback {
   focus_areas: string[];
 }
 
+export interface SkillHistorySeries {
+  skill_id: number;
+  skill_name: string;
+  scores: number[];
+}
+
+export interface DifficultyDistribution {
+  beginner: number;
+  intermediate: number;
+  advanced: number;
+  total: number;
+}
+
 export interface StatsDashboard {
   weekly_snapshot: WeeklySnapshot;
   skill_scores: SkillScoreSnapshot[];
+  weekly_points_by_skill: Record<number, number>;
+  difficulty_distribution: DifficultyDistribution;
+  skill_history_labels: string[];
+  skill_history: SkillHistorySeries[];
   feedback: StatsFeedback;
   recent_activities: RecentActivity[];
 }

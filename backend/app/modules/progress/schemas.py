@@ -28,9 +28,27 @@ class ProgressLogPoint(BaseModel):
     created_at: datetime
 
 
+class SkillHistorySeries(BaseModel):
+    """Per-skill score history for the progression chart."""
+
+    skill_id: int
+    skill_name: str
+    scores: list[float]
+
+
+class DifficultyDistribution(BaseModel):
+    """Task difficulty breakdown since the user started."""
+
+    beginner: int
+    intermediate: int
+    advanced: int
+    total: int
+
+
 class WeeklySnapshot(BaseModel):
     """Aggregated weekly metrics for the stats page."""
 
+    overall_score: float
     overall_score_change: float
     tasks_completed: int
     weekly_task_goal: int
@@ -71,6 +89,10 @@ class StatsDashboard(BaseModel):
 
     weekly_snapshot: WeeklySnapshot
     skill_scores: list[SkillScoreSnapshot]
+    weekly_points_by_skill: dict[int, int]
+    difficulty_distribution: DifficultyDistribution
+    skill_history_labels: list[str]
+    skill_history: list[SkillHistorySeries]
     feedback: StatsFeedback
     recent_activities: list[RecentActivity]
 
