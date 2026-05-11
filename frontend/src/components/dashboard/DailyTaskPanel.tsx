@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AxiosError } from "axios";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type { EnrollmentRead } from "@/lib/courses-api";
 import { getApiErrorMessage } from "@/lib/errors";
@@ -30,6 +31,10 @@ const ACTIVITY_COLORS: Record<Activity, { bg: string; text: string }> = {
   listen: { bg: "#ffedd5", text: "#c2410c" },
   speak:  { bg: "#dcfce7", text: "#15803d" },
 };
+
+function activitiesPerDay(enrollment: EnrollmentRead) {
+  return Math.max(2, Math.min(4, enrollment.tasks_per_day));
+}
 
 function ActivityBadge({ activity }: { activity: string }) {
   const a = activity as Activity;
@@ -118,9 +123,11 @@ function RetryIcon() {
 
 export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const taskQuery = useNextTask(true);
   const bundle = taskQuery.data ?? [];
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
 
   const isTaskComplete = useCallback(
     (task: UserTask) => task.status === "completed",
@@ -144,6 +151,21 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
     },
     [taskQuery, router],
   );
+
+  const advanceMutation = useMutation({
+    mutationFn: tasksApi.completeDay,
+    onMutate: () => setAdvanceError(null),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["task", "next"] }),
+        queryClient.invalidateQueries({ queryKey: ["me"] }),
+      ]);
+      await taskQuery.refetch();
+    },
+    onError: (error) => {
+      setAdvanceError(getApiErrorMessage(error as AxiosError));
+    },
+  });
 
   return (
     <div
@@ -243,8 +265,24 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
             fontWeight: 700,
           }}
         >
-          {enrollment.tasks_per_day} tasks
+          {activitiesPerDay(enrollment)} tasks
         </span>
+      </div>
+
+      <div
+        style={{
+          marginBottom: 16,
+          borderRadius: 12,
+          background: "#eef6fc",
+          border: "1px solid #c9deef",
+          color: "#00599e",
+          fontSize: 12.5,
+          fontWeight: 700,
+          lineHeight: 1.45,
+          padding: "10px 12px",
+        }}
+      >
+        Today&apos;s activities run in one chat session.
       </div>
 
       {/* Content */}
@@ -261,7 +299,12 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
         />
       )}
       {!taskQuery.isLoading && !taskQuery.isError && (bundle.length === 0 || allComplete) && (
-        <CompletedTodayBlock />
+        <CompletedTodayBlock
+          enrollment={enrollment}
+          isAdvancing={advanceMutation.isPending}
+          error={advanceError}
+          onAdvance={() => advanceMutation.mutate()}
+        />
       )}
       {!taskQuery.isLoading && !taskQuery.isError && bundle.length > 0 && !allComplete && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -491,7 +534,24 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
   );
 }
 
-function CompletedTodayBlock() {
+function nextDayLabel(enrollment: EnrollmentRead) {
+  if (enrollment.current_day_in_week < 7) {
+    return `Advance to day ${enrollment.current_day_in_week + 1}`;
+  }
+  return `Advance to week ${enrollment.current_week + 1}, day 1`;
+}
+
+function CompletedTodayBlock({
+  enrollment,
+  isAdvancing,
+  error,
+  onAdvance,
+}: {
+  enrollment: EnrollmentRead;
+  isAdvancing: boolean;
+  error: string | null;
+  onAdvance: () => void;
+}) {
   return (
     <div
       style={{
@@ -534,7 +594,7 @@ function CompletedTodayBlock() {
             fontWeight: 800,
           }}
         >
-          Today&apos;s tasks are complete
+          Today&apos;s activities are complete
         </h3>
         <p
           style={{
@@ -544,9 +604,35 @@ function CompletedTodayBlock() {
             lineHeight: 1.6,
           }}
         >
-          Your next set will unlock tomorrow.
+          Review your work, then move the plan forward when you&apos;re ready.
         </p>
       </div>
+      {error && (
+        <p style={{ margin: 0, color: "oklch(40% 0.15 15)", fontSize: 13 }}>
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={onAdvance}
+        disabled={isAdvancing}
+        style={{
+          border: "none",
+          borderRadius: 12,
+          background: "#0070C4",
+          color: "white",
+          cursor: isAdvancing ? "not-allowed" : "pointer",
+          fontFamily: "inherit",
+          fontSize: 13.5,
+          fontWeight: 800,
+          opacity: isAdvancing ? 0.7 : 1,
+          padding: "12px 18px",
+          minWidth: 190,
+          boxShadow: "0 6px 18px rgba(0,112,196,0.22)",
+        }}
+      >
+        {isAdvancing ? "Advancing..." : nextDayLabel(enrollment)}
+      </button>
     </div>
   );
 }

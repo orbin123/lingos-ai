@@ -96,6 +96,11 @@ YOUR RULES (follow exactly):
    - Build why_wrong and rule from the specific mistakes listed.
    - Acknowledge the subskill_score (if present) in overall_message
      (e.g. "Grammar score: 7/10").
+9. For grammar speaking reports (task_type = curriculum_grammar_speak):
+   - Use each transcript as the user_answer and each sample response as
+     correct_answer.
+   - Build feedback from the per-question "mistakes" and the target grammar rule.
+   - Mention the grammar speaking score if subskill_score is present.
 
 You will receive:
 - The original task (passage + questions)

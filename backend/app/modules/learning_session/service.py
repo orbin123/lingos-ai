@@ -60,6 +60,7 @@ from app.modules.skills.repository import SkillRepository, UserSkillScoreReposit
 from app.modules.tasks.models import TaskType
 from app.modules.tasks.models import UserTaskStatus
 from app.modules.tasks.repository import UserTaskRepository
+from app.modules.tasks.service import TaskService
 from app.tasks.schemas import ALL_TEMPLATES, get_templates_for
 from app.tasks.schemas.base import Activity, SubSkill, TaskTemplate
 
@@ -245,66 +246,109 @@ class LearningSessionService:
         user_task_id: int | None = None,
     ) -> StartSessionResponse:
         enrollment = self._load_enrollment(user_id)
-        if user_task_id is not None:
-            return await self._create_session_from_user_task(
-                user_id=user_id,
-                enrollment=enrollment,
-                user_task_id=user_task_id,
-            )
-
-        plan = self._decide_plan(enrollment)
-
-        course_topic = self._course_topic_for(enrollment)
-        topic = course_topic.topic_name if course_topic else plan.skill_name
-        user_level = course_topic.sub_level if course_topic else self._user_sub_level(user_id)
-        template = self._pick_template(plan=plan, user_level=user_level)
-        user_profile = self._generation_profile(
+        bundle = await TaskService(self.db).get_or_create_day_bundle_async(
             user_id=user_id,
-            user_level=user_level,
-            topic=topic,
-            course_topic=course_topic,
+        )
+        if not bundle:
+            raise LearningSessionTaskUnavailable(
+                "No daily activities are available for the current enrollment day"
+            )
+        return self._create_or_resume_daily_session(
+            user_id=user_id,
+            enrollment=enrollment,
+            bundle=bundle,
+            requested_user_task_id=user_task_id,
         )
 
-        try:
-            task_content = await self.generator.generate(template, user_profile)
-        except Exception:
-            logger.exception(
-                "create_session: task generation failed for user_id=%s "
-                "template=%s",
-                user_id,
-                template.template_id,
+    def _create_or_resume_daily_session(
+        self,
+        *,
+        user_id: int,
+        enrollment: UserEnrollment,
+        bundle: list,
+        requested_user_task_id: int | None,
+    ) -> StartSessionResponse:
+        if requested_user_task_id is not None:
+            matching = next(
+                (task for task in bundle if task.id == requested_user_task_id),
+                None,
             )
-            raise
+            if matching is None:
+                raise LearningSessionTaskUnavailable(
+                    f"UserTask {requested_user_task_id} is not part of the current day bundle"
+                )
+            if matching.user_id != user_id:
+                raise PermissionError(
+                    f"User {user_id} cannot start UserTask {requested_user_task_id}"
+                )
+
+        active_index = self._resolve_active_queue_index(
+            bundle=bundle,
+            requested_user_task_id=requested_user_task_id,
+        )
+        active_user_task = bundle[active_index]
+        existing = self._find_daily_session(enrollment=enrollment, bundle=bundle)
+
+        if existing is not None:
+            existing.task_queue = self._queue_from_bundle(bundle)
+            active_changed = existing.user_task_id != active_user_task.id
+            if active_changed:
+                self._apply_active_user_task(
+                    existing,
+                    active_user_task,
+                    active_index,
+                    reset_result_state=True,
+                )
+                existing.phase = (
+                    "ended"
+                    if self._all_queue_tasks_complete(existing)
+                    else "practice_task"
+                )
+            elif not existing.task_queue:
+                existing.task_queue = self._queue_from_bundle(bundle)
+
+            self.session_repo.save(existing)
+            self.db.commit()
+            return StartSessionResponse(
+                session_id=existing.session_id,
+                topic=existing.topic,
+                skill_name=existing.skill_name,
+                task_type=existing.task_type,
+                user_task_id=existing.user_task_id,
+                message="Session resumed",
+            )
 
         session_id = uuid.uuid4().hex
-
-        self.session_repo.create(
+        active_content = dict(active_user_task.task.content or {})
+        session = self.session_repo.create(
             session_id=session_id,
             user_id=user_id,
             enrollment_id=enrollment.id,
-            user_task_id=None,
-            topic=topic,
-            skill_name=plan.skill_name,
-            activity_type=plan.activity_type.value,
-            task_type=template.task_type,
-            user_level=user_level,
-            pre_generated_tasks=task_content,
+            user_task_id=active_user_task.id,
+            topic=self._topic_for_user_task(active_user_task),
+            skill_name=self._skill_name_for_user_task(active_user_task),
+            activity_type=self._activity_type_for_user_task(active_user_task),
+            task_type=active_user_task.task.task_type.value,
+            user_level=int(
+                active_content.get("sub_level")
+                or active_user_task.task.difficulty
+                or 5
+            ),
+            pre_generated_tasks=active_content,
+            task_queue=self._queue_from_bundle(bundle),
         )
-
-        self.history_repo.upsert_after_assignment(
-            enrollment_id=enrollment.id,
-            skill_id=plan.skill_id,
-            activity_type=plan.activity_type,
-        )
-
+        session.current_task_index = active_index
+        if active_user_task.status == UserTaskStatus.PENDING:
+            active_user_task.status = UserTaskStatus.IN_PROGRESS
+        self.session_repo.save(session)
         self.db.commit()
 
         return StartSessionResponse(
             session_id=session_id,
-            topic=topic,
-            skill_name=plan.skill_name,
-            task_type=template.task_type,
-            user_task_id=None,
+            topic=session.topic,
+            skill_name=session.skill_name,
+            task_type=session.task_type,
+            user_task_id=active_user_task.id,
             message="Session ready",
         )
 
@@ -435,6 +479,78 @@ class LearningSessionService:
         self._enrich_state_with_profile(state, session.user_id)
         async for msg in self._stream_teaching_turn(session, state):
             yield msg
+
+    async def resume_messages_stream(
+        self, session_id: str
+    ) -> AsyncIterator[WSOutgoingMessage]:
+        """Send enough state for a previously-started daily chat to continue."""
+        session = self._load_session(session_id)
+        self._refresh_queue_statuses(session)
+        state = self._state_from_row(session)
+        self._enrich_state_with_profile(state, session.user_id)
+        total = len(session.task_queue or []) or 1
+        current = int(session.current_task_index or 0)
+
+        if self._all_queue_tasks_complete(session):
+            message = (
+                "Today's activities are complete. Go back to the dashboard "
+                "to review the day and advance when you're ready."
+            )
+            async for msg in self._stream_chat_text(
+                message,
+                actions=["Go to dashboard"],
+            ):
+                yield msg
+            return
+
+        if session.phase == "teaching":
+            previous = _last_tutor_message(session.messages or [])
+            message = previous or (
+                f"Welcome back. We are learning {session.topic}. "
+                "Tell me when you feel ready for the first activity."
+            )
+            async for msg in self._stream_chat_text(message):
+                yield msg
+            return
+
+        if session.phase == "practice_task":
+            message = f"Welcome back. Continue with activity {current + 1} of {total}."
+            yield WSOutgoingMessage(
+                type="chat_message",
+                role="assistant",
+                content=message,
+            )
+            payload = {
+                **(session.pre_generated_tasks or {}),
+                "_session": {
+                    "current_task_index": current,
+                    "total_tasks": total,
+                    "user_task_id": session.user_task_id,
+                },
+            }
+            yield WSOutgoingMessage(
+                type="ui_event",
+                widget=payload.get("widget") or session.task_type,
+                payload=payload,
+            )
+            return
+
+        if session.phase in ("feedback", "scorecard", "follow_up"):
+            message = "Ready for the next step?"
+            async for msg in self._stream_chat_text(
+                message,
+                actions=self._post_feedback_actions(state),
+            ):
+                yield msg
+            return
+
+        if session.phase == "ended":
+            message = "This chat is finished. Go back to the dashboard when you're ready."
+            async for msg in self._stream_chat_text(
+                message,
+                actions=["Go to dashboard"],
+            ):
+                yield msg
 
     async def process_message(
         self, session_id: str, message: WSIncomingMessage
@@ -690,8 +806,8 @@ class LearningSessionService:
             or ""
         ).strip()
         avoid_previous = (
-            "This is an extra feedback-only practice task. Generate fresh "
-            "content at the same level and for the same learning target. "
+            "This is an extra practice task. Generate fresh content at the "
+            "same level and for the same learning target. "
             "Do not reuse the previous title, story, names, examples, blank "
             "sentences, or passage."
         )
@@ -721,48 +837,62 @@ class LearningSessionService:
         )
         return profile
 
-    async def _build_retry_task_update(
+    async def _build_next_activity_update(
         self,
         session: LearningSession,
         state: LearningSessionState,
     ) -> dict[str, Any]:
-        template = self._template_for_retry(session)
-        user_profile = self._retry_generation_profile(
-            session=session,
-            template=template,
-        )
-        task_content = await self.generator.generate(template, user_profile)
-        next_index = int(state.get("current_task_index") or session.current_task_index or 0) + 1
-        intro = (
-            "Here is another practice task at the same level. This one is for "
-            "feedback only, so it will not change today's score."
-        )
-        widget = task_content.get("widget") or template.task_type
-        messages = list(state.get("messages", []))
-        messages.append({"role": "ai", "content": intro, "type": "chat"})
-        messages.append(
-            {
-                "role": "ai",
-                "content": f"[extra feedback-only task delivered: {template.task_type}]",
-                "type": "ui_event",
+        self._refresh_queue_statuses(session)
+        queue = list(session.task_queue or [])
+        current_index = int(session.current_task_index or 0)
+        next_item: dict[str, Any] | None = None
+        for item in queue:
+            index = int(item.get("sequence_index") or 0)
+            if index <= current_index:
+                continue
+            if item.get("status") != UserTaskStatus.COMPLETED.value:
+                next_item = item
+                break
+
+        if next_item is None:
+            prompt = (
+                "Today's activities are complete. Go back to the dashboard "
+                "to review the day and advance when you're ready."
+            )
+            messages = list(state.get("messages", []))
+            messages.append({"role": "ai", "content": prompt, "type": "chat"})
+            return {
+                "phase": "ended",
+                "messages": messages,
+                "task_queue": queue,
+                "outgoing_events": [
+                    {
+                        "type": "chat_message",
+                        "role": "assistant",
+                        "content": prompt,
+                        "actions": ["Go to dashboard"],
+                    }
+                ],
             }
+
+        user_task = self.user_task_repo.get_by_id(int(next_item["user_task_id"]))
+        if user_task is None:
+            raise LookupError(f"UserTask {next_item['user_task_id']} does not exist")
+
+        self._apply_active_user_task(
+            session,
+            user_task,
+            int(next_item.get("sequence_index") or 0),
+            reset_result_state=True,
         )
-        return {
-            "phase": "practice_task",
-            "task_content": task_content,
-            "task_type": template.task_type,
-            "current_task_index": next_index,
-            "user_submission": None,
-            "outgoing_events": [
-                {"type": "chat_message", "role": "assistant", "content": intro},
-                {
-                    "type": "ui_event",
-                    "widget": widget,
-                    "payload": task_content,
-                },
-            ],
-            "messages": messages,
-        }
+        self._refresh_queue_statuses(session)
+        session.phase = "practice_task"
+        session.messages = list(state.get("messages", []))
+        next_state = self._state_from_row(session)
+        next_state["messages"] = list(state.get("messages", []))
+        update = await task_delivery_node(next_state)
+        update["task_queue"] = session.task_queue
+        return update
 
     def _enrich_state_with_profile(
         self,
@@ -790,12 +920,159 @@ class LearningSessionService:
             raise LookupError(f"No learning_session with id={session_id!r}")
         return session
 
+    def _find_daily_session(
+        self,
+        *,
+        enrollment: UserEnrollment,
+        bundle: list,
+    ) -> LearningSession | None:
+        bundle_ids = {task.id for task in bundle}
+        rows = (
+            self.db.query(LearningSession)
+            .filter(
+                LearningSession.user_id == enrollment.user_id,
+                LearningSession.enrollment_id == enrollment.id,
+                LearningSession.created_at >= enrollment.current_day_started_at,
+            )
+            .order_by(LearningSession.id.desc())
+            .all()
+        )
+        for row in rows:
+            queue_ids = {
+                int(item.get("user_task_id"))
+                for item in (row.task_queue or [])
+                if item.get("user_task_id") is not None
+            }
+            if queue_ids and queue_ids == bundle_ids:
+                return row
+        return None
+
+    @staticmethod
+    def _queue_from_bundle(bundle: list) -> list[dict[str, Any]]:
+        return [
+            {
+                "user_task_id": user_task.id,
+                "task_id": user_task.task_id,
+                "sequence_index": index,
+                "status": user_task.status.value,
+                "title": user_task.task.title,
+                "task_type": user_task.task.task_type.value,
+                "completed_at": (
+                    user_task.completed_at.isoformat()
+                    if user_task.completed_at
+                    else None
+                ),
+            }
+            for index, user_task in enumerate(bundle)
+        ]
+
+    @staticmethod
+    def _resolve_active_queue_index(
+        *,
+        bundle: list,
+        requested_user_task_id: int | None,
+    ) -> int:
+        if requested_user_task_id is not None:
+            for index, user_task in enumerate(bundle):
+                if (
+                    user_task.id == requested_user_task_id
+                    and user_task.status != UserTaskStatus.COMPLETED
+                ):
+                    return index
+
+        for index, user_task in enumerate(bundle):
+            if user_task.status != UserTaskStatus.COMPLETED:
+                return index
+        return max(len(bundle) - 1, 0)
+
+    def _refresh_queue_statuses(self, session: LearningSession) -> None:
+        queue = []
+        for item in session.task_queue or []:
+            user_task_id = item.get("user_task_id")
+            user_task = (
+                self.user_task_repo.get_by_id(int(user_task_id))
+                if user_task_id is not None
+                else None
+            )
+            if user_task is None:
+                queue.append(item)
+                continue
+            queue.append(
+                {
+                    **item,
+                    "status": user_task.status.value,
+                    "completed_at": (
+                        user_task.completed_at.isoformat()
+                        if user_task.completed_at
+                        else None
+                    ),
+                }
+            )
+        session.task_queue = queue
+
+    @staticmethod
+    def _all_queue_tasks_complete(session: LearningSession) -> bool:
+        queue = session.task_queue or []
+        return bool(queue) and all(
+            item.get("status") == UserTaskStatus.COMPLETED.value for item in queue
+        )
+
+    @staticmethod
+    def _topic_for_user_task(user_task) -> str:
+        content = dict(user_task.task.content or {})
+        return str(
+            content.get("topic_name")
+            or content.get("topic")
+            or content.get("passage_title")
+            or user_task.task.title
+        )
+
+    @staticmethod
+    def _skill_name_for_user_task(user_task) -> str:
+        content = dict(user_task.task.content or {})
+        skill_name = str(content.get("sub_skill") or "").strip()
+        if not skill_name and user_task.task.task_skills:
+            linked_skill = user_task.task.task_skills[0].skill
+            skill_name = linked_skill.name if linked_skill else ""
+        return skill_name or "grammar"
+
+    @staticmethod
+    def _activity_type_for_user_task(user_task) -> str:
+        content = dict(user_task.task.content or {})
+        return str(content.get("activity") or user_task.task.task_type.value)
+
+    def _apply_active_user_task(
+        self,
+        session: LearningSession,
+        user_task,
+        index: int,
+        *,
+        reset_result_state: bool,
+    ) -> None:
+        content = dict(user_task.task.content or {})
+        session.user_task_id = user_task.id
+        session.current_task_index = index
+        session.topic = self._topic_for_user_task(user_task)
+        session.skill_name = self._skill_name_for_user_task(user_task)
+        session.activity_type = self._activity_type_for_user_task(user_task)
+        session.task_type = user_task.task.task_type.value
+        session.user_level = int(content.get("sub_level") or user_task.task.difficulty or 5)
+        session.pre_generated_tasks = content
+        if reset_result_state:
+            session.user_submission = None
+            session.evaluation = None
+            session.feedback = None
+            session.understanding_confirmed = True
+        if user_task.status == UserTaskStatus.PENDING:
+            user_task.status = UserTaskStatus.IN_PROGRESS
+
     @staticmethod
     def _state_from_row(session: LearningSession) -> LearningSessionState:
         return {
             "session_id": session.session_id,
             "user_id": session.user_id,
             "user_task_id": session.user_task_id,
+            "task_queue": list(session.task_queue or []),
             "current_task_index": session.current_task_index,
             "phase": session.phase,
             "messages": list(session.messages or []),
@@ -825,6 +1102,8 @@ class LearningSessionService:
             session.feedback = update["feedback"]
         if "task_content" in update:
             session.pre_generated_tasks = update["task_content"] or {}
+        if "task_queue" in update:
+            session.task_queue = update["task_queue"] or []
         if "task_type" in update:
             session.task_type = str(update["task_type"] or session.task_type)
         if "current_task_index" in update:
@@ -848,9 +1127,13 @@ class LearningSessionService:
             return
         if user_task.status == UserTaskStatus.SKIPPED:
             return
+        if not session.evaluation:
+            return
 
         self._persist_session_scores(session, user_task_id)
         self.user_task_repo.mark_completed(user_task)
+        self._refresh_queue_statuses(session)
+        self.session_repo.save(session)
 
     def _persist_session_scores(
         self, session: LearningSession, user_task_id: int
@@ -863,7 +1146,11 @@ class LearningSessionService:
         when the session ends.
         """
         from app.modules.progress.service import PointsUpdaterService, ScoreUpdaterService
-        from app.modules.responses.repository import EvaluationRepository, ResponseRepository
+        from app.modules.responses.repository import (
+            EvaluationRepository,
+            FeedbackRepository,
+            ResponseRepository,
+        )
 
         evaluation_data = session.evaluation
         if not evaluation_data:
@@ -891,6 +1178,10 @@ class LearningSessionService:
             percentage=percentage,
             report=evaluation_data,
         )
+        FeedbackRepository(self.db).create(
+            evaluation_id=evaluation.id,
+            body=session.feedback or {},
+        )
 
         # ScoreUpdaterService.apply commits internally.
         try:
@@ -911,6 +1202,19 @@ class LearningSessionService:
     @staticmethod
     def _render_outgoing(events: list[dict]) -> list[WSOutgoingMessage]:
         return [WSOutgoingMessage(**evt) for evt in events]
+
+    @staticmethod
+    def _post_feedback_actions(state: LearningSessionState) -> list[str]:
+        queue = list(state.get("task_queue") or [])
+        current_index = int(state.get("current_task_index") or 0)
+        has_next = any(
+            int(item.get("sequence_index") or index) > current_index
+            and item.get("status") != UserTaskStatus.COMPLETED.value
+            for index, item in enumerate(queue)
+        )
+        if has_next:
+            return ["Next activity", "Go to dashboard"]
+        return ["Go to dashboard"]
 
     @staticmethod
     def _split_text_chunks(text: str) -> list[str]:
@@ -1346,25 +1650,19 @@ class LearningSessionService:
         session.user_submission = answers
         state["user_submission"] = answers
 
-        messages_before_eval = list(state.get("messages", []))
         eval_update = await evaluation_node(state)
-        feedback_only = int(state.get("current_task_index") or 0) > 0
-        if not feedback_only:
-            self._apply_update(session, eval_update)
+        self._apply_update(session, eval_update)
         # Merge evaluation back into state for the feedback node
         state["evaluation"] = eval_update.get("evaluation")
         state["phase"] = eval_update.get("phase", state.get("phase"))
-        state["messages"] = (
-            messages_before_eval
-            if feedback_only
-            else eval_update.get("messages", state.get("messages", []))
-        )
+        state["messages"] = eval_update.get("messages", state.get("messages", []))
 
         feedback_update = await feedback_node(state)
         self._apply_update(session, feedback_update)
+        self._mark_bound_task_complete(session)
         self.db.commit()
 
-        events = [] if feedback_only else list(eval_update.get("outgoing_events", []))
+        events = list(eval_update.get("outgoing_events", []))
         events.extend(feedback_update.get("outgoing_events", []))
         return self._render_outgoing(events)
 
@@ -1378,25 +1676,18 @@ class LearningSessionService:
         session.user_submission = answers
         state["user_submission"] = answers
 
-        messages_before_eval = list(state.get("messages", []))
         eval_update = await evaluation_node(state)
-        feedback_only = int(state.get("current_task_index") or 0) > 0
-        if not feedback_only:
-            self._apply_update(session, eval_update)
+        self._apply_update(session, eval_update)
         state["evaluation"] = eval_update.get("evaluation")
         state["phase"] = eval_update.get("phase", state.get("phase"))
-        state["messages"] = (
-            messages_before_eval
-            if feedback_only
-            else eval_update.get("messages", state.get("messages", []))
-        )
+        state["messages"] = eval_update.get("messages", state.get("messages", []))
 
-        if not feedback_only:
-            for event in eval_update.get("outgoing_events", []):
-                yield WSOutgoingMessage(**event)
+        for event in eval_update.get("outgoing_events", []):
+            yield WSOutgoingMessage(**event)
 
         feedback_update = await feedback_node(state)
         self._apply_update(session, feedback_update)
+        self._mark_bound_task_complete(session)
         self.db.commit()
 
         async for msg in self._stream_outgoing_events(
@@ -1417,8 +1708,17 @@ class LearningSessionService:
         session.messages = messages
 
         action = action_text.strip().lower()
-        if any(sig in action for sig in ("try another task", "another task", "next task", "more")):
-            update = await self._build_retry_task_update(session, state)
+        if any(
+            sig in action
+            for sig in (
+                "next activity",
+                "try another task",
+                "another task",
+                "next task",
+                "more",
+            )
+        ):
+            update = await self._build_next_activity_update(session, state)
             self._apply_update(session, update)
             self.db.commit()
             return self._render_outgoing(update.get("outgoing_events", []))
@@ -1460,7 +1760,7 @@ class LearningSessionService:
                         type="chat_message",
                         role="assistant",
                         content=prompt_msg,
-                        actions=["Try another task", "Ask a question", "End session"],
+                        actions=self._post_feedback_actions(state),
                     )
                 ]
 
@@ -1497,8 +1797,21 @@ class LearningSessionService:
         messages = list(state.get("messages", []))
         action = raw_action.strip().lower()
 
-        end_signals = ("end session", "end", "stop", "bye", "goodbye")
-        another_signals = ("try another task", "another task", "next task", "more")
+        end_signals = (
+            "go to dashboard",
+            "end session",
+            "end",
+            "stop",
+            "bye",
+            "goodbye",
+        )
+        another_signals = (
+            "next activity",
+            "try another task",
+            "another task",
+            "next task",
+            "more",
+        )
         question_signals = ("ask a question", "question", "doubt", "clarif")
 
         previous_tutor_message = _last_tutor_message(messages)
@@ -1519,7 +1832,7 @@ class LearningSessionService:
                 self.db.commit()
                 async for msg in self._stream_chat_text(
                     prompt_msg,
-                    actions=["Try another task", "Ask a question", "End session"],
+                    actions=self._post_feedback_actions(state),
                 ):
                     yield msg
                 return
@@ -1543,7 +1856,10 @@ class LearningSessionService:
                 return
 
         if any(sig in action for sig in end_signals):
-            farewell = "Great work today! See you tomorrow."
+            farewell = (
+                "Great work. Go back to the dashboard to review today's "
+                "activities and advance when you're ready."
+            )
             messages.append({"role": "ai", "content": farewell, "type": "chat"})
             self._apply_update(
                 session,
@@ -1552,7 +1868,6 @@ class LearningSessionService:
                     "messages": messages,
                 },
             )
-            self._mark_bound_task_complete(session)
             self.db.commit()
             async for msg in self._stream_chat_text(
                 farewell,
@@ -1562,7 +1877,7 @@ class LearningSessionService:
             return
 
         if any(sig in action for sig in another_signals):
-            update = await self._build_retry_task_update(session, state)
+            update = await self._build_next_activity_update(session, state)
             self._apply_update(session, update)
             self.db.commit()
             async for msg in self._stream_outgoing_events(

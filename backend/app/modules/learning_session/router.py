@@ -23,6 +23,7 @@ from app.modules.auth.models import User
 from app.modules.auth.repository import UserRepository
 from app.modules.curriculum.exceptions import (
     EnrollmentNotActive,
+    NoTaskAvailable,
     NotEnrolled,
 )
 from app.modules.learning_session.schemas import (
@@ -71,6 +72,8 @@ async def start_session(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LearningSessionTaskUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except NoTaskAvailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover — unexpected
         logger.exception("start_session failed for user_id=%s", current_user.id)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -119,6 +122,7 @@ def get_session_by_task(
         user_submission=session.user_submission,
         evaluation=session.evaluation,
         feedback=session.feedback,
+        task_queue=session.task_queue or [],
         created_at=session.created_at,
     )
 
@@ -172,6 +176,9 @@ async def learning_session_ws(
     try:
         if not session.messages:
             async for msg in service.initial_messages_stream(session_id):
+                await _send(websocket, msg)
+        else:
+            async for msg in service.resume_messages_stream(session_id):
                 await _send(websocket, msg)
 
         while True:

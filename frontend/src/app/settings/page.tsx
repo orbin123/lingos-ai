@@ -502,12 +502,12 @@ function DailyPracticeCard({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
             gap: 8,
             maxWidth: 360,
           }}
         >
-          {[1, 2, 3, 4].map((value) => {
+          {[2, 3, 4].map((value) => {
             const selected = settings.tasks_per_day === value;
             return (
               <button

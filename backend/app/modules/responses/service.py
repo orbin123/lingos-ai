@@ -176,6 +176,20 @@ class ResponseService:
             logger.debug("[evaluator] generated task widget='fill_in_blanks' → fill_in_blanks")
             return "fill_in_blanks"
 
+        if task_content.get("widget") == "listen_and_respond":
+            activity = task_content.get("activity")
+            sub_skill = task_content.get("sub_skill")
+            if activity == "listen" and sub_skill == "grammar":
+                logger.debug("[evaluator] generated grammar listen widget → curriculum_grammar_listen_mcq")
+                return "curriculum_grammar_listen_mcq"
+
+        if task_content.get("widget") == "speak_and_record":
+            activity = task_content.get("activity")
+            sub_skill = task_content.get("sub_skill")
+            if activity == "speak" and sub_skill == "grammar":
+                logger.debug("[evaluator] generated grammar speak widget → curriculum_grammar_speak")
+                return "curriculum_grammar_speak"
+
         if "speaking_prompt" in task_content and "target_tense" in task_content:
             logger.debug("[evaluator] generated task fingerprint='speaking_prompt+target_tense' → speak_with_tense")
             return "speak_with_tense"

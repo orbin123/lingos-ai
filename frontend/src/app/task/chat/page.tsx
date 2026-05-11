@@ -114,7 +114,7 @@ export default function ChatEntryPage() {
             marginBottom: 8,
           }}
         >
-          Ready for today&apos;s lesson?
+          Ready for today&apos;s activities?
         </div>
         <div
           style={{
@@ -124,8 +124,8 @@ export default function ChatEntryPage() {
             marginBottom: 22,
           }}
         >
-          We&apos;ll generate a fresh task tailored to your level, then teach
-          and practice together in chat.
+          We&apos;ll teach today&apos;s topic once, then complete your daily
+          activities in this chat.
         </div>
 
         {error && (

@@ -69,9 +69,11 @@ export default function TaskPage() {
     !overrideBundle && isReady && !!me?.diagnosis_completed && !!me?.enrollment,
   );
 
-  const bundle: UserTask[] = overrideBundle ?? taskQuery.data ?? [];
+  const bundle: UserTask[] = useMemo(
+    () => overrideBundle ?? taskQuery.data ?? [],
+    [overrideBundle, taskQuery.data],
+  );
   const totalTasks = bundle.length;
-  const isSuperUserJumpBundle = overrideBundle !== null;
 
   // ─── Step state ────────────────────────────────────────────
   const [currentStep, setCurrentStep] = useState(0);
@@ -97,7 +99,7 @@ export default function TaskPage() {
         setDayComplete(false);
       }
     }
-  }, [bundle.length]);
+  }, [bundle]);
 
   // Pre-fetch results for completed tasks so DayCompleteScreen can show scores.
   useEffect(() => {
@@ -208,23 +210,10 @@ export default function TaskPage() {
     }
   };
 
-  // Complete day
-  const completeDayMutation = useMutation({
-    mutationFn: tasksApi.completeDay,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["task", "next"] });
-      queryClient.invalidateQueries({ queryKey: ["me"] });
-      router.push("/dashboard");
-    },
-  });
-
   const finishDayOrJump = () => {
-    if (isSuperUserJumpBundle) {
-      queryClient.invalidateQueries({ queryKey: ["task", "next"] });
-      router.push("/dashboard");
-      return;
-    }
-    completeDayMutation.mutate();
+    queryClient.invalidateQueries({ queryKey: ["task", "next"] });
+    queryClient.invalidateQueries({ queryKey: ["me"] });
+    router.push("/dashboard");
   };
 
   // ─── Render states ─────────────────────────────────────────
@@ -317,7 +306,6 @@ export default function TaskPage() {
           dayNum={dayNum}
           results={effectiveResults}
           bundle={bundle}
-          isCompleting={completeDayMutation.isPending}
           onFinish={finishDayOrJump}
         />
       </PageShell>
@@ -1168,13 +1156,11 @@ function DayCompleteScreen({
   dayNum,
   results,
   bundle,
-  isCompleting,
   onFinish,
 }: {
   dayNum: number;
   results: (ResponseGraded | null)[];
   bundle: UserTask[];
-  isCompleting: boolean;
   onFinish: () => void;
 }) {
   return (
@@ -1343,7 +1329,6 @@ function DayCompleteScreen({
       {/* Finish button */}
       <button
         onClick={onFinish}
-        disabled={isCompleting}
         style={{
           width: "100%",
           padding: "14px 0",
@@ -1353,13 +1338,12 @@ function DayCompleteScreen({
           color: "white",
           fontSize: 15,
           fontWeight: 700,
-          cursor: isCompleting ? "not-allowed" : "pointer",
+          cursor: "pointer",
           transition: "all 0.2s ease",
-          opacity: isCompleting ? 0.6 : 1,
           marginTop: 4,
         }}
       >
-        {isCompleting ? "Completing…" : "Back to dashboard →"}
+        Back to dashboard →
       </button>
     </div>
   );
