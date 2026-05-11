@@ -58,7 +58,7 @@ class EnrollmentRead(BaseModel):
 class EnrollmentSettingsUpdate(BaseModel):
     """User-configurable practice settings for the active enrollment."""
 
-    tasks_per_day: int | None = Field(default=None, ge=1, le=4)
+    tasks_per_day: int | None = Field(default=None, ge=2, le=4)
     allow_reading: bool | None = None
     allow_writing: bool | None = None
     allow_listening: bool | None = None

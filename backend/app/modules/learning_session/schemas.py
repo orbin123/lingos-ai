@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # --- REST -------------------------------------------------------------
@@ -22,6 +22,7 @@ class LearningSessionSnapshotRead(BaseModel):
     user_submission: dict[str, Any] | None
     evaluation: dict[str, Any] | None
     feedback: dict[str, Any] | None
+    task_queue: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
 
 

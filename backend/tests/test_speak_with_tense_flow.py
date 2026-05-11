@@ -204,6 +204,66 @@ def test_evaluate_speak_with_tense_scoring_rules(
     assert report["percentage"] == expected_pct
 
 
+@pytest.mark.asyncio
+async def test_evaluate_curriculum_grammar_speak_uses_llm(monkeypatch) -> None:
+    calls: list[dict] = []
+
+    class FakeClient:
+        async def generate_structured(self, **kwargs):  # noqa: ANN003, ANN202
+            calls.append(kwargs)
+            model = kwargs["output_model"]
+            return model(
+                subskill_score=8,
+                items=[
+                    {
+                        "item_id": "prompt_1",
+                        "mistakes": [],
+                        "score": 0.9,
+                        "grammar_rule_used": True,
+                    }
+                ],
+                main_mistakes=[],
+                overall_level="good",
+            )
+
+    import app.ai.llm as llm_module
+
+    monkeypatch.setattr(llm_module, "get_default_llm_client", lambda: FakeClient())
+
+    report = await EvaluationService().evaluate_grammar_speaking(
+        task_content={
+            "widget": "speak_and_record",
+            "topic_name": "Present Simple",
+            "instructions": "Answer using present simple.",
+            "speaking_prompts": ["Tell me about your daily routine."],
+            "sample_responses": ["I wake up early and study English."],
+            "grammar_rule_to_practice": "present simple",
+            "speaking_duration_seconds": 60,
+        },
+        user_answers={
+            "recordings": [
+                {
+                    "item_id": "prompt_1",
+                    "transcript": "I wake up early and study English.",
+                    "audio_blob_url": "/audio/user-recordings/a.webm",
+                    "duration_seconds": 6,
+                    "attempt_number": 1,
+                }
+            ],
+            "time_spent_seconds": 20,
+        },
+        user_level=3,
+        learner_profile={"self_assessed_level": "beginner"},
+    )
+
+    assert calls
+    assert report["task_type"] == "curriculum_grammar_speak"
+    assert report["percentage"] == 80.0
+    assert report["correct_count"] == 1
+    assert report["questions"]["prompt_1"]["correct"] is True
+    assert report["questions"]["prompt_1"]["audio_url"] == "/audio/user-recordings/a.webm"
+
+
 # ─── Feedback output shape ────────────────────────────────────────────
 
 def test_feedback_agent_standard_output_model_shape_for_speak_with_tense() -> None:

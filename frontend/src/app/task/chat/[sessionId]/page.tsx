@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import { tasksApi } from "@/lib/tasks-api";
 
 /* ── Types from backend ───────────────────────────────────────────────── */
 interface BlankItem {
@@ -58,6 +59,47 @@ interface OpenTextPayload {
   items: OpenTextItem[];
 }
 
+interface MCQItem {
+  item_id: string;
+  prompt: string;
+  options: [string, string, string, string] | string[];
+  correct_index: number;
+  explanation: string;
+}
+
+interface ListenAndRespondPayload {
+  task_intro?: string;
+  estimated_time_minutes?: number;
+  widget: "listen_and_respond";
+  topic_id?: string;
+  topic_name?: string;
+  sub_skill?: string;
+  sub_level?: number;
+  activity?: string;
+  instructions?: string;
+  audio_script: string;
+  audio_url: string | null;
+  audio_duration_seconds?: number;
+  inner_widget: "mcq" | "fill_in_blanks" | "open_text" | "speak_and_record";
+  items?: MCQItem[];
+}
+
+interface SpeakAndRecordPayload {
+  task_intro?: string;
+  estimated_time_minutes?: number;
+  widget: "speak_and_record";
+  topic_id?: string;
+  topic_name?: string;
+  sub_skill?: string;
+  sub_level?: number;
+  activity?: string;
+  instructions?: string;
+  speaking_prompts: string[];
+  sample_responses: string[];
+  grammar_rule_to_practice: string;
+  speaking_duration_seconds: number;
+}
+
 interface ScorecardPayload {
   overall_score: number;
   skill_name: string;
@@ -87,14 +129,19 @@ interface FeedbackPayload {
   practice_suggestion: string;
 }
 
-type TaskPayload = FillInBlanksPayload | OpenTextPayload;
+type TaskPayload =
+  | FillInBlanksPayload
+  | OpenTextPayload
+  | ListenAndRespondPayload
+  | SpeakAndRecordPayload;
 
 type ChatEvent =
   | { kind: "chat"; role: "ai" | "you"; content: string; actions?: string[]; streamId?: string; streaming?: boolean }
   | { kind: "section"; tone: "intro" | "task" | "score" | "feedback"; label: string }
-  | { kind: "task"; payload: TaskPayload; submitted: boolean; answers: Record<string, string> }
+  | { kind: "task"; payload: TaskPayload; submitted: boolean; answers: Record<string, unknown> }
   | { kind: "scorecard"; payload: ScorecardPayload }
-  | { kind: "feedback"; payload: FeedbackPayload };
+  | { kind: "feedback"; payload: FeedbackPayload }
+  | { kind: "unsupported"; widget: string };
 
 type WSIncoming =
   | { type: "chat_message"; role?: string; content?: string; actions?: string[] }
@@ -106,7 +153,7 @@ type WSIncoming =
 
 type WSOutgoing =
   | { type: "user_message"; content: string }
-  | { type: "task_submission"; answers: Record<string, string> }
+  | { type: "task_submission"; answers: Record<string, unknown> }
   | { type: "follow_up_action"; action: string };
 
 /* ── Icons ───────────────────────────────────────────────────────────── */
@@ -145,6 +192,20 @@ function MicIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <rect x="6" y="2" width="4" height="7" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 13v1.5M5.5 14.5h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+function PlayTriangleIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M5 3.5v9l7-4.5-7-4.5z" />
+    </svg>
+  );
+}
+function StopIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
+      <rect x="4" y="4" width="8" height="8" rx="1.5" />
     </svg>
   );
 }
@@ -388,6 +449,20 @@ function SectionMarker({
 
 function blankId(blank: BlankItem) {
   return blank.item_id || blank.blank_id || blank.sentence_with_blank;
+}
+
+function formatDuration(totalSeconds: number) {
+  const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function resolveAudioUrl(url?: string | null) {
+  if (!url) return undefined;
+  if (/^https?:\/\//i.test(url)) return url;
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  return `${apiBase.replace(/\/$/, "")}${url.startsWith("/") ? url : `/${url}`}`;
 }
 
 function PassageWithBlanks({
@@ -831,6 +906,619 @@ function OpenTextTaskCard({
   );
 }
 
+function ListenAndRespondTaskCard({
+  payload,
+  answers,
+  setAnswers,
+  submitted,
+  onSubmit,
+}: {
+  payload: ListenAndRespondPayload;
+  answers: Record<string, unknown>;
+  setAnswers: (next: Record<string, unknown>) => void;
+  submitted: boolean;
+  onSubmit: () => void;
+}) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const startedAtRef = useRef(Date.now());
+  const playStartedAtRef = useRef<number | null>(null);
+  const items = payload.items ?? [];
+  const [selectedById, setSelectedById] = useState<Record<string, number>>({});
+  const [playCount, setPlayCount] = useState(0);
+  const [totalListenSeconds, setTotalListenSeconds] = useState(0);
+  const [unlocked, setUnlocked] = useState(false);
+  const [hasPlayedFull, setHasPlayedFull] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [actualDuration, setActualDuration] = useState(0);
+  const duration = actualDuration || audioRef.current?.duration || payload.audio_duration_seconds || 0;
+  const audioUrl = resolveAudioUrl(payload.audio_url);
+
+  const publish = (
+    selected: Record<string, number>,
+    analytics = {
+      play_count: playCount,
+      total_listen_seconds: totalListenSeconds,
+    },
+  ) => {
+    setAnswers({
+      listen_analytics: {
+        play_count: analytics.play_count,
+        total_listen_seconds: Math.round(analytics.total_listen_seconds),
+      },
+      inner_response: {
+        widget: "mcq",
+        answers: items
+          .filter((item) => selected[item.item_id] !== undefined)
+          .map((item) => ({
+            item_id: item.item_id,
+            selected_index: selected[item.item_id],
+          })),
+      },
+      time_spent_seconds: Math.round((Date.now() - startedAtRef.current) / 1000),
+    });
+  };
+
+  const commitListenSeconds = () => {
+    if (playStartedAtRef.current == null) return totalListenSeconds;
+    const next = totalListenSeconds + (Date.now() - playStartedAtRef.current) / 1000;
+    playStartedAtRef.current = null;
+    setTotalListenSeconds(next);
+    return next;
+  };
+
+  const togglePlay = async () => {
+    const audio = audioRef.current;
+    if (!audio || !audioUrl || hasPlayedFull) return;
+    if (isPlaying) {
+      audio.pause();
+      return;
+    }
+    await audio.play();
+  };
+
+  const selectAnswer = (itemId: string, index: number) => {
+    if (submitted) return;
+    const next = { ...selectedById, [itemId]: index };
+    setSelectedById(next);
+    publish(next);
+  };
+
+  const allAnswered = items.every((item) => selectedById[item.item_id] !== undefined);
+  const canSubmit = unlocked && allAnswered && Object.keys(answers).length > 0;
+
+  return (
+    <div style={{
+      borderRadius: 22, padding: "22px 24px",
+      background: "rgba(255,255,255,0.84)",
+      backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)",
+      border: "1.5px solid rgba(255,255,255,0.92)",
+      boxShadow: "0 6px 28px rgba(80,110,180,0.12)",
+      marginTop: 4, animation: "fadeIn 0.4s ease both",
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        fontSize: 13, fontWeight: 800, color: "oklch(48% 0.16 60)",
+        marginBottom: 14, paddingBottom: 12,
+        borderBottom: "1px solid oklch(85% 0.025 240)",
+      }}>
+        <TaskIcon /> {payload.topic_name || "Listening task"}
+      </div>
+
+      {payload.instructions && (
+        <div style={{ fontSize: 14, lineHeight: 1.6, color: "oklch(35% 0.07 240)", marginBottom: 14 }}>
+          {payload.instructions}
+        </div>
+      )}
+
+      <div style={{
+        borderRadius: 18,
+        border: "2px solid #f3be86",
+        background: "linear-gradient(90deg, #fff2df, white)",
+        padding: "18px 20px",
+        display: "grid",
+        gridTemplateColumns: "auto minmax(0, 1fr) auto",
+        gap: 18,
+        alignItems: "center",
+        marginBottom: 18,
+      }}>
+        <audio
+          ref={audioRef}
+          src={audioUrl}
+          preload="metadata"
+          onLoadedMetadata={(e) => setActualDuration(e.currentTarget.duration)}
+          onPlay={() => {
+            setIsPlaying(true);
+            setPlayCount((count) => {
+              const next = count + 1;
+              publish(selectedById, {
+                play_count: next,
+                total_listen_seconds: totalListenSeconds,
+              });
+              return next;
+            });
+            playStartedAtRef.current = Date.now();
+          }}
+          onPause={() => {
+            setIsPlaying(false);
+            const nextTotal = commitListenSeconds();
+            publish(selectedById, {
+              play_count: playCount,
+              total_listen_seconds: nextTotal,
+            });
+          }}
+          onEnded={() => {
+            setIsPlaying(false);
+            setUnlocked(true);
+            setHasPlayedFull(true);
+            const nextTotal = commitListenSeconds();
+            publish(selectedById, {
+              play_count: playCount,
+              total_listen_seconds: nextTotal,
+            });
+          }}
+          onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+        />
+        <button
+          type="button"
+          onClick={togglePlay}
+          disabled={!audioUrl || hasPlayedFull}
+          style={{
+            width: 70, height: 70, borderRadius: "50%",
+            border: "none", color: "white",
+            background: "#ed9200",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            cursor: audioUrl && !hasPlayedFull ? "pointer" : "not-allowed",
+            boxShadow: "0 8px 22px rgba(237,146,0,0.25)",
+          }}
+          aria-label={isPlaying ? "Pause audio" : "Play audio"}
+        >
+          {isPlaying ? <StopIcon /> : hasPlayedFull ? <CheckIcon /> : <PlayTriangleIcon />}
+        </button>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "oklch(18% 0.07 245)", marginBottom: 4 }}>
+            {payload.topic_name || "Grammar listening"}
+          </div>
+          <div style={{ fontSize: 13, color: "#1f5d8a", fontWeight: 650 }}>
+            Natural speed · {duration ? `${formatDuration(duration)} total` : "audio clip"}
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 150 }}>
+          {Array.from({ length: 28 }).map((_, idx) => {
+            const active = idx / 28 <= (duration ? currentTime / duration : 0);
+            return (
+              <span
+                key={idx}
+                style={{
+                  width: 4,
+                  height: 12 + ((idx * 7) % 28),
+                  borderRadius: 999,
+                  background: active ? "#ed9200" : "#d4a982",
+                  opacity: active ? 1 : 0.75,
+                }}
+              />
+            );
+          })}
+          <span style={{
+            marginLeft: 12, color: "#26587d", fontSize: 15,
+            fontWeight: 800, fontVariantNumeric: "tabular-nums",
+          }}>
+            {formatDuration(currentTime)} / {formatDuration(duration)}
+          </span>
+        </div>
+      </div>
+
+      {!unlocked && !submitted && (
+        <div style={{
+          borderRadius: 12,
+          background: "oklch(96% 0.03 60)",
+          color: "oklch(42% 0.12 60)",
+          padding: "10px 12px",
+          fontSize: 13,
+          fontWeight: 750,
+          marginBottom: 16,
+        }}>
+          Listen to the full audio once to unlock the questions.
+        </div>
+      )}
+
+      {(unlocked || submitted) && (
+        <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
+          {items.map((item, itemIndex) => {
+            const selected = selectedById[item.item_id];
+            return (
+              <div
+                key={item.item_id}
+                style={{
+                  borderRadius: 14,
+                  border: "1px solid oklch(86% 0.025 240)",
+                  background: "white",
+                  padding: "14px 16px",
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 800, color: "oklch(22% 0.08 240)", marginBottom: 10, lineHeight: 1.45 }}>
+                  {itemIndex + 1}. {item.prompt}
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {item.options.map((option, optionIndex) => {
+                    const chosen = selected === optionIndex;
+                    const correct = submitted && item.correct_index === optionIndex;
+                    const wrong = submitted && chosen && !correct;
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        disabled={submitted}
+                        onClick={() => selectAnswer(item.item_id, optionIndex)}
+                        style={{
+                          textAlign: "left",
+                          borderRadius: 11,
+                          border: chosen
+                            ? "1.5px solid oklch(52% 0.18 240)"
+                            : "1px solid oklch(86% 0.025 240)",
+                          background: correct
+                            ? "oklch(94% 0.07 155)"
+                            : wrong
+                            ? "oklch(94% 0.06 25)"
+                            : chosen
+                            ? "oklch(94% 0.04 240)"
+                            : "oklch(98% 0.01 245)",
+                          color: "oklch(22% 0.08 240)",
+                          padding: "10px 12px",
+                          cursor: submitted ? "default" : "pointer",
+                          fontFamily: "inherit",
+                          fontSize: 13.5,
+                          fontWeight: chosen ? 800 : 650,
+                        }}
+                      >
+                        {option}
+                      </button>
+                    );
+                  })}
+                </div>
+                {submitted && (
+                  <p style={{ margin: "10px 0 0", color: "oklch(45% 0.07 240)", fontSize: 12.5, lineHeight: 1.55 }}>
+                    {item.explanation}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!submitted && (
+        <button
+          disabled={!canSubmit}
+          onClick={onSubmit}
+          style={{
+            width: "100%", padding: "14px 0",
+            borderRadius: 14, border: "none",
+            background: "oklch(20% 0.09 245)", color: "white",
+            fontSize: 14.5, fontWeight: 700,
+            cursor: canSubmit ? "pointer" : "not-allowed",
+            opacity: canSubmit ? 1 : 0.5,
+            fontFamily: "inherit",
+          }}
+        >
+          Submit listening answers
+        </button>
+      )}
+    </div>
+  );
+}
+
+interface PromptRecording {
+  item_id: string;
+  transcript: string;
+  audio_blob_url: string;
+  duration_seconds: number;
+  attempt_number: number;
+}
+
+function SpeakAndRecordTaskCard({
+  payload,
+  answers,
+  setAnswers,
+  submitted,
+  onSubmit,
+}: {
+  payload: SpeakAndRecordPayload;
+  answers: Record<string, unknown>;
+  setAnswers: (next: Record<string, unknown>) => void;
+  submitted: boolean;
+  onSubmit: () => void;
+}) {
+  const startedAtRef = useRef(Date.now());
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<BlobEvent["data"][]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStartedAtRef = useRef<number>(0);
+  const [recordings, setRecordings] = useState<Record<string, PromptRecording>>({});
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const promptIds = payload.speaking_prompts.map((_, index) => _promptId(index));
+
+  const publish = (nextRecordings: Record<string, PromptRecording>) => {
+    setAnswers({
+      recordings: promptIds
+        .map((itemId) => nextRecordings[itemId])
+        .filter(Boolean)
+        .map((recording) => ({
+          item_id: recording.item_id,
+          audio_blob_url: recording.audio_blob_url,
+          duration_seconds: recording.duration_seconds,
+          attempt_number: recording.attempt_number,
+          transcript: recording.transcript,
+        })),
+      time_spent_seconds: Math.round((Date.now() - startedAtRef.current) / 1000),
+    });
+  };
+
+  const stopRecording = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+  };
+
+  const startRecording = async (itemId: string) => {
+    if (submitted || activeItemId || uploadingItemId) return;
+    setError(null);
+    chunksRef.current = [];
+    setActiveItemId(itemId);
+    setElapsed(0);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/ogg;codecs=opus",
+        "audio/ogg",
+        "audio/mp4",
+      ].find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        const duration = Math.round((Date.now() - recordingStartedAtRef.current) / 1000);
+        streamRef.current?.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        setUploadingItemId(itemId);
+        setActiveItemId(null);
+        const usedMimeType = recorder.mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: usedMimeType });
+        const ext = usedMimeType.includes("ogg") ? ".ogg" : usedMimeType.includes("mp4") ? ".mp4" : ".webm";
+        try {
+          const result = await tasksApi.transcribeAudio(blob, `grammar-${itemId}${ext}`);
+          setRecordings((prev) => {
+            const next = {
+              ...prev,
+              [itemId]: {
+                item_id: itemId,
+                transcript: result.transcript,
+                audio_blob_url: result.audio_url,
+                duration_seconds: duration,
+                attempt_number: (prev[itemId]?.attempt_number ?? 0) + 1,
+              },
+            };
+            publish(next);
+            return next;
+          });
+        } catch {
+          setError("Transcription failed. Please record that prompt again.");
+        } finally {
+          setUploadingItemId(null);
+        }
+      };
+      recordingStartedAtRef.current = Date.now();
+      recorder.start(250);
+      timerRef.current = setInterval(() => {
+        setElapsed((prev) => {
+          const next = prev + 1;
+          if (next >= payload.speaking_duration_seconds) stopRecording();
+          return next;
+        });
+      }, 1000);
+    } catch {
+      setActiveItemId(null);
+      setError("Microphone access is needed for this speaking activity.");
+    }
+  };
+
+  const allRecorded = promptIds.every((itemId) => recordings[itemId]?.transcript?.trim());
+  const canSubmit = allRecorded && Object.keys(answers).length > 0 && !activeItemId && !uploadingItemId;
+
+  return (
+    <div style={{
+      borderRadius: 22, padding: "22px 24px",
+      background: "rgba(255,255,255,0.84)",
+      backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)",
+      border: "1.5px solid rgba(255,255,255,0.92)",
+      boxShadow: "0 6px 28px rgba(80,110,180,0.12)",
+      marginTop: 4, animation: "fadeIn 0.4s ease both",
+    }}>
+      <div style={{
+        background: "#eee9ff",
+        border: "2px solid #c8b8ff",
+        borderRadius: 16,
+        padding: "16px 18px",
+        marginBottom: 18,
+      }}>
+        <div style={{
+          color: "#4c3192",
+          fontSize: 12,
+          fontWeight: 900,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          marginBottom: 8,
+        }}>
+          Speaking prompt
+        </div>
+        <div style={{ color: "oklch(18% 0.08 245)", fontSize: 17, fontWeight: 850, lineHeight: 1.45 }}>
+          {payload.instructions || payload.task_intro || "Record each answer using the target grammar rule."}
+        </div>
+      </div>
+
+      <div style={{
+        border: "2px solid #93d1a7",
+        borderRadius: 18,
+        background: "linear-gradient(120deg, #e4faea, white)",
+        padding: "22px 18px",
+        textAlign: "center",
+        marginBottom: 18,
+      }}>
+        <div style={{ color: "#005a2a", fontSize: 14, fontWeight: 900, textTransform: "uppercase", marginBottom: 10 }}>
+          Hold to record
+        </div>
+        <div style={{ color: "oklch(18% 0.08 245)", fontSize: 20, fontWeight: 850, lineHeight: 1.4 }}>
+          Target rule — <span style={{ color: "#0070c4", fontStyle: "italic" }}>{payload.grammar_rule_to_practice}</span>
+        </div>
+        <div style={{ color: "#26587d", fontSize: 14, marginTop: 6 }}>
+          Speak naturally. Aim for 15-30 seconds per prompt.
+        </div>
+      </div>
+
+      {error && (
+        <div style={{
+          background: "oklch(96% 0.05 25)",
+          border: "1px solid oklch(84% 0.1 25)",
+          color: "oklch(35% 0.16 25)",
+          borderRadius: 12,
+          padding: "10px 12px",
+          fontSize: 13,
+          marginBottom: 14,
+        }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 14, marginBottom: 18 }}>
+        {payload.speaking_prompts.map((prompt, index) => {
+          const itemId = _promptId(index);
+          const recording = recordings[itemId];
+          const isActive = activeItemId === itemId;
+          const isUploading = uploadingItemId === itemId;
+          return (
+            <div
+              key={itemId}
+              style={{
+                borderRadius: 15,
+                border: "1px solid oklch(86% 0.025 240)",
+                background: "white",
+                padding: "15px 16px",
+              }}
+            >
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 12 }}>
+                <span style={{
+                  width: 24, height: 24, borderRadius: "50%",
+                  background: "#16a05b", color: "white",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 12, fontWeight: 900, flexShrink: 0,
+                }}>
+                  {index + 1}
+                </span>
+                <div style={{ color: "oklch(20% 0.08 245)", fontSize: 14.5, fontWeight: 800, lineHeight: 1.45 }}>
+                  {prompt}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  disabled={submitted || !!uploadingItemId || (!!activeItemId && !isActive)}
+                  onClick={() => isActive ? stopRecording() : startRecording(itemId)}
+                  style={{
+                    width: 64, height: 64, borderRadius: "50%",
+                    border: "none",
+                    background: isActive ? "#d63d3d" : "#2fa660",
+                    color: "white",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    cursor: submitted || isUploading ? "not-allowed" : "pointer",
+                    boxShadow: isActive
+                      ? "0 0 0 8px rgba(214,61,61,0.15)"
+                      : "0 8px 24px rgba(47,166,96,0.25)",
+                  }}
+                  aria-label={isActive ? "Stop recording" : "Start recording"}
+                >
+                  {isActive ? <StopIcon /> : <MicIcon />}
+                </button>
+                <div style={{ color: "oklch(45% 0.07 240)", fontSize: 13, fontWeight: 700 }}>
+                  {isActive
+                    ? `Recording ${formatDuration(elapsed)} / ${formatDuration(payload.speaking_duration_seconds)}`
+                    : isUploading
+                    ? "Transcribing..."
+                    : recording
+                    ? `Recorded ${recording.duration_seconds}s`
+                    : "Press the mic to start"}
+                </div>
+              </div>
+              {recording && (
+                <div style={{
+                  marginTop: 12,
+                  borderRadius: 12,
+                  background: "oklch(96% 0.025 245)",
+                  border: "1px solid oklch(86% 0.025 240)",
+                  padding: "10px 12px",
+                  color: "oklch(28% 0.07 240)",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}>
+                  <strong>Transcript:</strong> {recording.transcript || "(no speech detected)"}
+                </div>
+              )}
+              {submitted && payload.sample_responses[index] && (
+                <div style={{
+                  marginTop: 10,
+                  borderRadius: 12,
+                  background: "oklch(94% 0.07 155)",
+                  border: "1px solid oklch(80% 0.1 155)",
+                  padding: "10px 12px",
+                  color: "oklch(24% 0.1 155)",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}>
+                  <strong>Sample:</strong> {payload.sample_responses[index]}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {!submitted && (
+        <button
+          disabled={!canSubmit}
+          onClick={onSubmit}
+          style={{
+            width: "100%", padding: "14px 0",
+            borderRadius: 14, border: "none",
+            background: "oklch(20% 0.09 245)", color: "white",
+            fontSize: 14.5, fontWeight: 700,
+            cursor: canSubmit ? "pointer" : "not-allowed",
+            opacity: canSubmit ? 1 : 0.5,
+            fontFamily: "inherit",
+          }}
+        >
+          Submit recordings
+        </button>
+      )}
+    </div>
+  );
+}
+
+function _promptId(index: number) {
+  return `prompt_${index + 1}`;
+}
+
 function ScoreRing({ pct }: { pct: number }) {
   const r = 38;
   const c = 2 * Math.PI * r;
@@ -1106,8 +1794,6 @@ export default function ChatSessionPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const pendingSendsRef = useRef<WSOutgoing[]>([]);
   const stageRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
   const lastTaskIdx = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i -= 1) {
       if (events[i].kind === "task") return i;
@@ -1117,14 +1803,18 @@ export default function ChatSessionPage() {
 
   const handleIncoming = useCallback((msg: WSIncoming) => {
     if (msg.type === "chat_message") {
-      if (msg.actions?.includes("Go to dashboard")) {
+      if (
+        msg.actions?.includes("Go to dashboard") &&
+        !msg.actions.includes("Next activity")
+      ) {
         setPhase("ended");
       }
+      const role = msg.role === "user" || msg.role === "you" ? "you" : "ai";
       setEvents((prev) => [
         ...prev,
         {
           kind: "chat",
-          role: "ai",
+          role,
           content: msg.content || "",
           actions: msg.actions,
         },
@@ -1172,7 +1862,10 @@ export default function ChatSessionPage() {
       return;
     }
     if (msg.type === "chat_stream_end") {
-      if (msg.actions?.includes("Go to dashboard")) {
+      if (
+        msg.actions?.includes("Go to dashboard") &&
+        !msg.actions.includes("Next activity")
+      ) {
         setPhase("ended");
       }
       const streamId = msg.stream_id;
@@ -1236,12 +1929,34 @@ export default function ChatSessionPage() {
         setPhase("practice");
         return;
       }
+      if (msg.widget === "listen_and_respond") {
+        const payload = msg.payload as unknown as ListenAndRespondPayload;
+        setSkillName((curr) => curr || payload.topic_name || "");
+        setEvents((prev) => [
+          ...prev,
+          { kind: "section", tone: "task", label: "Listening task" },
+          { kind: "task", payload, submitted: false, answers: {} },
+        ]);
+        setPhase("practice");
+        return;
+      }
+      if (msg.widget === "speak_and_record") {
+        const payload = msg.payload as unknown as SpeakAndRecordPayload;
+        setSkillName((curr) => curr || payload.topic_name || "");
+        setEvents((prev) => [
+          ...prev,
+          { kind: "section", tone: "task", label: "Speaking task" },
+          { kind: "task", payload, submitted: false, answers: {} },
+        ]);
+        setPhase("practice");
+        return;
+      }
       if (msg.widget === "scorecard") {
         const payload = msg.payload as unknown as ScorecardPayload;
         setSkillName((curr) => curr || payload.skill_name || "");
         setEvents((prev) => [
           ...prev,
-          { kind: "section", tone: "score", label: "Today's scorecard" },
+          { kind: "section", tone: "score", label: "Activity score" },
           { kind: "scorecard", payload },
         ]);
         setPhase("submitted");
@@ -1251,11 +1966,16 @@ export default function ChatSessionPage() {
         const payload = msg.payload as unknown as FeedbackPayload;
         setEvents((prev) => [
           ...prev,
-          { kind: "section", tone: "feedback", label: "Detailed feedback" },
+          { kind: "section", tone: "feedback", label: "Activity feedback" },
           { kind: "feedback", payload },
         ]);
         return;
       }
+      setEvents((prev) => [
+        ...prev,
+        { kind: "section", tone: "task", label: "Unsupported activity" },
+        { kind: "unsupported", widget: msg.widget },
+      ]);
       return;
     }
     if (msg.type === "error") {
@@ -1282,6 +2002,7 @@ export default function ChatSessionPage() {
     ws.onopen = () => {
       if (wsRef.current !== ws) return;
       setConnectionState("open");
+      setEvents((prev) => prev.filter((e) => e.kind === "chat"));
       const queued = pendingSendsRef.current.splice(0);
       queued.forEach((payload) => ws.send(JSON.stringify(payload)));
     };
@@ -1307,10 +2028,6 @@ export default function ChatSessionPage() {
       if (wsRef.current === ws) wsRef.current = null;
     };
   }, [sessionId, handleIncoming, reconnectAttempt]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [events]);
 
   const send = useCallback((payload: WSOutgoing) => {
     const ws = wsRef.current;
@@ -1347,10 +2064,10 @@ export default function ChatSessionPage() {
     }
     setEvents((prev) => [...prev, { kind: "chat", role: "you", content: label }]);
     send({ type: "follow_up_action", action: label });
-    if (label === "End session") setPhase("ended");
+    if (label === "Next activity") setPhase("practice");
   }
 
-  function setTaskAnswers(eventIdx: number, next: Record<string, string>) {
+  function setTaskAnswers(eventIdx: number, next: Record<string, unknown>) {
     setEvents((prev) =>
       prev.map((e, i) =>
         i === eventIdx && e.kind === "task" ? { ...e, answers: next } : e,
@@ -1465,6 +2182,30 @@ export default function ChatSessionPage() {
                   <OpenTextTaskCard
                     key={i}
                     payload={evt.payload as OpenTextPayload}
+                    answers={evt.answers as Record<string, string>}
+                    setAnswers={(next) => setTaskAnswers(i, next)}
+                    submitted={evt.submitted}
+                    onSubmit={() => handleSubmitTask(i)}
+                  />
+                );
+              }
+              if (evt.payload.widget === "listen_and_respond") {
+                return (
+                  <ListenAndRespondTaskCard
+                    key={i}
+                    payload={evt.payload as ListenAndRespondPayload}
+                    answers={evt.answers}
+                    setAnswers={(next) => setTaskAnswers(i, next)}
+                    submitted={evt.submitted}
+                    onSubmit={() => handleSubmitTask(i)}
+                  />
+                );
+              }
+              if (evt.payload.widget === "speak_and_record") {
+                return (
+                  <SpeakAndRecordTaskCard
+                    key={i}
+                    payload={evt.payload as SpeakAndRecordPayload}
                     answers={evt.answers}
                     setAnswers={(next) => setTaskAnswers(i, next)}
                     submitted={evt.submitted}
@@ -1476,7 +2217,7 @@ export default function ChatSessionPage() {
                 <TaskCard
                   key={i}
                   payload={evt.payload as FillInBlanksPayload}
-                  answers={evt.answers}
+                  answers={evt.answers as Record<string, string>}
                   setAnswers={(next) => setTaskAnswers(i, next)}
                   submitted={evt.submitted}
                   onSubmit={() => handleSubmitTask(i)}
@@ -1489,10 +2230,17 @@ export default function ChatSessionPage() {
             if (evt.kind === "feedback") {
               return <FeedbackCard key={i} payload={evt.payload} />;
             }
+            if (evt.kind === "unsupported") {
+              return (
+                <ChatBubble key={i} role="ai">
+                  This activity uses the {evt.widget.replace(/_/g, " ")} widget, which is not available in chat yet.
+                </ChatBubble>
+              );
+            }
             return null;
           })}
 
-          <div ref={bottomRef} style={{ height: 60 }} />
+          <div style={{ height: 60 }} />
         </main>
 
         <Composer

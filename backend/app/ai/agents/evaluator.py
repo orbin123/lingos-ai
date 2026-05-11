@@ -10,6 +10,7 @@ This module is PURE: data in, data out. No DB, no commits.
 Persistence happens in the service layer (responses/service.py).
 """
 
+import json
 import logging
 from typing import Literal
 
@@ -49,6 +50,8 @@ SupportedActivity = Literal[
     "paraphrasing",
     "error_correction",
     "speak_with_tense",
+    "curriculum_grammar_listen_mcq",
+    "curriculum_grammar_speak",
 ]
 
 
@@ -218,6 +221,35 @@ class _OpenTextWritingEval(BaseModel):
     overall_level: Literal["needs_work", "okay", "good", "excellent"]
 
 
+class _GrammarSpeakingItemEval(BaseModel):
+    """Per-prompt result from the LLM speaking evaluator."""
+
+    item_id: str
+    mistakes: list[str] = Field(
+        default_factory=list,
+        description="Specific grammar mistakes found in the transcript",
+    )
+    score: float = Field(..., ge=0.0, le=1.0, description="Prompt score 0-1")
+    grammar_rule_used: bool = Field(
+        ..., description="Whether the target grammar rule was used meaningfully"
+    )
+
+
+class _GrammarSpeakingEval(BaseModel):
+    """Full LLM evaluation of a grammar speaking task."""
+
+    subskill_score: int = Field(
+        ..., ge=0, le=10,
+        description="Grammar speaking score 0-10, calibrated to the learner's level",
+    )
+    items: list[_GrammarSpeakingItemEval]
+    main_mistakes: list[str] = Field(
+        ...,
+        description="Top 3-5 specific grammar mistakes across all transcripts",
+    )
+    overall_level: Literal["needs_work", "okay", "good", "excellent"]
+
+
 _OPEN_TEXT_EVAL_SYSTEM = """\
 You are an expert English grammar evaluator assessing a non-native learner's writing.
 
@@ -233,6 +265,18 @@ EVALUATION RULES
    Example: "Missing -s on third-person verb: 'he go' → should be 'he goes'"
 5. Per item: list concrete mistakes only for that answer; empty list if the answer is correct.
 6. Never penalize for spelling errors unless they change meaning.
+
+Return JSON matching the schema. Nothing else.
+"""
+
+
+_GRAMMAR_SPEAKING_EVAL_SYSTEM = """\
+You are an expert English grammar speaking evaluator.
+
+Evaluate the learner's speech transcripts for the target grammar rule only.
+Do not grade accent harshly. Do grade whether the learner actually used the
+requested grammar structure, whether forms are correct, and whether the answer
+completed the prompt.
 
 Return JSON matching the schema. Nothing else.
 """
@@ -284,6 +328,74 @@ def _build_open_text_user_message(
         f"TASK ITEMS AND ANSWERS:\n{items_text}\n\n"
         "Evaluate the learner's grammar writing. Return your assessment."
     )
+
+
+def _prompt_id(index: int) -> str:
+    return f"prompt_{index}"
+
+
+def _grammar_speaking_recordings_by_id(user_answers: dict) -> dict[str, dict]:
+    recordings = user_answers.get("recordings") or []
+    if not isinstance(recordings, list):
+        return {}
+
+    by_id: dict[str, dict] = {}
+    for idx, recording in enumerate(recordings, 1):
+        if not isinstance(recording, dict):
+            continue
+        item_id = str(recording.get("item_id") or _prompt_id(idx))
+        by_id[item_id] = recording
+    return by_id
+
+
+def _build_grammar_speaking_user_message(
+    *,
+    task_content: dict,
+    user_answers: dict,
+    user_level: int,
+    learner_profile: dict,
+) -> str:
+    """Format the grammar speaking task evaluation prompt."""
+    tier = (
+        "Beginner (1-3)" if user_level <= 3
+        else "Intermediate (4-6)" if user_level <= 6
+        else "Advanced (7-10)"
+    )
+    recordings_by_id = _grammar_speaking_recordings_by_id(user_answers)
+    prompts = task_content.get("speaking_prompts") or []
+    samples = task_content.get("sample_responses") or []
+
+    items: list[dict] = []
+    for idx, prompt in enumerate(prompts, 1):
+        item_id = _prompt_id(idx)
+        recording = recordings_by_id.get(item_id, {})
+        items.append(
+            {
+                "item_id": item_id,
+                "prompt": prompt,
+                "sample_response": samples[idx - 1] if idx - 1 < len(samples) else "",
+                "transcript": recording.get("transcript", ""),
+                "duration_seconds": recording.get("duration_seconds"),
+            }
+        )
+
+    return f"""\
+LEARNER LEVEL: {user_level}/10 ({tier})
+SELF-ASSESSED: {learner_profile.get("self_assessed_level", "unknown")}
+
+TARGET GRAMMAR RULE:
+{task_content.get("grammar_rule_to_practice") or task_content.get("topic_name") or "See task topic"}
+
+TASK INSTRUCTIONS:
+{task_content.get("instructions", "")}
+
+PROMPTS, SAMPLE RESPONSES, AND TRANSCRIPTS:
+{json.dumps(items, indent=2)}
+
+Evaluate each transcript. Penalize missing transcripts, not using the target
+grammar rule, incorrect forms, and answers that do not address the prompt.
+Return your assessment.
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -1085,6 +1197,192 @@ class EvaluationService:
         }
 
     # ------------------------------------------------------------------
+    # Curriculum grammar listen — listen_and_respond with inner MCQ.
+    # ------------------------------------------------------------------
+    def evaluate_curriculum_grammar_listen_mcq(
+        self,
+        *,
+        task_content: dict,
+        user_answers: dict,
+    ) -> dict:
+        """Score the MCQ response inside a grammar listening task."""
+        items: list[dict] = task_content.get("items") or []
+        if not items:
+            raise ValueError("Grammar listen task has no MCQ items")
+
+        inner_response = user_answers.get("inner_response") or {}
+        if not isinstance(inner_response, dict):
+            inner_response = {}
+        answer_rows = inner_response.get("answers") or user_answers.get("answers") or []
+        selected_by_id: dict[str, int] = {}
+        if isinstance(answer_rows, list):
+            for row in answer_rows:
+                if not isinstance(row, dict):
+                    continue
+                item_id = str(row.get("item_id") or "")
+                try:
+                    selected_by_id[item_id] = int(row.get("selected_index"))
+                except (TypeError, ValueError):
+                    continue
+
+        per_question: dict[str, dict] = {}
+        correct_count = 0
+
+        for idx, item in enumerate(items, 1):
+            item_id = str(item.get("item_id") or f"item_{idx}")
+            options = item.get("options") or []
+            correct_index = int(item.get("correct_index", -1))
+            selected_index = selected_by_id.get(item_id)
+            selected_valid = (
+                selected_index is not None
+                and 0 <= selected_index < len(options)
+            )
+            correct_valid = 0 <= correct_index < len(options)
+            is_correct = (
+                selected_valid
+                and correct_valid
+                and selected_index == correct_index
+            )
+            if is_correct:
+                correct_count += 1
+
+            per_question[item_id] = {
+                "correct": is_correct,
+                "user_answer": options[selected_index] if selected_valid else "",
+                "correct_answer": options[correct_index] if correct_valid else "",
+                "selected_index": selected_index,
+                "correct_index": correct_index,
+                "prompt": item.get("prompt", ""),
+                "explanation": item.get("explanation", ""),
+                "error_type": (
+                    "correct"
+                    if is_correct
+                    else "wrong_answer"
+                    if selected_valid
+                    else "missing_answer"
+                ),
+            }
+
+        total = len(items)
+        percentage = round((correct_count / total) * 100, 2) if total else 0.0
+        return {
+            "task_type": "curriculum_grammar_listen_mcq",
+            "total": total,
+            "correct_count": correct_count,
+            "percentage": percentage,
+            "listen_analytics": user_answers.get("listen_analytics") or {},
+            "questions": per_question,
+        }
+
+    # ------------------------------------------------------------------
+    # Curriculum grammar speak — LLM-backed transcript evaluation.
+    # ------------------------------------------------------------------
+    async def evaluate_grammar_speaking(
+        self,
+        *,
+        task_content: dict,
+        user_answers: dict,
+        user_level: int = 5,
+        learner_profile: dict | None = None,
+    ) -> dict:
+        """Evaluate grammar speaking transcripts with the LLM."""
+        prompts = task_content.get("speaking_prompts") or []
+        if not prompts:
+            raise ValueError("Grammar speak task has no speaking prompts")
+
+        recordings_by_id = _grammar_speaking_recordings_by_id(user_answers)
+        has_any_transcript = any(
+            str(recording.get("transcript") or "").strip()
+            for recording in recordings_by_id.values()
+        )
+
+        if not has_any_transcript:
+            questions = {
+                _prompt_id(idx): {
+                    "correct": False,
+                    "user_answer": "",
+                    "correct_answer": "",
+                    "prompt": prompt,
+                    "grammar_rule_to_practice": task_content.get(
+                        "grammar_rule_to_practice", ""
+                    ),
+                    "duration_seconds": 0,
+                    "mistakes": ["No speech transcript was submitted."],
+                    "score": 0.0,
+                    "error_type": "missing_answer",
+                }
+                for idx, prompt in enumerate(prompts, 1)
+            }
+            return {
+                "task_type": "curriculum_grammar_speak",
+                "total": len(prompts),
+                "correct_count": 0,
+                "percentage": 0.0,
+                "subskill_score": 0,
+                "main_mistakes": ["No speech transcript was submitted."],
+                "overall_level": "needs_work",
+                "questions": questions,
+            }
+
+        from app.ai.llm import get_default_llm_client
+
+        client = get_default_llm_client()
+        llm_result = await client.generate_structured(
+            system_prompt=_GRAMMAR_SPEAKING_EVAL_SYSTEM,
+            user_prompt=_build_grammar_speaking_user_message(
+                task_content=task_content,
+                user_answers=user_answers,
+                user_level=user_level,
+                learner_profile=learner_profile or {},
+            ),
+            output_model=_GrammarSpeakingEval,
+            temperature=0.2,
+        )
+
+        item_eval_by_id = {item.item_id: item for item in llm_result.items}
+        samples = task_content.get("sample_responses") or []
+        questions: dict[str, dict] = {}
+        correct_count = 0
+
+        for idx, prompt in enumerate(prompts, 1):
+            item_id = _prompt_id(idx)
+            recording = recordings_by_id.get(item_id, {})
+            transcript = str(recording.get("transcript") or "").strip()
+            ev = item_eval_by_id.get(item_id)
+            score = ev.score if ev is not None else (0.0 if not transcript else 0.5)
+            mistakes = ev.mistakes if ev is not None else []
+            is_correct = bool(transcript) and score >= 0.6
+            if is_correct:
+                correct_count += 1
+
+            questions[item_id] = {
+                "correct": is_correct,
+                "user_answer": transcript,
+                "correct_answer": samples[idx - 1] if idx - 1 < len(samples) else "",
+                "prompt": prompt,
+                "grammar_rule_to_practice": task_content.get(
+                    "grammar_rule_to_practice", ""
+                ),
+                "duration_seconds": recording.get("duration_seconds"),
+                "audio_url": recording.get("audio_blob_url"),
+                "mistakes": mistakes,
+                "grammar_rule_used": ev.grammar_rule_used if ev is not None else False,
+                "score": score,
+                "error_type": "correct" if is_correct else "needs_review",
+            }
+
+        return {
+            "task_type": "curriculum_grammar_speak",
+            "total": len(prompts),
+            "correct_count": correct_count,
+            "percentage": llm_result.subskill_score * 10.0,
+            "subskill_score": llm_result.subskill_score,
+            "main_mistakes": llm_result.main_mistakes,
+            "overall_level": llm_result.overall_level,
+            "questions": questions,
+        }
+
+    # ------------------------------------------------------------------
     # Open-text writing evaluator — LLM-backed, async.
     #
     # Used for curriculum_grammar_open_text (and future open_text tasks).
@@ -1263,11 +1561,16 @@ class EvaluationService:
             return self.evaluate_speak_with_tense(
                 task_content=task_content, user_answers=user_answers
             )
+        if activity_type == "curriculum_grammar_listen_mcq":
+            return self.evaluate_curriculum_grammar_listen_mcq(
+                task_content=task_content, user_answers=user_answers
+            )
         raise ValueError(
             f"Unsupported activity_type: {activity_type!r}. "
             f"Supported: fill_in_the_blanks, fill_in_blanks, error_spotting, "
             f"sentence_transformation, voice_conversion, sentence_engineering, "
-            f"paraphrasing, error_correction, speak_with_tense."
+            f"paraphrasing, error_correction, speak_with_tense, "
+            f"curriculum_grammar_listen_mcq."
         )
 
     # ------------------------------------------------------------------

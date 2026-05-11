@@ -10,6 +10,7 @@ from app.modules.learning_session.service import (
     LearningSessionService,
     _looks_like_understanding,
 )
+from app.modules.tasks.models import UserTaskStatus
 
 
 def test_learning_readiness_does_not_match_ok_inside_books() -> None:
@@ -66,6 +67,38 @@ def test_learning_readiness_rejects_negated_understanding() -> None:
     assert _looks_like_understanding("not ready") is False
     assert _looks_like_understanding("what is a subject?") is False
     assert _looks_like_understanding("I understand now, ready") is True
+
+
+def test_daily_queue_picks_first_incomplete_task() -> None:
+    bundle = [
+        SimpleNamespace(id=1, status=UserTaskStatus.COMPLETED),
+        SimpleNamespace(id=2, status=UserTaskStatus.PENDING),
+        SimpleNamespace(id=3, status=UserTaskStatus.PENDING),
+    ]
+
+    assert (
+        LearningSessionService._resolve_active_queue_index(
+            bundle=bundle,
+            requested_user_task_id=None,
+        )
+        == 1
+    )
+
+
+def test_daily_queue_respects_requested_incomplete_task() -> None:
+    bundle = [
+        SimpleNamespace(id=1, status=UserTaskStatus.COMPLETED),
+        SimpleNamespace(id=2, status=UserTaskStatus.PENDING),
+        SimpleNamespace(id=3, status=UserTaskStatus.PENDING),
+    ]
+
+    assert (
+        LearningSessionService._resolve_active_queue_index(
+            bundle=bundle,
+            requested_user_task_id=3,
+        )
+        == 2
+    )
 
 
 class _FakeDB:
@@ -317,39 +350,51 @@ async def test_end_session_farewell_offers_dashboard_action() -> None:
 
 
 @pytest.mark.asyncio
-async def test_try_another_task_streams_feedback_only_retry_task() -> None:
+async def test_next_activity_streams_next_queued_task() -> None:
     service = _streaming_service()
-    session = _FakeSession(messages=[], phase="feedback", current_task_index=0)
-    state = {"messages": [{"role": "user", "content": "Try another task", "type": "chat"}]}
-
-    async def fake_retry_update(session, state):
-        return {
-            "phase": "practice_task",
-            "current_task_index": 1,
-            "task_content": {"widget": "fill_in_blanks", "items": []},
-            "outgoing_events": [
-                {
-                    "type": "chat_message",
-                    "role": "assistant",
-                    "content": "Here is another practice task at the same level. This one is for feedback only.",
-                },
-                {
-                    "type": "ui_event",
-                    "widget": "fill_in_blanks",
-                    "payload": {"widget": "fill_in_blanks", "items": []},
-                },
-            ],
-            "messages": [],
-        }
-
-    service._build_retry_task_update = fake_retry_update
+    service.user_task_repo = SimpleNamespace(
+        get_by_id=lambda user_task_id: SimpleNamespace(
+            id=user_task_id,
+            task_id=20,
+            status=SimpleNamespace(value="pending"),
+            completed_at=None,
+            task=SimpleNamespace(
+                title="Second activity",
+                task_type=SimpleNamespace(value="fill_in_blanks"),
+                difficulty=5,
+                content={"widget": "fill_in_blanks", "items": []},
+                task_skills=[],
+            ),
+        )
+    )
+    session = _FakeSession(
+        session_id="daily-session",
+        user_id=1,
+        messages=[],
+        phase="feedback",
+        current_task_index=0,
+        task_queue=[
+            {"user_task_id": 1, "sequence_index": 0, "status": "completed"},
+            {"user_task_id": 2, "sequence_index": 1, "status": "pending"},
+        ],
+        user_task_id=1,
+        user_submission={"b1": "go"},
+        evaluation={"percentage": 80},
+        feedback={"overall_message": "Nice"},
+        understanding_confirmed=True,
+    )
+    state = {
+        "messages": [{"role": "user", "content": "Next activity", "type": "chat"}],
+        "task_queue": list(session.task_queue),
+        "current_task_index": 0,
+    }
 
     events = [
         event
         async for event in service._stream_followup_response(
             session,
             state,
-            "Try another task",
+            "Next activity",
         )
     ]
 
@@ -362,7 +407,7 @@ async def test_try_another_task_streams_feedback_only_retry_task() -> None:
 
 
 @pytest.mark.asyncio
-async def test_retry_submission_suppresses_scorecard(monkeypatch) -> None:
+async def test_queued_submission_keeps_scorecard(monkeypatch) -> None:
     async def fake_evaluation_node(state):
         return {
             "phase": "scorecard",
@@ -392,7 +437,7 @@ async def test_retry_submission_suppresses_scorecard(monkeypatch) -> None:
                     "type": "chat_message",
                     "role": "assistant",
                     "content": "Review this one.",
-                    "actions": ["Try another task", "Ask a question", "End session"],
+                    "actions": ["Next activity", "Go to dashboard"],
                 },
             ],
             "messages": list(state.get("messages", [])),
@@ -425,9 +470,9 @@ async def test_retry_submission_suppresses_scorecard(monkeypatch) -> None:
     ]
 
     assert [event.widget for event in events if event.type == "ui_event"] == [
+        "scorecard",
         "feedback_card"
     ]
-    assert all(event.widget != "scorecard" for event in events)
 
 
 @pytest.mark.asyncio
@@ -477,7 +522,7 @@ async def test_yes_after_clarified_doubt_shows_followup_actions() -> None:
         async for event in service._stream_followup_response(session, state, "yes")
     ]
 
-    assert events[-1].actions == ["Try another task", "Ask a question", "End session"]
+    assert events[-1].actions == ["Go to dashboard"]
     assert session.phase == "feedback"
 
 

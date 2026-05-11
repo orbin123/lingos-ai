@@ -32,6 +32,7 @@ class LearningSessionRepository:
         task_type: str,
         user_level: int,
         pre_generated_tasks: dict,
+        task_queue: list | None = None,
     ) -> LearningSession:
         row = LearningSession(
             session_id=session_id,
@@ -45,6 +46,7 @@ class LearningSessionRepository:
             task_type=task_type,
             user_level=user_level,
             pre_generated_tasks=pre_generated_tasks,
+            task_queue=task_queue or [],
             current_task_index=0,
             messages=[],
             understanding_confirmed=False,
@@ -55,8 +57,14 @@ class LearningSessionRepository:
 
     def save(self, session: LearningSession) -> LearningSession:
         """Mark JSONB columns dirty and flush."""
-        for column in ("messages", "pre_generated_tasks", "user_submission",
-                       "evaluation", "feedback"):
+        for column in (
+            "messages",
+            "pre_generated_tasks",
+            "task_queue",
+            "user_submission",
+            "evaluation",
+            "feedback",
+        ):
             if getattr(session, column) is not None:
                 flag_modified(session, column)
         self.db.flush()

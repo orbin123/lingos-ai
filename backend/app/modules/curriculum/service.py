@@ -72,7 +72,7 @@ class EnrollmentService:
     ) -> UserEnrollment:
         """Update daily practice preferences for the active enrollment.
 
-        Daily task count is 1..4. The learner must keep at least two core
+        Daily task count is 2..4. The learner must keep at least two core
         activity types active so the rotation engine always has room to vary.
         """
         enrollment = self.enrollment_repo.get_for_user(user_id)
@@ -99,6 +99,8 @@ class EnrollmentService:
             raise ValueError("At least two core activities must stay enabled")
 
         if tasks_per_day is not None:
+            if not 2 <= tasks_per_day <= 4:
+                raise ValueError("Daily task count must be between 2 and 4")
             enrollment.tasks_per_day = tasks_per_day
         enrollment.allow_reading = proposed["allow_reading"]
         enrollment.allow_writing = proposed["allow_writing"]

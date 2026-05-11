@@ -46,6 +46,7 @@ class LearningSession(Base, IDMixin, TimestampMixin):
     task_type: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     user_level: Mapped[int] = mapped_column(nullable=False, default=5)
     pre_generated_tasks: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    task_queue: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     current_task_index: Mapped[int] = mapped_column(nullable=False, default=0)
     messages: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     user_submission: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

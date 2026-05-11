@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.ai.agents.task_generator import TaskGeneratorAgent
+from app.ai.tts import get_default_tts_service
+from app.modules.curriculum.constants import SKILL_ACTIVITIES
 from app.modules.curriculum.exceptions import (
     EnrollmentNotActive,
     NoTaskAvailable,
@@ -238,6 +240,96 @@ class TaskService:
             enabled.add(TaskType.SPEAKING)
         return enabled
 
+    @staticmethod
+    def _tasks_per_day(enrollment: UserEnrollment) -> int:
+        return max(2, min(4, int(enrollment.tasks_per_day or 2)))
+
+    @staticmethod
+    def _activity_cycle_for_enrollment(
+        *,
+        enrollment: UserEnrollment,
+        skill_name: str,
+        fallback_activity: TaskType,
+    ) -> list[Activity]:
+        """Return today's enabled activity sequence in canonical UI order."""
+        enabled = TaskService._enabled_activity_types(enrollment)
+        configured = set(SKILL_ACTIVITIES.get(skill_name, []))
+        if not configured:
+            configured = {
+                TaskType.READING,
+                TaskType.WRITING,
+                TaskType.LISTENING,
+                TaskType.SPEAKING,
+            }
+
+        allowed_schema_activities = {
+            _TASK_TYPE_TO_ACTIVITY[task_type.value]
+            for task_type in enabled.intersection(configured)
+            if task_type.value in _TASK_TYPE_TO_ACTIVITY
+        }
+        cycle = [
+            activity
+            for activity in _DAY_ACTIVITY_CYCLE
+            if activity in allowed_schema_activities
+        ]
+        if cycle:
+            return cycle
+
+        fallback = _TASK_TYPE_TO_ACTIVITY.get(fallback_activity.value)
+        return [fallback] if fallback is not None else []
+
+    @staticmethod
+    async def _postprocess_generated_content(content: dict) -> dict:
+        """Attach generated assets required by widget contracts."""
+        if content.get("widget") != "listen_and_respond":
+            return content
+
+        audio_url_key = "audio_url"
+
+        script = content.get("audio_script")
+        if not isinstance(script, str) or not script.strip():
+            script = content.get("source_audio_script")
+            audio_url_key = "source_audio_url"
+
+        if not isinstance(script, str) or not script.strip():
+            script = content.get("text_to_shadow")
+
+        if not isinstance(script, str) or not script.strip():
+            logger.warning(
+                "[postprocess] listen_and_respond task has no audio script; "
+                "audio_url will be null"
+            )
+            return {
+                **content,
+                audio_url_key: None,
+                "audio_duration_seconds": None,
+            }
+
+        try:
+            result = await get_default_tts_service().synthesize(
+                text=script,
+                style_instructions=(
+                    "Speak clearly and naturally for an English learner. "
+                    "Use a warm conversational tutor voice."
+                ),
+            )
+        except Exception as exc:
+            logger.warning(
+                "[postprocess] TTS synthesis failed: %s — audio_url will be null",
+                exc,
+            )
+            return {
+                **content,
+                audio_url_key: None,
+                "audio_duration_seconds": None,
+            }
+
+        return {
+            **content,
+            audio_url_key: result["audio_url"],
+            "audio_duration_seconds": result["duration_seconds"],
+        }
+
     def _try_generate_task(
         self,
         *,
@@ -273,9 +365,15 @@ class TaskService:
             logger.warning("No SubSkill mapping for %r, skipping LLM gen", plan.skill_name)
             return None
 
-        # Cycle READ→WRITE→LISTEN→SPEAK across the day's task bundle.
-        # sequence_index 0 = first task, 1 = second task, etc.
-        schema_activity = _DAY_ACTIVITY_CYCLE[sequence_index % len(_DAY_ACTIVITY_CYCLE)]
+        activity_cycle = self._activity_cycle_for_enrollment(
+            enrollment=enrollment,
+            skill_name=plan.skill_name,
+            fallback_activity=plan.activity_type,
+        )
+        if not activity_cycle:
+            logger.warning("No enabled activity cycle for %r, skipping LLM gen", plan.skill_name)
+            return None
+        schema_activity = activity_cycle[sequence_index % len(activity_cycle)]
 
         # Look up the single curriculum-driven template for this (sub_skill, activity) pair
         try:
@@ -315,6 +413,9 @@ class TaskService:
             try:
                 content = loop.run_until_complete(
                     self.generator.generate(template, user_profile)
+                )
+                content = loop.run_until_complete(
+                    self._postprocess_generated_content(content)
                 )
             finally:
                 loop.close()
@@ -375,6 +476,116 @@ class TaskService:
         )
         return assignment
 
+    async def _try_generate_task_async(
+        self,
+        *,
+        user_id: int,
+        plan: "RotationEngine.Plan",  # noqa: F821
+        enrollment: UserEnrollment,
+        user_profile: dict,
+        skill_name_to_id: dict[str, int],
+        sequence_index: int = 0,
+    ) -> UserTask | None:
+        """Async version of _try_generate_task for chat session creation."""
+        from app.tasks.schemas.base import SubSkill
+
+        _SKILL_NAME_TO_SUBSKILL = {
+            "grammar": SubSkill.GRAMMAR,
+            "vocabulary": SubSkill.VOCABULARY,
+            "pronunciation": SubSkill.PRONUNCIATION,
+            "fluency": SubSkill.FLUENCY,
+            "expression": SubSkill.THOUGHT_ORGANIZATION,
+            "comprehension": SubSkill.LISTENING,
+            "tone": SubSkill.TONE,
+        }
+
+        sub_skill = _SKILL_NAME_TO_SUBSKILL.get(plan.skill_name)
+        if sub_skill is None:
+            logger.warning("No SubSkill mapping for %r, skipping LLM gen", plan.skill_name)
+            return None
+
+        activity_cycle = self._activity_cycle_for_enrollment(
+            enrollment=enrollment,
+            skill_name=plan.skill_name,
+            fallback_activity=plan.activity_type,
+        )
+        if not activity_cycle:
+            logger.warning("No enabled activity cycle for %r, skipping LLM gen", plan.skill_name)
+            return None
+        schema_activity = activity_cycle[sequence_index % len(activity_cycle)]
+
+        try:
+            template = get_full_template(sub_skill, schema_activity)
+        except KeyError:
+            logger.warning(
+                "No full curriculum template for sub_skill=%s activity=%s, skipping LLM gen",
+                sub_skill.value, schema_activity.value,
+            )
+            return None
+
+        sub_level = user_profile.get("sub_level", 5)
+        user_profile = {
+            **user_profile,
+            "topic_name": user_profile.get("course_topic") or user_profile.get("topic") or "today's English topic",
+            "week": plan.week_number,
+            "day": plan.day_in_week,
+            "sub_skill": sub_skill.value,
+            "plan_type": f"{enrollment.course.duration_weeks}w" if enrollment.course else "24w",
+            "domain": "general",
+        }
+
+        logger.info(
+            "Attempting async LLM generation: skill=%s activity=%s template=%s",
+            plan.skill_name, plan.activity_type.value, template.template_id,
+        )
+
+        try:
+            content = await self.generator.generate(template, user_profile)
+            content = await self._postprocess_generated_content(content)
+        except Exception as exc:
+            logger.warning(
+                "[task_gen] async LLM call failed for template=%s: %s — will fall back to seeded pool",
+                template.template_id, exc,
+            )
+            return None
+
+        from app.modules.tasks.models import TaskType as TT
+        try:
+            generated_task_type = TT(template.task_type)
+        except ValueError:
+            logger.warning(
+                "template.task_type=%r has no matching TaskType enum value; falling back to activity type",
+                template.task_type,
+            )
+            generated_task_type = plan.activity_type
+
+        topic_name = user_profile.get("topic_name") or plan.skill_name.title()
+        activity_label = _ACTIVITY_LABELS.get(schema_activity, schema_activity.value.title())
+        task = Task(
+            title=f"{topic_name} — {activity_label}",
+            task_type=generated_task_type,
+            difficulty=sub_level,
+            status=TaskStatus.ACTIVE,
+            content=content,
+        )
+        self.db.add(task)
+        self.db.flush()
+
+        from app.modules.tasks.models import TaskSkill
+        self.db.add(TaskSkill(task_id=task.id, skill_id=plan.skill_id, weight=1.0))
+        self.db.flush()
+
+        assignment = self.user_task_repo.assign(
+            user_id=user_id,
+            task_id=task.id,
+            enrollment_id=enrollment.id,
+        )
+        logger.info(
+            "[task_gen] async LLM task generated successfully: task_id=%s template=%s task_type=%s for user=%s",
+            task.id, template.template_id, generated_task_type.value, user_id,
+        )
+        return assignment
+
     @staticmethod
     def _select_template_for_plan(
         *,
@@ -419,13 +630,28 @@ class TaskService:
             "tone": SubSkill.TONE,
         }
         sub_skill = skill_name_to_subskill.get(plan.skill_name)
-        schema_activity = _TASK_TYPE_TO_ACTIVITY.get(plan.activity_type.value)
-        if sub_skill is None or schema_activity is None:
+        if sub_skill is None:
             return []
+
+        ordered_task_types: list[str] = []
+        for task_type in SKILL_ACTIVITIES.get(plan.skill_name, []):
+            schema_activity = _TASK_TYPE_TO_ACTIVITY.get(task_type.value)
+            if schema_activity is None:
+                continue
+            try:
+                ordered_task_types.append(
+                    get_full_template(sub_skill, schema_activity).task_type
+                )
+            except KeyError:
+                continue
+
+        schema_activity = _TASK_TYPE_TO_ACTIVITY.get(plan.activity_type.value)
+        if schema_activity is None:
+            return ordered_task_types
 
         templates = get_templates_for(sub_skill, schema_activity)
         if not templates:
-            return []
+            return ordered_task_types
 
         supported = [
             tpl
@@ -436,7 +662,8 @@ class TaskService:
         activity_cycle_length = max(plan.activity_cycle_length, 1)
         occurrence_index = (max(plan.week_number, 1) - 1) // activity_cycle_length
         rotated = candidates[occurrence_index:] + candidates[:occurrence_index]
-        return [tpl.task_type for tpl in rotated]
+        ordered_task_types.extend(tpl.task_type for tpl in rotated)
+        return ordered_task_types
 
     @staticmethod
     def _sort_day_bundle_for_plan(
@@ -453,9 +680,21 @@ class TaskService:
         priority = {task_type: index for index, task_type in enumerate(template_order)}
         fallback_priority = len(priority)
 
-        def sort_key(user_task: UserTask) -> tuple[int, datetime, int]:
+        activity_priority = {
+            activity.value: index for index, activity in enumerate(_DAY_ACTIVITY_CYCLE)
+        }
+        fallback_activity_priority = len(activity_priority)
+
+        def sort_key(user_task: UserTask) -> tuple[int, int, datetime, int]:
             task_type = user_task.task.task_type.value
+            content = getattr(user_task.task, "content", {}) or {}
+            activity = (
+                content.get("activity")
+                if isinstance(content, dict)
+                else None
+            )
             return (
+                activity_priority.get(str(activity), fallback_activity_priority),
                 priority.get(task_type, fallback_priority),
                 user_task.created_at,
                 user_task.id,
@@ -540,6 +779,122 @@ class TaskService:
 
         return assignment
 
+    def _daily_session_queue_bundle(
+        self,
+        *,
+        enrollment: UserEnrollment,
+    ) -> list[UserTask] | None:
+        """Return the frozen daily chat queue if one already exists.
+
+        This keeps a started daily session stable even if the learner changes
+        tasks_per_day before advancing from the dashboard.
+        """
+        from app.modules.learning_session.models import LearningSession
+
+        rows = (
+            self.db.query(LearningSession)
+            .filter(
+                LearningSession.user_id == enrollment.user_id,
+                LearningSession.enrollment_id == enrollment.id,
+                LearningSession.created_at >= enrollment.current_day_started_at,
+            )
+            .order_by(LearningSession.id.desc())
+            .all()
+        )
+        for row in rows:
+            queue = sorted(
+                (row.task_queue or []),
+                key=lambda item: int(item.get("sequence_index") or 0),
+            )
+            if not queue:
+                continue
+
+            bundle: list[UserTask] = []
+            for item in queue:
+                user_task_id = item.get("user_task_id")
+                if user_task_id is None:
+                    bundle = []
+                    break
+                user_task = self.user_task_repo.get_by_id(int(user_task_id))
+                if user_task is None or user_task.enrollment_id != enrollment.id:
+                    bundle = []
+                    break
+                bundle.append(user_task)
+
+            if bundle:
+                return bundle
+
+        return None
+
+    async def _create_one_task_async(
+        self,
+        *,
+        user_id: int,
+        enrollment: UserEnrollment,
+        skill_name_to_id: dict[str, int],
+        history_by_skill_id: dict[int, str | None],
+        sequence_index: int = 0,
+    ) -> UserTask:
+        """Async version of _create_one_task for learning-session startup."""
+        plan = self.engine.decide(
+            week_number=enrollment.current_week,
+            day_in_week=enrollment.current_day_in_week,
+            skill_name_to_id=skill_name_to_id,
+            history_by_skill_id=history_by_skill_id,
+            allowed_activity_types=self._enabled_activity_types(enrollment),
+        )
+
+        user_profile = self._build_user_profile(
+            user_id,
+            enrollment=enrollment,
+            plan=plan,
+        )
+        assignment = await self._try_generate_task_async(
+            user_id=user_id,
+            plan=plan,
+            enrollment=enrollment,
+            user_profile=user_profile,
+            skill_name_to_id=skill_name_to_id,
+            sequence_index=sequence_index,
+        )
+        if assignment is not None:
+            self.history_repo.upsert_after_assignment(
+                enrollment_id=enrollment.id,
+                skill_id=plan.skill_id,
+                activity_type=plan.activity_type,
+            )
+            return assignment
+
+        logger.warning(
+            "[task_gen] async LLM generation failed or no template matched — "
+            "falling back to seeded pool for skill=%s activity=%s",
+            plan.skill_name, plan.activity_type.value,
+        )
+        task = self.task_repo.find_for_plan(
+            skill_id=plan.skill_id,
+            activity_type=plan.activity_type,
+            target_difficulty=plan.target_difficulty,
+            exclude_completed_by_user_id=None,
+        )
+        if task is None:
+            raise NoTaskAvailable(
+                f"No task in pool for skill={plan.skill_name}, "
+                f"activity={plan.activity_type.value}, "
+                f"difficulty~{plan.target_difficulty}"
+            )
+
+        assignment = self.user_task_repo.assign(
+            user_id=user_id,
+            task_id=task.id,
+            enrollment_id=enrollment.id,
+        )
+        self.history_repo.upsert_after_assignment(
+            enrollment_id=enrollment.id,
+            skill_id=plan.skill_id,
+            activity_type=plan.activity_type,
+        )
+        return assignment
+
     # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
@@ -561,9 +916,9 @@ class TaskService:
                 is empty for that (skill, activity) combo.
         """
         enrollment = self._load_enrollment(user_id)
-
-        if enrollment.last_completed_on == datetime.now(timezone.utc).date():
-            return []
+        frozen_bundle = self._daily_session_queue_bundle(enrollment=enrollment)
+        if frozen_bundle is not None:
+            return frozen_bundle
 
         # Check how many tasks already exist for the current day. This includes
         # completed tasks so a partially completed dashboard bundle cannot grow
@@ -592,7 +947,7 @@ class TaskService:
             plan=plan,
         )
 
-        needed = enrollment.tasks_per_day - len(existing)
+        needed = self._tasks_per_day(enrollment) - len(existing)
         if needed <= 0:
             return self._sort_day_bundle_for_plan(
                 bundle=existing,
@@ -623,6 +978,73 @@ class TaskService:
         self.db.commit()
 
         # Refresh all objects so they're serializable
+        bundle = existing + new_tasks
+        for ut in bundle:
+            self.db.refresh(ut)
+            self.db.refresh(ut.task)
+
+        return self._sort_day_bundle_for_plan(
+            bundle=bundle,
+            plan=plan,
+            sub_level=user_profile.get("sub_level", 5),
+        )
+
+    async def get_or_create_day_bundle_async(self, *, user_id: int) -> list[UserTask]:
+        """Async day-bundle creation used by chat session startup."""
+        enrollment = self._load_enrollment(user_id)
+        frozen_bundle = self._daily_session_queue_bundle(enrollment=enrollment)
+        if frozen_bundle is not None:
+            return frozen_bundle
+
+        existing = self.user_task_repo.list_for_enrollment_day(
+            enrollment_id=enrollment.id,
+            day_started_at=enrollment.current_day_started_at,
+        )
+
+        skill_name_to_id = self.skill_repo.name_to_id_map()
+        history_rows = self.history_repo.list_for_enrollment(enrollment.id)
+        history_by_skill_id = {
+            h.skill_id: h.last_activity_type for h in history_rows
+        }
+        plan = self.engine.decide(
+            week_number=enrollment.current_week,
+            day_in_week=enrollment.current_day_in_week,
+            skill_name_to_id=skill_name_to_id,
+            history_by_skill_id=history_by_skill_id,
+            allowed_activity_types=self._enabled_activity_types(enrollment),
+        )
+        user_profile = self._build_user_profile(
+            user_id,
+            enrollment=enrollment,
+            plan=plan,
+        )
+
+        needed = self._tasks_per_day(enrollment) - len(existing)
+        if needed <= 0:
+            return self._sort_day_bundle_for_plan(
+                bundle=existing,
+                plan=plan,
+                sub_level=user_profile.get("sub_level", 5),
+            )
+
+        new_tasks: list[UserTask] = []
+        for offset in range(needed):
+            assignment = await self._create_one_task_async(
+                user_id=user_id,
+                enrollment=enrollment,
+                skill_name_to_id=skill_name_to_id,
+                history_by_skill_id=history_by_skill_id,
+                sequence_index=len(existing) + offset,
+            )
+            new_tasks.append(assignment)
+
+            refreshed_rows = self.history_repo.list_for_enrollment(enrollment.id)
+            history_by_skill_id = {
+                h.skill_id: h.last_activity_type for h in refreshed_rows
+            }
+
+        self.db.commit()
+
         bundle = existing + new_tasks
         for ut in bundle:
             self.db.refresh(ut)
@@ -854,10 +1276,12 @@ class TaskService:
         """
         enrollment = self._load_enrollment(user_id)
 
-        today_tasks = self.user_task_repo.list_for_enrollment_day(
-            enrollment_id=enrollment.id,
-            day_started_at=enrollment.current_day_started_at,
-        )
+        today_tasks = self._daily_session_queue_bundle(enrollment=enrollment)
+        if today_tasks is None:
+            today_tasks = self.user_task_repo.list_for_enrollment_day(
+                enrollment_id=enrollment.id,
+                day_started_at=enrollment.current_day_started_at,
+            )
         if not today_tasks:
             if enrollment.last_completed_on == datetime.now(timezone.utc).date():
                 return enrollment

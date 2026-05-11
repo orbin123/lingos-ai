@@ -60,15 +60,29 @@ async def task_delivery_node(state: LearningSessionState) -> dict[str, Any]:
     task_content = state.get("task_content") or {}
     task_type = state.get("task_type") or "fill_in_blanks"
     widget = task_content.get("widget") or task_type
+    queue = list(state.get("task_queue") or [])
+    current_index = int(state.get("current_task_index") or 0)
+    total = len(queue) or 1
 
-    intro = "Great! Here is your practice task."
+    intro = (
+        f"Great! Here is activity {current_index + 1} of {total}."
+        if total > 1
+        else "Great! Here is your practice task."
+    )
 
     outgoing = [
         {"type": "chat_message", "role": "assistant", "content": intro},
         {
             "type": "ui_event",
             "widget": widget,
-            "payload": task_content,
+            "payload": {
+                **task_content,
+                "_session": {
+                    "current_task_index": current_index,
+                    "total_tasks": total,
+                    "user_task_id": state.get("user_task_id"),
+                },
+            },
         },
     ]
 
@@ -91,6 +105,7 @@ async def task_delivery_node(state: LearningSessionState) -> dict[str, Any]:
 
 # Task types that require the LLM-based async writing evaluator
 _OPEN_TEXT_TASK_TYPES = frozenset({"curriculum_grammar_open_text"})
+_GRAMMAR_SPEAK_TASK_TYPES = frozenset({"curriculum_grammar_speak"})
 
 
 async def evaluation_node(state: LearningSessionState) -> dict[str, Any]:
@@ -100,11 +115,20 @@ async def evaluation_node(state: LearningSessionState) -> dict[str, Any]:
     task_type = state.get("task_type") or "fill_in_blanks"
     skill_name = state.get("skill_name", "")
     topic = state.get("topic", "")
+    queue = list(state.get("task_queue") or [])
+    current_index = int(state.get("current_task_index") or 0)
 
     evaluator = EvaluationService()
 
     if task_type in _OPEN_TEXT_TASK_TYPES:
         evaluation = await evaluator.evaluate_open_text_writing(
+            task_content=task_content,
+            user_answers=user_submission,
+            user_level=int(state.get("user_level") or 5),
+            learner_profile=state.get("learner_profile") or {},
+        )
+    elif task_type in _GRAMMAR_SPEAK_TASK_TYPES:
+        evaluation = await evaluator.evaluate_grammar_speaking(
             task_content=task_content,
             user_answers=user_submission,
             user_level=int(state.get("user_level") or 5),
@@ -126,6 +150,11 @@ async def evaluation_node(state: LearningSessionState) -> dict[str, Any]:
         "correct_count": evaluation.get("correct_count", 0),
         "questions": evaluation.get("questions", {}),
         "subskill_score": evaluation.get("subskill_score"),  # None for rule-based tasks
+        "_session": {
+            "current_task_index": current_index,
+            "total_tasks": len(queue) or 1,
+            "user_task_id": state.get("user_task_id"),
+        },
     }
 
     outgoing = [
@@ -182,13 +211,31 @@ async def feedback_node(state: LearningSessionState) -> dict[str, Any]:
         }
 
     overall_message = feedback_dict.get("overall_message", "")
-    follow_up_actions = ["Try another task", "Ask a question", "End session"]
+    queue = list(state.get("task_queue") or [])
+    current_index = int(state.get("current_task_index") or 0)
+    has_next = any(
+        int(item.get("sequence_index") or index) > current_index
+        and item.get("status") != "completed"
+        for index, item in enumerate(queue)
+    )
+    follow_up_actions = (
+        ["Next activity", "Go to dashboard"]
+        if has_next
+        else ["Go to dashboard"]
+    )
 
     outgoing: list[dict] = [
         {
             "type": "ui_event",
             "widget": "feedback_card",
-            "payload": feedback_dict,
+            "payload": {
+                **feedback_dict,
+                "_session": {
+                    "current_task_index": current_index,
+                    "total_tasks": len(queue) or 1,
+                    "has_next": has_next,
+                },
+            },
         },
         {
             "type": "chat_message",
@@ -229,12 +276,21 @@ async def followup_node(state: LearningSessionState) -> dict[str, Any]:
     raw_action = (last_user or {}).get("content", "") or ""
     action = raw_action.strip().lower()
 
-    end_signals = ("end session", "end", "stop", "bye", "goodbye")
-    another_signals = ("try another task", "another task", "next task", "more")
+    end_signals = ("go to dashboard", "end session", "end", "stop", "bye", "goodbye")
+    another_signals = (
+        "next activity",
+        "try another task",
+        "another task",
+        "next task",
+        "more",
+    )
     question_signals = ("ask a question", "question", "doubt", "clarif")
 
     if any(sig in action for sig in end_signals):
-        farewell = "Great work today! See you tomorrow."
+        farewell = (
+            "Great work. Go back to the dashboard to review today's "
+            "activities and advance when you're ready."
+        )
         new_messages = messages + [
             {"role": "ai", "content": farewell, "type": "chat"}
         ]
@@ -252,17 +308,19 @@ async def followup_node(state: LearningSessionState) -> dict[str, Any]:
         }
 
     if any(sig in action for sig in another_signals):
-        prompt_msg = (
-            "Awesome — want to keep practicing the same topic, or move to "
-            "the next concept?"
-        )
+        prompt_msg = "Use the Next activity button when you're ready to continue."
         new_messages = messages + [
             {"role": "ai", "content": prompt_msg, "type": "chat"}
         ]
         return {
             "phase": "teaching",
             "outgoing_events": [
-                {"type": "chat_message", "role": "assistant", "content": prompt_msg}
+                {
+                    "type": "chat_message",
+                    "role": "assistant",
+                    "content": prompt_msg,
+                    "actions": ["Next activity", "Go to dashboard"],
+                }
             ],
             "messages": new_messages,
         }

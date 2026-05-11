@@ -13,6 +13,7 @@ from enum import Enum
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum as SQLAlchemyEnum,
@@ -107,6 +108,12 @@ class UserEnrollment(Base, IDMixin, TimestampMixin):
     """
 
     __tablename__ = "user_enrollments"
+    __table_args__ = (
+        CheckConstraint(
+            "tasks_per_day BETWEEN 2 AND 4",
+            name="ck_user_enrollments_tasks_per_day_2_4",
+        ),
+    )
 
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),

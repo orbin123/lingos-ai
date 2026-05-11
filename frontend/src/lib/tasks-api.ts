@@ -88,6 +88,19 @@ interface GeneratedTaskBase {
   estimated_time_minutes: number;
 }
 
+interface CurriculumTaskBase extends GeneratedTaskBase {
+  widget:
+    | "fill_in_blanks"
+    | "open_text"
+    | "listen_and_respond"
+    | "speak_and_record";
+  topic_id: string;
+  topic_name: string;
+  sub_skill: string;
+  sub_level: number;
+  activity: "read" | "write" | "listen" | "speak";
+}
+
 // ── Template 1: Fill-in-Blanks ──────────────────────────────────
 export interface BlankItem {
   blank_id: string;
@@ -181,6 +194,35 @@ export interface SpeakWithTenseTaskContent extends GeneratedTaskBase {
   sample_response: string;
 }
 
+export interface MCQItem {
+  item_id: string;
+  prompt: string;
+  options: [string, string, string, string];
+  correct_index: 0 | 1 | 2 | 3;
+  explanation: string;
+}
+
+export interface GrammarListenTaskContent extends CurriculumTaskBase {
+  widget: "listen_and_respond";
+  activity: "listen";
+  instructions: string;
+  audio_script: string;
+  audio_url: string | null;
+  audio_duration_seconds?: number;
+  inner_widget: "mcq";
+  items: MCQItem[];
+}
+
+export interface GrammarSpeakTaskContent extends CurriculumTaskBase {
+  widget: "speak_and_record";
+  activity: "speak";
+  instructions: string;
+  speaking_prompts: string[];
+  sample_responses: string[];
+  grammar_rule_to_practice: string;
+  speaking_duration_seconds: number;
+}
+
 // Union of all generated task content shapes.
 // Discrimination happens via task.task_type (outer object), not a field inside content.
 export type GeneratedTaskContent =
@@ -189,7 +231,9 @@ export type GeneratedTaskContent =
   | SentenceTransformationTaskContent
   | VoiceConversionTaskContent
   | ErrorCorrectionTaskContent
-  | SpeakWithTenseTaskContent;
+  | SpeakWithTenseTaskContent
+  | GrammarListenTaskContent
+  | GrammarSpeakTaskContent;
 
 // The known task_type strings for generated tasks
 export type GeneratedTaskType =
@@ -198,7 +242,9 @@ export type GeneratedTaskType =
   | "sentence_transformation"
   | "voice_conversion"
   | "error_correction"
-  | "speak_with_tense";
+  | "speak_with_tense"
+  | "curriculum_grammar_listen_mcq"
+  | "curriculum_grammar_speak";
 
 // The known task_type strings for old seeded tasks
 export type SeededTaskType = "reading" | "writing" | "speaking" | "listening";
@@ -210,6 +256,8 @@ const GENERATED_TASK_TYPES: Set<string> = new Set([
   "voice_conversion",
   "error_correction",
   "speak_with_tense",
+  "curriculum_grammar_listen_mcq",
+  "curriculum_grammar_speak",
 ]);
 
 /** Check if a task_type string is a generated (LLM) task type */
@@ -345,6 +393,7 @@ export interface LearningSessionSnapshot {
   user_submission: Record<string, unknown> | null;
   evaluation: Record<string, unknown> | null;
   feedback: Record<string, unknown> | null;
+  task_queue: Array<Record<string, unknown>>;
   created_at: string;
 }
 

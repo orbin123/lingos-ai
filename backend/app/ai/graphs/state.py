@@ -18,6 +18,7 @@ class LearningSessionState(TypedDict, total=False):
     session_id: str
     user_id: int
     user_task_id: Optional[int]
+    task_queue: list[dict]
     current_task_index: int
     phase: PhaseType
     messages: list[dict]

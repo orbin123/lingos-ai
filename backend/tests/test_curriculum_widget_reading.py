@@ -176,6 +176,54 @@ def test_curriculum_fill_in_blanks_scores_items_by_item_id() -> None:
     assert report["questions"]["g2"]["correct"] is False
 
 
+def test_curriculum_grammar_listen_mcq_scores_inner_response_by_item_id() -> None:
+    report = EvaluationService().evaluate(
+        activity_type="curriculum_grammar_listen_mcq",
+        task_content={
+            "widget": "listen_and_respond",
+            "activity": "listen",
+            "sub_skill": "grammar",
+            "items": [
+                {
+                    "item_id": "q1",
+                    "prompt": "Which tense did Maya use?",
+                    "options": ["past simple", "present simple", "future simple", "present perfect"],
+                    "correct_index": 1,
+                    "explanation": "Maya says walks and studies.",
+                },
+                {
+                    "item_id": "q2",
+                    "prompt": "Which sentence is correct?",
+                    "options": ["She walk", "She walking", "She walks", "She walked"],
+                    "correct_index": 2,
+                    "explanation": "Third-person present simple takes -s.",
+                },
+            ],
+        },
+        user_answers={
+            "listen_analytics": {
+                "play_count": 1,
+                "total_listen_seconds": 8,
+                "transcript_revealed": False,
+            },
+            "inner_response": {
+                "widget": "mcq",
+                "answers": [
+                    {"item_id": "q1", "selected_index": 1},
+                    {"item_id": "q2", "selected_index": 0},
+                ],
+            },
+        },
+    )
+
+    assert report["task_type"] == "curriculum_grammar_listen_mcq"
+    assert report["total"] == 2
+    assert report["correct_count"] == 1
+    assert report["percentage"] == 50.0
+    assert report["questions"]["q1"]["correct"] is True
+    assert report["questions"]["q2"]["correct"] is False
+
+
 @pytest.mark.asyncio
 async def test_task_delivery_uses_widget_from_curriculum_payload() -> None:
     update = await task_delivery_node(
