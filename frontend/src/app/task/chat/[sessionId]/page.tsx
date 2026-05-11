@@ -926,11 +926,12 @@ function ListenAndRespondTaskCard({
   const [selectedById, setSelectedById] = useState<Record<string, number>>({});
   const [playCount, setPlayCount] = useState(0);
   const [totalListenSeconds, setTotalListenSeconds] = useState(0);
-  const [transcriptRevealed, setTranscriptRevealed] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
+  const [hasPlayedFull, setHasPlayedFull] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const duration = payload.audio_duration_seconds || audioRef.current?.duration || 0;
+  const [actualDuration, setActualDuration] = useState(0);
+  const duration = actualDuration || audioRef.current?.duration || payload.audio_duration_seconds || 0;
   const audioUrl = resolveAudioUrl(payload.audio_url);
 
   const publish = (
@@ -938,14 +939,12 @@ function ListenAndRespondTaskCard({
     analytics = {
       play_count: playCount,
       total_listen_seconds: totalListenSeconds,
-      transcript_revealed: transcriptRevealed,
     },
   ) => {
     setAnswers({
       listen_analytics: {
         play_count: analytics.play_count,
         total_listen_seconds: Math.round(analytics.total_listen_seconds),
-        transcript_revealed: analytics.transcript_revealed,
       },
       inner_response: {
         widget: "mcq",
@@ -970,7 +969,7 @@ function ListenAndRespondTaskCard({
 
   const togglePlay = async () => {
     const audio = audioRef.current;
-    if (!audio || !audioUrl) return;
+    if (!audio || !audioUrl || hasPlayedFull) return;
     if (isPlaying) {
       audio.pause();
       return;
@@ -983,16 +982,6 @@ function ListenAndRespondTaskCard({
     const next = { ...selectedById, [itemId]: index };
     setSelectedById(next);
     publish(next);
-  };
-
-  const toggleTranscript = () => {
-    const next = !transcriptRevealed;
-    setTranscriptRevealed(next);
-    publish(selectedById, {
-      play_count: playCount,
-      total_listen_seconds: totalListenSeconds,
-      transcript_revealed: next,
-    });
   };
 
   const allAnswered = items.every((item) => selectedById[item.item_id] !== undefined);
@@ -1037,6 +1026,7 @@ function ListenAndRespondTaskCard({
           ref={audioRef}
           src={audioUrl}
           preload="metadata"
+          onLoadedMetadata={(e) => setActualDuration(e.currentTarget.duration)}
           onPlay={() => {
             setIsPlaying(true);
             setPlayCount((count) => {
@@ -1044,7 +1034,6 @@ function ListenAndRespondTaskCard({
               publish(selectedById, {
                 play_count: next,
                 total_listen_seconds: totalListenSeconds,
-                transcript_revealed: transcriptRevealed,
               });
               return next;
             });
@@ -1056,17 +1045,16 @@ function ListenAndRespondTaskCard({
             publish(selectedById, {
               play_count: playCount,
               total_listen_seconds: nextTotal,
-              transcript_revealed: transcriptRevealed,
             });
           }}
           onEnded={() => {
             setIsPlaying(false);
             setUnlocked(true);
+            setHasPlayedFull(true);
             const nextTotal = commitListenSeconds();
             publish(selectedById, {
               play_count: playCount,
               total_listen_seconds: nextTotal,
-              transcript_revealed: transcriptRevealed,
             });
           }}
           onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
@@ -1074,18 +1062,18 @@ function ListenAndRespondTaskCard({
         <button
           type="button"
           onClick={togglePlay}
-          disabled={!audioUrl}
+          disabled={!audioUrl || hasPlayedFull}
           style={{
             width: 70, height: 70, borderRadius: "50%",
             border: "none", color: "white",
             background: "#ed9200",
             display: "inline-flex", alignItems: "center", justifyContent: "center",
-            cursor: audioUrl ? "pointer" : "not-allowed",
+            cursor: audioUrl && !hasPlayedFull ? "pointer" : "not-allowed",
             boxShadow: "0 8px 22px rgba(237,146,0,0.25)",
           }}
           aria-label={isPlaying ? "Pause audio" : "Play audio"}
         >
-          {isPlaying ? <StopIcon /> : <PlayTriangleIcon />}
+          {isPlaying ? <StopIcon /> : hasPlayedFull ? <CheckIcon /> : <PlayTriangleIcon />}
         </button>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: "oklch(18% 0.07 245)", marginBottom: 4 }}>
@@ -1119,40 +1107,6 @@ function ListenAndRespondTaskCard({
           </span>
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={toggleTranscript}
-        style={{
-          border: "1px solid oklch(82% 0.04 240)",
-          background: "white",
-          borderRadius: 999,
-          padding: "8px 12px",
-          color: "oklch(35% 0.08 245)",
-          fontSize: 12.5,
-          fontWeight: 750,
-          cursor: "pointer",
-          marginBottom: transcriptRevealed ? 10 : 16,
-          fontFamily: "inherit",
-        }}
-      >
-        {transcriptRevealed ? "Hide transcript" : "Show transcript"}
-      </button>
-
-      {transcriptRevealed && (
-        <div style={{
-          background: "oklch(96% 0.02 245)",
-          border: "1px solid oklch(86% 0.025 240)",
-          borderRadius: 12,
-          padding: "12px 14px",
-          fontSize: 13.5,
-          lineHeight: 1.65,
-          color: "oklch(28% 0.07 240)",
-          marginBottom: 16,
-        }}>
-          {payload.audio_script}
-        </div>
-      )}
 
       {!unlocked && !submitted && (
         <div style={{
@@ -2048,6 +2002,7 @@ export default function ChatSessionPage() {
     ws.onopen = () => {
       if (wsRef.current !== ws) return;
       setConnectionState("open");
+      setEvents((prev) => prev.filter((e) => e.kind === "chat"));
       const queued = pendingSendsRef.current.splice(0);
       queued.forEach((payload) => ws.send(JSON.stringify(payload)));
     };
