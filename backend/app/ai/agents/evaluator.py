@@ -282,12 +282,34 @@ Return JSON matching the schema. Nothing else.
 """
 
 
+def _format_evaluation_focus_block(
+    evaluation_focus: dict | None,
+) -> str:
+    """Render the Planner's evaluation_focus as a prompt block, or empty."""
+    if not evaluation_focus:
+        return ""
+    lines = [
+        "PLANNER EVALUATION FOCUS (apply over the generic level rules above):",
+    ]
+    focus_areas = evaluation_focus.get("focus_areas")
+    if isinstance(focus_areas, list) and focus_areas:
+        lines.append(
+            "- focus_areas: " + ", ".join(str(f) for f in focus_areas if str(f).strip())
+        )
+    for key in ("level_note", "scoring_instruction"):
+        value = evaluation_focus.get(key)
+        if isinstance(value, str) and value.strip():
+            lines.append(f"- {key}: {value.strip()}")
+    return "\n".join(lines)
+
+
 def _build_open_text_user_message(
     *,
     task_content: dict,
     user_answers: dict,
     user_level: int,
     learner_profile: dict,
+    evaluation_focus: dict | None = None,
 ) -> str:
     """Format the writing task evaluation prompt."""
     tier = (
@@ -320,13 +342,16 @@ def _build_open_text_user_message(
         )
     items_text = "\n\n".join(items_lines)
 
+    focus_block = _format_evaluation_focus_block(evaluation_focus)
+    focus_section = f"{focus_block}\n\n" if focus_block else ""
     return (
         f"LEARNER LEVEL: {user_level}/10 ({tier})\n"
         f"SELF-ASSESSED: {self_assessed}\n\n"
+        f"{focus_section}"
         f"GRAMMAR RULE BEING PRACTICED:\n{grammar_rule}\n\n"
         f"COMMON MISTAKES TO WATCH FOR:\n{common_text}\n\n"
         f"TASK ITEMS AND ANSWERS:\n{items_text}\n\n"
-        "Evaluate the learner's grammar writing. Return your assessment."
+        "Evaluate the learner's writing. Return your assessment."
     )
 
 
@@ -354,6 +379,7 @@ def _build_grammar_speaking_user_message(
     user_answers: dict,
     user_level: int,
     learner_profile: dict,
+    evaluation_focus: dict | None = None,
 ) -> str:
     """Format the grammar speaking task evaluation prompt."""
     tier = (
@@ -379,11 +405,13 @@ def _build_grammar_speaking_user_message(
             }
         )
 
+    focus_block = _format_evaluation_focus_block(evaluation_focus)
+    focus_section = f"{focus_block}\n\n" if focus_block else ""
     return f"""\
 LEARNER LEVEL: {user_level}/10 ({tier})
 SELF-ASSESSED: {learner_profile.get("self_assessed_level", "unknown")}
 
-TARGET GRAMMAR RULE:
+{focus_section}TARGET GRAMMAR RULE:
 {task_content.get("grammar_rule_to_practice") or task_content.get("topic_name") or "See task topic"}
 
 TASK INSTRUCTIONS:
@@ -1284,6 +1312,7 @@ class EvaluationService:
         user_answers: dict,
         user_level: int = 5,
         learner_profile: dict | None = None,
+        evaluation_focus: dict | None = None,
     ) -> dict:
         """Evaluate grammar speaking transcripts with the LLM."""
         prompts = task_content.get("speaking_prompts") or []
@@ -1334,6 +1363,7 @@ class EvaluationService:
                 user_answers=user_answers,
                 user_level=user_level,
                 learner_profile=learner_profile or {},
+                evaluation_focus=evaluation_focus,
             ),
             output_model=_GrammarSpeakingEval,
             temperature=0.2,
@@ -1396,6 +1426,7 @@ class EvaluationService:
         user_answers: dict,
         user_level: int = 5,
         learner_profile: dict | None = None,
+        evaluation_focus: dict | None = None,
     ) -> dict:
         """LLM-based evaluation for open_text writing tasks.
 
@@ -1418,6 +1449,7 @@ class EvaluationService:
             user_answers=user_answers,
             user_level=user_level,
             learner_profile=profile,
+            evaluation_focus=evaluation_focus,
         )
 
         llm_result: _OpenTextWritingEval | None = None

@@ -12,13 +12,110 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.ai.agents.evaluator import EvaluationService
 from app.ai.agents.feedback import generate_feedback
+from app.ai.agents.planner import generate_daily_plan
+from app.ai.agents.task_generator import TaskGeneratorAgent
 from app.ai.agents.teacher import generate_teaching_turn
 from app.ai.graphs.state import LearningSessionState
 from app.ai.llm import get_default_llm_client
+from app.modules.curriculum.repository import (
+    DailyPlanRepository,
+    UserEnrollmentRepository,
+)
+from app.modules.curriculum.topics import get_course_topic
+from app.tasks.schemas.full_tasks_templates import get_full_template_by_id
 
 logger = logging.getLogger(__name__)
+
+
+async def plan_loader_node(
+    state: LearningSessionState,
+    *,
+    db: Session,
+) -> dict[str, Any]:
+    """Load (or generate + persist) the DailyPlan for today's session.
+
+    Runs once at the very start of every new session. Subsequent runs for
+    the same (user, course, week, day) hit the cache in `daily_plans`.
+
+    Required state fields:
+        user_id, enrollment_id
+
+    Optional (used as overrides; otherwise looked up via the enrollment):
+        course_slug, week, day
+    """
+    user_id = state.get("user_id")
+    enrollment_id = state.get("enrollment_id")
+    if user_id is None or enrollment_id is None:
+        raise ValueError(
+            "plan_loader_node requires user_id and enrollment_id in state"
+        )
+
+    course_slug = state.get("course_slug")
+    week = state.get("week")
+    day = state.get("day")
+    duration_weeks: int | None = None
+
+    enrollment_repo = UserEnrollmentRepository(db)
+    enrollment = enrollment_repo.get_by_id(enrollment_id)
+    if enrollment is None:
+        raise LookupError(f"Enrollment {enrollment_id} not found")
+    course = enrollment.course
+    duration_weeks = course.duration_weeks
+    if course_slug is None:
+        course_slug = course.slug
+    if week is None:
+        week = enrollment.current_week
+    if day is None:
+        day = enrollment.current_day_in_week
+
+    plan_repo = DailyPlanRepository(db)
+    existing = plan_repo.get_for_day(
+        user_id=user_id, course_slug=course_slug, week=week, day=day,
+    )
+    if existing is not None:
+        return {
+            "daily_plan": dict(existing.plan_json),
+            "current_activity_order": 1,
+            "course_slug": course_slug,
+            "week": week,
+            "day": day,
+        }
+
+    topic_entry = get_course_topic(
+        duration_weeks=duration_weeks, week=week, day=day,
+    )
+    if topic_entry is None:
+        raise LookupError(
+            f"No course topic for duration_weeks={duration_weeks}, "
+            f"week={week}, day={day}"
+        )
+
+    plan_json = await generate_daily_plan(
+        user_id=user_id,
+        course_slug=course_slug,
+        topic_entry=topic_entry,
+        learner_profile=state.get("learner_profile") or {},
+    )
+    plan_repo.upsert(
+        user_id=user_id,
+        course_slug=course_slug,
+        week=week,
+        day=day,
+        topic_id=topic_entry.topic_id,
+        plan_json=plan_json,
+    )
+
+    return {
+        "daily_plan": plan_json,
+        "current_activity_order": 1,
+        "course_slug": course_slug,
+        "week": week,
+        "day": day,
+    }
 
 
 async def teach_node(state: LearningSessionState) -> dict[str, Any]:
@@ -28,6 +125,8 @@ async def teach_node(state: LearningSessionState) -> dict[str, Any]:
     task_type = state.get("task_type") or "fill_in_blanks"
     skill_name = state.get("skill_name") or "grammar"
     learner_profile = state.get("learner_profile") or {}
+    daily_plan = state.get("daily_plan") or {}
+    teacher_instructions = daily_plan.get("teacher_instructions") if daily_plan else None
 
     teaching = await generate_teaching_turn(
         topic=topic,
@@ -36,6 +135,7 @@ async def teach_node(state: LearningSessionState) -> dict[str, Any]:
         user_level=user_level,
         learner_profile=learner_profile,
         conversation=list(state.get("messages", [])),
+        teacher_instructions=teacher_instructions,
     )
     chat_messages = teaching.messages
 
@@ -55,14 +155,71 @@ async def teach_node(state: LearningSessionState) -> dict[str, Any]:
     }
 
 
+def _find_plan_activity(
+    state: LearningSessionState,
+) -> dict[str, Any] | None:
+    """Return the daily-plan activity dict matching current_activity_order.
+
+    None if no plan is loaded yet or the order is missing/out of range.
+    """
+    daily_plan = state.get("daily_plan") or {}
+    activities = daily_plan.get("activities") if daily_plan else None
+    if not activities:
+        return None
+    order = state.get("current_activity_order") or 1
+    for activity in activities:
+        if int(activity.get("order") or 0) == int(order):
+            return activity
+    return None
+
+
 async def task_delivery_node(state: LearningSessionState) -> dict[str, Any]:
-    """Hand the pre-generated task to the frontend as a UI widget."""
+    """Hand the practice task to the frontend as a UI widget.
+
+    Two paths:
+      1. Plan-aware: if `daily_plan` is loaded and `task_content` has not
+         been pre-generated, generate the task using the activity's
+         `template_id` from the plan. Widget comes from the plan activity.
+      2. Legacy/pre-generated: existing flow — read `task_content` and
+         derive widget from it. Used when there is no plan yet (sessions
+         created before the Planner refactor or when the plan_loader fails).
+    """
     task_content = state.get("task_content") or {}
     task_type = state.get("task_type") or "fill_in_blanks"
-    widget = task_content.get("widget") or task_type
     queue = list(state.get("task_queue") or [])
     current_index = int(state.get("current_task_index") or 0)
     total = len(queue) or 1
+    plan_activity = _find_plan_activity(state)
+
+    updated_state_patch: dict[str, Any] = {}
+
+    if plan_activity is not None:
+        widget = plan_activity.get("widget") or task_content.get("widget") or task_type
+        if not task_content:
+            try:
+                template = get_full_template_by_id(plan_activity["template_id"])
+                generator = TaskGeneratorAgent()
+                profile = dict(state.get("learner_profile") or {})
+                daily_plan = state.get("daily_plan") or {}
+                profile.setdefault("sub_level", daily_plan.get("sub_level") or 5)
+                profile.setdefault(
+                    "course_topic", daily_plan.get("topic_name") or state.get("topic") or ""
+                )
+                profile.setdefault(
+                    "topic", daily_plan.get("topic_name") or state.get("topic") or ""
+                )
+                task_content = await generator.generate(template, profile)
+                task_content.setdefault("widget", widget)
+                updated_state_patch["task_content"] = task_content
+                updated_state_patch["task_type"] = task_content.get("widget") or task_type
+            except Exception:
+                logger.exception(
+                    "task_delivery_node on-demand generation failed "
+                    "(template_id=%s); falling back to pre-generated task_content",
+                    plan_activity.get("template_id"),
+                )
+    else:
+        widget = task_content.get("widget") or task_type
 
     intro = (
         f"Great! Here is activity {current_index + 1} of {total}."
@@ -100,6 +257,7 @@ async def task_delivery_node(state: LearningSessionState) -> dict[str, Any]:
         "phase": "practice_task",
         "outgoing_events": outgoing,
         "messages": new_messages,
+        **updated_state_patch,
     }
 
 
@@ -119,6 +277,10 @@ async def evaluation_node(state: LearningSessionState) -> dict[str, Any]:
     current_index = int(state.get("current_task_index") or 0)
 
     evaluator = EvaluationService()
+    plan_activity = _find_plan_activity(state)
+    evaluation_focus = (
+        plan_activity.get("evaluation_focus") if plan_activity else None
+    )
 
     if task_type in _OPEN_TEXT_TASK_TYPES:
         evaluation = await evaluator.evaluate_open_text_writing(
@@ -126,6 +288,7 @@ async def evaluation_node(state: LearningSessionState) -> dict[str, Any]:
             user_answers=user_submission,
             user_level=int(state.get("user_level") or 5),
             learner_profile=state.get("learner_profile") or {},
+            evaluation_focus=evaluation_focus,
         )
     elif task_type in _GRAMMAR_SPEAK_TASK_TYPES:
         evaluation = await evaluator.evaluate_grammar_speaking(
@@ -133,6 +296,7 @@ async def evaluation_node(state: LearningSessionState) -> dict[str, Any]:
             user_answers=user_submission,
             user_level=int(state.get("user_level") or 5),
             learner_profile=state.get("learner_profile") or {},
+            evaluation_focus=evaluation_focus,
         )
     else:
         evaluation = evaluator.evaluate(
@@ -312,7 +476,7 @@ async def followup_node(state: LearningSessionState) -> dict[str, Any]:
         new_messages = messages + [
             {"role": "ai", "content": prompt_msg, "type": "chat"}
         ]
-        return {
+        update: dict[str, Any] = {
             "phase": "teaching",
             "outgoing_events": [
                 {
@@ -324,6 +488,38 @@ async def followup_node(state: LearningSessionState) -> dict[str, Any]:
             ],
             "messages": new_messages,
         }
+        # If a plan is loaded, advance the activity pointer so the next
+        # task_delivery picks up the next template_id from the plan.
+        daily_plan = state.get("daily_plan") or {}
+        activities = daily_plan.get("activities") if daily_plan else None
+        if activities:
+            current_order = int(state.get("current_activity_order") or 1)
+            next_order = current_order + 1
+            if next_order > len(activities):
+                # No more activities in the plan — mark the day complete.
+                farewell = (
+                    "Today's activities are complete. Go back to the dashboard "
+                    "to review the day and advance when you're ready."
+                )
+                update = {
+                    "phase": "ended",
+                    "outgoing_events": [
+                        {
+                            "type": "chat_message",
+                            "role": "assistant",
+                            "content": farewell,
+                            "actions": ["Go to dashboard"],
+                        }
+                    ],
+                    "messages": messages + [
+                        {"role": "ai", "content": farewell, "type": "chat"}
+                    ],
+                }
+            else:
+                update["current_activity_order"] = next_order
+                # Clear task_content so the next task_delivery_node regenerates.
+                update["task_content"] = None
+        return update
 
     if action in question_signals:
         prompt_msg = "Sure — what would you like to know?"

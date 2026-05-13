@@ -13,7 +13,7 @@ Add every new model to this file as you create it.
 from app.modules.auth.models import User, UserProfile, OAuthAccount  # noqa: F401
 from app.modules.skills.models import Skill, UserSkillScore  # noqa: F401
 from app.modules.curriculum.models import (  # noqa: F401
-    Course, UserEnrollment, EnrollmentSkillHistory,
+    Course, UserEnrollment, EnrollmentSkillHistory, DailyPlan,
 )
 from app.modules.tasks.models import Task, TaskSkill, UserTask  # noqa: F401
 from app.modules.responses.models import (  # noqa: F401

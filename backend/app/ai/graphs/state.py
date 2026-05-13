@@ -34,3 +34,10 @@ class LearningSessionState(TypedDict, total=False):
     learner_profile: dict[str, Any]
     understanding_confirmed: bool
     outgoing_events: list[dict]
+    # Planner Agent — full DailyPlan contract JSON (loaded by plan_loader_node)
+    daily_plan: Optional[dict]
+    current_activity_order: int
+    enrollment_id: Optional[int]
+    course_slug: Optional[str]
+    week: Optional[int]
+    day: Optional[int]

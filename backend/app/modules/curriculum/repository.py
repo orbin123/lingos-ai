@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.modules.curriculum.models import (
     Course,
     CourseStatus,
+    DailyPlan,
     EnrollmentSkillHistory,
     EnrollmentStatus,
     UserEnrollment,
@@ -166,6 +167,78 @@ class EnrollmentSkillHistoryRepository:
             last_activity_type=activity_type,
             times_practiced=1,
             last_practiced_at=now,
+        )
+        self.db.add(new_row)
+        self.db.flush()
+        return new_row
+
+
+class DailyPlanRepository:
+    """Per-(user, course, week, day) Planner Agent output.
+
+    Generated lazily on first session open. Used by all downstream agents
+    so they share one level-aware contract for the day.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def get_for_day(
+        self,
+        *,
+        user_id: int,
+        course_slug: str,
+        week: int,
+        day: int,
+    ) -> DailyPlan | None:
+        """Return the saved plan for this day, or None if not generated yet."""
+        return (
+            self.db.query(DailyPlan)
+            .filter(
+                DailyPlan.user_id == user_id,
+                DailyPlan.course_slug == course_slug,
+                DailyPlan.week == week,
+                DailyPlan.day == day,
+            )
+            .first()
+        )
+
+    def upsert(
+        self,
+        *,
+        user_id: int,
+        course_slug: str,
+        week: int,
+        day: int,
+        topic_id: str,
+        plan_json: dict,
+    ) -> DailyPlan:
+        """Insert or replace the plan for this (user, course, week, day).
+
+        Portable across Postgres and SQLite — does get-then-update/insert
+        rather than dialect-specific ON CONFLICT. The UNIQUE constraint on
+        the table is still the source of truth.
+        """
+        existing = self.get_for_day(
+            user_id=user_id, course_slug=course_slug, week=week, day=day,
+        )
+        now = datetime.now(timezone.utc)
+
+        if existing is not None:
+            existing.topic_id = topic_id
+            existing.plan_json = plan_json
+            existing.generated_at = now
+            self.db.flush()
+            return existing
+
+        new_row = DailyPlan(
+            user_id=user_id,
+            course_slug=course_slug,
+            week=week,
+            day=day,
+            topic_id=topic_id,
+            plan_json=plan_json,
+            generated_at=now,
         )
         self.db.add(new_row)
         self.db.flush()

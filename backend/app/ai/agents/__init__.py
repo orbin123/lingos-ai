@@ -16,13 +16,25 @@ Re-exporting the public symbols here lets callers do the clean import:
 
 from app.ai.agents.evaluator import EvaluationService
 from app.ai.agents.feedback import FeedbackOutput, generate_feedback
+from app.ai.agents.planner import (
+    EvaluationFocus,
+    PlannerAgent,
+    PlannerLLMOutput,
+    TeacherInstructions,
+    generate_daily_plan,
+)
 from app.ai.agents.task_generator import generate_task
 from app.ai.agents.teacher import TeachingOutput, generate_teaching_turn
 
 __all__ = [
+    "EvaluationFocus",
     "EvaluationService",
     "FeedbackOutput",
+    "PlannerAgent",
+    "PlannerLLMOutput",
+    "TeacherInstructions",
     "TeachingOutput",
+    "generate_daily_plan",
     "generate_feedback",
     "generate_task",
     "generate_teaching_turn",

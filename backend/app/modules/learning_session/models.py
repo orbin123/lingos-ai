@@ -53,6 +53,7 @@ class LearningSession(Base, IDMixin, TimestampMixin):
     evaluation: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     feedback: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     understanding_confirmed: Mapped[bool] = mapped_column(nullable=False, default=False)
+    current_activity_order: Mapped[int] = mapped_column(nullable=False, default=1)
 
     def __repr__(self) -> str:
         return (
