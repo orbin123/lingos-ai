@@ -18,9 +18,12 @@ from sqlalchemy import (
     DateTime,
     Enum as SQLAlchemyEnum,
     ForeignKey,
+    Index,
+    JSON,
     String,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -211,4 +214,53 @@ class EnrollmentSkillHistory(Base, IDMixin, TimestampMixin):
         return (
             f"<EnrollmentSkillHistory(enrollment_id={self.enrollment_id}, "
             f"skill_id={self.skill_id}, last={self.last_activity_type})>"
+        )
+
+
+# DailyPlan — Planner Agent contract per (user, course, week, day)
+
+class DailyPlan(Base, IDMixin, TimestampMixin):
+    """Per-(user, course, week, day) plan produced by the Planner Agent.
+
+    Generated lazily on the first session open for a given day. Read by
+    downstream agents (Teacher, Task Generator, Evaluator) so they share a
+    consistent, level-aware view of the day's lesson.
+
+    `course_slug` is denormalised (not an FK) so a saved plan remains
+    interpretable even if the underlying course definition changes.
+    """
+
+    __tablename__ = "daily_plans"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "course_slug", "week", "day",
+            name="uq_daily_plan_user_day",
+        ),
+        Index(
+            "ix_daily_plan_lookup",
+            "user_id", "course_slug", "week", "day",
+        ),
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    course_slug: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    week: Mapped[int] = mapped_column(nullable=False)
+    day: Mapped[int] = mapped_column(nullable=False)
+    topic_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    plan_json: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<DailyPlan(user_id={self.user_id}, course={self.course_slug!r}, "
+            f"week={self.week}, day={self.day})>"
         )

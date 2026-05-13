@@ -2007,6 +2007,21 @@ def get_full_template(sub_skill: SubSkill, activity: Activity) -> TaskTemplate:
     return _FULL_TEMPLATE_INDEX[key]
 
 
+_FULL_TEMPLATE_BY_ID: dict[str, TaskTemplate] = {
+    t.template_id: t for t in FULL_TASK_TEMPLATES
+}
+
+
+def get_full_template_by_id(template_id: str) -> TaskTemplate:
+    """Look up a full-task template by its stable id (e.g. 'full_vocabulary_read_v1').
+
+    Raises KeyError if no template is registered for the given id.
+    """
+    if template_id not in _FULL_TEMPLATE_BY_ID:
+        raise KeyError(f"No full-task template registered for id={template_id!r}")
+    return _FULL_TEMPLATE_BY_ID[template_id]
+
+
 def list_full_templates_by_widget(widget: UIWidget) -> list[TaskTemplate]:
     """Return all templates that render with a given UI widget."""
     return [

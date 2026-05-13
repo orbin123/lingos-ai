@@ -172,6 +172,29 @@ def _format_teaching_agenda(
     return "\n".join(agenda_lines), current_name, current_goal
 
 
+def _format_planner_section(teacher_instructions: dict[str, Any] | None) -> str:
+    """Render the Planner's teacher_instructions as a prompt block, or empty."""
+    if not teacher_instructions:
+        return ""
+    lines = ["Planner guidance for this lesson (prefer this over generic defaults):"]
+    for key in (
+        "sub_skill_context",
+        "learning_goal",
+        "teaching_approach",
+        "concept_check_focus",
+        "do_not_reveal",
+    ):
+        value = teacher_instructions.get(key)
+        if isinstance(value, str) and value.strip():
+            lines.append(f"- {key}: {value.strip()}")
+    words = teacher_instructions.get("words_to_cover")
+    if isinstance(words, list) and words:
+        rendered = ", ".join(str(w) for w in words if str(w).strip())
+        if rendered:
+            lines.append(f"- words_to_cover: {rendered}")
+    return "\n".join(lines)
+
+
 def _build_user_prompt(
     *,
     topic: str,
@@ -181,6 +204,7 @@ def _build_user_prompt(
     learner_profile: dict[str, Any],
     conversation: list[dict],
     stream_text: bool = False,
+    teacher_instructions: dict[str, Any] | None = None,
 ) -> str:
     profile = learner_profile or {}
     interests = profile.get("interests") or "not specified"
@@ -194,6 +218,7 @@ def _build_user_prompt(
         topic=topic,
         conversation=conversation or [],
     )
+    planner_section = _format_planner_section(teacher_instructions)
     if needs_clarification:
         current_step = "clarify_confusion"
         current_goal = (
@@ -221,6 +246,7 @@ Learner sub-level: {user_level}/10
 Learner interests: {interests}
 Learner goals: {goals}
 Personalisation notes: {personalisation_context or "none"}
+{planner_section or "Planner guidance: none — fall back to generic teaching defaults."}
 Latest learner message: {recent_user_message or "none yet"}
 Recent conversation:
 {recent_conversation or "none yet"}
@@ -291,6 +317,7 @@ class TeachingAgent:
         user_level: int,
         learner_profile: dict[str, Any] | None = None,
         conversation: list[dict] | None = None,
+        teacher_instructions: dict[str, Any] | None = None,
     ) -> TeachingOutput:
         user_prompt = _build_user_prompt(
             topic=topic,
@@ -299,6 +326,7 @@ class TeachingAgent:
             user_level=user_level,
             learner_profile=learner_profile or {},
             conversation=conversation or [],
+            teacher_instructions=teacher_instructions,
         )
 
         try:
@@ -327,6 +355,7 @@ class TeachingAgent:
         user_level: int,
         learner_profile: dict[str, Any] | None = None,
         conversation: list[dict] | None = None,
+        teacher_instructions: dict[str, Any] | None = None,
     ) -> AsyncIterator[str]:
         user_prompt = _build_user_prompt(
             topic=topic,
@@ -336,6 +365,7 @@ class TeachingAgent:
             learner_profile=learner_profile or {},
             conversation=conversation or [],
             stream_text=True,
+            teacher_instructions=teacher_instructions,
         )
         async for chunk in self._llm.stream_text(
             system_prompt=_SYSTEM_PROMPT,
@@ -357,6 +387,7 @@ async def generate_teaching_turn(
     user_level: int,
     learner_profile: dict[str, Any] | None = None,
     conversation: list[dict] | None = None,
+    teacher_instructions: dict[str, Any] | None = None,
 ) -> TeachingOutput:
     agent = TeachingAgent()
     return await agent.generate(
@@ -366,6 +397,7 @@ async def generate_teaching_turn(
         user_level=user_level,
         learner_profile=learner_profile,
         conversation=conversation,
+        teacher_instructions=teacher_instructions,
     )
 
 
@@ -377,6 +409,7 @@ async def stream_teaching_turn(
     user_level: int,
     learner_profile: dict[str, Any] | None = None,
     conversation: list[dict] | None = None,
+    teacher_instructions: dict[str, Any] | None = None,
 ) -> AsyncIterator[str]:
     agent = TeachingAgent()
     async for chunk in agent.stream_text(
@@ -386,5 +419,6 @@ async def stream_teaching_turn(
         user_level=user_level,
         learner_profile=learner_profile,
         conversation=conversation,
+        teacher_instructions=teacher_instructions,
     ):
         yield chunk

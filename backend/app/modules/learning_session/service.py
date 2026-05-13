@@ -32,6 +32,7 @@ from app.ai.graphs.nodes import (
     evaluation_node,
     feedback_node,
     followup_node,
+    plan_loader_node,
     stream_answer_question,
     task_delivery_node,
     teach_node,
@@ -43,6 +44,7 @@ from app.modules.curriculum.exceptions import (
 )
 from app.modules.curriculum.models import EnrollmentStatus, UserEnrollment
 from app.modules.curriculum.repository import (
+    DailyPlanRepository,
     EnrollmentSkillHistoryRepository,
     UserEnrollmentRepository,
 )
@@ -229,6 +231,7 @@ class LearningSessionService:
         self.db = db
         self.enrollment_repo = UserEnrollmentRepository(db)
         self.history_repo = EnrollmentSkillHistoryRepository(db)
+        self.daily_plan_repo = DailyPlanRepository(db)
         self.skill_repo = SkillRepository(db)
         self.score_repo = UserSkillScoreRepository(db)
         self.session_repo = LearningSessionRepository(db)
@@ -465,6 +468,7 @@ class LearningSessionService:
         session = self._load_session(session_id)
         state = self._state_from_row(session)
         self._enrich_state_with_profile(state, session.user_id)
+        await self._ensure_daily_plan_in_state(state, session=session)
         update = await teach_node(state)
         self._apply_update(session, update)
         self.db.commit()
@@ -477,8 +481,34 @@ class LearningSessionService:
         session = self._load_session(session_id)
         state = self._state_from_row(session)
         self._enrich_state_with_profile(state, session.user_id)
+        await self._ensure_daily_plan_in_state(state, session=session)
         async for msg in self._stream_teaching_turn(session, state):
             yield msg
+
+    async def _ensure_daily_plan_in_state(
+        self,
+        state: LearningSessionState,
+        session: LearningSession | None = None,
+    ) -> None:
+        """Run the plan_loader node, merge the result into state, and
+        persist `current_activity_order` onto the session row when one is
+        supplied. Best-effort — agents have fallbacks when the plan is None.
+        """
+        try:
+            update = await plan_loader_node(state, db=self.db)
+        except Exception:
+            logger.exception(
+                "plan_loader_node failed; continuing without a daily plan"
+            )
+            return
+        for key, value in update.items():
+            state[key] = value  # type: ignore[literal-required]
+        if session is not None and "current_activity_order" in update:
+            value = update["current_activity_order"]
+            if value is not None:
+                session.current_activity_order = int(value)
+                self.session_repo.save(session)
+        self.db.commit()
 
     async def resume_messages_stream(
         self, session_id: str
@@ -1066,11 +1096,11 @@ class LearningSessionService:
         if user_task.status == UserTaskStatus.PENDING:
             user_task.status = UserTaskStatus.IN_PROGRESS
 
-    @staticmethod
-    def _state_from_row(session: LearningSession) -> LearningSessionState:
-        return {
+    def _state_from_row(self, session: LearningSession) -> LearningSessionState:
+        state: LearningSessionState = {
             "session_id": session.session_id,
             "user_id": session.user_id,
+            "enrollment_id": session.enrollment_id,
             "user_task_id": session.user_task_id,
             "task_queue": list(session.task_queue or []),
             "current_task_index": session.current_task_index,
@@ -1086,8 +1116,48 @@ class LearningSessionService:
             "evaluation": session.evaluation,
             "feedback": session.feedback,
             "understanding_confirmed": session.understanding_confirmed,
+            "current_activity_order": int(
+                getattr(session, "current_activity_order", None) or 1
+            ),
             "outgoing_events": [],
         }
+        self._rehydrate_daily_plan(state, session)
+        return state
+
+    def _rehydrate_daily_plan(
+        self,
+        state: LearningSessionState,
+        session: LearningSession,
+    ) -> None:
+        """Re-fetch the day's plan from `daily_plans` so it's available on
+        every WebSocket message, not just the first turn.
+
+        Looks up by the enrollment's current (week, day). For a single-day
+        session this is stable; if the user advances days mid-session the
+        plan_loader will regenerate on the next session open.
+        """
+        try:
+            enrollment = self.enrollment_repo.get_by_id(session.enrollment_id)
+        except Exception:
+            enrollment = None
+        if enrollment is None or enrollment.course is None:
+            return
+
+        course_slug = enrollment.course.slug
+        week = enrollment.current_week
+        day = enrollment.current_day_in_week
+        plan_row = self.daily_plan_repo.get_for_day(
+            user_id=session.user_id,
+            course_slug=course_slug,
+            week=week,
+            day=day,
+        )
+        if plan_row is None:
+            return
+        state["daily_plan"] = dict(plan_row.plan_json)
+        state["course_slug"] = course_slug
+        state["week"] = week
+        state["day"] = day
 
     def _apply_update(
         self, session: LearningSession, update: dict[str, Any]
@@ -1112,6 +1182,10 @@ class LearningSessionService:
             session.user_submission = update["user_submission"]
         if "understanding_confirmed" in update:
             session.understanding_confirmed = bool(update["understanding_confirmed"])
+        if "current_activity_order" in update:
+            value = update["current_activity_order"]
+            if value is not None:
+                session.current_activity_order = int(value)
         self.session_repo.save(session)
 
     def _mark_bound_task_complete(self, session: LearningSession) -> None:
@@ -1330,6 +1404,10 @@ class LearningSessionService:
 
         chunks: list[str] = []
         try:
+            daily_plan = state.get("daily_plan") or {}
+            teacher_instructions = (
+                daily_plan.get("teacher_instructions") if daily_plan else None
+            )
             teaching_chunks = stream_teaching_turn(
                 topic=state.get("topic") or "today's English topic",
                 sub_skill=state.get("skill_name") or "grammar",
@@ -1337,6 +1415,7 @@ class LearningSessionService:
                 user_level=int(state.get("user_level", 5)),
                 learner_profile=state.get("learner_profile") or {},
                 conversation=list(state.get("messages", [])),
+                teacher_instructions=teacher_instructions,
             )
             async for chunk in self._timed_chunks(
                 teaching_chunks,

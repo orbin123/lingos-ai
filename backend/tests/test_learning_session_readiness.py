@@ -113,6 +113,7 @@ class _FakeSessionRepo:
 
 class _FakeSession(SimpleNamespace):
     current_task_index: int = 0
+    enrollment_id: int | None = None
 
 
 def _streaming_service() -> LearningSessionService:

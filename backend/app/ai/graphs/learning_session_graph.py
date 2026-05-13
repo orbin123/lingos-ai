@@ -47,16 +47,28 @@ def _route_after_followup(state: LearningSessionState) -> str:
     return "end" if state.get("phase") == "ended" else "teach"
 
 
+async def _plan_loader_passthrough(state: LearningSessionState) -> dict:
+    """Structural placeholder for plan_loader in the compiled graph.
+
+    The actual plan loading needs a DB session and runs inside the
+    WebSocket layer (see `LearningSessionService.initial_messages*`).
+    Keeping the node here documents the flow: START → plan_loader → teach.
+    """
+    return {}
+
+
 def build_graph() -> StateGraph:
     graph: StateGraph = StateGraph(LearningSessionState)
 
+    graph.add_node("plan_loader", _plan_loader_passthrough)
     graph.add_node("teach", teach_node)
     graph.add_node("task_delivery", task_delivery_node)
     graph.add_node("evaluation", evaluation_node)
     graph.add_node("feedback", feedback_node)
     graph.add_node("followup", followup_node)
 
-    graph.add_edge(START, "teach")
+    graph.add_edge(START, "plan_loader")
+    graph.add_edge("plan_loader", "teach")
     graph.add_conditional_edges(
         "teach",
         _route_after_teach,
