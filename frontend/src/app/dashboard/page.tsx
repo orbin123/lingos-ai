@@ -202,10 +202,12 @@ function CardHead({
   title,
   sub,
   link,
+  onLinkClick,
 }: {
   title: string;
   sub?: string;
   link?: string;
+  onLinkClick?: () => void;
 }) {
   return (
     <div
@@ -235,13 +237,15 @@ function CardHead({
       </div>
       {link && (
         <button
+          type="button"
+          onClick={onLinkClick}
           style={{
             fontSize: 13,
             fontWeight: 700,
             color: "#0070C4",
             background: "none",
             border: "none",
-            cursor: "pointer",
+            cursor: onLinkClick ? "pointer" : "default",
             display: "flex",
             alignItems: "center",
             gap: 4,
@@ -504,8 +508,9 @@ function EnrolledView({ enrollment, scores, onViewStats, userName }: EnrolledVie
               title="Your skill scores"
               sub="Updated after every session · scale 0–10"
               link="View full stats"
+              onLinkClick={onViewStats}
             />
-            <SkillScorePreview scores={scores} onViewAll={onViewStats} />
+            <SkillScorePreview scores={scores} />
           </Card>
         </div>
 
@@ -825,8 +830,9 @@ function NoEnrollmentView({ scores, onChoosePlan, onViewStats, userName }: NoEnr
               title="Your skill scores"
               sub="From your diagnosis · scale 0–10"
               link="View full stats"
+              onLinkClick={onViewStats}
             />
-            <SkillScorePreview scores={scores} onViewAll={onViewStats} />
+            <SkillScorePreview scores={scores} />
           </Card>
         </div>
 
