@@ -35,9 +35,9 @@ export default function TaskResultPage() {
   const router = useRouter();
   const { result, clear } = useTaskStore();
 
-  // No result in memory (e.g. page refresh) → send back to /task
+  // No result in memory (e.g. page refresh) → send back to dashboard
   useEffect(() => {
-    if (!result) router.replace("/task");
+    if (!result) router.replace("/dashboard");
   }, [result, router]);
 
   if (!result) return null;
@@ -47,7 +47,7 @@ export default function TaskResultPage() {
 
   const goNext = () => {
     clear();
-    router.push("/task"); // will fetch the next task (cache was invalidated)
+    router.push("/dashboard");
   };
 
   const goDashboard = () => {
