@@ -106,6 +106,7 @@ interface ScorecardPayload {
   topic: string;
   total: number;
   correct_count: number;
+  answered_count?: number;  // items the user answered (for writing tasks)
   questions: Record<string, unknown>;
   subskill_score?: number | null;  // 0-10 for AI-evaluated writing tasks
 }
@@ -1590,7 +1591,7 @@ function Scorecard({ payload }: { payload: ScorecardPayload }) {
             lbl: payload.subskill_score != null ? "Skill score" : "Correct",
           },
           {
-            num: payload.subskill_score != null ? `${payload.correct_count}/${payload.total}` : `${payload.total - payload.correct_count}`,
+            num: payload.subskill_score != null ? `${payload.answered_count ?? payload.correct_count}/${payload.total}` : `${payload.total - payload.correct_count}`,
             lbl: payload.subskill_score != null ? "Items done" : "To review",
           },
           { num: `${pct}%`, lbl: "Score" },
@@ -1794,6 +1795,8 @@ export default function ChatSessionPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const pendingSendsRef = useRef<WSOutgoing[]>([]);
   const stageRef = useRef<HTMLDivElement>(null);
+  const eventsRef = useRef<ChatEvent[]>(events);
+  eventsRef.current = events;
   const lastTaskIdx = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i -= 1) {
       if (events[i].kind === "task") return i;
@@ -2067,25 +2070,25 @@ export default function ChatSessionPage() {
     if (label === "Next activity") setPhase("practice");
   }
 
-  function setTaskAnswers(eventIdx: number, next: Record<string, unknown>) {
+  const setTaskAnswers = useCallback((eventIdx: number, next: Record<string, unknown>) => {
     setEvents((prev) =>
       prev.map((e, i) =>
         i === eventIdx && e.kind === "task" ? { ...e, answers: next } : e,
       ),
     );
-  }
+  }, []);
 
-  function handleSubmitTask(eventIdx: number) {
-    const evt = events[eventIdx];
-    if (!evt || evt.kind !== "task") return;
+  const handleSubmitTask = useCallback((eventIdx: number) => {
+    const evt = eventsRef.current[eventIdx];
+    if (!evt || evt.kind !== "task" || evt.submitted) return;
+    send({ type: "task_submission", answers: evt.answers });
     setEvents((prev) =>
       prev.map((e, i) =>
         i === eventIdx && e.kind === "task" ? { ...e, submitted: true } : e,
       ),
     );
-    send({ type: "task_submission", answers: evt.answers });
     setPhase("submitted");
-  }
+  }, [send]);
 
   /* --- Render ----------------------------------------------------- */
   const sceneLabel =

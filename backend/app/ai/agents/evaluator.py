@@ -1492,6 +1492,7 @@ class EvaluationService:
                 "task_type": "curriculum_grammar_open_text",
                 "total": total,
                 "correct_count": answered,
+                "answered_count": answered,
                 "percentage": subskill_score * 10.0,
                 "subskill_score": subskill_score,
                 "main_mistakes": ["Evaluation service temporarily unavailable."],
@@ -1502,6 +1503,7 @@ class EvaluationService:
         item_eval_by_id = {ev.item_id: ev for ev in llm_result.items}
         per_question: dict[str, dict] = {}
         correct_count = 0
+        answered_count = 0
 
         for idx, item in enumerate(items, 1):
             item_id = item.get("item_id", f"item_{idx}")
@@ -1510,6 +1512,7 @@ class EvaluationService:
             score = ev.score if ev else (0.0 if not user_ans.strip() else 0.7)
             mistakes = ev.mistakes if ev else []
             is_correct = score >= 0.6
+            is_answered = bool(user_ans.strip())
 
             per_question[item_id] = {
                 "correct": is_correct,
@@ -1522,6 +1525,8 @@ class EvaluationService:
             }
             if is_correct:
                 correct_count += 1
+            if is_answered:
+                answered_count += 1
 
         total = len(items) or 1
         percentage = llm_result.subskill_score * 10.0
@@ -1530,6 +1535,7 @@ class EvaluationService:
             "task_type": "curriculum_grammar_open_text",
             "total": total,
             "correct_count": correct_count,
+            "answered_count": answered_count,
             "percentage": percentage,
             "subskill_score": llm_result.subskill_score,
             "main_mistakes": llm_result.main_mistakes,

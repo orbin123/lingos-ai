@@ -33,12 +33,12 @@ WEEK_SCHEDULE: dict[int, str] = {
 # today's activity, so the order here defines the rotation order.
 SKILL_ACTIVITIES: dict[str, list[TaskType]] = {
     "grammar":       [TaskType.READING, TaskType.WRITING, TaskType.LISTENING, TaskType.SPEAKING],
-    "vocabulary":    [TaskType.READING, TaskType.WRITING, TaskType.SPEAKING],
-    "pronunciation": [TaskType.SPEAKING, TaskType.LISTENING],
-    "fluency":       [TaskType.SPEAKING, TaskType.LISTENING],
-    "expression":    [TaskType.READING, TaskType.WRITING, TaskType.SPEAKING],
-    "comprehension": [TaskType.READING, TaskType.LISTENING],
-    "tone":          [TaskType.READING, TaskType.WRITING, TaskType.SPEAKING],
+    "vocabulary":    [TaskType.READING, TaskType.WRITING, TaskType.LISTENING, TaskType.SPEAKING],
+    "pronunciation": [TaskType.READING, TaskType.WRITING, TaskType.LISTENING, TaskType.SPEAKING],
+    "fluency":       [TaskType.READING, TaskType.WRITING, TaskType.LISTENING, TaskType.SPEAKING],
+    "expression":    [TaskType.READING, TaskType.WRITING, TaskType.LISTENING, TaskType.SPEAKING],
+    "comprehension": [TaskType.READING, TaskType.WRITING, TaskType.LISTENING, TaskType.SPEAKING],
+    "tone":          [TaskType.READING, TaskType.WRITING, TaskType.LISTENING, TaskType.SPEAKING],
 }
 
 

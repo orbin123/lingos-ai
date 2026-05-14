@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { api } from "@/lib/api";
@@ -18,8 +18,33 @@ export default function ChatEntryPage() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isResuming, setIsResuming] = useState(false);
+  const [resumeSessionId, setResumeSessionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    checkForExistingSession();
+  }, []);
+
+  async function checkForExistingSession() {
+    try {
+      const response = await api.post<StartSessionResponse>(
+        "/api/learning/sessions/start",
+        {},
+      );
+      if (response.data.message === "Session resumed") {
+        setIsResuming(true);
+        setResumeSessionId(response.data.session_id);
+      }
+    } catch {
+      setIsResuming(false);
+    }
+  }
 
   async function handleStart() {
+    if (isResuming && resumeSessionId) {
+      router.push(`/task/chat/${resumeSessionId}`);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -114,7 +139,7 @@ export default function ChatEntryPage() {
             marginBottom: 8,
           }}
         >
-          Ready for today&apos;s activities?
+          {isResuming ? "Resume today's session" : "Ready for today's activities?"}
         </div>
         <div
           style={{
@@ -124,8 +149,9 @@ export default function ChatEntryPage() {
             marginBottom: 22,
           }}
         >
-          We&apos;ll teach today&apos;s topic once, then complete your daily
-          activities in this chat.
+          {isResuming
+            ? "Continue today's activities in this chat."
+            : "We'll teach today's topic once, then complete your daily activities in this chat."}
         </div>
 
         {error && (
@@ -163,7 +189,11 @@ export default function ChatEntryPage() {
             fontFamily: "inherit",
           }}
         >
-          {busy ? "Preparing your session…" : "Start Session"}
+          {busy
+            ? "Preparing your session…"
+            : isResuming
+              ? "Resume Session"
+              : "Start Session"}
         </button>
 
         <button

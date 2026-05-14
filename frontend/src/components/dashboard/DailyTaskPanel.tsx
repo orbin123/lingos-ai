@@ -14,58 +14,49 @@ interface DailyTaskPanelProps {
   enrollment: EnrollmentRead;
 }
 
-// ── Activity helpers ────────────────────────────────────────────────────────
+// ── Task display name helpers ────────────────────────────────────────────────
 
-type Activity = "read" | "write" | "listen" | "speak";
-
-const ACTIVITY_LABELS: Record<Activity, string> = {
-  read: "Reading",
-  write: "Writing",
-  listen: "Listening",
-  speak: "Speaking",
+const SUBSKILL_LABELS: Record<string, string> = {
+  grammar: "Grammar",
+  vocabulary: "Vocabulary",
+  pronunciation: "Pronunciation",
+  fluency: "Fluency",
+  thought_organization: "Thought Organization",
+  listening: "Listening",
+  tone: "Tone",
 };
 
-const ACTIVITY_COLORS: Record<Activity, { bg: string; text: string }> = {
-  read:   { bg: "#dbeafe", text: "#1d4ed8" },
-  write:  { bg: "#ede9fe", text: "#6d28d9" },
-  listen: { bg: "#ffedd5", text: "#c2410c" },
-  speak:  { bg: "#dcfce7", text: "#15803d" },
+const ACTIVITY_LABELS: Record<string, string> = {
+  read: "Read",
+  write: "Write",
+  listen: "Listen",
+  speak: "Speak",
 };
+
+const WIDGET_LABELS: Record<string, string> = {
+  mcq: "MCQ",
+  fill_in_blanks: "Fill in Blanks",
+  open_text: "Open Text",
+  timed_text: "Timed Text",
+  structured_essay: "Structured Essay",
+  speak_and_record: "Speak & Record",
+  listen_and_respond: "Listen & Respond",
+  storyboard: "Storyboard",
+};
+
+function getTaskDisplayTitle(task: UserTask["task"]): string {
+  const c = task.content as unknown as Record<string, unknown> | null;
+  const subSkill = c?.sub_skill ? (SUBSKILL_LABELS[c.sub_skill as string] ?? String(c.sub_skill)) : "";
+  const activity = c?.activity ? (ACTIVITY_LABELS[c.activity as string] ?? String(c.activity)) : "";
+  const widget   = c?.widget   ? (WIDGET_LABELS[c.widget as string]     ?? String(c.widget))   : "";
+  if (subSkill && activity && widget) return `${subSkill} - ${activity} - ${widget}`;
+  return task.title;
+}
 
 function activitiesPerDay(enrollment: EnrollmentRead) {
   return Math.max(2, Math.min(4, enrollment.tasks_per_day));
 }
 
-function ActivityBadge({ activity }: { activity: string }) {
-  const a = activity as Activity;
-  const colors = ACTIVITY_COLORS[a] ?? { bg: "#e5e7eb", text: "#374151" };
-  const label = ACTIVITY_LABELS[a] ?? activity;
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 8px",
-        borderRadius: 999,
-        background: colors.bg,
-        color: colors.text,
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: "0.02em",
-      }}
-    >
-      {label}
-    </span>
-  );
-}
-
-/** Extract the activity string from task content if present (curriculum tasks). */
-function getActivity(content: unknown): string | null {
-  if (content && typeof content === "object" && "activity" in content) {
-    const a = (content as Record<string, unknown>).activity;
-    if (typeof a === "string") return a;
-  }
-  return null;
-}
 
 function PlayIcon() {
   return (
@@ -156,11 +147,10 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
     mutationFn: tasksApi.completeDay,
     onMutate: () => setAdvanceError(null),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["task", "next"] }),
-        queryClient.invalidateQueries({ queryKey: ["me"] }),
-      ]);
-      await taskQuery.refetch();
+      // Remove stale bundle immediately so we show the loading state for the
+      // new day rather than flashing "Advance to day N+2" with old data.
+      queryClient.removeQueries({ queryKey: ["task", "next"] });
+      await queryClient.invalidateQueries({ queryKey: ["me"] });
     },
     onError: (error) => {
       setAdvanceError(getApiErrorMessage(error as AxiosError));
@@ -414,24 +404,8 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {task.task.title}
+                      {getTaskDisplayTitle(task.task)}
                     </div>
-                    {(() => {
-                      const activity = getActivity(task.task.content);
-                      return activity ? (
-                        <ActivityBadge activity={activity} />
-                      ) : (
-                        <div
-                          style={{
-                            fontSize: 12.5,
-                            color: "oklch(45% 0.07 240)",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {task.task.task_type.replace(/^curriculum_/, "").replace(/_/g, " ")}
-                        </div>
-                      );
-                    })()}
                   </div>
 
                   {/* CTA / Retry */}
