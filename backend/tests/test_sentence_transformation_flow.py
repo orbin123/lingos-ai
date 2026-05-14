@@ -72,7 +72,7 @@ def test_sentence_transformation_template_contract_and_pydantic_model() -> None:
     assert template.sub_skill == SubSkill.GRAMMAR
     assert template.activity == Activity.WRITE
     assert template.output_model_name == "SentenceTransformationTask"
-    assert template.scoring_method == ScoringMethod.AI_BASED
+    assert template.scoring_method == ScoringMethod.LLM_PARAPHRASE_STUB
     assert template.estimated_time_minutes == 8
 
     validated = SentenceTransformationTask.model_validate(

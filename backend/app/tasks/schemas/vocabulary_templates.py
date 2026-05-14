@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from app.tasks.schemas.base import (
     Activity,
+    FeedbackStyle,
     GeneratedTaskBase,
     ScoringMethod,
     SubSkill,
@@ -215,7 +216,8 @@ VOCAB_READ_WORD_MEANING_MATCH_V1 = TaskTemplate(
     task_type="word_meaning_match",
     difficulty_range=(1, 10),
     estimated_time_minutes=4,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 You are an English vocabulary teacher. Generate a word-meaning matching exercise.
 
@@ -263,7 +265,8 @@ VOCAB_READ_CONTEXT_MCQ_V1 = TaskTemplate(
     task_type="context_mcq",
     difficulty_range=(2, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a context-based vocabulary MCQ. The learner picks which word
 fits naturally in a sentence — testing CONTEXTUAL usage, not just meaning.
@@ -304,7 +307,8 @@ VOCAB_WRITE_WORD_UPGRADE_V1 = TaskTemplate(
     task_type="word_upgrade",
     difficulty_range=(3, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_PARAPHRASE_STUB,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 Create a word-upgrade exercise. The learner replaces a basic word in a
 sentence with a more sophisticated synonym while keeping the meaning intact.
@@ -350,7 +354,8 @@ VOCAB_WRITE_PARAPHRASE_V1 = TaskTemplate(
     task_type="paraphrase_with_target_words",
     difficulty_range=(4, 10),
     estimated_time_minutes=10,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_PARAPHRASE_STUB,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 Create paraphrasing exercises that FORCE the learner to use specific
 target words — building active recall, not just passive recognition.
@@ -394,7 +399,8 @@ VOCAB_WRITE_CONCISENESS_V1 = TaskTemplate(
     task_type="conciseness_rewrite",
     difficulty_range=(4, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_PARAPHRASE_STUB,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 Create conciseness exercises. The learner rewrites wordy sentences using
 fewer words — directly tackling the conciseness dimension of vocabulary.
@@ -443,7 +449,8 @@ VOCAB_LISTEN_IDENTIFY_VOCAB_V1 = TaskTemplate(
     task_type="identify_vocab_from_audio",
     difficulty_range=(3, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a listening vocabulary task. The learner hears a sentence containing
 a target word and must pick the correct meaning.
@@ -483,7 +490,8 @@ VOCAB_SPEAK_USE_WORDS_V1 = TaskTemplate(
     task_type="speak_with_target_words",
     difficulty_range=(3, 10),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a speaking task that forces active vocabulary use. The learner
 speaks for a duration and must use specific target words naturally.
@@ -529,7 +537,8 @@ VOCAB_SPEAK_TOPIC_EXPLANATION_V1 = TaskTemplate(
     task_type="topic_explanation",
     difficulty_range=(5, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a domain-vocabulary speaking task. The learner explains a topic
 using domain-appropriate vocabulary — building career-focused fluency.

@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.tasks.schemas.base import (
     Activity,
+    FeedbackStyle,
     GeneratedTaskBase,
     ScoringMethod,
     SubSkill,
@@ -247,7 +248,8 @@ GRAMMAR_READ_FILL_BLANKS_V1 = TaskTemplate(
     task_type="fill_in_blanks",
     difficulty_range=(1, 10),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 You are an English teacher creating a grammar exercise for a learner.
 
@@ -300,7 +302,8 @@ GRAMMAR_READ_ERROR_SPOTTING_V1 = TaskTemplate(
     task_type="error_spotting",
     difficulty_range=(3, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_PARTIAL_CREDIT,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 You are an English teacher. Generate a set of sentences. Some contain a
 grammatical error; others are correct. The learner must spot which ones
@@ -345,7 +348,8 @@ GRAMMAR_WRITE_SENTENCE_TRANSFORMATION_V1 = TaskTemplate(
     task_type="sentence_transformation",
     difficulty_range=(4, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_PARAPHRASE_STUB,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 You are an English teacher. Generate sentence-transformation exercises
 that push the learner from simple sentences to richer structures.
@@ -385,7 +389,8 @@ GRAMMAR_WRITE_VOICE_CONVERSION_V1 = TaskTemplate(
     task_type="voice_conversion",
     difficulty_range=(5, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_SENTENCE_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Generate active ↔ passive voice conversion exercises.
 
@@ -424,7 +429,8 @@ GRAMMAR_WRITE_ERROR_CORRECTION_V1 = TaskTemplate(
     task_type="error_correction",
     difficulty_range=(2, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.HYBRID,
+    scoring_method=ScoringMethod.RULE_SENTENCE_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create error-correction exercises. The learner reads an INCORRECT sentence
 and must rewrite it correctly.
@@ -463,7 +469,8 @@ GRAMMAR_LISTEN_DETECT_ERRORS_V1 = TaskTemplate(
     task_type="detect_grammar_errors_audio",
     difficulty_range=(4, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_PARTIAL_CREDIT,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Generate spoken sentences (as transcripts) for a listening grammar test.
 The TTS pipeline will later convert each transcript to audio.
@@ -502,7 +509,8 @@ GRAMMAR_SPEAK_USE_TENSE_V1 = TaskTemplate(
     task_type="speak_with_tense",
     difficulty_range=(3, 10),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a speaking task where the learner speaks for {duration} seconds
 using a SPECIFIC tense.
@@ -541,7 +549,8 @@ GRAMMAR_SPEAK_SENTENCE_COMBINERS_V1 = TaskTemplate(
     task_type="speak_sentence_combiners",
     difficulty_range=(4, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Generate sentence-combining exercises the learner will complete BY SPEAKING.
 

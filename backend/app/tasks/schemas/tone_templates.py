@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 
 from app.tasks.schemas.base import (
     Activity,
+    FeedbackStyle,
     GeneratedTaskBase,
     ScoringMethod,
     SubSkill,
@@ -347,7 +348,8 @@ TONE_READ_IDENTIFY_V1 = TaskTemplate(
     task_type="identify_tone_register",
     difficulty_range=(3, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a tone & register identification exercise. The learner reads a
 short message and identifies BOTH its register (formality level) AND
@@ -394,7 +396,8 @@ TONE_READ_MATCH_SCENARIO_V1 = TaskTemplate(
     task_type="match_message_to_scenario",
     difficulty_range=(3, 10),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a context-matching exercise. The learner reads a short message
 and identifies WHICH social scenario the message belongs to.
@@ -455,7 +458,8 @@ TONE_WRITE_REGISTER_CONVERSION_V1 = TaskTemplate(
     task_type="register_conversion",
     difficulty_range=(3, 10),
     estimated_time_minutes=10,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 Create a register-conversion exercise. The learner rewrites messages,
 shifting them between formal and casual registers.
@@ -506,7 +510,8 @@ TONE_WRITE_RESPONSE_V1 = TaskTemplate(
     task_type="tone_appropriate_response",
     difficulty_range=(5, 10),
     estimated_time_minutes=12,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 Create a tone-under-pressure writing task. The learner faces a socially
 TRICKY situation and must write a response with the right tone.
@@ -568,7 +573,8 @@ TONE_LISTEN_DETECT_TONE_V1 = TaskTemplate(
     task_type="detect_speaker_tone",
     difficulty_range=(4, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a tone-detection listening exercise. The learner hears short
 spoken utterances and identifies the speaker's tone.
@@ -624,7 +630,8 @@ TONE_LISTEN_REGISTER_MISMATCH_V1 = TaskTemplate(
     task_type="register_mismatch_dialogue",
     difficulty_range=(5, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a "spot the social misfire" exercise. The learner listens to a
 dialogue and identifies which lines use a register that's INAPPROPRIATE
@@ -671,7 +678,8 @@ TONE_SPEAK_ROLEPLAY_V1 = TaskTemplate(
     task_type="roleplay_scenario",
     difficulty_range=(4, 10),
     estimated_time_minutes=10,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a roleplay speaking task. The learner takes on a role and responds
 to prompts in a multi-turn scenario, using the right register and tone.
@@ -732,7 +740,8 @@ TONE_SPEAK_ASSERTIVENESS_V1 = TaskTemplate(
     task_type="assertiveness_drill",
     difficulty_range=(5, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create an assertiveness / confidence drill. This directly trains the
 "confidence" dimension of this sub-skill — the learner practices

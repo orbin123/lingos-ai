@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 
 from app.tasks.schemas.base import (
     Activity,
+    FeedbackStyle,
     GeneratedTaskBase,
     ScoringMethod,
     SubSkill,
@@ -264,6 +265,7 @@ FLUENCY_READ_SPEED_READING_V1 = TaskTemplate(
     difficulty_range=(2, 10),
     estimated_time_minutes=4,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a timed reading-aloud exercise. The learner reads a passage aloud
 within a strict time limit, building reading fluency.
@@ -311,7 +313,8 @@ FLUENCY_WRITE_TIMED_WRITING_V1 = TaskTemplate(
     task_type="timed_writing",
     difficulty_range=(2, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 Create a timed writing exercise. The learner writes about a topic within
 a strict time limit — building written fluency by removing the editing crutch.
@@ -361,6 +364,7 @@ FLUENCY_LISTEN_SHADOWING_V1 = TaskTemplate(
     difficulty_range=(3, 10),
     estimated_time_minutes=5,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a shadowing exercise — the learner repeats audio with a tiny delay,
 training real-time language processing.
@@ -406,6 +410,7 @@ FLUENCY_SPEAK_RANDOM_TOPIC_V1 = TaskTemplate(
     difficulty_range=(2, 10),
     estimated_time_minutes=4,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a random-topic speaking task. The learner speaks for {duration} seconds
 on a surprise topic with {prep_time} seconds of preparation.
@@ -455,6 +460,7 @@ FLUENCY_SPEAK_CONTINUOUS_TALKING_V1 = TaskTemplate(
     difficulty_range=(3, 10),
     estimated_time_minutes=4,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a continuous talking drill — the learner MUST keep speaking with no
 long pauses and no filler words. Builds raw fluency under pressure.
@@ -500,7 +506,8 @@ FLUENCY_SPEAK_SMALL_TALK_V1 = TaskTemplate(
     task_type="small_talk_simulation",
     difficulty_range=(3, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a small talk simulation — the AI plays a colleague/stranger, the
 learner navigates a casual conversation. Builds REAL workplace fluency.
@@ -557,7 +564,8 @@ FLUENCY_SPEAK_CURVEBALL_QA_V1 = TaskTemplate(
     task_type="curveball_qa",
     difficulty_range=(5, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a curveball Q&A task — unexpected, abstract, or weird questions
 the learner must answer ON THE SPOT. Trains real-world spontaneity.
@@ -608,7 +616,8 @@ FLUENCY_SPEAK_SELF_CORRECTION_V1 = TaskTemplate(
     task_type="self_correction_drill",
     difficulty_range=(4, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a self-correction drill — the learner says a sentence, then
 mid-stream catches and fixes their own choice. This is a HALLMARK

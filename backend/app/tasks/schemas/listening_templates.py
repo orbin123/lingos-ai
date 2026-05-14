@@ -39,6 +39,7 @@ from pydantic import BaseModel, Field
 
 from app.tasks.schemas.base import (
     Activity,
+    FeedbackStyle,
     GeneratedTaskBase,
     ScoringMethod,
     SubSkill,
@@ -319,7 +320,8 @@ LISTENING_READ_COMPREHENSION_MCQ_V1 = TaskTemplate(
     task_type="reading_comprehension_mcq",
     difficulty_range=(2, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 You are an English teacher creating a reading comprehension exercise.
 The learner reads a passage and answers multiple-choice questions about it.
@@ -378,7 +380,8 @@ LISTENING_READ_TFNG_V1 = TaskTemplate(
     task_type="true_false_not_given",
     difficulty_range=(4, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create an IELTS-style True / False / Not Given exercise. The learner reads
 a passage and decides whether each statement is supported, contradicted,
@@ -422,7 +425,8 @@ LISTENING_WRITE_ANSWERS_FROM_AUDIO_V1 = TaskTemplate(
     task_type="write_answers_from_audio",
     difficulty_range=(3, 10),
     estimated_time_minutes=10,
-    scoring_method=ScoringMethod.HYBRID,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 Create a listening exercise where the learner hears audio and writes
 short open-ended answers (not multiple choice).
@@ -475,7 +479,8 @@ LISTENING_LISTEN_AUDIO_MCQ_V1 = TaskTemplate(
     task_type="audio_mcq",
     difficulty_range=(2, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create the core listening drill: audio + multiple-choice comprehension.
 
@@ -518,7 +523,8 @@ LISTENING_LISTEN_CLOZE_V1 = TaskTemplate(
     task_type="cloze_listening",
     difficulty_range=(2, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a cloze listening exercise. The learner sees a transcript with
 blanks and listens to the audio to fill them in.
@@ -563,7 +569,8 @@ LISTENING_LISTEN_DICTATION_V1 = TaskTemplate(
     task_type="dictation",
     difficulty_range=(2, 10),
     estimated_time_minutes=10,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a dictation exercise. The learner hears audio and types EXACTLY
 what was said. This tests phonological accuracy, not just comprehension.
@@ -609,7 +616,8 @@ LISTENING_LISTEN_INFERENCE_V1 = TaskTemplate(
     task_type="inference_listening",
     difficulty_range=(5, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a high-level listening exercise focused on INFERENCE — catching
 meaning the speaker implies but doesn't directly state.
@@ -656,7 +664,8 @@ LISTENING_SPEAK_RETELL_V1 = TaskTemplate(
     task_type="retell_what_you_heard",
     difficulty_range=(3, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a retelling task. The learner listens to audio and then verbally
 summarizes what they heard. This combines listening comprehension with

@@ -53,7 +53,7 @@ def test_voice_conversion_template_contract_and_pydantic_model() -> None:
     assert template.sub_skill == SubSkill.GRAMMAR
     assert template.activity == Activity.WRITE
     assert template.output_model_name == "VoiceConversionTask"
-    assert template.scoring_method == ScoringMethod.RULE_BASED
+    assert template.scoring_method == ScoringMethod.RULE_SENTENCE_MATCH
     assert template.estimated_time_minutes == 6
     assert template.evaluation_logic["method"] == "exact_match"
     assert template.difficulty_modifiers == {

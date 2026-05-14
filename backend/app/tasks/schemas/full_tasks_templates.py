@@ -104,6 +104,7 @@ from pydantic import BaseModel, Field
 
 from app.tasks.schemas.base import (
     Activity,
+    FeedbackStyle,
     GeneratedTaskBase,
     ScoringMethod,
     SubSkill,
@@ -736,7 +737,8 @@ FULL_GRAMMAR_READ_V1 = TaskTemplate(
     task_type="curriculum_grammar_fill_blanks",
     difficulty_range=(1, 10),
     estimated_time_minutes=4,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: fill_in_blanks
@@ -787,7 +789,8 @@ FULL_GRAMMAR_WRITE_V1 = TaskTemplate(
     task_type="curriculum_grammar_open_text",
     difficulty_range=(1, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: open_text
@@ -829,7 +832,8 @@ FULL_GRAMMAR_LISTEN_V1 = TaskTemplate(
     task_type="curriculum_grammar_listen_mcq",
     difficulty_range=(1, 10),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: listen_and_respond  (inner: mcq)
@@ -869,7 +873,8 @@ FULL_GRAMMAR_SPEAK_V1 = TaskTemplate(
     task_type="curriculum_grammar_speak",
     difficulty_range=(1, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.HYBRID,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: speak_and_record
@@ -912,7 +917,8 @@ FULL_VOCABULARY_READ_V1 = TaskTemplate(
     task_type="curriculum_vocab_mcq",
     difficulty_range=(1, 10),
     estimated_time_minutes=4,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: mcq
@@ -949,7 +955,8 @@ FULL_VOCABULARY_WRITE_V1 = TaskTemplate(
     task_type="curriculum_vocab_open_text",
     difficulty_range=(1, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: open_text
@@ -990,7 +997,8 @@ FULL_VOCABULARY_LISTEN_V1 = TaskTemplate(
     task_type="curriculum_vocab_listen_mcq",
     difficulty_range=(1, 10),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: listen_and_respond  (inner: mcq)
@@ -1027,7 +1035,8 @@ FULL_VOCABULARY_SPEAK_V1 = TaskTemplate(
     task_type="curriculum_vocab_speak",
     difficulty_range=(1, 10),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.HYBRID,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: speak_and_record
@@ -1069,6 +1078,7 @@ FULL_PRONUNCIATION_READ_V1 = TaskTemplate(
     difficulty_range=(1, 10),
     estimated_time_minutes=5,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: speak_and_record
@@ -1115,7 +1125,8 @@ FULL_PRONUNCIATION_WRITE_V1 = TaskTemplate(
     task_type="curriculum_pron_phonetic_mcq",
     difficulty_range=(1, 10),
     estimated_time_minutes=4,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: mcq
@@ -1154,7 +1165,8 @@ FULL_PRONUNCIATION_LISTEN_V1 = TaskTemplate(
     task_type="curriculum_pron_listen_discriminate",
     difficulty_range=(1, 10),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: listen_and_respond  (inner: mcq)
@@ -1193,6 +1205,7 @@ FULL_PRONUNCIATION_SPEAK_V1 = TaskTemplate(
     difficulty_range=(1, 10),
     estimated_time_minutes=5,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: speak_and_record
@@ -1238,6 +1251,7 @@ FULL_FLUENCY_READ_V1 = TaskTemplate(
     difficulty_range=(2, 10),
     estimated_time_minutes=4,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: speak_and_record
@@ -1278,7 +1292,8 @@ FULL_FLUENCY_WRITE_V1 = TaskTemplate(
     task_type="curriculum_fluency_timed_write",
     difficulty_range=(2, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: timed_text
@@ -1323,6 +1338,7 @@ FULL_FLUENCY_LISTEN_V1 = TaskTemplate(
     difficulty_range=(3, 10),
     estimated_time_minutes=6,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: listen_and_respond  (inner: speak_and_record — shadowing)
@@ -1362,7 +1378,8 @@ FULL_FLUENCY_SPEAK_V1 = TaskTemplate(
     task_type="curriculum_fluency_speak",
     difficulty_range=(1, 10),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.HYBRID,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: speak_and_record
@@ -1405,7 +1422,8 @@ FULL_EXPRESSION_READ_V1 = TaskTemplate(
     task_type="curriculum_expression_summarize",
     difficulty_range=(2, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: open_text
@@ -1449,7 +1467,8 @@ FULL_EXPRESSION_WRITE_V1 = TaskTemplate(
     task_type="curriculum_expression_essay",
     difficulty_range=(3, 10),
     estimated_time_minutes=15,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: structured_essay
@@ -1492,7 +1511,8 @@ FULL_EXPRESSION_LISTEN_V1 = TaskTemplate(
     task_type="curriculum_expression_listen_structure",
     difficulty_range=(3, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: listen_and_respond  (inner: open_text)
@@ -1535,7 +1555,8 @@ FULL_EXPRESSION_SPEAK_V1 = TaskTemplate(
     task_type="curriculum_expression_storyboard",
     difficulty_range=(2, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: storyboard
@@ -1579,7 +1600,8 @@ FULL_COMPREHENSION_READ_V1 = TaskTemplate(
     task_type="curriculum_comprehension_read_mcq",
     difficulty_range=(1, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: mcq
@@ -1618,7 +1640,8 @@ FULL_COMPREHENSION_WRITE_V1 = TaskTemplate(
     task_type="curriculum_comprehension_write_answers",
     difficulty_range=(1, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: open_text
@@ -1660,7 +1683,8 @@ FULL_COMPREHENSION_LISTEN_V1 = TaskTemplate(
     task_type="curriculum_comprehension_listen_mcq",
     difficulty_range=(1, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: listen_and_respond  (inner: mcq)
@@ -1699,7 +1723,8 @@ FULL_COMPREHENSION_SPEAK_V1 = TaskTemplate(
     task_type="curriculum_comprehension_retell",
     difficulty_range=(2, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.HYBRID,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: speak_and_record
@@ -1740,7 +1765,8 @@ FULL_TONE_READ_V1 = TaskTemplate(
     task_type="curriculum_tone_read_mcq",
     difficulty_range=(1, 10),
     estimated_time_minutes=4,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: mcq
@@ -1778,7 +1804,8 @@ FULL_TONE_WRITE_V1 = TaskTemplate(
     task_type="curriculum_tone_rewrite",
     difficulty_range=(1, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: open_text
@@ -1822,7 +1849,8 @@ FULL_TONE_LISTEN_V1 = TaskTemplate(
     task_type="curriculum_tone_listen_mcq",
     difficulty_range=(1, 10),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: listen_and_respond  (inner: mcq)
@@ -1860,7 +1888,8 @@ FULL_TONE_SPEAK_V1 = TaskTemplate(
     task_type="curriculum_tone_roleplay",
     difficulty_range=(2, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template=_CURRICULUM_HEADER + """
 
 WIDGET: speak_and_record  (multi-turn roleplay)

@@ -39,12 +39,41 @@ class Activity(str, Enum):
 
 
 class ScoringMethod(str, Enum):
-    """How the Evaluator agent scores a response."""
+    """Maps 1:1 to an evaluator strategy function.
 
-    RULE_BASED = "rule_based"      # exact-match, deterministic (MCQs, fill-blanks)
-    AI_BASED = "ai_based"          # LLM evaluates open-ended responses
-    HYBRID = "hybrid"              # rule-based first, AI for nuance
-    SPEECH_API = "speech_api"      # Azure Speech / Whisper for pronunciation
+    Each value is the name of an EvaluationService method:
+      RULE_EXACT_MATCH      → evaluate_fill_in_blanks / mcq style exact matching
+      RULE_SENTENCE_MATCH   → evaluate_sentence_engineering / normalized match
+      RULE_PARTIAL_CREDIT   → evaluate_error_spotting (0.5/1.0 partial scores)
+      LLM_OPEN_WRITING      → evaluate_open_text_writing
+      LLM_SPEAKING_GRAMMAR  → evaluate_grammar_speaking
+      LLM_PARAPHRASE_STUB   → evaluate_paraphrasing / evaluate_sentence_transformation
+      SPEECH_API            → Azure pronunciation (future)
+    """
+
+    RULE_EXACT_MATCH = "rule_exact_match"
+    RULE_SENTENCE_MATCH = "rule_sentence_match"
+    RULE_PARTIAL_CREDIT = "rule_partial_credit"
+    LLM_OPEN_WRITING = "llm_open_writing"
+    LLM_SPEAKING_GRAMMAR = "llm_speaking_grammar"
+    LLM_PARAPHRASE_STUB = "llm_paraphrase_stub"
+    SPEECH_API = "speech_api"
+
+
+class FeedbackStyle(str, Enum):
+    """Controls which feedback prompt + payload shape is used.
+
+    PER_ITEM_ERRORS    → list of {question_id, why_wrong, rule, memory_tip}
+                          (fill_in_blanks, MCQ, error_spotting)
+    HOLISTIC_WRITING   → overall_message + per_item errors with main_mistakes
+                          (open_text, structured_essay, timed_text)
+    SPEAKING_RUBRIC    → per-prompt mistakes + grammar_rule_used + overall
+                          (speak_and_record, storyboard)
+    """
+
+    PER_ITEM_ERRORS = "per_item_errors"
+    HOLISTIC_WRITING = "holistic_writing"
+    SPEAKING_RUBRIC = "speaking_rubric"
 
 
 class DifficultyTier(str, Enum):
@@ -120,6 +149,7 @@ class TaskTemplate(BaseModel):
     )
     estimated_time_minutes: int
     scoring_method: ScoringMethod
+    feedback_style: FeedbackStyle
 
     llm_prompt_template: str = Field(
         ..., description="Prompt with {placeholders} the generator fills in."

@@ -55,7 +55,7 @@ def test_error_correction_template_contract() -> None:
     assert template.sub_skill == SubSkill.GRAMMAR
     assert template.activity == Activity.WRITE
     assert template.output_model_name == "ErrorCorrectionTask"
-    assert template.scoring_method == ScoringMethod.HYBRID
+    assert template.scoring_method == ScoringMethod.RULE_SENTENCE_MATCH
     assert template.estimated_time_minutes == 7
     assert template.evaluation_logic["method"] == "rule_first_then_ai"
     assert template.difficulty_modifiers == {

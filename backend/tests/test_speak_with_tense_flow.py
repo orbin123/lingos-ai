@@ -52,7 +52,7 @@ def test_speak_with_tense_template_contract() -> None:
     assert template.sub_skill == SubSkill.GRAMMAR
     assert template.activity == Activity.SPEAK
     assert template.output_model_name == "SpeakWithTenseTask"
-    assert template.scoring_method == ScoringMethod.AI_BASED
+    assert template.scoring_method == ScoringMethod.LLM_SPEAKING_GRAMMAR
     assert template.estimated_time_minutes == 5
     assert template.evaluation_logic["weights"] == {
         "target_tense_usage": 0.5,

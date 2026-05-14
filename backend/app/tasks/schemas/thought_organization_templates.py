@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 
 from app.tasks.schemas.base import (
     Activity,
+    FeedbackStyle,
     GeneratedTaskBase,
     ScoringMethod,
     SubSkill,
@@ -282,7 +283,8 @@ THOUGHT_ORG_READ_PASSAGE_SUMMARIZATION_V1 = TaskTemplate(
     task_type="passage_summarization",
     difficulty_range=(3, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 You are an English teacher creating a summarization exercise. The learner
 will read a passage and write a short summary capturing the main idea
@@ -345,7 +347,8 @@ THOUGHT_ORG_READ_STRUCTURE_ID_V1 = TaskTemplate(
     task_type="structure_identification",
     difficulty_range=(4, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a structure-identification exercise. The learner reads a passage
 and identifies which organizational pattern the writer used.
@@ -395,7 +398,8 @@ THOUGHT_ORG_WRITE_STRUCTURED_ESSAY_V1 = TaskTemplate(
     task_type="structured_essay",
     difficulty_range=(5, 10),
     estimated_time_minutes=15,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 Create a structured-writing prompt. The learner writes a short essay that
 must follow a specific organizational pattern.
@@ -457,7 +461,8 @@ THOUGHT_ORG_WRITE_IDEA_PARAPHRASING_V1 = TaskTemplate(
     task_type="idea_paraphrasing",
     difficulty_range=(4, 10),
     estimated_time_minutes=8,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_PARAPHRASE_STUB,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 Create an idea-paraphrasing exercise. The learner re-expresses the SAME
 idea in {target_count} different ways, each with a different style.
@@ -504,7 +509,8 @@ THOUGHT_ORG_WRITE_BULLETS_TO_PARAGRAPH_V1 = TaskTemplate(
     task_type="bullets_to_paragraph",
     difficulty_range=(3, 10),
     estimated_time_minutes=10,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_OPEN_WRITING,
+    feedback_style=FeedbackStyle.HOLISTIC_WRITING,
     llm_prompt_template="""
 Create a "bullets to paragraph" exercise. The learner gets a list of loose,
 unordered ideas and must organize them into ONE coherent paragraph.
@@ -551,7 +557,8 @@ THOUGHT_ORG_LISTEN_STRUCTURE_V1 = TaskTemplate(
     task_type="identify_spoken_structure",
     difficulty_range=(5, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Generate a spoken passage (as a transcript) for the learner to listen to.
 After listening, the learner identifies the speaker's organizational pattern.
@@ -602,7 +609,8 @@ THOUGHT_ORG_SPEAK_STORYBOARD_V1 = TaskTemplate(
     task_type="storyboard_narration",
     difficulty_range=(3, 10),
     estimated_time_minutes=7,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a storyboard narration task. The learner sees {scene_count} scene
 descriptions (acting as story-image prompts) and narrates a connected
@@ -652,7 +660,8 @@ THOUGHT_ORG_SPEAK_STEP_BY_STEP_V1 = TaskTemplate(
     task_type="step_by_step_explanation",
     difficulty_range=(3, 10),
     estimated_time_minutes=6,
-    scoring_method=ScoringMethod.AI_BASED,
+    scoring_method=ScoringMethod.LLM_SPEAKING_GRAMMAR,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a step-by-step explanation task. The learner explains a process in
 clear sequential steps using sequencing words.

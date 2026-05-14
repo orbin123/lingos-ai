@@ -26,6 +26,7 @@ from app.modules.curriculum.repository import (
     UserEnrollmentRepository,
 )
 from app.modules.curriculum.topics import get_course_topic
+from app.tasks.schemas.base import ScoringMethod
 from app.tasks.schemas.full_tasks_templates import get_full_template_by_id
 
 logger = logging.getLogger(__name__)
@@ -282,7 +283,25 @@ async def evaluation_node(state: LearningSessionState) -> dict[str, Any]:
         plan_activity.get("evaluation_focus") if plan_activity else None
     )
 
-    if task_type in _OPEN_TEXT_TASK_TYPES:
+    template = None
+    if plan_activity is not None:
+        template_id = plan_activity.get("template_id")
+        if template_id:
+            try:
+                template = get_full_template_by_id(template_id)
+            except KeyError:
+                pass
+
+    if template is not None and template.scoring_method == ScoringMethod.LLM_OPEN_WRITING:
+        evaluation = await evaluator.score(
+            scoring_method=template.scoring_method,
+            task_content=task_content,
+            user_answers=user_submission,
+            user_level=int(state.get("user_level") or 5),
+            learner_profile=state.get("learner_profile") or {},
+            evaluation_focus=evaluation_focus,
+        )
+    elif task_type in _OPEN_TEXT_TASK_TYPES:
         evaluation = await evaluator.evaluate_open_text_writing(
             task_content=task_content,
             user_answers=user_submission,

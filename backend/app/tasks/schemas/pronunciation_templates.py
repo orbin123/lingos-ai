@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 
 from app.tasks.schemas.base import (
     Activity,
+    FeedbackStyle,
     GeneratedTaskBase,
     ScoringMethod,
     SubSkill,
@@ -266,7 +267,8 @@ PRON_READ_PHONEME_AWARENESS_V1 = TaskTemplate(
     task_type="phoneme_awareness",
     difficulty_range=(1, 8),
     estimated_time_minutes=4,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a phoneme awareness exercise. The learner reads sets of 4 words
 and identifies which contain a target sound.
@@ -308,7 +310,8 @@ PRON_LISTEN_IDENTIFY_MISPRONOUNCED_V1 = TaskTemplate(
     task_type="identify_mispronounced",
     difficulty_range=(2, 9),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a listening task where the learner spots a deliberately mispronounced
 word in an audio clip.
@@ -350,7 +353,8 @@ PRON_LISTEN_STRESS_PATTERN_V1 = TaskTemplate(
     task_type="detect_stress_pattern",
     difficulty_range=(3, 10),
     estimated_time_minutes=5,
-    scoring_method=ScoringMethod.RULE_BASED,
+    scoring_method=ScoringMethod.RULE_EXACT_MATCH,
+    feedback_style=FeedbackStyle.PER_ITEM_ERRORS,
     llm_prompt_template="""
 Create a listening task where the learner hears a multi-syllable word
 and identifies which syllable carries the primary stress.
@@ -393,6 +397,7 @@ PRON_SPEAK_READ_ALOUD_V1 = TaskTemplate(
     difficulty_range=(1, 10),
     estimated_time_minutes=4,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a read-aloud task. The learner reads a sentence aloud; Azure Speech
 Pronunciation Assessment scores phoneme-level accuracy.
@@ -453,6 +458,7 @@ PRON_SPEAK_MINIMAL_PAIRS_V1 = TaskTemplate(
     difficulty_range=(2, 9),
     estimated_time_minutes=5,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a minimal pairs drill targeting a specific phoneme contrast that
 the learner struggles with.
@@ -496,6 +502,7 @@ PRON_SPEAK_SHADOW_AUDIO_V1 = TaskTemplate(
     difficulty_range=(3, 10),
     estimated_time_minutes=6,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a shadowing exercise. The learner listens to a reference audio and
 repeats it immediately, matching rhythm, stress, and intonation.
@@ -551,6 +558,7 @@ PRON_SPEAK_CONNECTED_SPEECH_V1 = TaskTemplate(
     difficulty_range=(5, 10),
     estimated_time_minutes=6,
     scoring_method=ScoringMethod.SPEECH_API,
+    feedback_style=FeedbackStyle.SPEAKING_RUBRIC,
     llm_prompt_template="""
 Create a connected-speech exercise. Non-native speakers tend to over-pronounce
 every word; natives link, reduce, and assimilate. This task fixes that.

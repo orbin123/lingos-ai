@@ -56,11 +56,11 @@ def test_build_deterministic_activities_for_vocabulary() -> None:
 
     assert read["template_id"] == "full_vocabulary_read_v1"
     assert read["widget"] == "mcq"
-    assert read["evaluation_method"] == "rule_based"
+    assert read["evaluation_method"] == "rule_exact_match"
 
     assert write["template_id"] == "full_vocabulary_write_v1"
     assert write["widget"] == "open_text"
-    assert write["evaluation_method"] == "ai_based"
+    assert write["evaluation_method"] == "llm_open_writing"
 
     assert listen["template_id"] == "full_vocabulary_listen_v1"
     assert listen["widget"] == "listen_and_respond"

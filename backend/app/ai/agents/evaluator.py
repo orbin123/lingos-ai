@@ -1544,7 +1544,43 @@ class EvaluationService:
         }
 
     # ------------------------------------------------------------------
-    # Dispatcher — the ONE method service code should call.
+    # Strategy dispatcher — dispatches on ScoringMethod, not task_type.
+    # ------------------------------------------------------------------
+    async def score(
+        self,
+        *,
+        scoring_method: "ScoringMethod",
+        task_content: dict,
+        user_answers: dict,
+        user_level: int = 5,
+        learner_profile: dict | None = None,
+        evaluation_focus: dict | None = None,
+        activity_type: str | None = None,
+    ) -> dict:
+        """Single entry point. Dispatches on scoring_method, not task_type strings."""
+        from app.tasks.schemas.base import ScoringMethod
+
+        if scoring_method == ScoringMethod.LLM_OPEN_WRITING:
+            return await self.evaluate_open_text_writing(
+                task_content=task_content,
+                user_answers=user_answers,
+                user_level=user_level,
+                learner_profile=learner_profile or {},
+                evaluation_focus=evaluation_focus,
+            )
+        # TODO(migration): add LLM_SPEAKING_GRAMMAR, RULE_* branches one PR at a time
+        if activity_type is None:
+            raise ValueError(
+                f"score() needs activity_type for legacy scoring_method={scoring_method}"
+            )
+        return self.evaluate(
+            activity_type=activity_type,
+            task_content=task_content,
+            user_answers=user_answers,
+        )
+
+    # ------------------------------------------------------------------
+    # Legacy dispatcher — routes on activity_type strings.
     # ------------------------------------------------------------------
     def evaluate(
         self,
