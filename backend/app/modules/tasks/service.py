@@ -51,16 +51,58 @@ _TASK_TYPE_TO_ACTIVITY = {
     "speaking": Activity.SPEAK,
 }
 
+# Reverse: schema Activity → DB TaskType (used when seeded-pool fallback needs sequence-based activity)
+_ACTIVITY_TO_TASK_TYPE: dict[Activity, TaskType] = {
+    Activity.READ: TaskType.READING,
+    Activity.WRITE: TaskType.WRITING,
+    Activity.LISTEN: TaskType.LISTENING,
+    Activity.SPEAK: TaskType.SPEAKING,
+}
+
 # Fixed order used to cycle activities within a single day's task bundle.
 # sequence_index 0→READ, 1→WRITE, 2→LISTEN, 3→SPEAK, then wraps.
 _DAY_ACTIVITY_CYCLE = [Activity.READ, Activity.WRITE, Activity.LISTEN, Activity.SPEAK]
 
-_ACTIVITY_LABELS = {
-    Activity.READ: "Reading",
-    Activity.WRITE: "Writing",
-    Activity.LISTEN: "Listening",
-    Activity.SPEAK: "Speaking",
+_SUBSKILL_LABELS: dict[str, str] = {
+    "grammar": "Grammar",
+    "vocabulary": "Vocabulary",
+    "pronunciation": "Pronunciation",
+    "fluency": "Fluency",
+    "thought_organization": "Thought Organization",
+    "listening": "Listening",
+    "tone": "Tone",
 }
+
+_ACTIVITY_LABELS: dict[str, str] = {
+    "read": "Read",
+    "write": "Write",
+    "listen": "Listen",
+    "speak": "Speak",
+}
+
+_WIDGET_LABELS: dict[str, str] = {
+    "mcq": "MCQ",
+    "fill_in_blanks": "Fill in Blanks",
+    "open_text": "Open Text",
+    "timed_text": "Timed Text",
+    "structured_essay": "Structured Essay",
+    "speak_and_record": "Speak & Record",
+    "listen_and_respond": "Listen & Respond",
+    "storyboard": "Storyboard",
+}
+
+
+def _make_task_title(content: dict) -> str:
+    """Build a consistent display title from task content fields."""
+    sub = content.get("sub_skill", "")
+    act = content.get("activity", "")
+    wid = content.get("widget", "")
+    sub_label = _SUBSKILL_LABELS.get(str(sub), str(sub).replace("_", " ").title())
+    act_label = _ACTIVITY_LABELS.get(str(act), str(act).title())
+    wid_label = _WIDGET_LABELS.get(str(wid), str(wid).replace("_", " ").title())
+    if sub_label and act_label and wid_label:
+        return f"{sub_label} - {act_label} - {wid_label}"
+    return sub_label or "Task"
 
 
 class DayNotComplete(Exception):
@@ -440,10 +482,8 @@ class TaskService:
             generated_task_type = plan.activity_type
 
         # Create a new Task row with the generated content
-        topic_name = user_profile.get("topic_name") or plan.skill_name.title()
-        activity_label = _ACTIVITY_LABELS.get(schema_activity, schema_activity.value.title())
         task = Task(
-            title=f"{topic_name} — {activity_label}",
+            title=_make_task_title(content),
             task_type=generated_task_type,
             difficulty=sub_level,
             status=TaskStatus.ACTIVE,
@@ -559,10 +599,8 @@ class TaskService:
             )
             generated_task_type = plan.activity_type
 
-        topic_name = user_profile.get("topic_name") or plan.skill_name.title()
-        activity_label = _ACTIVITY_LABELS.get(schema_activity, schema_activity.value.title())
         task = Task(
-            title=f"{topic_name} — {activity_label}",
+            title=_make_task_title(content),
             task_type=generated_task_type,
             difficulty=sub_level,
             status=TaskStatus.ACTIVE,
@@ -727,6 +765,19 @@ class TaskService:
             enrollment=enrollment,
             plan=plan,
         )
+        # Derive the sequence-based activity so the fallback honours the same
+        # READ→WRITE→LISTEN→SPEAK cycle that LLM generation uses.
+        activity_cycle = self._activity_cycle_for_enrollment(
+            enrollment=enrollment,
+            skill_name=plan.skill_name,
+            fallback_activity=plan.activity_type,
+        )
+        effective_activity = (
+            _ACTIVITY_TO_TASK_TYPE.get(activity_cycle[sequence_index % len(activity_cycle)], plan.activity_type)
+            if activity_cycle
+            else plan.activity_type
+        )
+
         assignment = self._try_generate_task(
             user_id=user_id,
             plan=plan,
@@ -740,27 +791,27 @@ class TaskService:
             self.history_repo.upsert_after_assignment(
                 enrollment_id=enrollment.id,
                 skill_id=plan.skill_id,
-                activity_type=plan.activity_type,
+                activity_type=effective_activity,
             )
             return assignment
 
         # --- Fallback: seeded task pool ---
         logger.warning(
             "[task_gen] ⚠️  LLM generation FAILED or no template matched — "
-            "falling back to seeded pool for skill=%s activity=%s. "
+            "falling back to seeded pool for skill=%s activity=%s (sequence_index=%d). "
             "User will receive a hand-authored task, NOT an AI-generated one.",
-            plan.skill_name, plan.activity_type.value,
+            plan.skill_name, effective_activity.value, sequence_index,
         )
         task = self.task_repo.find_for_plan(
             skill_id=plan.skill_id,
-            activity_type=plan.activity_type,
+            activity_type=effective_activity,
             target_difficulty=plan.target_difficulty,
             exclude_completed_by_user_id=None,
         )
         if task is None:
             raise NoTaskAvailable(
                 f"No task in pool for skill={plan.skill_name}, "
-                f"activity={plan.activity_type.value}, "
+                f"activity={effective_activity.value}, "
                 f"difficulty~{plan.target_difficulty}"
             )
 
@@ -774,7 +825,7 @@ class TaskService:
         self.history_repo.upsert_after_assignment(
             enrollment_id=enrollment.id,
             skill_id=plan.skill_id,
-            activity_type=plan.activity_type,
+            activity_type=effective_activity,
         )
 
         return assignment
@@ -849,6 +900,17 @@ class TaskService:
             enrollment=enrollment,
             plan=plan,
         )
+        activity_cycle = self._activity_cycle_for_enrollment(
+            enrollment=enrollment,
+            skill_name=plan.skill_name,
+            fallback_activity=plan.activity_type,
+        )
+        effective_activity = (
+            _ACTIVITY_TO_TASK_TYPE.get(activity_cycle[sequence_index % len(activity_cycle)], plan.activity_type)
+            if activity_cycle
+            else plan.activity_type
+        )
+
         assignment = await self._try_generate_task_async(
             user_id=user_id,
             plan=plan,
@@ -861,25 +923,25 @@ class TaskService:
             self.history_repo.upsert_after_assignment(
                 enrollment_id=enrollment.id,
                 skill_id=plan.skill_id,
-                activity_type=plan.activity_type,
+                activity_type=effective_activity,
             )
             return assignment
 
         logger.warning(
             "[task_gen] async LLM generation failed or no template matched — "
-            "falling back to seeded pool for skill=%s activity=%s",
-            plan.skill_name, plan.activity_type.value,
+            "falling back to seeded pool for skill=%s activity=%s (sequence_index=%d)",
+            plan.skill_name, effective_activity.value, sequence_index,
         )
         task = self.task_repo.find_for_plan(
             skill_id=plan.skill_id,
-            activity_type=plan.activity_type,
+            activity_type=effective_activity,
             target_difficulty=plan.target_difficulty,
             exclude_completed_by_user_id=None,
         )
         if task is None:
             raise NoTaskAvailable(
                 f"No task in pool for skill={plan.skill_name}, "
-                f"activity={plan.activity_type.value}, "
+                f"activity={effective_activity.value}, "
                 f"difficulty~{plan.target_difficulty}"
             )
 
@@ -891,7 +953,7 @@ class TaskService:
         self.history_repo.upsert_after_assignment(
             enrollment_id=enrollment.id,
             skill_id=plan.skill_id,
-            activity_type=plan.activity_type,
+            activity_type=effective_activity,
         )
         return assignment
 
@@ -1141,7 +1203,7 @@ class TaskService:
                 generated_task_type = TT.READING  # safe fallback, shouldn't happen
 
             task = Task(
-                title=f"{template.sub_skill.value.title()} – {task_type.replace('_', ' ').title()} (AI)",
+                title=_make_task_title(content),
                 task_type=generated_task_type,
                 difficulty=user_profile.get("sub_level", 5),
                 status=TaskStatus.ACTIVE,
