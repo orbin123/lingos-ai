@@ -1,6 +1,27 @@
 export type { WidgetState } from "./shared";
 export { TaskHeader, I } from "./shared";
 
+export type {
+  WidgetKey,
+  WidgetProps,
+  AnyTaskPayload,
+  MCQItem,
+  MCQPayload,
+  BlankItem,
+  FillInBlanksPayload,
+  OpenTextItem,
+  OpenTextPayload,
+  TimedTextPayload,
+  EssaySection,
+  StructuredEssayPayload,
+  SpeakRoleplayTurn,
+  SpeakAndRecordPayload,
+  ListenAndRespondPayload,
+  StoryboardScene,
+  StoryboardPayload,
+} from "./types";
+export { resolveAudioUrl, formatDuration, blankId, countWords } from "./types";
+
 export { MCQWidget } from "./MCQWidget";
 export { FillBlanksWidget } from "./FillBlanksWidget";
 export { OpenTextWidget } from "./OpenTextWidget";

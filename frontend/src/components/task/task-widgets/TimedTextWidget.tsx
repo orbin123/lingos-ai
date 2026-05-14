@@ -1,42 +1,95 @@
 "use client";
 
-import { TaskHeader, I, type WidgetState } from "./shared";
+import { useEffect, useRef, useState } from "react";
+import { TaskHeader, I } from "./shared";
+import { countWords } from "./types";
+import type { TimedTextPayload, WidgetProps } from "./types";
 
-interface Props {
-  state: WidgetState;
-}
+type Props = WidgetProps<TimedTextPayload>;
 
-const TOTAL_SEC = 180;
-const TARGET_WORDS = 80;
+export function TimedTextWidget({ payload, answers, setAnswers, state, onSubmit }: Props) {
+  const submitted = state === "after";
+  const totalSec = Math.max(1, payload.time_limit_seconds || 180);
+  const targetWords = payload.target_word_count || 80;
+  const minWords = payload.minimum_word_count || 0;
+  const noEditing = !!payload.no_editing_allowed;
 
-const LIVE_TEXT_BEFORE =
-  "Last weekend I traveled to a small mountain town with two old friends. We rented a cabin near a frozen lake and spent most of Saturday hiking. The trail was steeper than we expected, and by the time we reached the top we were exhausted but";
-const LIVE_TEXT_AFTER =
-  "Last weekend I traveled to a small mountain town with two old friends. We rented a cabin near a frozen lake and spent most of Saturday hiking. The trail was steeper than we expected, and by the time we reached the top we were exhausted but happy. We made a simple dinner of pasta and tomato sauce, talked for hours about the past, and went to bed early because the cold drained all our energy. On Sunday morning we walked back down through fresh snow.";
+  const startedAtRef = useRef(Date.now());
+  const firstTypeAtRef = useRef<number | null>(null);
+  const submittedRef = useRef(submitted);
+  submittedRef.current = submitted;
 
-export function TimedTextWidget({ state }: Props) {
-  const elapsed = state === "before" ? 52 : TOTAL_SEC;
-  const remaining = TOTAL_SEC - elapsed;
+  const [text, setText] = useState<string>((answers.user_answer as string) ?? "");
+  const [elapsed, setElapsed] = useState(0);
+  const autoSubmittedRef = useRef(false);
+
+  const remaining = Math.max(0, totalSec - elapsed);
+  const wordCount = countWords(text);
+
+  // Tick timer
+  useEffect(() => {
+    if (submitted) return;
+    const interval = setInterval(() => {
+      setElapsed((e) => e + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [submitted]);
+
+  // Auto-submit when timer hits 0
+  useEffect(() => {
+    if (submitted || autoSubmittedRef.current) return;
+    if (elapsed < totalSec) return;
+    autoSubmittedRef.current = true;
+    publish(text, true);
+    onSubmit();
+  }, [elapsed, totalSec, submitted, text, onSubmit]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const publish = (nextText: string, completedNormally: boolean) => {
+    const wc = countWords(nextText);
+    setAnswers({
+      user_answer: nextText,
+      word_count: wc,
+      time_spent_seconds: Math.min(totalSec, Math.round((Date.now() - startedAtRef.current) / 1000)),
+      hit_target_word_count: wc >= targetWords,
+      completed_normally: completedNormally,
+    });
+  };
+
+  const handleChange = (next: string) => {
+    if (submitted) return;
+    if (firstTypeAtRef.current == null) firstTypeAtRef.current = Date.now();
+    setText(next);
+    publish(next, false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!noEditing || submitted) return;
+    if (firstTypeAtRef.current == null) return;
+    const sinceFirst = Date.now() - firstTypeAtRef.current;
+    if (sinceFirst < 3000) return;
+    if (e.key === "Backspace" || e.key === "Delete") {
+      e.preventDefault();
+    }
+  };
+
   const mm = String(Math.floor(remaining / 60));
   const ss = String(remaining % 60).padStart(2, "0");
-  const liveText = state === "before" ? LIVE_TEXT_BEFORE : LIVE_TEXT_AFTER;
-  const wordCount = liveText.trim().split(/\s+/).length;
-
   const R = 22;
   const C = 2 * Math.PI * R;
-  const dash = state === "before" ? C * (elapsed / TOTAL_SEC) : C;
+  const dash = submitted ? C : C * (elapsed / totalSec);
+  const warning = !submitted && remaining < 30;
 
   return (
     <div className="tw-root">
       <TaskHeader
-        topic="Fluency · Write Without Stopping"
+        topic={payload.topic_name || "Timed writing"}
         intro={{
-          title: "Just keep writing",
-          body: "No editing, no backspace — once the timer starts, only forward motion. The point is to build flow, not perfection.",
+          title: payload.task_intro || "Just keep writing",
+          body: payload.instructions || "No editing — write as much as you can before the timer runs out.",
         }}
-        sub_skill="Writing Fluency"
-        activity="Timed Free-write"
-        time={3}
+        sub_skill={payload.sub_skill || "Writing fluency"}
+        activity={payload.activity || "Timed Free-write"}
+        time={payload.estimated_time_minutes ?? Math.ceil(totalSec / 60)}
       />
 
       <div
@@ -49,13 +102,21 @@ export function TimedTextWidget({ state }: Props) {
         <div className="tw-rule-label" style={{ color: "oklch(40% 0.16 290)" }}>
           Prompt
         </div>
-        <div style={{ fontSize: 17, fontWeight: 700, color: "var(--tw-navy)", lineHeight: 1.4, marginTop: 4 }}>
-          Describe a recent trip in as much sensory detail as you can — what you saw, smelled, ate, and how it made you feel.
+        <div
+          style={{
+            fontSize: 17,
+            fontWeight: 700,
+            color: "var(--tw-navy)",
+            lineHeight: 1.4,
+            marginTop: 4,
+          }}
+        >
+          {payload.writing_prompt}
         </div>
       </div>
 
       <div className="tw-timer-bar">
-        <div className={`tw-timer-dial${remaining < 30 && state === "before" ? " warn" : ""}`}>
+        <div className={`tw-timer-dial${warning ? " warn" : ""}`}>
           <svg width="56" height="56" viewBox="0 0 56 56">
             <circle cx="28" cy="28" r={R} fill="none" stroke="oklch(92% 0.02 240)" strokeWidth="4" />
             <circle
@@ -63,7 +124,7 @@ export function TimedTextWidget({ state }: Props) {
               cy="28"
               r={R}
               fill="none"
-              stroke={remaining < 30 && state === "before" ? "var(--tw-amber)" : "var(--tw-violet)"}
+              stroke={warning ? "var(--tw-amber)" : "var(--tw-violet)"}
               strokeWidth="4"
               strokeLinecap="round"
               strokeDasharray={`${dash} ${C}`}
@@ -75,19 +136,23 @@ export function TimedTextWidget({ state }: Props) {
           </span>
         </div>
         <div className="tw-timer-text">
-          <div className="tw-timer-label">{state === "before" ? "Time remaining" : "Time up"}</div>
+          <div className="tw-timer-label">{submitted ? "Time up" : "Time remaining"}</div>
           <div className="tw-timer-hint">
-            {state === "before" ? "Keep going — don't stop or edit" : "Response auto-submitted"}
+            {submitted ? "Response submitted" : "Keep going — don't stop"}
           </div>
           <div className="tw-timer-sub">
-            {state === "before" ? "Backspace and delete are disabled" : "Total time spent: 3:00"}
+            {noEditing
+              ? submitted
+                ? "Backspace was locked"
+                : "Backspace & Delete blocked after 3s of typing"
+              : "Free editing allowed"}
           </div>
         </div>
         <div className="tw-timer-words">
-          <div className={`tw-timer-words-num ${wordCount < TARGET_WORDS ? "short" : "ok"}`}>
+          <div className={`tw-timer-words-num ${wordCount < targetWords ? "short" : "ok"}`}>
             {wordCount}
           </div>
-          <div className="tw-timer-words-target">of {TARGET_WORDS} words</div>
+          <div className="tw-timer-words-target">of {targetWords} words</div>
         </div>
       </div>
 
@@ -97,20 +162,28 @@ export function TimedTextWidget({ state }: Props) {
           minHeight: 180,
           fontSize: 15,
           lineHeight: 1.7,
-          background: state === "after" ? "oklch(98% 0.01 240)" : "white",
+          background: submitted ? "oklch(98% 0.01 240)" : "white",
         }}
-        defaultValue={liveText}
-        readOnly={state === "after"}
+        value={text}
+        onChange={(e) => handleChange(e.target.value)}
+        onKeyDown={handleKeyDown}
+        readOnly={submitted}
+        autoCorrect="off"
+        autoCapitalize="off"
+        spellCheck={false}
+        placeholder="Start typing immediately…"
       />
 
-      <div className="tw-lock-banner warn">
-        {I.lock}{" "}
-        {state === "before"
-          ? "Editing locked after 3s of typing — Backspace & Delete blocked."
-          : "Textarea locked. Submission recorded with full keystroke trace."}
-      </div>
+      {noEditing && (
+        <div className="tw-lock-banner warn">
+          {I.lock}{" "}
+          {submitted
+            ? "Textarea locked. Submission recorded."
+            : "Editing locked after 3s of typing — Backspace & Delete blocked."}
+        </div>
+      )}
 
-      {state === "before" ? (
+      {!submitted ? (
         <div
           style={{
             display: "flex",
@@ -123,45 +196,59 @@ export function TimedTextWidget({ state }: Props) {
         >
           <span style={{ fontSize: 12, color: "var(--tw-ink-muted)", fontWeight: 600 }}>
             Auto-submit when timer hits 0:00
+            {minWords > 0 && ` · Minimum ${minWords} words to count`}
           </span>
-          <button className="tw-done-early-btn">{I.check} I&apos;m done early</button>
+          <button
+            className="tw-done-early-btn"
+            onClick={() => {
+              publish(text, true);
+              onSubmit();
+            }}
+            disabled={wordCount < Math.max(1, minWords)}
+          >
+            {I.check} I&apos;m done early
+          </button>
         </div>
       ) : (
         <>
           <div className="tw-result-banner good" style={{ marginTop: 14 }}>
-            <div className="tw-result-icon" style={{ color: "var(--tw-green)" }}>{I.check}</div>
+            <div className="tw-result-icon" style={{ color: "var(--tw-green)" }}>
+              {I.check}
+            </div>
             <div className="tw-result-text">
               <div className="tw-result-headline">
-                Strong fluency — {wordCount} words in 3:00
+                {wordCount} words in {formatTime(Math.min(elapsed, totalSec))}
               </div>
               <div className="tw-result-sub">
-                Avg pace: {Math.round(wordCount / 3)} wpm · sensory verbs: 7 · zero stops over 5s.
+                {wordCount >= targetWords
+                  ? "Hit the target word count."
+                  : `${targetWords - wordCount} words short of target.`}
               </div>
             </div>
             <div>
               <div className="tw-result-score">
                 {wordCount}
-                <span style={{ fontSize: 14, color: "var(--tw-ink-muted)" }}> / {TARGET_WORDS}</span>
+                <span style={{ fontSize: 14, color: "var(--tw-ink-muted)" }}>
+                  {" "}/ {targetWords}
+                </span>
               </div>
               <div className="tw-result-score-sub">Words</div>
             </div>
           </div>
-          <div className="tw-analytics-grid">
-            <div className="tw-metric">
-              <div className="tw-metric-num primary">{Math.round(wordCount / 3)}</div>
-              <div className="tw-metric-label">Words / min</div>
+          {payload.sample_response && (
+            <div className="tw-compare-card sample" style={{ marginTop: 8 }}>
+              <div className="tw-compare-label">{I.spark} Sample response</div>
+              <div className="tw-compare-body">{payload.sample_response}</div>
             </div>
-            <div className="tw-metric">
-              <div className="tw-metric-num">2</div>
-              <div className="tw-metric-label">Pauses &gt;5s</div>
-            </div>
-            <div className="tw-metric">
-              <div className="tw-metric-num" style={{ color: "var(--tw-green)" }}>3:00</div>
-              <div className="tw-metric-label">Time spent</div>
-            </div>
-          </div>
+          )}
         </>
       )}
     </div>
   );
+}
+
+function formatTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }

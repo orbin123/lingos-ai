@@ -1,175 +1,328 @@
 "use client";
 
-import { TaskHeader, I, type WidgetState } from "./shared";
+import { useRef, useState } from "react";
+import { TaskHeader, I } from "./shared";
+import { countWords } from "./types";
+import type { EssaySection, StructuredEssayPayload, WidgetProps } from "./types";
 
-interface Props {
-  state: WidgetState;
+type Props = WidgetProps<StructuredEssayPayload>;
+
+interface SectionAnswer {
+  section_id: string;
+  user_answer: string;
+  word_count: number;
 }
 
-const sections = [
-  {
-    id: "intro",
-    title: "Introduction",
-    prompt: "State your position on remote work in 2–3 sentences.",
-    min: 40,
-    user: "Remote work has fundamentally changed how I think about productivity. After three years working from home, I believe the future belongs to teams that can be deliberate about when they need to be in the same room.",
-    words: 38,
-  },
-  {
-    id: "body1",
-    title: "Body 1 — Argument",
-    prompt: "Give your strongest argument with a concrete example.",
-    min: 80,
-    user: "The biggest win for me is uninterrupted focus time. Last quarter I shipped a database migration that had been stuck for two years, mostly because I had four-hour blocks without meetings, kitchen drop-ins, or surprise hallway questions. That depth was impossible in our old open-plan office, where I averaged 17 interruptions per day.",
-    words: 56,
-  },
-  {
-    id: "body2",
-    title: "Body 2 — Counter",
-    prompt: "Acknowledge the strongest counterargument and respond.",
-    min: 80,
-    user: "Critics fairly point out that mentorship suffers when junior engineers can't shadow seniors in person. That's real. But the answer isn't five days back in the office — it's structured pairing weeks and intentional in-person sprints, which is what my team now does once a month with much better results than the daily-commute era.",
-    words: 58,
-  },
-  { id: "concl", title: "Conclusion", prompt: "Summarize and end with a clear recommendation.", min: 40, user: "", words: 0 },
-];
+interface EssayAnswers {
+  sections?: SectionAnswer[];
+  total_word_count?: number;
+  time_spent_seconds?: number;
+}
 
-const CONCLUSION_TEXT =
-  "In the end, the binary \"remote vs. office\" framing misses the point. Strong teams should default to async focus and use co-located time intentionally — one week a month is plenty for most knowledge work.";
+function sectionsFromAnswers(answers: Record<string, unknown>): Record<string, string> {
+  const rows = (answers as EssayAnswers).sections ?? [];
+  const out: Record<string, string> = {};
+  for (const row of rows) {
+    if (row?.section_id) out[row.section_id] = row.user_answer ?? "";
+  }
+  return out;
+}
 
-export function StructuredEssayWidget({ state }: Props) {
-  const totalWords = sections.reduce((s, x) => s + x.words, 0);
-  const currentIdx = state === "before" ? 2 : 3;
-  const current = sections[currentIdx];
+function sectionTitle(s: EssaySection): string {
+  const raw = s.section_name || "";
+  return raw
+    .toString()
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ") || "Section";
+}
+
+export function StructuredEssayWidget({ payload, answers, setAnswers, state, onSubmit }: Props) {
+  const submitted = state === "after";
+  const sections = payload.sections ?? [];
+  const startedAtRef = useRef(Date.now());
+  const initialMap = sectionsFromAnswers(answers);
+  const [texts, setTexts] = useState<Record<string, string>>(initialMap);
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  const setText = (sectionId: string, next: string) => {
+    if (submitted) return;
+    const updated = { ...texts, [sectionId]: next };
+    setTexts(updated);
+    const rows: SectionAnswer[] = sections.map((s) => ({
+      section_id: s.section_id,
+      user_answer: updated[s.section_id] ?? "",
+      word_count: countWords(updated[s.section_id] ?? ""),
+    }));
+    setAnswers({
+      sections: rows,
+      total_word_count: rows.reduce((a, r) => a + r.word_count, 0),
+      time_spent_seconds: Math.round((Date.now() - startedAtRef.current) / 1000),
+    });
+  };
+
+  const totalWords = sections.reduce(
+    (acc, s) => acc + countWords(texts[s.section_id] ?? ""),
+    0,
+  );
+  const targetTotal = payload.total_target_words || 0;
+  const allMinMet = sections.every(
+    (s) => countWords(texts[s.section_id] ?? "") >= s.minimum_word_count,
+  );
+  const canSubmit = !submitted && (allMinMet || (targetTotal > 0 && totalWords >= targetTotal));
 
   return (
     <div className="tw-root">
       <TaskHeader
-        topic="Essay · Opinion Piece"
+        topic={payload.topic_name || payload.overall_topic || "Essay"}
         intro={{
-          title: "Build your argument section by section",
-          body: "Move through each part in order. The submit button unlocks only when every section meets its minimum word count.",
+          title: payload.task_intro || "Build your essay section by section",
+          body: payload.instructions || "Work through each section in order.",
         }}
-        sub_skill="Persuasive Writing"
-        activity="Structured Essay"
-        time={20}
+        sub_skill={payload.sub_skill || "Structured writing"}
+        activity={payload.activity || "Structured Essay"}
+        time={payload.estimated_time_minutes ?? 0}
       />
+
+      {payload.overall_topic && (
+        <div
+          className="tw-card"
+          style={{
+            background: "linear-gradient(135deg, oklch(96% 0.04 290), white)",
+            borderColor: "oklch(82% 0.1 290)",
+          }}
+        >
+          <div className="tw-rule-label" style={{ color: "oklch(40% 0.16 290)" }}>
+            Topic
+          </div>
+          <div
+            style={{
+              fontSize: 17,
+              fontWeight: 800,
+              color: "var(--tw-navy)",
+              lineHeight: 1.4,
+              marginTop: 4,
+            }}
+          >
+            {payload.overall_topic}
+          </div>
+          {payload.structure_pattern && (
+            <div style={{ fontSize: 12, color: "var(--tw-ink-muted)", marginTop: 6, fontStyle: "italic" }}>
+              Structure: {payload.structure_pattern}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="tw-progress-strip">
         <div className="tw-progress-row">
           <div>
             <div className="tw-progress-step-label">
-              {state === "before" ? `Section ${currentIdx + 1} of ${sections.length}` : "All sections complete"}
+              {submitted
+                ? "All sections complete"
+                : `Section ${Math.min(activeIdx + 1, sections.length)} of ${sections.length}`}
             </div>
             <div className="tw-progress-section-title">
-              {state === "before" ? current.title : "Ready to submit"}
+              {submitted
+                ? "Ready to submit"
+                : sectionTitle(sections[activeIdx] ?? sections[0])}
             </div>
           </div>
           <div className="tw-progress-total">
-            <span>Total written</span>
+            <span>Total written</span>{" "}
             <strong style={{ color: "var(--tw-navy)", fontWeight: 800, fontSize: 14 }}>
-              {state === "before" ? totalWords : 218}
+              {totalWords}
             </strong>{" "}
-            words
+            {targetTotal > 0 && <>/ {targetTotal}</>} words
           </div>
         </div>
         <div className="tw-dot-track">
           {sections.map((s, i) => {
             let cls = "tw-dot-step";
-            if (state === "after") cls += " done";
-            else if (i < currentIdx) cls += " done";
-            else if (i === currentIdx) cls += " active";
-            return <span key={s.id} className={cls} />;
+            const wc = countWords(texts[s.section_id] ?? "");
+            if (submitted || wc >= s.minimum_word_count) cls += " done";
+            else if (i === activeIdx) cls += " active";
+            return <span key={s.section_id} className={cls} />;
           })}
         </div>
       </div>
 
       <div className="tw-section-tabs">
         {sections.map((s, i) => {
+          const wc = countWords(texts[s.section_id] ?? "");
+          const done = wc >= s.minimum_word_count;
           let cls = "tw-section-tab";
-          if (state === "after") cls += " done";
-          else if (i === currentIdx) cls += " active";
-          else if (i < currentIdx) cls += " done";
+          if (submitted) cls += " done";
+          else if (i === activeIdx) cls += " active";
+          else if (done) cls += " done";
           return (
-            <button key={s.id} className={cls}>
+            <button
+              key={s.section_id}
+              className={cls}
+              onClick={() => setActiveIdx(i)}
+              disabled={submitted}
+            >
               <span className="tw-step-num">{i + 1}</span>
-              <span>{s.title.split(" — ")[0]}</span>
-              {(state === "after" || i < currentIdx) && (
-                <span style={{ marginLeft: 4 }}>{I.check}</span>
-              )}
+              <span>{sectionTitle(s)}</span>
+              {done && <span style={{ marginLeft: 4 }}>{I.check}</span>}
             </button>
           );
         })}
       </div>
 
-      {state === "before" ? (
-        <div className="tw-card">
-          <div className="tw-q-number-row">
-            <div className="tw-q-number-badge">{currentIdx + 1}</div>
-            <div className="tw-q-stem">
-              <strong>{current.title}</strong>
-              <br />
-              <span style={{ fontSize: 13.5, fontWeight: 500, color: "var(--tw-ink-muted)" }}>
-                {current.prompt}
-              </span>
-            </div>
-          </div>
-          <textarea className="tw-write-area" style={{ minHeight: 160 }} defaultValue={current.user} />
-          <div className="tw-write-helper">
-            <span>Minimum {current.min} words for this section</span>
-            <span className={`tw-count ${current.words >= current.min ? "ok" : "short"}`}>
-              {current.words} / {current.min} words{" "}
-              {current.words >= current.min ? "· ✓ met" : `· ${current.min - current.words} to go`}
-            </span>
-          </div>
-          <div className="tw-section-nav">
-            <button className="tw-nav-btn prev">{I.arrowL} Previous</button>
-            <button className="tw-nav-btn next" disabled={current.words < current.min}>
-              Next section {I.arrowR}
-            </button>
-          </div>
-        </div>
+      {!submitted ? (
+        sections[activeIdx] && (
+          <SectionEditor
+            section={sections[activeIdx]}
+            value={texts[sections[activeIdx].section_id] ?? ""}
+            onChange={(v) => setText(sections[activeIdx].section_id, v)}
+            activeIdx={activeIdx}
+            totalSections={sections.length}
+            onPrev={() => setActiveIdx((i) => Math.max(0, i - 1))}
+            onNext={() => setActiveIdx((i) => Math.min(sections.length - 1, i + 1))}
+          />
+        )
       ) : (
         <>
           <div className="tw-result-banner good">
-            <div className="tw-result-icon" style={{ color: "var(--tw-green)" }}>{I.check}</div>
+            <div className="tw-result-icon" style={{ color: "var(--tw-green)" }}>
+              {I.check}
+            </div>
             <div className="tw-result-text">
-              <div className="tw-result-headline">All 4 sections complete · 218 words</div>
-              <div className="tw-result-sub">
-                Strong thesis, balanced counter-argument, and a specific recommendation. Ready for AI feedback.
+              <div className="tw-result-headline">
+                {sections.length} section{sections.length === 1 ? "" : "s"} complete · {totalWords} words
               </div>
+              <div className="tw-result-sub">Compare each section with the sample below.</div>
             </div>
             <div>
               <div className="tw-result-score">
-                218<span style={{ fontSize: 14, color: "var(--tw-ink-muted)" }}> / 240</span>
+                {totalWords}
+                {targetTotal > 0 && (
+                  <span style={{ fontSize: 14, color: "var(--tw-ink-muted)" }}>
+                    {" "}/ {targetTotal}
+                  </span>
+                )}
               </div>
               <div className="tw-result-score-sub">Words</div>
             </div>
           </div>
-          {sections.map((s, i) => (
-            <div className="tw-card" key={s.id} style={{ marginBottom: 10 }}>
-              <div className="tw-q-number-row" style={{ marginBottom: 6 }}>
-                <div
-                  className="tw-q-number-badge"
-                  style={{ background: "var(--tw-green-soft)", color: "oklch(28% 0.14 155)" }}
-                >
-                  {I.check}
+          {sections.map((s) => {
+            const userText = texts[s.section_id] ?? "";
+            const wc = countWords(userText);
+            return (
+              <div className="tw-card" key={s.section_id}>
+                <div className="tw-q-number-row" style={{ marginBottom: 6 }}>
+                  <div
+                    className="tw-q-number-badge"
+                    style={{
+                      background: "var(--tw-green-soft)",
+                      color: "oklch(28% 0.14 155)",
+                    }}
+                  >
+                    {I.check}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--tw-navy)" }}>
+                      {sectionTitle(s)}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11.5,
+                        color: "var(--tw-ink-muted)",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {wc} words · target {s.minimum_word_count}+
+                    </div>
+                  </div>
                 </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 800, color: "var(--tw-navy)" }}>{s.title}</div>
-                  <div style={{ fontSize: 11.5, color: "var(--tw-ink-muted)", fontWeight: 700 }}>
-                    {i === 3 ? 54 : s.words} words · met minimum of {s.min}
+                <div className="tw-compare-grid">
+                  <div className="tw-compare-card">
+                    <div className="tw-compare-label">{I.doc} Your section</div>
+                    <div className="tw-compare-body">
+                      {userText || <em style={{ color: "var(--tw-ink-muted)" }}>No answer</em>}
+                    </div>
+                  </div>
+                  <div className="tw-compare-card sample">
+                    <div className="tw-compare-label">{I.spark} Sample</div>
+                    <div className="tw-compare-body">{s.sample_text}</div>
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize: 13.5, color: "var(--tw-navy)", lineHeight: 1.6 }}>
-                {i === 3 ? CONCLUSION_TEXT : s.user}
-              </div>
-            </div>
-          ))}
-          <button className="tw-submit-btn">{I.send} Submit essay for AI feedback</button>
+            );
+          })}
         </>
       )}
+
+      {!submitted && (
+        <button
+          className="tw-submit-btn"
+          disabled={!canSubmit}
+          onClick={onSubmit}
+        >
+          {I.send} Submit essay
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SectionEditor({
+  section,
+  value,
+  onChange,
+  activeIdx,
+  totalSections,
+  onPrev,
+  onNext,
+}: {
+  section: EssaySection;
+  value: string;
+  onChange: (next: string) => void;
+  activeIdx: number;
+  totalSections: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const wc = countWords(value);
+  const met = wc >= section.minimum_word_count;
+  return (
+    <div className="tw-card">
+      <div className="tw-q-number-row">
+        <div className="tw-q-number-badge">{activeIdx + 1}</div>
+        <div className="tw-q-stem">
+          <strong>{sectionTitle(section)}</strong>
+          <br />
+          <span style={{ fontSize: 13.5, fontWeight: 500, color: "var(--tw-ink-muted)" }}>
+            {section.section_prompt}
+          </span>
+        </div>
+      </div>
+      <textarea
+        className="tw-write-area"
+        style={{ minHeight: 160 }}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Write this section…"
+      />
+      <div className="tw-write-helper">
+        <span>Minimum {section.minimum_word_count} words for this section</span>
+        <span className={`tw-count ${met ? "ok" : "short"}`}>
+          {wc} / {section.minimum_word_count} words {met ? "· ✓ met" : `· ${section.minimum_word_count - wc} to go`}
+        </span>
+      </div>
+      <div className="tw-section-nav">
+        <button className="tw-nav-btn prev" onClick={onPrev} disabled={activeIdx === 0}>
+          {I.arrowL} Previous
+        </button>
+        <button
+          className="tw-nav-btn next"
+          onClick={onNext}
+          disabled={activeIdx >= totalSections - 1}
+        >
+          Next section {I.arrowR}
+        </button>
+      </div>
     </div>
   );
 }

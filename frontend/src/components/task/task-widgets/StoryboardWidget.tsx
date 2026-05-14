@@ -1,97 +1,306 @@
 "use client";
 
-import { useState } from "react";
-import { TaskHeader, I, type WidgetState } from "./shared";
+import { useEffect, useRef, useState } from "react";
+import { tasksApi } from "@/lib/tasks-api";
+import { TaskHeader, I } from "./shared";
+import { formatDuration, resolveAudioUrl } from "./types";
+import type { StoryboardPayload, StoryboardScene, WidgetProps } from "./types";
 
-interface Props {
-  state: WidgetState;
+type Props = WidgetProps<StoryboardPayload>;
+
+interface SceneTimestamp {
+  scene_id: string;
+  started_at_seconds: number;
+  ended_at_seconds: number;
 }
 
-const SCENES = [
-  { id: 1, title: "Morning", focus: "Set the scene — where is she and what is she doing?", label: "Maya at kitchen, holding coffee", loaded: true },
-  { id: 2, title: "Discovery", focus: "Describe what she finds and how she reacts.", label: "Envelope on the doormat", loaded: true },
-  { id: 3, title: "Reaction", focus: "Express her emotion in detail — body language, thoughts.", label: "Maya reading the letter", loadedAfter: true },
-  { id: 4, title: "Decision", focus: "What does she decide to do next? Use a future form.", label: "Maya packing a small bag", loadedAfter: true },
-];
+interface StoryboardAnswers {
+  audio_blob_url?: string;
+  transcript?: string;
+  scene_timestamps?: SceneTimestamp[];
+  duration_seconds?: number;
+  time_spent_seconds?: number;
+}
 
-const TIMESTAMPS = [
-  { id: 1, start: "0:00", end: "0:12" },
-  { id: 2, start: "0:12", end: "0:26" },
-  { id: 3, start: "0:26", end: "0:41" },
-  { id: 4, start: "0:41", end: "0:58" },
-];
+function pickMimeType(): string {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+    "audio/mp4",
+  ];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
+}
 
-export function StoryboardWidget({ state }: Props) {
-  const [active, setActive] = useState(1);
+function extensionForMime(mime: string): string {
+  if (mime.includes("ogg")) return ".ogg";
+  if (mime.includes("mp4")) return ".mp4";
+  return ".webm";
+}
+
+export function StoryboardWidget({ payload, answers, setAnswers, state, onSubmit }: Props) {
+  const submitted = state === "after";
+  const scenes = payload.scenes ?? [];
+  const cap = Math.max(1, payload.speaking_duration_seconds || 90);
+
+  const startedAtRef = useRef(Date.now());
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStartedAtRef = useRef(0);
+  const sceneStartedAtRef = useRef<Map<string, number>>(new Map());
+
+  const [activeIdx, setActiveIdx] = useState(0);
   const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | undefined>(
+    (answers as StoryboardAnswers).audio_blob_url,
+  );
+  const [transcript, setTranscript] = useState<string | undefined>(
+    (answers as StoryboardAnswers).transcript,
+  );
+  const [sceneTimestamps, setSceneTimestamps] = useState<SceneTimestamp[]>(
+    (answers as StoryboardAnswers).scene_timestamps ?? [],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const publish = (
+    nextAudioUrl: string,
+    nextTranscript: string,
+    nextTimestamps: SceneTimestamp[],
+    duration: number,
+  ) => {
+    setAnswers({
+      audio_blob_url: nextAudioUrl,
+      transcript: nextTranscript,
+      scene_timestamps: nextTimestamps,
+      duration_seconds: duration,
+      time_spent_seconds: Math.round((Date.now() - startedAtRef.current) / 1000),
+    });
+  };
+
+  const stopRecording = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+  };
+
+  const startRecording = async () => {
+    if (submitted || recording || uploading) return;
+    setError(null);
+    chunksRef.current = [];
+    sceneStartedAtRef.current.clear();
+    if (scenes[0]) sceneStartedAtRef.current.set(scenes[0].scene_id, 0);
+    setSceneTimestamps([]);
+    setActiveIdx(0);
+    setRecording(true);
+    setElapsed(0);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = pickMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (e: BlobEvent) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        const duration = Math.round((Date.now() - recordingStartedAtRef.current) / 1000);
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        // Close out the last scene with the final elapsed time.
+        const finalTimestamps = closeOutTimestamps(duration);
+        setRecording(false);
+        setUploading(true);
+        const usedMime = recorder.mimeType || mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: usedMime });
+        const ext = extensionForMime(usedMime);
+        try {
+          const result = await tasksApi.transcribeAudio(blob, `storyboard${ext}`);
+          setAudioUrl(result.audio_url);
+          setTranscript(result.transcript);
+          setSceneTimestamps(finalTimestamps);
+          publish(result.audio_url, result.transcript, finalTimestamps, duration);
+        } catch {
+          setError("Transcription failed. Please record again.");
+        } finally {
+          setUploading(false);
+        }
+      };
+      recordingStartedAtRef.current = Date.now();
+      recorder.start(250);
+      timerRef.current = setInterval(() => {
+        setElapsed((prev) => {
+          const next = prev + 1;
+          if (next >= cap) stopRecording();
+          return next;
+        });
+      }, 1000);
+    } catch {
+      setRecording(false);
+      setError("Microphone access is needed for this storyboard.");
+    }
+  };
+
+  const closeOutTimestamps = (finalElapsed: number): SceneTimestamp[] => {
+    const result: SceneTimestamp[] = [];
+    const ids = Array.from(sceneStartedAtRef.current.keys());
+    ids.forEach((sceneId, i) => {
+      const started = sceneStartedAtRef.current.get(sceneId) ?? 0;
+      const next = ids[i + 1];
+      const ended = next ? sceneStartedAtRef.current.get(next) ?? finalElapsed : finalElapsed;
+      result.push({
+        scene_id: sceneId,
+        started_at_seconds: started,
+        ended_at_seconds: ended,
+      });
+    });
+    return result;
+  };
+
+  const advanceScene = () => {
+    if (!recording || submitted) return;
+    if (activeIdx >= scenes.length - 1) return;
+    const nextIdx = activeIdx + 1;
+    const nextScene = scenes[nextIdx];
+    if (nextScene) {
+      sceneStartedAtRef.current.set(nextScene.scene_id, elapsed);
+    }
+    setActiveIdx(nextIdx);
+  };
+
+  const hasRecording = !!audioUrl;
+  const canSubmit = !submitted && hasRecording && !recording && !uploading;
+  const activeScene = scenes[activeIdx];
 
   return (
     <div className="tw-root">
       <TaskHeader
-        topic="Speaking · Narrative Storyboard"
+        topic={payload.topic_name || "Storyboard"}
         intro={{
-          title: "Tell the story scene by scene",
-          body: "One continuous recording. Move to the next scene when you're ready — we'll capture the timestamp for each one automatically.",
+          title: payload.task_intro || "Tell the story scene by scene",
+          body: payload.instructions || "One continuous recording. Tap Next Scene when you move on.",
         }}
-        sub_skill="Narrative Past"
-        activity="Storyboard Speaking"
-        time={5}
+        sub_skill={payload.sub_skill || "Narrative"}
+        activity={payload.activity || "Storyboard Speaking"}
+        time={payload.estimated_time_minutes ?? Math.ceil(cap / 60)}
       />
 
-      <div className="tw-scene-strip">
-        {SCENES.map((s) => {
-          const loaded = s.loaded || (s.loadedAfter && state === "after");
-          return (
-            <div
-              key={s.id}
-              className={`tw-scene-card${s.id === active && state === "before" ? " active" : ""}`}
-              onClick={() => state === "before" && setActive(s.id)}
-            >
-              <div className={`tw-scene-img${loaded ? " filled" : " skeleton"}`}>
-                {loaded ? s.label : ""}
-              </div>
-              <div className="tw-scene-meta">
-                <div className="tw-scene-num">Scene {s.id} · {s.title}</div>
-                <div className="tw-scene-caption">{s.focus}</div>
-              </div>
-            </div>
-          );
-        })}
+      <div
+        className="tw-card"
+        style={{
+          background: "linear-gradient(135deg, oklch(96% 0.04 290), white)",
+          borderColor: "oklch(82% 0.1 290)",
+        }}
+      >
+        <div className="tw-rule-label" style={{ color: "oklch(40% 0.16 290)" }}>
+          Premise
+        </div>
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: "var(--tw-navy)",
+            lineHeight: 1.5,
+            marginTop: 4,
+          }}
+        >
+          {payload.overall_story_premise}
+        </div>
+        {payload.narrative_pattern && (
+          <div style={{ fontSize: 12, color: "var(--tw-ink-muted)", marginTop: 6, fontStyle: "italic" }}>
+            Pattern: {payload.narrative_pattern}
+          </div>
+        )}
       </div>
 
-      {state === "before" ? (
+      <div className="tw-scene-strip">
+        {scenes.map((s, i) => (
+          <SceneCard
+            key={s.scene_id}
+            scene={s}
+            isActive={!submitted && i === activeIdx}
+            onClick={() => !submitted && !recording && setActiveIdx(i)}
+          />
+        ))}
+      </div>
+
+      {!submitted && (
         <>
-          <div className="tw-scene-active-banner">
-            <div className="tw-scene-active-num">{active}</div>
-            <div className="tw-scene-active-text">
-              <div className="tw-scene-active-label">Now narrating · Scene {active} of {SCENES.length}</div>
-              <div className="tw-scene-active-focus">
-                {SCENES.find((s) => s.id === active)?.focus}
+          {activeScene && (
+            <div className="tw-scene-active-banner">
+              <div className="tw-scene-active-num">{activeScene.scene_number}</div>
+              <div className="tw-scene-active-text">
+                <div className="tw-scene-active-label">
+                  Now narrating · Scene {activeScene.scene_number} of {scenes.length}
+                </div>
+                <div className="tw-scene-active-focus">{activeScene.narration_focus}</div>
               </div>
             </div>
-          </div>
+          )}
+
+          {error && (
+            <div
+              style={{
+                background: "oklch(96% 0.05 25)",
+                border: "1px solid oklch(84% 0.1 25)",
+                color: "oklch(35% 0.16 25)",
+                borderRadius: 12,
+                padding: "10px 12px",
+                fontSize: 13,
+                marginBottom: 14,
+              }}
+            >
+              {error}
+            </div>
+          )}
 
           <div className="tw-mic-stage">
             <div className="tw-mic-prompt">
-              {recording ? "Recording your story" : "One take · keep going through all scenes"}
+              {recording
+                ? "Recording your story"
+                : hasRecording
+                ? "Re-record to overwrite"
+                : "One take · keep going through all scenes"}
             </div>
             <div className="tw-mic-button-wrap">
               <button
                 className={`tw-mic-button${recording ? " recording" : ""}`}
-                onClick={() => setRecording((r) => !r)}
+                onClick={() => (recording ? stopRecording() : startRecording())}
+                disabled={uploading}
+                aria-label={recording ? "Stop recording" : "Start recording"}
               >
                 {recording ? I.stop : I.mic}
               </button>
               <span className="tw-mic-ring" />
             </div>
             <div className="tw-mic-instruction">
-              {recording ? "Tap to stop · or finish all scenes first" : "Tap to start the single take"}
+              {recording
+                ? "Tap to stop · or finish all scenes first"
+                : uploading
+                ? "Transcribing…"
+                : "Tap to start the single take"}
             </div>
             <div className="tw-mic-sub">We&apos;ll mark when you click Next Scene</div>
             {recording && (
               <div className="tw-rec-timer">
                 <span className="tw-rec-dot" />
-                0:23
+                {formatDuration(elapsed)} / {formatDuration(cap)}
               </div>
             )}
           </div>
@@ -99,92 +308,147 @@ export function StoryboardWidget({ state }: Props) {
           <div className="tw-scene-nav">
             <button
               className="tw-scene-nav-btn"
-              disabled={active === 1}
-              onClick={() => setActive((a) => Math.max(1, a - 1))}
+              disabled={!recording || activeIdx === 0}
+              onClick={() => setActiveIdx((a) => Math.max(0, a - 1))}
             >
               {I.arrowL} Previous
             </button>
             <button
-              className={`tw-scene-nav-btn${active < SCENES.length ? " primary" : ""}`}
-              onClick={() => setActive((a) => Math.min(SCENES.length, a + 1))}
-              disabled={active === SCENES.length}
+              className={`tw-scene-nav-btn${activeIdx < scenes.length - 1 ? " primary" : ""}`}
+              onClick={advanceScene}
+              disabled={!recording || activeIdx >= scenes.length - 1}
             >
-              {active === SCENES.length ? "Last scene" : "Next scene"} {I.arrowR}
+              {activeIdx === scenes.length - 1 ? "Last scene" : "Next scene"} {I.arrowR}
             </button>
           </div>
         </>
-      ) : (
+      )}
+
+      {submitted && (
         <>
           <div className="tw-result-banner good">
-            <div className="tw-result-icon" style={{ color: "var(--tw-green)" }}>{I.check}</div>
+            <div className="tw-result-icon" style={{ color: "var(--tw-green)" }}>
+              {I.check}
+            </div>
             <div className="tw-result-text">
-              <div className="tw-result-headline">Story complete · 58 sec across 4 scenes</div>
+              <div className="tw-result-headline">
+                Story complete · {formatDuration((answers as StoryboardAnswers).duration_seconds ?? 0)}{" "}
+                across {scenes.length} scene{scenes.length === 1 ? "" : "s"}
+              </div>
               <div className="tw-result-sub">
-                Clear narrative arc · used past simple consistently · transitioned smoothly between scenes.
+                {transcript ? "Transcript captured below." : "Recording uploaded."}
               </div>
             </div>
             <div>
-              <div className="tw-result-score">0:58</div>
+              <div className="tw-result-score">
+                {formatDuration((answers as StoryboardAnswers).duration_seconds ?? 0)}
+              </div>
               <div className="tw-result-score-sub">Total</div>
             </div>
           </div>
 
-          <div className="tw-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <button className="tw-audio-play-btn playing" style={{ width: 44, height: 44 }}>
-              {I.play}
-            </button>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "var(--tw-navy)" }}>
-                Single continuous recording
+          {audioUrl && (
+            <div className="tw-card">
+              <div className="tw-rule-label" style={{ marginBottom: 8 }}>
+                Your recording
               </div>
-              <div style={{ fontSize: 11.5, color: "var(--tw-ink-muted)", fontWeight: 600 }}>
-                blob://storyboard-7d2a · 4 scene markers
-              </div>
+              <audio src={resolveAudioUrl(audioUrl)} controls style={{ width: "100%" }} />
             </div>
-            <div className="tw-audio-wave">
-              {Array.from({ length: 32 }).map((_, i) => (
-                <span
-                  key={i}
-                  className="tw-audio-wave-bar played"
-                  style={{ height: 6 + Math.abs(Math.sin(i * 0.5) * 16) + (i % 4) * 2 }}
-                />
-              ))}
-            </div>
-          </div>
+          )}
 
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              color: "var(--tw-ink-muted)",
-              marginTop: 14,
-              marginBottom: 8,
-            }}
-          >
-            Scene timestamps captured
-          </div>
-          <div className="tw-ts-table">
-            <div className="tw-ts-row head">
-              <div>#</div>
-              <div>Scene focus</div>
-              <div>Time</div>
-            </div>
-            {TIMESTAMPS.map((t, i) => (
-              <div className="tw-ts-row" key={t.id}>
-                <div className="tw-ts-scene-num">{t.id}</div>
-                <div className="tw-ts-cap">
-                  {SCENES[i].title} — {SCENES[i].label}
-                </div>
-                <div className="tw-ts-time">
-                  {t.start}–{t.end}
-                </div>
+          {transcript && (
+            <div className="tw-card">
+              <div className="tw-rule-label" style={{ marginBottom: 8 }}>
+                Transcript
               </div>
-            ))}
-          </div>
+              <div style={{ fontSize: 13.5, lineHeight: 1.6, color: "var(--tw-navy)" }}>
+                {transcript}
+              </div>
+            </div>
+          )}
+
+          {payload.sample_narration && (
+            <div className="tw-compare-card sample">
+              <div className="tw-compare-label">{I.spark} Sample narration</div>
+              <div className="tw-compare-body">{payload.sample_narration}</div>
+            </div>
+          )}
+
+          {sceneTimestamps.length > 0 && (
+            <div className="tw-ts-table" style={{ marginTop: 14 }}>
+              <div className="tw-ts-row head">
+                <div>#</div>
+                <div>Scene focus</div>
+                <div>Time</div>
+              </div>
+              {sceneTimestamps.map((t, i) => {
+                const scene = scenes.find((s) => s.scene_id === t.scene_id);
+                return (
+                  <div className="tw-ts-row" key={t.scene_id}>
+                    <div className="tw-ts-scene-num">{scene?.scene_number ?? i + 1}</div>
+                    <div className="tw-ts-cap">{scene?.narration_focus ?? t.scene_id}</div>
+                    <div className="tw-ts-time">
+                      {formatDuration(t.started_at_seconds)}–{formatDuration(t.ended_at_seconds)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
+
+      {!submitted && (
+        <button
+          className="tw-submit-btn"
+          disabled={!canSubmit}
+          onClick={onSubmit}
+          style={{ marginTop: 14 }}
+        >
+          {I.send} Submit storyboard
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SceneCard({
+  scene,
+  isActive,
+  onClick,
+}: {
+  scene: StoryboardScene;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  const imageUrl = resolveAudioUrl(scene.image_url);
+  const hasImage = !!imageUrl;
+  return (
+    <div
+      className={`tw-scene-card${isActive ? " active" : ""}`}
+      onClick={onClick}
+      role="button"
+    >
+      <div
+        className={`tw-scene-img${hasImage ? " filled" : " skeleton"}`}
+        style={
+          hasImage
+            ? {
+                backgroundImage: `url(${imageUrl})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }
+            : undefined
+        }
+      >
+        {!hasImage && (
+          <span style={{ fontSize: 12, color: "var(--tw-ink-muted)" }}>Loading…</span>
+        )}
+      </div>
+      <div className="tw-scene-meta">
+        <div className="tw-scene-num">Scene {scene.scene_number}</div>
+        <div className="tw-scene-caption">{scene.narration_focus}</div>
+      </div>
     </div>
   );
 }

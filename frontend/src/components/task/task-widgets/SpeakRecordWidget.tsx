@@ -1,316 +1,515 @@
 "use client";
 
-import { useState } from "react";
-import { TaskHeader, I, type WidgetState } from "./shared";
+import { useEffect, useRef, useState } from "react";
+import { tasksApi } from "@/lib/tasks-api";
+import { TaskHeader, I } from "./shared";
+import { formatDuration, resolveAudioUrl } from "./types";
+import type { SpeakAndRecordPayload, SpeakRoleplayTurn, WidgetProps } from "./types";
 
-interface Props {
-  state: WidgetState;
+type Props = WidgetProps<SpeakAndRecordPayload>;
+
+interface Recording {
+  item_id?: string;
+  turn_id?: string;
+  audio_blob_url: string;
+  transcript: string;
+  duration_seconds: number;
+  attempt_number: number;
 }
 
-type Mode = "list" | "single" | "read" | "role";
+type Mode = "list" | "single" | "read" | "retell" | "role";
 
-const MODES: { id: Mode; label: string }[] = [
-  { id: "list", label: "List" },
-  { id: "single", label: "Single Prompt" },
-  { id: "read", label: "Read Aloud" },
-  { id: "role", label: "Roleplay" },
-];
+function detectMode(p: SpeakAndRecordPayload): Mode {
+  if (p.turns && p.turns.length > 0) return "role";
+  if (p.source_audio_url || p.source_audio_script) return "retell";
+  if (p.text_to_read_aloud || p.passage) return "read";
+  if (p.speaking_prompts && p.speaking_prompts.length > 0) return "list";
+  return "single";
+}
 
-const LIST_PROMPTS = [
-  { id: 1, q: "Introduce yourself in 15 seconds.", dur: "0:14" },
-  { id: 2, q: "Describe your morning routine.", dur: "0:28" },
-  { id: 3, q: "Talk about a hobby you started this year.", dur: null },
-];
+function pickMimeType(): string {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+    "audio/mp4",
+  ];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
+}
 
-export function SpeakRecordWidget({ state }: Props) {
-  const [mode, setMode] = useState<Mode>("single");
-  const [recording, setRecording] = useState(false);
+function extensionForMime(mime: string): string {
+  if (mime.includes("ogg")) return ".ogg";
+  if (mime.includes("mp4")) return ".mp4";
+  return ".webm";
+}
+
+export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmit }: Props) {
+  const submitted = state === "after";
+  const mode = detectMode(payload);
+
+  // Items: a unified list of "things to record".
+  const items: Array<{ id: string; label: string; kind: "prompt" | "turn"; turn?: SpeakRoleplayTurn; sampleResponse?: string | null }> = (() => {
+    if (mode === "role") {
+      return (payload.turns ?? [])
+        .filter((t) => t.speaker === "user")
+        .map((t, i) => ({
+          id: t.turn_id,
+          label: payload.sample_user_responses?.[i] || "Your reply",
+          kind: "turn" as const,
+          turn: t,
+          sampleResponse: payload.sample_user_responses?.[i] ?? null,
+        }));
+    }
+    if (mode === "list") {
+      const prompts = payload.speaking_prompts ?? [];
+      return prompts.map((p, i) => ({
+        id: `prompt_${i + 1}`,
+        label: p,
+        kind: "prompt" as const,
+        sampleResponse: payload.sample_responses?.[i] ?? null,
+      }));
+    }
+    if (mode === "read") {
+      return [
+        {
+          id: "read_aloud",
+          label: payload.text_to_read_aloud || payload.passage || "",
+          kind: "prompt" as const,
+          sampleResponse: payload.sample_response ?? null,
+        },
+      ];
+    }
+    if (mode === "retell") {
+      return [
+        {
+          id: "retell",
+          label: payload.retelling_prompt || "Retell what you heard in your own words.",
+          kind: "prompt" as const,
+          sampleResponse: payload.sample_response ?? null,
+        },
+      ];
+    }
+    return [
+      {
+        id: "prompt_1",
+        label: payload.speaking_prompt || "Speak your response",
+        kind: "prompt" as const,
+        sampleResponse: payload.sample_response ?? null,
+      },
+    ];
+  })();
+
+  const startedAtRef = useRef(Date.now());
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingStartedAtRef = useRef<number>(0);
+
+  const [recordings, setRecordings] = useState<Record<string, Recording>>({});
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [prepRemaining, setPrepRemaining] = useState(payload.preparation_seconds ?? 0);
+  const sourceAudioUrl = resolveAudioUrl(payload.source_audio_url);
+  const referenceAudioUrl = resolveAudioUrl(payload.reference_audio_url);
+
+  useEffect(() => {
+    if (!payload.preparation_seconds || submitted) return;
+    if (prepRemaining <= 0) return;
+    const interval = setInterval(() => {
+      setPrepRemaining((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [payload.preparation_seconds, prepRemaining, submitted]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const publish = (next: Record<string, Recording>) => {
+    setAnswers({
+      recordings: items
+        .map((it) => next[it.id])
+        .filter(Boolean)
+        .map((rec) => ({
+          item_id: rec.item_id,
+          turn_id: rec.turn_id,
+          audio_blob_url: rec.audio_blob_url,
+          duration_seconds: rec.duration_seconds,
+          attempt_number: rec.attempt_number,
+          transcript: rec.transcript,
+        })),
+      time_spent_seconds: Math.round((Date.now() - startedAtRef.current) / 1000),
+    });
+  };
+
+  const stopRecording = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+  };
+
+  const startRecording = async (itemId: string) => {
+    if (submitted || activeItemId || uploadingItemId) return;
+    if (prepRemaining > 0) return;
+    setError(null);
+    chunksRef.current = [];
+    setActiveItemId(itemId);
+    setElapsed(0);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = pickMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (e: BlobEvent) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = async () => {
+        const duration = Math.round((Date.now() - recordingStartedAtRef.current) / 1000);
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        setUploadingItemId(itemId);
+        setActiveItemId(null);
+        const usedMime = recorder.mimeType || mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: usedMime });
+        const ext = extensionForMime(usedMime);
+        try {
+          const result = await tasksApi.transcribeAudio(blob, `speak-${itemId}${ext}`);
+          const item = items.find((it) => it.id === itemId);
+          setRecordings((prev) => {
+            const next: Record<string, Recording> = {
+              ...prev,
+              [itemId]: {
+                ...(item?.kind === "turn"
+                  ? { turn_id: itemId }
+                  : { item_id: itemId }),
+                audio_blob_url: result.audio_url,
+                transcript: result.transcript,
+                duration_seconds: duration,
+                attempt_number: (prev[itemId]?.attempt_number ?? 0) + 1,
+              },
+            };
+            publish(next);
+            return next;
+          });
+        } catch {
+          setError("Transcription failed. Please record that prompt again.");
+        } finally {
+          setUploadingItemId(null);
+        }
+      };
+      recordingStartedAtRef.current = Date.now();
+      recorder.start(250);
+      const cap = payload.speaking_duration_seconds || 60;
+      timerRef.current = setInterval(() => {
+        setElapsed((prev) => {
+          const next = prev + 1;
+          if (next >= cap) stopRecording();
+          return next;
+        });
+      }, 1000);
+    } catch {
+      setActiveItemId(null);
+      setError("Microphone access is needed for this speaking activity.");
+    }
+  };
+
+  const allRecorded = items.every((it) => recordings[it.id]?.transcript?.trim());
+  const canSubmit = !submitted && allRecorded && !activeItemId && !uploadingItemId;
+
+  const targetWordsHit = (() => {
+    if (!payload.target_words || payload.target_words.length === 0) return [];
+    const allText = Object.values(recordings)
+      .map((r) => r.transcript)
+      .join(" ")
+      .toLowerCase();
+    return payload.target_words.map((w) => ({
+      word: w,
+      used: new RegExp(`\\b${w.toLowerCase()}\\b`).test(allText),
+    }));
+  })();
+
+  const cap = payload.speaking_duration_seconds || 60;
 
   return (
     <div className="tw-root">
       <TaskHeader
-        topic="Speaking · Real-life Scenarios"
+        topic={payload.topic_name || "Speaking task"}
         intro={{
-          title: "Record your response",
-          body: "Use the microphone to record your spoken answer. Up to 3 re-record attempts before submission.",
+          title: payload.task_intro || "Record your response",
+          body: payload.instructions || "Tap the mic and speak naturally.",
         }}
-        sub_skill="Spoken Fluency"
-        activity="Speak & Record"
-        time={6}
+        sub_skill={payload.sub_skill || ""}
+        activity={payload.activity || "Speak & Record"}
+        time={payload.estimated_time_minutes ?? 0}
+        target_words={targetWordsHit.length > 0 ? targetWordsHit : undefined}
       />
 
-      <div className="tw-mode-tabs">
-        {MODES.map((m) => (
-          <button
-            key={m.id}
-            className={`tw-mode-tab${mode === m.id ? " active" : ""}`}
-            onClick={() => setMode(m.id)}
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-
-      {mode === "single" && (
-        <>
-          <div
-            className="tw-card"
-            style={{ background: "oklch(96% 0.04 290)", borderColor: "oklch(82% 0.1 290)" }}
-          >
-            <div className="tw-rule-label" style={{ color: "oklch(40% 0.16 290)" }}>
-              Speaking prompt
-            </div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: "var(--tw-navy)", lineHeight: 1.4, marginTop: 4 }}>
-              Tell me about a place that feels like home — describe what you see, hear, and smell there.
-            </div>
+      {payload.grammar_rule_to_practice && (
+        <div className="tw-rule-callout">
+          <div className="tw-rule-icon">{I.rule}</div>
+          <div className="tw-rule-body">
+            <div className="tw-rule-label">Target rule</div>
+            <div className="tw-rule-text">{payload.grammar_rule_to_practice}</div>
           </div>
+        </div>
+      )}
 
-          {state === "before" ? (
-            <div className="tw-mic-stage">
-              <div className="tw-prep-countdown">{I.clock} Prep time · 0:18 left</div>
-              <div className="tw-mic-prompt">When ready, tap to record</div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--tw-navy)", marginBottom: 14 }}>
-                Target length: 30–60 seconds
+      {payload.target_pattern && (
+        <div className="tw-rule-callout">
+          <div className="tw-rule-icon">{I.rule}</div>
+          <div className="tw-rule-body">
+            <div className="tw-rule-label">Target pattern</div>
+            <div className="tw-rule-text">{payload.target_pattern}</div>
+          </div>
+        </div>
+      )}
+
+      {payload.target_tone && (
+        <div className="tw-rule-callout">
+          <div className="tw-rule-icon">{I.rule}</div>
+          <div className="tw-rule-body">
+            <div className="tw-rule-label">Target tone</div>
+            <div className="tw-rule-text">{payload.target_tone}</div>
+          </div>
+        </div>
+      )}
+
+      {mode === "retell" && sourceAudioUrl && (
+        <div className="tw-card" style={{ background: "oklch(96% 0.03 245)" }}>
+          <div className="tw-rule-label" style={{ marginBottom: 8 }}>Source audio</div>
+          <audio src={sourceAudioUrl} controls style={{ width: "100%" }} />
+        </div>
+      )}
+
+      {referenceAudioUrl && (
+        <div className="tw-card" style={{ background: "oklch(96% 0.03 245)" }}>
+          <div className="tw-rule-label" style={{ marginBottom: 8 }}>Reference pronunciation</div>
+          <audio src={referenceAudioUrl} controls style={{ width: "100%" }} />
+        </div>
+      )}
+
+      {mode === "read" && (payload.text_to_read_aloud || payload.passage) && (
+        <div className="tw-passage">
+          <div className="tw-passage-label">Read aloud</div>
+          {payload.text_to_read_aloud || payload.passage}
+        </div>
+      )}
+
+      {payload.scenario_description && (
+        <div
+          className="tw-card"
+          style={{ background: "oklch(96% 0.04 290)", borderColor: "oklch(82% 0.1 290)" }}
+        >
+          <div className="tw-rule-label" style={{ color: "oklch(40% 0.16 290)", marginBottom: 6 }}>
+            Scenario
+          </div>
+          <div style={{ fontSize: 13.5, color: "var(--tw-navy)", lineHeight: 1.6 }}>
+            {payload.scenario_description}
+          </div>
+        </div>
+      )}
+
+      {prepRemaining > 0 && !submitted && (
+        <div className="tw-prep-countdown">
+          {I.clock} Prep time · {formatDuration(prepRemaining)} left
+        </div>
+      )}
+
+      {error && (
+        <div
+          style={{
+            background: "oklch(96% 0.05 25)",
+            border: "1px solid oklch(84% 0.1 25)",
+            color: "oklch(35% 0.16 25)",
+            borderRadius: 12,
+            padding: "10px 12px",
+            fontSize: 13,
+            marginBottom: 14,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 14, marginBottom: 18 }}>
+        {items.map((item, index) => {
+          const rec = recordings[item.id];
+          const isActive = activeItemId === item.id;
+          const isUploading = uploadingItemId === item.id;
+          const attemptsUsed = rec?.attempt_number ?? 0;
+          const reRecordsLeft = Math.max(0, 3 - attemptsUsed);
+          return (
+            <div className="tw-card" key={item.id}>
+              {mode === "role" && item.turn && (
+                <PriorRoleplayTurns
+                  payload={payload}
+                  thisTurnId={item.turn.turn_id}
+                />
+              )}
+              <div className="tw-q-number-row">
+                <div className="tw-q-number-badge">{index + 1}</div>
+                <div className="tw-q-stem">
+                  {mode === "role"
+                    ? "Your reply"
+                    : item.label}
+                </div>
               </div>
-              <div className="tw-mic-button-wrap">
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
                 <button
-                  className={`tw-mic-button${recording ? " recording" : ""}`}
-                  onClick={() => setRecording((r) => !r)}
+                  type="button"
+                  disabled={
+                    submitted ||
+                    !!uploadingItemId ||
+                    (!!activeItemId && !isActive) ||
+                    prepRemaining > 0
+                  }
+                  onClick={() => (isActive ? stopRecording() : startRecording(item.id))}
+                  className={`tw-mic-button${isActive ? " recording" : ""}`}
+                  style={{ width: 56, height: 56 }}
+                  aria-label={isActive ? "Stop recording" : "Start recording"}
                 >
-                  {I.mic}
+                  {isActive ? I.stop : I.mic}
                 </button>
-                <span className="tw-mic-ring" />
-              </div>
-              <div className="tw-mic-instruction">{recording ? "Listening…" : "Tap to begin"}</div>
-              <div className="tw-mic-sub">
-                {recording ? "Tap again to stop" : "Microphone permission required"}
-              </div>
-              {recording && (
-                <>
-                  <div className="tw-mic-live-bars">
-                    {Array.from({ length: 21 }).map((_, i) => (
-                      <span
-                        key={i}
-                        className="tw-mic-live-bar"
-                        style={{ animationDelay: `${i * 0.06}s`, height: 8 + (i % 5) * 4 }}
-                      />
-                    ))}
-                  </div>
-                  <div className="tw-rec-timer">
-                    <span className="tw-rec-dot" />
-                    0:23
-                  </div>
-                </>
-              )}
-              <div className="tw-attempts-row">
-                <span>Attempts:</span>
-                <span className="tw-attempt-dot used" />
-                <span className="tw-attempt-dot" />
-                <span className="tw-attempt-dot" />
-                <span style={{ marginLeft: 4 }}>1 of 3 used</span>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="tw-result-banner good">
-                <div className="tw-result-icon" style={{ color: "var(--tw-green)" }}>{I.check}</div>
-                <div className="tw-result-text">
-                  <div className="tw-result-headline">Recorded · 42 sec · sent for analysis</div>
-                  <div className="tw-result-sub">Pronunciation clear · 2 hesitations · pace 124 wpm.</div>
+                <div style={{ color: "var(--tw-ink-muted)", fontSize: 13, fontWeight: 700, flex: 1 }}>
+                  {isActive
+                    ? `Recording ${formatDuration(elapsed)} / ${formatDuration(cap)}`
+                    : isUploading
+                    ? "Transcribing…"
+                    : rec
+                    ? `Recorded ${rec.duration_seconds}s · attempt ${attemptsUsed}/3`
+                    : prepRemaining > 0
+                    ? "Prep timer running…"
+                    : "Tap the mic to start"}
                 </div>
-                <div>
-                  <div className="tw-result-score">0:42</div>
-                  <div className="tw-result-score-sub">Duration</div>
-                </div>
-              </div>
-              <div className="tw-card" style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <button className="tw-audio-play-btn playing" style={{ width: 44, height: 44 }}>
-                  {I.play}
-                </button>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--tw-navy)" }}>Your recording</div>
-                  <div style={{ fontSize: 11.5, color: "var(--tw-ink-muted)", fontWeight: 600 }}>
-                    blob://recording-3a8c · 42 seconds · final attempt
-                  </div>
-                </div>
-                <div className="tw-audio-wave">
-                  {Array.from({ length: 24 }).map((_, i) => (
-                    <span
-                      key={i}
-                      className="tw-audio-wave-bar played"
-                      style={{ height: 6 + Math.abs(Math.sin(i * 0.7) * 16) + (i % 3) * 2 }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="tw-rerecord-row">
-                <button className="tw-action-pill">
-                  <span style={{ transform: "scaleX(-1)", display: "inline-block" }}>{I.replay}</span> Re-record (2 left)
-                </button>
-                <button className="tw-action-pill primary">{I.send} Submit recording</button>
-              </div>
-            </>
-          )}
-        </>
-      )}
-
-      {mode === "list" && (
-        <div>
-          {LIST_PROMPTS.map((p) => (
-            <div className="tw-card" key={p.id} style={{ display: "flex", gap: 14, alignItems: "center" }}>
-              <div className="tw-q-number-badge">{p.id}</div>
-              <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "var(--tw-navy)" }}>{p.q}</div>
-              {p.dur && state === "after" ? (
-                <span className="tw-recorded-clip">
-                  <span className="tw-play-mini">{I.playMini}</span> {p.dur}
-                </span>
-              ) : (
-                <button className="tw-action-pill">
-                  <span style={{ color: "var(--tw-red)" }}>{I.micSm}</span> Record
-                </button>
-              )}
-            </div>
-          ))}
-          {state === "before" && (
-            <button className="tw-submit-btn" disabled>
-              {I.send} Record all 3 to submit
-            </button>
-          )}
-        </div>
-      )}
-
-      {mode === "read" && (
-        <div>
-          <div className="tw-passage">
-            <div className="tw-passage-label">Passage · 64 words</div>
-            <span style={{ fontSize: 15, lineHeight: 1.85 }}>
-              {state === "after" ? (
-                <>
-                  <span style={{ background: "var(--tw-green-soft)", padding: "1px 3px", borderRadius: 3 }}>
-                    The old library on Elm Street has stood for over a hundred years.
-                  </span>{" "}
-                  Inside, the air smells of paper and varnish.{" "}
-                  <span style={{ background: "oklch(94% 0.07 65)", padding: "1px 3px", borderRadius: 3, color: "oklch(40% 0.14 65)" }}>
-                    Children gather in the corner on Saturday mornings,
-                  </span>{" "}
-                  listening to volunteers read aloud while their parents browse the stacks for something new — or something they&apos;ve forgotten they once loved.
-                </>
-              ) : (
-                "The old library on Elm Street has stood for over a hundred years. Inside, the air smells of paper and varnish. Children gather in the corner on Saturday mornings, listening to volunteers read aloud while their parents browse the stacks for something new — or something they've forgotten they once loved."
-              )}
-            </span>
-          </div>
-          {state === "before" ? (
-            <div className="tw-mic-stage">
-              <div className="tw-mic-prompt">Read the passage above out loud</div>
-              <div style={{ fontSize: 13, color: "var(--tw-ink-muted)", marginBottom: 14 }}>
-                We&apos;ll score pace, pronunciation, and word-stress.
-              </div>
-              <div className="tw-mic-button-wrap">
-                <button className="tw-mic-button">{I.mic}</button>
-                <span className="tw-mic-ring" />
-              </div>
-              <div className="tw-mic-instruction">Tap to start reading</div>
-            </div>
-          ) : (
-            <div className="tw-result-banner mid">
-              <div className="tw-result-icon">{I.spark}</div>
-              <div className="tw-result-text">
-                <div className="tw-result-headline">Clear read · 1 hesitation</div>
-                <div className="tw-result-sub">
-                  &quot;Gather&quot; pronounced softly — try a harder G sound. Otherwise excellent pace at 132 wpm.
-                </div>
-              </div>
-              <div>
-                <div className="tw-result-score">
-                  8.6<span style={{ fontSize: 14, color: "var(--tw-ink-muted)" }}>/10</span>
-                </div>
-                <div className="tw-result-score-sub">Read score</div>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {mode === "role" && (
-        <div>
-          <div style={{ fontSize: 12.5, color: "var(--tw-ink-muted)", fontWeight: 600, marginBottom: 10 }}>
-            Roleplay · You&apos;re checking into a hotel. The AI plays the front-desk agent — record your reply each turn.
-          </div>
-          <div className="tw-chat-stack">
-            <div className="tw-chat-row">
-              <div className="tw-chat-avatar">AI</div>
-              <div className="tw-chat-bubble">
-                <div className="tw-tts-line">
-                  <button className="tw-tts-play">{I.playMini}</button>
-                  <span>Good evening! Do you have a reservation with us tonight?</span>
-                </div>
-              </div>
-            </div>
-            <div className="tw-chat-row user">
-              <div className="tw-chat-avatar">You</div>
-              <div className="tw-chat-bubble">
-                <span className="tw-recorded-clip">
-                  <span className="tw-play-mini">{I.playMini}</span> 0:09
-                </span>
-                {state === "after" && (
-                  <div style={{ fontSize: 12.5, marginTop: 6, color: "var(--tw-ink-muted)" }}>
-                    &quot;Yes, I have a reservation under the name Patel for two nights.&quot;
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="tw-chat-row">
-              <div className="tw-chat-avatar">AI</div>
-              <div className="tw-chat-bubble">
-                <div className="tw-tts-line">
-                  <button className="tw-tts-play">{I.playMini}</button>
-                  <span>
-                    Perfect, I see your booking. Would you prefer a quiet room facing the courtyard, or a higher floor with a city view?
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="tw-chat-row user">
-              <div className="tw-chat-avatar">You</div>
-              <div
-                className="tw-chat-bubble"
-                style={{
-                  background: state === "after" ? undefined : "oklch(96% 0.02 240)",
-                  borderStyle: state === "after" ? "solid" : "dashed",
-                }}
-              >
-                {state === "after" ? (
-                  <span className="tw-recorded-clip">
-                    <span className="tw-play-mini">{I.playMini}</span> 0:07
-                  </span>
-                ) : (
-                  <button className="tw-action-pill">
-                    <span style={{ color: "var(--tw-red)" }}>{I.micSm}</span> Record your reply
+                {rec && !submitted && reRecordsLeft > 0 && !activeItemId && !uploadingItemId && (
+                  <button
+                    className="tw-action-pill"
+                    onClick={() => startRecording(item.id)}
+                  >
+                    <span style={{ transform: "scaleX(-1)", display: "inline-block" }}>
+                      {I.replay}
+                    </span>{" "}
+                    Re-record ({reRecordsLeft} left)
                   </button>
                 )}
               </div>
+              {rec && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    borderRadius: 12,
+                    background: "oklch(96% 0.025 245)",
+                    border: "1px solid oklch(86% 0.025 240)",
+                    padding: "10px 12px",
+                    color: "oklch(28% 0.07 240)",
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  <strong>Transcript:</strong> {rec.transcript || "(no speech detected)"}
+                </div>
+              )}
+              {submitted && item.sampleResponse && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    borderRadius: 12,
+                    background: "oklch(94% 0.07 155)",
+                    border: "1px solid oklch(80% 0.1 155)",
+                    padding: "10px 12px",
+                    color: "oklch(24% 0.1 155)",
+                    fontSize: 13,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  <strong>Sample:</strong> {item.sampleResponse}
+                </div>
+              )}
             </div>
+          );
+        })}
+      </div>
+
+      {submitted && payload.key_points_expected && payload.key_points_expected.length > 0 && (
+        <div className="tw-hints-block" style={{ marginTop: 4 }}>
+          <div className="tw-hints-label">Key points expected</div>
+          <div className="tw-hints-list">
+            {payload.key_points_expected.map((p, i) => (
+              <div className="tw-hint-item" key={i}>
+                <span className="tw-hint-dot" />
+                {p}
+              </div>
+            ))}
           </div>
-          {state === "after" && (
-            <div className="tw-result-banner good" style={{ marginTop: 4 }}>
-              <div className="tw-result-icon" style={{ color: "var(--tw-green)" }}>{I.check}</div>
-              <div className="tw-result-text">
-                <div className="tw-result-headline">2 turns recorded · natural flow</div>
-                <div className="tw-result-sub">
-                  Polite register maintained. Try &quot;I&apos;d prefer&quot; instead of &quot;I want&quot; for a softer tone.
-                </div>
-              </div>
-              <div>
-                <div className="tw-result-score">
-                  9.0<span style={{ fontSize: 14, color: "var(--tw-ink-muted)" }}>/10</span>
-                </div>
-                <div className="tw-result-score-sub">Score</div>
-              </div>
-            </div>
-          )}
         </div>
       )}
+
+      {submitted && payload.sample_talking_points && payload.sample_talking_points.length > 0 && (
+        <div className="tw-hints-block" style={{ marginTop: 4 }}>
+          <div className="tw-hints-label">Sample talking points</div>
+          <div className="tw-hints-list">
+            {payload.sample_talking_points.map((p, i) => (
+              <div className="tw-hint-item" key={i}>
+                <span className="tw-hint-dot" />
+                {p}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!submitted && (
+        <button
+          className="tw-submit-btn"
+          disabled={!canSubmit}
+          onClick={onSubmit}
+        >
+          {I.send} Submit recordings
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PriorRoleplayTurns({
+  payload,
+  thisTurnId,
+}: {
+  payload: SpeakAndRecordPayload;
+  thisTurnId: string;
+}) {
+  const turns = payload.turns ?? [];
+  const idx = turns.findIndex((t) => t.turn_id === thisTurnId);
+  if (idx <= 0) return null;
+  const priorAiTurn = [...turns.slice(0, idx)].reverse().find((t) => t.speaker === "ai");
+  if (!priorAiTurn?.ai_line) return null;
+  return (
+    <div
+      style={{
+        background: "oklch(97% 0.02 245)",
+        border: "1px dashed oklch(86% 0.025 240)",
+        borderRadius: 10,
+        padding: "8px 12px",
+        marginBottom: 10,
+        fontSize: 13,
+        color: "var(--tw-navy)",
+        lineHeight: 1.55,
+      }}
+    >
+      <strong style={{ color: "oklch(48% 0.18 290)" }}>AI:</strong> {priorAiTurn.ai_line}
     </div>
   );
 }
