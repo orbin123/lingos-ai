@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 
 interface SkillScorePreviewProps {
   scores: Record<string, number>;
-  onViewAll?: () => void;
 }
 
 const SKILL_LABELS: Record<string, string> = {
@@ -23,7 +22,7 @@ function getBarColor(score: number): string {
   return "oklch(48% 0.18 155)";
 }
 
-export function SkillScorePreview({ scores, onViewAll }: SkillScorePreviewProps) {
+export function SkillScorePreview({ scores }: SkillScorePreviewProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -36,51 +35,6 @@ export function SkillScorePreview({ scores, onViewAll }: SkillScorePreviewProps)
 
   return (
     <section>
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 20,
-        }}
-      >
-        <h3
-          style={{
-            fontSize: 16,
-            fontWeight: 700,
-            color: "oklch(18% 0.09 245)",
-            margin: 0,
-          }}
-        >
-          Your skill scores
-        </h3>
-        {onViewAll && (
-          <button
-            onClick={onViewAll}
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: "oklch(52% 0.18 240)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-              transition: "opacity 0.15s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = "0.75";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = "1";
-            }}
-          >
-            View full stats
-            <span style={{ marginLeft: 4 }}>&rarr;</span>
-          </button>
-        )}
-      </div>
-
       {/* Bars */}
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {skillKeys.map((key, index) => {
