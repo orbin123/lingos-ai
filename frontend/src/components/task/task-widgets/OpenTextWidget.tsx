@@ -36,7 +36,7 @@ export function OpenTextWidget({ payload, answers, setAnswers, state, onSubmit }
   return (
     <div className="tw-root">
       <TaskHeader
-        topic={payload.topic_name || "Writing task"}
+        topic="Writing Task"
         intro={{
           title: payload.task_intro || "Write your response",
           body: payload.instructions || "Answer each prompt in 3–5 sentences.",

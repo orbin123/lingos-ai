@@ -246,7 +246,7 @@ export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmi
   return (
     <div className="tw-root">
       <TaskHeader
-        topic={payload.topic_name || "Speaking task"}
+        topic="Speaking Task"
         intro={{
           title: payload.task_intro || "Record your response",
           body: payload.instructions || "Tap the mic and speak naturally.",

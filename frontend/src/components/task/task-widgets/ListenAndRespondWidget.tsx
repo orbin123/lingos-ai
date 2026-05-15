@@ -178,7 +178,7 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
   return (
     <div className="tw-root">
       <TaskHeader
-        topic={payload.topic_name || "Listening task"}
+        topic="Listening Task"
         intro={{
           title: payload.task_intro || "Listen, then respond",
           body: payload.instructions || "Play the clip first — the questions unlock after the first play-through.",

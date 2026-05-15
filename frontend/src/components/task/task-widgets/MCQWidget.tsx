@@ -52,7 +52,7 @@ export function MCQWidget({ payload, answers, setAnswers, state, onSubmit }: Pro
   return (
     <div className="tw-root">
       <TaskHeader
-        topic={payload.topic_name || "Multiple choice"}
+        topic="Multiple Choice"
         intro={{
           title: payload.task_intro || "Pick the best option",
           body: payload.instructions || "Choose the option that best answers each question.",

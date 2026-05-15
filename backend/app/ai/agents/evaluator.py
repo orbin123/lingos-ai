@@ -1373,6 +1373,7 @@ class EvaluationService:
         samples = task_content.get("sample_responses") or []
         questions: dict[str, dict] = {}
         correct_count = 0
+        answered_count = 0
 
         for idx, prompt in enumerate(prompts, 1):
             item_id = _prompt_id(idx)
@@ -1384,6 +1385,8 @@ class EvaluationService:
             is_correct = bool(transcript) and score >= 0.6
             if is_correct:
                 correct_count += 1
+            if bool(transcript):
+                answered_count += 1
 
             questions[item_id] = {
                 "correct": is_correct,
@@ -1405,6 +1408,7 @@ class EvaluationService:
             "task_type": "curriculum_grammar_speak",
             "total": len(prompts),
             "correct_count": correct_count,
+            "answered_count": answered_count,
             "percentage": llm_result.subskill_score * 10.0,
             "subskill_score": llm_result.subskill_score,
             "main_mistakes": llm_result.main_mistakes,

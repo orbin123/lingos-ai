@@ -331,6 +331,7 @@ async def evaluation_node(state: LearningSessionState) -> dict[str, Any]:
         "topic": topic,
         "total": evaluation.get("total", 0),
         "correct_count": evaluation.get("correct_count", 0),
+        "answered_count": evaluation.get("answered_count"),
         "questions": evaluation.get("questions", {}),
         "subskill_score": evaluation.get("subskill_score"),  # None for rule-based tasks
         "_session": {

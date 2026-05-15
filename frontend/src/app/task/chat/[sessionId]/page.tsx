@@ -890,9 +890,11 @@ export default function ChatSessionPage() {
 
   function handleAction(label: string) {
     if (label === "Go to dashboard") {
-      queryClient.invalidateQueries({ queryKey: ["task", "next"] });
-      queryClient.invalidateQueries({ queryKey: ["me"] });
       router.push("/dashboard");
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["task", "next"] });
+        queryClient.invalidateQueries({ queryKey: ["me"] });
+      }, 0);
       return;
     }
     setEvents((prev) => [...prev, { kind: "chat", role: "you", content: label }]);

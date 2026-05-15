@@ -74,7 +74,7 @@ export function StructuredEssayWidget({ payload, answers, setAnswers, state, onS
   return (
     <div className="tw-root">
       <TaskHeader
-        topic={payload.topic_name || payload.overall_topic || "Essay"}
+        topic="Structured Essay"
         intro={{
           title: payload.task_intro || "Build your essay section by section",
           body: payload.instructions || "Work through each section in order.",

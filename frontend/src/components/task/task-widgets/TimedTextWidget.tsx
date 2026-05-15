@@ -82,7 +82,7 @@ export function TimedTextWidget({ payload, answers, setAnswers, state, onSubmit 
   return (
     <div className="tw-root">
       <TaskHeader
-        topic={payload.topic_name || "Timed writing"}
+        topic="Timed Writing"
         intro={{
           title: payload.task_intro || "Just keep writing",
           body: payload.instructions || "No editing — write as much as you can before the timer runs out.",

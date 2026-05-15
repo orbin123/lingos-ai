@@ -191,7 +191,7 @@ export function StoryboardWidget({ payload, answers, setAnswers, state, onSubmit
   return (
     <div className="tw-root">
       <TaskHeader
-        topic={payload.topic_name || "Storyboard"}
+        topic="Storyboard"
         intro={{
           title: payload.task_intro || "Tell the story scene by scene",
           body: payload.instructions || "One continuous recording. Tap Next Scene when you move on.",
