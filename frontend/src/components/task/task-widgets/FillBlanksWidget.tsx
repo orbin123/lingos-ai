@@ -110,7 +110,7 @@ export function FillBlanksWidget({ payload, answers, setAnswers, state, onSubmit
   return (
     <div className="tw-root">
       <TaskHeader
-        topic={payload.topic_name || payload.passage_title || "Fill in the blanks"}
+        topic="Fill in the Blanks"
         intro={{
           title: payload.task_intro || "Complete the passage",
           body: payload.instructions || "Fill each blank with the correct word.",
