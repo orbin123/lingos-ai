@@ -6,6 +6,10 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { markDailyChatEntered } from "@/lib/daily-session-entry";
 import {
+  TaskChatLoadingSkeleton,
+  type TaskChatLoadingType,
+} from "@/components/task/TaskChatSkeletons";
+import {
   FillBlanksWidget,
   ListenAndRespondWidget,
   MCQWidget,
@@ -98,6 +102,15 @@ const WIDGET_SECTION_LABEL: Record<WidgetKey, string> = {
 
 function isKnownWidget(widget: string): widget is WidgetKey {
   return widget in WIDGET_COMPONENTS;
+}
+
+function shouldShowActivitySkeletonAfterChat(content?: string) {
+  const text = (content || "").toLowerCase();
+  return (
+    text.includes("here is activity") ||
+    text.includes("here is your practice task") ||
+    text.includes("continue with activity")
+  );
 }
 
 /* ── Icons ───────────────────────────────────────────────────────────── */
@@ -654,12 +667,19 @@ export default function ChatSessionPage() {
   const [skillName, setSkillName] = useState("");
   const [phase, setPhase] = useState<"teaching" | "practice" | "submitted" | "ended">("teaching");
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [loadingType, setLoadingType] = useState<TaskChatLoadingType>(
+    initialConnectionState === "connecting" ? "teacher_loading" : null,
+  );
 
   const wsRef = useRef<WebSocket | null>(null);
   const pendingSendsRef = useRef<WSOutgoing[]>([]);
   const stageRef = useRef<HTMLDivElement>(null);
   const eventsRef = useRef<ChatEvent[]>(events);
-  eventsRef.current = events;
+
+  useEffect(() => {
+    eventsRef.current = events;
+  }, [events]);
+
   const lastTaskIdx = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i -= 1) {
       if (events[i].kind === "task") return i;
@@ -669,6 +689,15 @@ export default function ChatSessionPage() {
 
   const handleIncoming = useCallback((msg: WSIncoming) => {
     if (msg.type === "chat_message") {
+      setLoadingType((curr) =>
+        shouldShowActivitySkeletonAfterChat(msg.content)
+          ? "activity_loading"
+          : curr === "teacher_loading" ||
+              curr === "next_activity_loading" ||
+              curr === "feedback_loading"
+            ? null
+            : curr,
+      );
       if (
         msg.actions?.includes("Go to dashboard") &&
         !msg.actions.includes("Next activity")
@@ -688,6 +717,9 @@ export default function ChatSessionPage() {
       return;
     }
     if (msg.type === "chat_stream_start") {
+      setLoadingType((curr) =>
+        curr === "teacher_loading" || curr === "next_activity_loading" ? null : curr,
+      );
       const streamId = msg.stream_id || `stream-${Date.now()}`;
       const role = msg.role === "user" || msg.role === "you" ? "you" : "ai";
       setEvents((prev) => [
@@ -728,6 +760,13 @@ export default function ChatSessionPage() {
       return;
     }
     if (msg.type === "chat_stream_end") {
+      setLoadingType((curr) =>
+        shouldShowActivitySkeletonAfterChat(msg.content)
+          ? "activity_loading"
+          : curr === "teacher_loading" || curr === "next_activity_loading"
+            ? null
+            : curr,
+      );
       if (
         msg.actions?.includes("Go to dashboard") &&
         !msg.actions.includes("Next activity")
@@ -774,6 +813,7 @@ export default function ChatSessionPage() {
     }
     if (msg.type === "ui_event") {
       if (isKnownWidget(msg.widget)) {
+        setLoadingType(null);
         const payload = msg.payload as unknown as AnyTaskPayload;
         const topicName =
           (payload as { topic_name?: string; topic?: string }).topic_name ||
@@ -789,6 +829,7 @@ export default function ChatSessionPage() {
         return;
       }
       if (msg.widget === "scorecard") {
+        setLoadingType("feedback_loading");
         const payload = msg.payload as unknown as ScorecardPayload;
         setSkillName((curr) => curr || payload.skill_name || "");
         setEvents((prev) => [
@@ -800,6 +841,7 @@ export default function ChatSessionPage() {
         return;
       }
       if (msg.widget === "feedback_card") {
+        setLoadingType(null);
         const payload = msg.payload as unknown as FeedbackPayload;
         setEvents((prev) => [
           ...prev,
@@ -809,6 +851,7 @@ export default function ChatSessionPage() {
         return;
       }
       // Unknown widget — surface as a chat message so the session doesn't get stuck silently.
+      setLoadingType(null);
       setEvents((prev) => [
         ...prev,
         {
@@ -820,6 +863,7 @@ export default function ChatSessionPage() {
       return;
     }
     if (msg.type === "error") {
+      setLoadingType(null);
       setEvents((prev) => [
         ...prev,
         { kind: "chat", role: "ai", content: `⚠️ ${msg.content || "Something went wrong."}` },
@@ -843,15 +887,22 @@ export default function ChatSessionPage() {
     ws.onopen = () => {
       if (wsRef.current !== ws) return;
       setConnectionState("open");
+      setLoadingType((curr) => curr ?? (eventsRef.current.length === 0 ? "teacher_loading" : null));
       setEvents((prev) => prev.filter((e) => e.kind === "chat"));
       const queued = pendingSendsRef.current.splice(0);
       queued.forEach((payload) => ws.send(JSON.stringify(payload)));
     };
     ws.onclose = () => {
-      if (wsRef.current === ws) setConnectionState("closed");
+      if (wsRef.current === ws) {
+        setConnectionState("closed");
+        setLoadingType(null);
+      }
     };
     ws.onerror = () => {
-      if (wsRef.current === ws) setConnectionState("error");
+      if (wsRef.current === ws) {
+        setConnectionState("error");
+        setLoadingType(null);
+      }
     };
 
     ws.onmessage = (raw) => {
@@ -871,6 +922,18 @@ export default function ChatSessionPage() {
   }, [sessionId, handleIncoming, reconnectAttempt]);
 
   const send = useCallback((payload: WSOutgoing) => {
+    // This local loading phase mirrors WebSocket waits only; backend session phase remains authoritative.
+    if (payload.type === "task_submission") {
+      setLoadingType("evaluation_loading");
+    } else if (payload.type === "follow_up_action") {
+      setLoadingType(
+        payload.action.trim().toLowerCase() === "next activity"
+          ? "next_activity_loading"
+          : "teacher_loading",
+      );
+    } else {
+      setLoadingType("teacher_loading");
+    }
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(payload));
@@ -941,6 +1004,20 @@ export default function ChatSessionPage() {
     : phase === "practice" ? "Use the task above…"
     : "Ask a follow-up question…";
 
+  const hasActiveAiStream = events.some(
+    (evt) => evt.kind === "chat" && evt.role === "ai" && evt.streaming,
+  );
+  const hasScorecard = events.some((evt) => evt.kind === "scorecard");
+  const hasFeedback = events.some((evt) => evt.kind === "feedback");
+  const visibleLoadingType: TaskChatLoadingType =
+    loadingType === "teacher_loading" && hasActiveAiStream
+      ? null
+      : loadingType === "evaluation_loading" && hasScorecard
+        ? null
+        : loadingType === "feedback_loading" && hasFeedback
+          ? null
+          : loadingType;
+
   return (
     <>
       <link
@@ -984,7 +1061,7 @@ export default function ChatSessionPage() {
         }}>
           <SectionMarker kind="intro" icon={<SparkIcon />}>Intro</SectionMarker>
 
-          {connectionState !== "open" && events.length === 0 && (
+          {connectionState !== "open" && events.length === 0 && !visibleLoadingType && (
             <ChatBubble role="ai" name="LingosAI">
               {connectionState === "connecting" && "Connecting to your session…"}
               {connectionState === "closed" && "Connection closed. Refresh to reconnect."}
@@ -1047,6 +1124,8 @@ export default function ChatSessionPage() {
             }
             return null;
           })}
+
+          <TaskChatLoadingSkeleton type={visibleLoadingType} />
 
           <div style={{ height: 60 }} />
         </main>
