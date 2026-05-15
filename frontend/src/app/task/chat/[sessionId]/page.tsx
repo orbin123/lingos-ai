@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { markDailyChatEntered } from "@/lib/daily-session-entry";
 import {
   FillBlanksWidget,
   ListenAndRespondWidget,
@@ -633,6 +634,12 @@ export default function ChatSessionPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const sessionId = params?.sessionId;
+
+  useEffect(() => {
+    if (typeof sessionId === "string" && sessionId.length > 0) {
+      markDailyChatEntered(sessionId);
+    }
+  }, [sessionId]);
 
   const initialConnectionState = useMemo<
     "connecting" | "open" | "closed" | "error"

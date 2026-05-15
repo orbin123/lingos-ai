@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { api } from "@/lib/api";
+import { getResumeSessionIdForToday } from "@/lib/daily-session-entry";
 
 interface StartSessionResponse {
   session_id: string;
@@ -22,23 +23,12 @@ export default function ChatEntryPage() {
   const [resumeSessionId, setResumeSessionId] = useState<string | null>(null);
 
   useEffect(() => {
-    checkForExistingSession();
-  }, []);
-
-  async function checkForExistingSession() {
-    try {
-      const response = await api.post<StartSessionResponse>(
-        "/api/learning/sessions/start",
-        {},
-      );
-      if (response.data.message === "Session resumed") {
-        setIsResuming(true);
-        setResumeSessionId(response.data.session_id);
-      }
-    } catch {
-      setIsResuming(false);
+    const sid = getResumeSessionIdForToday();
+    if (sid) {
+      setIsResuming(true);
+      setResumeSessionId(sid);
     }
-  }
+  }, []);
 
   async function handleStart() {
     if (isResuming && resumeSessionId) {
