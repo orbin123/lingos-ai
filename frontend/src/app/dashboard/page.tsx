@@ -9,6 +9,7 @@ import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { DailyTaskPanel } from "@/components/dashboard/DailyTaskPanel";
 import { SkillScorePreview } from "@/components/dashboard/SkillScorePreview";
+import { shouldShowAdminConsoleButton } from "@/lib/admin-access";
 
 const DEFAULT_SCORES: Record<string, number> = {
   grammar: 6.0,
@@ -18,6 +19,23 @@ const DEFAULT_SCORES: Record<string, number> = {
   thought_org: 4.5,
   listening: 7.0,
   tone: 6.5,
+};
+
+const adminConsoleButtonStyle: React.CSSProperties = {
+  minHeight: 40,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  borderRadius: 8,
+  border: "1px solid #0070C4",
+  background: "#0070C4",
+  color: "white",
+  padding: "0 14px",
+  fontFamily: "inherit",
+  fontSize: 13,
+  fontWeight: 800,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
 };
 
 function getGreeting(name: string | undefined): string {
@@ -327,6 +345,7 @@ export default function DashboardPage() {
     rawScores && typeof rawScores === "object" && !Array.isArray(rawScores)
       ? (rawScores as Record<string, number>)
       : DEFAULT_SCORES;
+  const showAdminConsole = shouldShowAdminConsoleButton(user);
 
   return (
     <div
@@ -385,13 +404,17 @@ export default function DashboardPage() {
               enrollment={enrollment}
               scores={scores}
               onViewStats={() => router.push("/stats")}
+              onGoAdmin={() => router.push("/admin")}
+              showAdminConsole={showAdminConsole}
               userName={user?.name}
             />
           ) : (
             <NoEnrollmentView
               scores={scores}
               onChoosePlan={() => router.push("/pricing")}
+              onGoAdmin={() => router.push("/admin")}
               onViewStats={() => router.push("/stats")}
+              showAdminConsole={showAdminConsole}
               userName={user?.name}
             />
           )}
@@ -416,11 +439,20 @@ interface EnrolledViewProps {
       : never
   >;
   scores: Record<string, number>;
+  showAdminConsole: boolean;
+  onGoAdmin: () => void;
   onViewStats: () => void;
   userName: string | undefined;
 }
 
-function EnrolledView({ enrollment, scores, onViewStats, userName }: EnrolledViewProps) {
+function EnrolledView({
+  enrollment,
+  scores,
+  showAdminConsole,
+  onGoAdmin,
+  onViewStats,
+  userName,
+}: EnrolledViewProps) {
   return (
     <div
       style={{
@@ -463,27 +495,34 @@ function EnrolledView({ enrollment, scores, onViewStats, userName }: EnrolledVie
             Week {enrollment.current_week}, Day {enrollment.current_day_in_week} — keep the momentum going.
           </p>
         </div>
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "8px 14px",
-            borderRadius: 12,
-            background: "white",
-            border: "1.5px solid oklch(88% 0.025 240)",
-            fontSize: 13,
-            fontWeight: 600,
-            color: "oklch(20% 0.09 245)",
-            flexShrink: 0,
-          }}
-        >
-          <span style={{ color: "oklch(45% 0.07 240)" }}>Week</span>
-          <span style={{ color: "#0070C4", fontWeight: 800 }}>
-            {enrollment.current_week}
-          </span>
-          <span style={{ color: "oklch(45% 0.07 240)" }}>of</span>
-          <span style={{ fontWeight: 700 }}>{enrollment.course.duration_weeks}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {showAdminConsole && (
+            <button type="button" onClick={onGoAdmin} style={adminConsoleButtonStyle}>
+              Go to Admin Console
+            </button>
+          )}
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 14px",
+              borderRadius: 12,
+              background: "white",
+              border: "1.5px solid oklch(88% 0.025 240)",
+              fontSize: 13,
+              fontWeight: 600,
+              color: "oklch(20% 0.09 245)",
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ color: "oklch(45% 0.07 240)" }}>Week</span>
+            <span style={{ color: "#0070C4", fontWeight: 800 }}>
+              {enrollment.current_week}
+            </span>
+            <span style={{ color: "oklch(45% 0.07 240)" }}>of</span>
+            <span style={{ fontWeight: 700 }}>{enrollment.course.duration_weeks}</span>
+          </div>
         </div>
       </div>
 
@@ -688,11 +727,20 @@ function EnrolledView({ enrollment, scores, onViewStats, userName }: EnrolledVie
 interface NoEnrollmentViewProps {
   scores: Record<string, number>;
   onChoosePlan: () => void;
+  onGoAdmin: () => void;
   onViewStats: () => void;
+  showAdminConsole: boolean;
   userName: string | undefined;
 }
 
-function NoEnrollmentView({ scores, onChoosePlan, onViewStats, userName }: NoEnrollmentViewProps) {
+function NoEnrollmentView({
+  scores,
+  onChoosePlan,
+  onGoAdmin,
+  onViewStats,
+  showAdminConsole,
+  userName,
+}: NoEnrollmentViewProps) {
   return (
     <div
       style={{
@@ -703,29 +751,36 @@ function NoEnrollmentView({ scores, onChoosePlan, onViewStats, userName }: NoEnr
       }}
     >
       {/* Page header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1
-          style={{
-            fontSize: 28,
-            fontWeight: 800,
-            letterSpacing: "-0.02em",
-            color: "oklch(20% 0.09 245)",
-            lineHeight: 1.15,
-            margin: 0,
-          }}
-        >
-          {getGreeting(userName)} 👋
-        </h1>
-        <p
-          style={{
-            fontSize: 14.5,
-            color: "oklch(45% 0.07 240)",
-            marginTop: 6,
-            marginBottom: 0,
-          }}
-        >
-          Your diagnosis is complete — choose a plan to unlock your daily tasks.
-        </p>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start", marginBottom: 24 }}>
+        <div>
+          <h1
+            style={{
+              fontSize: 28,
+              fontWeight: 800,
+              letterSpacing: "-0.02em",
+              color: "oklch(20% 0.09 245)",
+              lineHeight: 1.15,
+              margin: 0,
+            }}
+          >
+            {getGreeting(userName)} 👋
+          </h1>
+          <p
+            style={{
+              fontSize: 14.5,
+              color: "oklch(45% 0.07 240)",
+              marginTop: 6,
+              marginBottom: 0,
+            }}
+          >
+            Your diagnosis is complete — choose a plan to unlock your daily tasks.
+          </p>
+        </div>
+        {showAdminConsole && (
+          <button type="button" onClick={onGoAdmin} style={adminConsoleButtonStyle}>
+            Go to Admin Console
+          </button>
+        )}
       </div>
 
       <div

@@ -4,6 +4,8 @@ interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   isSuperUser: boolean;
+  isAdmin: boolean;
+  roles: string[];
 
   /**
    * True once hydrate() has run at least once.
@@ -19,39 +21,68 @@ interface AuthState {
   hydrate: () => void;
 }
 
-/** Decode is_superuser from a JWT's base64url payload. */
-function decodeSuperUser(token: string): boolean {
+function decodePayload(token: string): { roles: string[]; isSuperUser: boolean } {
   try {
     const payloadB64 = token.split(".")[1];
     const decoded = JSON.parse(atob(payloadB64));
-    return decoded.is_superuser === true;
+    const roles = Array.isArray(decoded.roles)
+      ? decoded.roles.filter((role: unknown): role is string => typeof role === "string")
+      : decoded.is_superuser === true
+        ? ["super_admin"]
+        : [];
+    return {
+      roles,
+      isSuperUser: decoded.is_superuser === true || roles.includes("super_admin"),
+    };
   } catch {
-    return false;
+    return { roles: [], isSuperUser: false };
   }
+}
+
+function isAdminRole(roles: string[], isSuperUser: boolean): boolean {
+  return isSuperUser || roles.includes("admin") || roles.includes("super_admin");
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   isAuthenticated: false,
   isSuperUser: false,
+  isAdmin: false,
+  roles: [],
   _hydrated: false,
 
   setToken: (token) => {
     localStorage.setItem("token", token);
-    set({ token, isAuthenticated: true, isSuperUser: decodeSuperUser(token) });
+    const payload = decodePayload(token);
+    set({
+      token,
+      isAuthenticated: true,
+      isSuperUser: payload.isSuperUser,
+      isAdmin: isAdminRole(payload.roles, payload.isSuperUser),
+      roles: payload.roles,
+    });
   },
 
   logout: () => {
     localStorage.removeItem("token");
-    set({ token: null, isAuthenticated: false, isSuperUser: false });
+    set({
+      token: null,
+      isAuthenticated: false,
+      isSuperUser: false,
+      isAdmin: false,
+      roles: [],
+    });
   },
 
   hydrate: () => {
     const token = localStorage.getItem("token");
+    const payload = token ? decodePayload(token) : { roles: [], isSuperUser: false };
     set({
       token: token ?? null,
       isAuthenticated: !!token,
-      isSuperUser: token ? decodeSuperUser(token) : false,
+      isSuperUser: payload.isSuperUser,
+      isAdmin: isAdminRole(payload.roles, payload.isSuperUser),
+      roles: payload.roles,
       _hydrated: true,       // ← mark hydration as done
     });
   },

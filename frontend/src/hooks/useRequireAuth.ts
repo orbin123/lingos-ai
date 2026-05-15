@@ -24,6 +24,8 @@ export function useRequireAuth() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const hydrated = useAuthStore((s) => s._hydrated);
   const isSuperUser = useAuthStore((s) => s.isSuperUser);
+  const isAdmin = useAuthStore((s) => s.isAdmin);
+  const roles = useAuthStore((s) => s.roles);
 
   useEffect(() => {
     // Wait until hydration is done before checking auth.
@@ -36,5 +38,5 @@ export function useRequireAuth() {
   }, [hydrated, isAuthenticated, router]);
 
   // isReady = hydration done AND user is authenticated
-  return { isReady: hydrated && isAuthenticated, isSuperUser };
+  return { isReady: hydrated && isAuthenticated, isSuperUser, isAdmin, roles };
 }

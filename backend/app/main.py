@@ -9,6 +9,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.ai.routes import router as ai_router
 from app.core.config import settings
+from app.core.rate_limit import AdminRateLimitMiddleware
+from app.modules.admin.routes import router as admin_router
 from app.modules.auth.routes import router as auth_router
 from app.modules.curriculum.routes import router as curriculum_router
 from app.modules.diagnosis.routes import router as diagnosis_router
@@ -39,6 +41,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(AdminRateLimitMiddleware)
 
 
 # ---------------------------------------------------------------------------
@@ -76,6 +80,7 @@ def health_check() -> dict[str, str]:
 
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(admin_router)
 app.include_router(diagnosis_router, prefix="/diagnosis", tags=["diagnosis"])
 app.include_router(curriculum_router)
 app.include_router(tasks_router)

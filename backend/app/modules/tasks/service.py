@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.ai import AIRequestLoggingService
 from app.ai.agents.task_generator import TaskGeneratorAgent
 from app.ai.tts import get_default_tts_service
 from app.modules.curriculum.constants import SKILL_ACTIVITIES
@@ -445,6 +447,7 @@ class TaskService:
             template.template_id, user_profile,
         )
 
+        started = time.perf_counter()
         try:
             # FastAPI routes are synchronous (the router uses sync def).
             # asyncio.get_event_loop() inside a sync thread returns a loop
@@ -462,11 +465,26 @@ class TaskService:
             finally:
                 loop.close()
         except Exception as exc:
+            AIRequestLoggingService(self.db).record_failure(
+                agent_name="task_generator",
+                model="gpt-4o-mini",
+                user_id=user_id,
+                latency_ms=round((time.perf_counter() - started) * 1000),
+                error_message=str(exc),
+                prompt_version=template.template_id,
+            )
             logger.warning(
                 "[task_gen] ⚠️  LLM call FAILED for template=%s: %s — will fall back to seeded pool",
                 template.template_id, exc,
             )
             return None
+        AIRequestLoggingService(self.db).record_success(
+            agent_name="task_generator",
+            model="gpt-4o-mini",
+            user_id=user_id,
+            latency_ms=round((time.perf_counter() - started) * 1000),
+            prompt_version=template.template_id,
+        )
 
         # Map the template's task_type string (e.g. "fill_in_blanks") to the
         # TaskType enum so the frontend's isGeneratedTaskType() check works.
@@ -579,15 +597,31 @@ class TaskService:
             plan.skill_name, plan.activity_type.value, template.template_id,
         )
 
+        started = time.perf_counter()
         try:
             content = await self.generator.generate(template, user_profile)
             content = await self._postprocess_generated_content(content)
         except Exception as exc:
+            AIRequestLoggingService(self.db).record_failure(
+                agent_name="task_generator",
+                model="gpt-4o-mini",
+                user_id=user_id,
+                latency_ms=round((time.perf_counter() - started) * 1000),
+                error_message=str(exc),
+                prompt_version=template.template_id,
+            )
             logger.warning(
                 "[task_gen] async LLM call failed for template=%s: %s — will fall back to seeded pool",
                 template.template_id, exc,
             )
             return None
+        AIRequestLoggingService(self.db).record_success(
+            agent_name="task_generator",
+            model="gpt-4o-mini",
+            user_id=user_id,
+            latency_ms=round((time.perf_counter() - started) * 1000),
+            prompt_version=template.template_id,
+        )
 
         from app.modules.tasks.models import TaskType as TT
         try:

@@ -4,7 +4,7 @@ from datetime import datetime
 
 from enum import Enum
 
-from sqlalchemy import DateTime, Enum as SQLAlchemyEnum, ForeignKey, Numeric, String
+from sqlalchemy import DateTime, Enum as SQLAlchemyEnum, ForeignKey, JSON, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -118,7 +118,10 @@ class Task(Base, IDMixin, TimestampMixin):
         nullable=False, default=TaskStatus.ACTIVE, index=True,
     )
     # Full task body — passage, questions, answer keys. Shape depends on task_type.
-    content: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    content: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
 
     # Relationships
     task_skills: Mapped[list["TaskSkill"]] = relationship(

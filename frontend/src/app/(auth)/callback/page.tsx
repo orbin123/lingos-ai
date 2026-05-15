@@ -12,11 +12,19 @@
  *  3. Redirects to the right page
  */
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 
 export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={<CallbackLoading />}>
+      <AuthCallbackInner />
+    </Suspense>
+  );
+}
+
+function AuthCallbackInner() {
   const router = useRouter();
   const params = useSearchParams();
   const setToken = useAuthStore((s) => s.setToken);
@@ -45,8 +53,14 @@ export default function AuthCallbackPage() {
   }, [params, router, setToken]);
 
   return (
+    <CallbackLoading />
+  );
+}
+
+function CallbackLoading() {
+  return (
     <div className="flex min-h-screen items-center justify-center">
-      <p className="text-sm text-slate-500">Signing you in…</p>
+      <p className="text-sm text-slate-500">Signing you in...</p>
     </div>
   );
 }

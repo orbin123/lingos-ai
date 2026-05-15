@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -87,6 +87,14 @@ function memberSince(createdAt: string | undefined) {
 }
 
 export default function ProfilePage() {
+  return (
+    <Suspense fallback={null}>
+      <ProfilePageInner />
+    </Suspense>
+  );
+}
+
+function ProfilePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();

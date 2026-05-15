@@ -4,9 +4,10 @@ from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
 from app.modules.auth.exceptions import EmailAlreadyExists, InvalidCredentials
-from app.modules.auth.models import User
+from app.modules.auth.models import ROLE_LEARNER, User
 from app.modules.auth.repository import (
     OAuthAccountRepository,
+    RoleRepository,
     UserProfileRepository,
     UserRepository,
 )
@@ -18,6 +19,7 @@ class AuthService:
         self.users = UserRepository(db)
         self.profiles = UserProfileRepository(db)
         self.oauth_accounts = OAuthAccountRepository(db)
+        self.roles = RoleRepository(db)
 
     def signup(self, *, email: str, password: str, name: str) -> User:
         """Register a new user and create their default profile.
@@ -41,8 +43,9 @@ class AuthService:
 
         # 4. Create default profile linked to that user
         self.profiles.create_default(user_id=user.id)
+        self.roles.assign_role(user_id=user.id, role_name=ROLE_LEARNER)
 
-        # 5. Commit transaction (user + profile saved together)
+        # 5. Commit transaction (user + profile + role saved together)
         self.db.commit()
         self.db.refresh(user)
 
@@ -58,6 +61,9 @@ class AuthService:
         user = self.users.get_by_email(email)
 
         if user is None:
+            raise InvalidCredentials("Invalid email or password")
+
+        if not user.is_active:
             raise InvalidCredentials("Invalid email or password")
 
         if not verify_password(password, user.password_hash or ""):
@@ -110,6 +116,7 @@ class AuthService:
         # 3. Brand new user — create everything
         new_user = self.users.create_oauth_user(email=email, name=name)
         self.profiles.create_default(user_id=new_user.id)
+        self.roles.assign_role(user_id=new_user.id, role_name=ROLE_LEARNER)
         self.oauth_accounts.create(
             user_id=new_user.id,
             provider="google",

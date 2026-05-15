@@ -13,6 +13,9 @@ export interface UserOut {
   auth_provider: "password" | "google";
   diagnosis_completed: boolean;
   is_superuser: boolean;
+  is_active: boolean;
+  roles: string[];
+  role: string;
   enrollment: EnrollmentRead | null;
   phone_number: string | null;
   country: string | null;
