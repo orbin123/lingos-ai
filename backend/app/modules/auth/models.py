@@ -2,12 +2,19 @@
 
 from enum import Enum
 
-from sqlalchemy import Boolean
+from sqlalchemy import Boolean, UniqueConstraint
 from sqlalchemy import Enum as SQLAlchemyEnum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.core.mixins import IDMixin, TimestampMixin
+from app.core.mixins import CreatedAtMixin, IDMixin, TimestampMixin
+
+
+ROLE_LEARNER = "learner"
+ROLE_ADMIN = "admin"
+ROLE_SUPER_ADMIN = "super_admin"
+ADMIN_ROLE_NAMES = {ROLE_ADMIN, ROLE_SUPER_ADMIN}
+DEFAULT_ROLE_NAMES = (ROLE_LEARNER, ROLE_ADMIN, ROLE_SUPER_ADMIN)
 
 
 # Enums for UserProfile
@@ -69,6 +76,13 @@ class User(Base, IDMixin, TimestampMixin):
         server_default="false",
     )
 
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+
     # Relationships
     profile: Mapped["UserProfile"] = relationship(
         back_populates="user",
@@ -81,8 +95,148 @@ class User(Base, IDMixin, TimestampMixin):
         cascade="all, delete-orphan",
     )
 
+    role_links: Mapped[list["UserRole"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    def role_names(self) -> list[str]:
+        """Return effective role names, including legacy superuser fallback."""
+        names = {link.role.name for link in self.role_links if link.role is not None}
+        if self.is_superuser:
+            names.add(ROLE_SUPER_ADMIN)
+        if not names:
+            names.add(ROLE_LEARNER)
+        return sorted(names)
+
+    def has_any_role(self, required_roles: set[str]) -> bool:
+        return bool(set(self.role_names()) & required_roles)
+
+    def has_permission(self, permission_key: str) -> bool:
+        """Return whether the user's effective roles grant a permission."""
+        if ROLE_SUPER_ADMIN in set(self.role_names()):
+            return True
+        for user_role in self.role_links:
+            role = user_role.role
+            if role is None:
+                continue
+            if role.has_permission(permission_key):
+                return True
+        return False
+
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email!r})>"
+
+
+class Role(Base, IDMixin, CreatedAtMixin):
+    """Application role that can be assigned to users."""
+
+    __tablename__ = "roles"
+
+    name: Mapped[str] = mapped_column(
+        String(50),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+
+    user_links: Mapped[list["UserRole"]] = relationship(
+        back_populates="role",
+        cascade="all, delete-orphan",
+    )
+
+    permission_links: Mapped[list["RolePermission"]] = relationship(
+        back_populates="role",
+        cascade="all, delete-orphan",
+    )
+
+    def permission_keys(self) -> list[str]:
+        """Return permission keys assigned to this role."""
+        keys = {
+            link.permission.key
+            for link in self.permission_links
+            if link.permission is not None
+        }
+        return sorted(keys)
+
+    def has_permission(self, permission_key: str) -> bool:
+        return permission_key in set(self.permission_keys())
+
+    def __repr__(self) -> str:
+        return f"<Role(id={self.id}, name={self.name!r})>"
+
+
+class UserRole(Base, IDMixin, CreatedAtMixin):
+    """Junction table linking users to roles."""
+
+    __tablename__ = "user_roles"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role_id: Mapped[int] = mapped_column(
+        ForeignKey("roles.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    user: Mapped["User"] = relationship(back_populates="role_links")
+    role: Mapped["Role"] = relationship(back_populates="user_links")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "role_id", name="uq_user_roles_user_role"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<UserRole(user_id={self.user_id}, role_id={self.role_id})>"
+
+
+class Permission(Base, IDMixin, CreatedAtMixin):
+    """Named permission used by admin authorization checks."""
+
+    __tablename__ = "permissions"
+
+    key: Mapped[str] = mapped_column(
+        String(120),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    description: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    role_links: Mapped[list["RolePermission"]] = relationship(
+        back_populates="permission",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"<Permission(id={self.id}, key={self.key!r})>"
+
+
+class RolePermission(Base):
+    """Junction table linking roles to permissions."""
+
+    __tablename__ = "role_permissions"
+
+    role_id: Mapped[int] = mapped_column(
+        ForeignKey("roles.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    permission_id: Mapped[int] = mapped_column(
+        ForeignKey("permissions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    role: Mapped["Role"] = relationship(back_populates="permission_links")
+    permission: Mapped["Permission"] = relationship(back_populates="role_links")
+
+    def __repr__(self) -> str:
+        return (
+            f"<RolePermission(role_id={self.role_id}, "
+            f"permission_id={self.permission_id})>"
+        )
 
 
 class OAuthAccount(Base, IDMixin, TimestampMixin):

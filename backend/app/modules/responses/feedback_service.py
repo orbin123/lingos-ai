@@ -14,13 +14,15 @@ single (SRP) and makes feedback regeneration cheap later (just call
 this again with the same evaluation_id).
 """
 
+import time
+
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from app.ai import AIRequestLoggingService
 from app.ai.agents import generate_feedback
 from app.modules.responses.exceptions import (
     EvaluationNotFound,
-    FeedbackAlreadyExists,
     FeedbackGenerationFailed,
 )
 from app.modules.responses.models import Feedback
@@ -64,6 +66,7 @@ class FeedbackService:
 
         # 5. Call the LLM. Wrap in try/except so we surface a clean
         # business error instead of leaking pydantic/openai internals.
+        started = time.perf_counter()
         try:
             feedback_output = await generate_feedback(
                 task_content=task.content,
@@ -72,10 +75,26 @@ class FeedbackService:
                 score=score_int,
             )
         except ValidationError as e:
+            AIRequestLoggingService(self.db).record_failure(
+                agent_name="feedback_engine",
+                model="gpt-4o-mini",
+                user_id=user_task.user_id,
+                latency_ms=round((time.perf_counter() - started) * 1000),
+                error_message=str(e),
+                prompt_version="feedback_v1",
+            )
             raise FeedbackGenerationFailed(
                 f"LLM returned invalid feedback JSON: {e}"
             ) from e
         except Exception as e:
+            AIRequestLoggingService(self.db).record_failure(
+                agent_name="feedback_engine",
+                model="gpt-4o-mini",
+                user_id=user_task.user_id,
+                latency_ms=round((time.perf_counter() - started) * 1000),
+                error_message=str(e),
+                prompt_version="feedback_v1",
+            )
             # Network errors, OpenAI 5xx, timeouts, etc.
             raise FeedbackGenerationFailed(
                 f"Feedback generation failed: {e}"
@@ -86,6 +105,13 @@ class FeedbackService:
         feedback = self.feedback_repo.create(
             evaluation_id=evaluation_id,
             body=feedback_output.model_dump(),
+        )
+        AIRequestLoggingService(self.db).record_success(
+            agent_name="feedback_engine",
+            model="gpt-4o-mini",
+            user_id=user_task.user_id,
+            latency_ms=round((time.perf_counter() - started) * 1000),
+            prompt_version="feedback_v1",
         )
 
         # 7. One commit — the only DB write in this flow.

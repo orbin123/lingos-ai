@@ -1,8 +1,19 @@
 """Data access for User, UserProfile, and OAuthAccount."""
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import selectinload
 
-from app.modules.auth.models import OAuthAccount, User, UserProfile
+from app.modules.auth.models import (
+    DEFAULT_ROLE_NAMES,
+    OAuthAccount,
+    Permission,
+    Role,
+    RolePermission,
+    User,
+    UserProfile,
+    UserRole,
+)
+from app.modules.auth.permissions import DEFAULT_ROLE_PERMISSIONS, REQUIRED_PERMISSIONS
 
 
 class UserRepository:
@@ -13,7 +24,20 @@ class UserRepository:
 
     # Reads
     def get_by_id(self, user_id: int) -> User | None:
-        return self.db.get(User, user_id)
+        return (
+            self.db.query(User)
+            .options(
+                selectinload(User.role_links)
+                .joinedload(UserRole.role)
+                .selectinload(Role.permission_links)
+                .joinedload(RolePermission.permission),
+            )
+            .filter(User.id == user_id)
+            .first()
+        )
+
+    def list_all(self) -> list[User]:
+        return self.db.query(User).order_by(User.created_at.desc(), User.id.desc()).all()
 
     def get_by_email(self, email: str) -> User | None:
         return (
@@ -49,6 +73,153 @@ class UserRepository:
 
     def delete(self, user: User) -> None:
         self.db.delete(user)
+
+    def set_active(self, user: User, *, is_active: bool) -> User:
+        user.is_active = is_active
+        self.db.flush()
+        return user
+
+
+class RoleRepository:
+    """DB access for application roles and user-role assignments."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def get_by_name(self, name: str) -> Role | None:
+        return self.db.query(Role).filter(Role.name == name).first()
+
+    def ensure_defaults(self) -> dict[str, Role]:
+        roles: dict[str, Role] = {}
+        for name in DEFAULT_ROLE_NAMES:
+            role = self.get_by_name(name)
+            if role is None:
+                role = Role(name=name)
+                self.db.add(role)
+                self.db.flush()
+            roles[name] = role
+        permissions = self.ensure_permissions()
+        for role_name, permission_keys in DEFAULT_ROLE_PERMISSIONS.items():
+            role = roles[role_name]
+            existing_keys = {
+                key
+                for (key,) in (
+                    self.db.query(Permission.key)
+                    .join(
+                        RolePermission,
+                        RolePermission.permission_id == Permission.id,
+                    )
+                    .filter(RolePermission.role_id == role.id)
+                    .all()
+                )
+            }
+            for permission_key in permission_keys:
+                if permission_key in existing_keys:
+                    continue
+                self.db.add(
+                    RolePermission(
+                        role_id=role.id,
+                        permission_id=permissions[permission_key].id,
+                    )
+                )
+            self.db.flush()
+            self.db.expire(role, ["permission_links"])
+        return roles
+
+    def ensure_permissions(self) -> dict[str, Permission]:
+        permissions: dict[str, Permission] = {}
+        for key, description in REQUIRED_PERMISSIONS:
+            permission = self.get_permission_by_key(key)
+            if permission is None:
+                permission = Permission(key=key, description=description)
+                self.db.add(permission)
+                self.db.flush()
+            permissions[key] = permission
+        return permissions
+
+    def list_roles(self) -> list[Role]:
+        self.ensure_defaults()
+        return (
+            self.db.query(Role)
+            .options(
+                selectinload(Role.permission_links).joinedload(
+                    RolePermission.permission
+                )
+            )
+            .order_by(Role.name.asc())
+            .all()
+        )
+
+    def list_permissions(self) -> list[Permission]:
+        self.ensure_permissions()
+        return self.db.query(Permission).order_by(Permission.key.asc()).all()
+
+    def get_permission_by_key(self, key: str) -> Permission | None:
+        return self.db.query(Permission).filter(Permission.key == key).first()
+
+    def get_role(self, role_id: int) -> Role | None:
+        return (
+            self.db.query(Role)
+            .options(
+                selectinload(Role.permission_links).joinedload(
+                    RolePermission.permission
+                )
+            )
+            .filter(Role.id == role_id)
+            .first()
+        )
+
+    def assign_role(self, *, user_id: int, role_name: str) -> UserRole:
+        role = self.ensure_defaults()[role_name]
+        existing = (
+            self.db.query(UserRole)
+            .filter(UserRole.user_id == user_id, UserRole.role_id == role.id)
+            .first()
+        )
+        if existing is not None:
+            return existing
+
+        user_role = UserRole(user_id=user_id, role_id=role.id)
+        self.db.add(user_role)
+        self.db.flush()
+        return user_role
+
+    def replace_user_roles(self, *, user: User, role_names: set[str]) -> None:
+        roles = self.ensure_defaults()
+        existing = self.db.query(UserRole).filter(UserRole.user_id == user.id).all()
+        for link in existing:
+            self.db.delete(link)
+        self.db.flush()
+        for role_name in sorted(role_names):
+            self.db.add(UserRole(user_id=user.id, role_id=roles[role_name].id))
+        user.is_superuser = "super_admin" in role_names
+        self.db.flush()
+        self.db.expire(user, ["role_links"])
+
+    def replace_role_permissions(
+        self,
+        *,
+        role: Role,
+        permission_keys: set[str],
+    ) -> None:
+        permissions = self.ensure_permissions()
+        existing = (
+            self.db.query(RolePermission)
+            .filter(RolePermission.role_id == role.id)
+            .all()
+        )
+        for link in existing:
+            self.db.delete(link)
+        self.db.flush()
+        for permission_key in sorted(permission_keys):
+            self.db.add(
+                RolePermission(
+                    role_id=role.id,
+                    permission_id=permissions[permission_key].id,
+                )
+            )
+        self.db.flush()
+        self.db.expire(role, ["permission_links"])
 
 
 class UserProfileRepository:

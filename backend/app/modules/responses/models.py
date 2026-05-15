@@ -1,6 +1,8 @@
 """Response chain — what user submitted, AI evaluation, AI feedback."""
 
-from sqlalchemy import ForeignKey, Numeric, Text
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, JSON, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,7 +27,10 @@ class UserResponse(Base, IDMixin, CreatedAtMixin):
         ForeignKey("user_tasks.id", ondelete="CASCADE"),
         nullable=False, unique=True, index=True,
     )
-    content: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    content: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Embedding state — async side-effect, doesn't block submission
@@ -66,7 +71,10 @@ class Evaluation(Base, IDMixin, CreatedAtMixin):
     )
     overall_score: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False)
     percentage: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
-    report: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    report: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
 
     # Relationships
     response: Mapped["UserResponse"] = relationship(back_populates="evaluation")
@@ -101,10 +109,31 @@ class Feedback(Base, IDMixin, CreatedAtMixin):
         ForeignKey("evaluations.id", ondelete="CASCADE"),
         nullable=False, unique=True, index=True,
     )
-    body: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    body: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+    )
+    review_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+        index=True,
+    )
+    reviewed_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Relationships
     evaluation: Mapped["Evaluation"] = relationship(back_populates="feedback")
+    reviewer = relationship("User")
 
     def __repr__(self) -> str:
         return f"<Feedback(id={self.id}, evaluation_id={self.evaluation_id})>"

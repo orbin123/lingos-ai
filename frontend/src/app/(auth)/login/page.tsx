@@ -3,6 +3,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { loginSchema, type LoginInput } from "@/lib/validators/auth";
@@ -25,6 +26,14 @@ const OAUTH_ERRORS: Record<string, string> = {
 };
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const searchParams = useSearchParams();
   const oauthError = searchParams.get("error");
   const oauthErrorMessage = oauthError ? (OAUTH_ERRORS[oauthError] ?? "Sign-in failed. Please try again.") : null;

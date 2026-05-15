@@ -1,15 +1,19 @@
 """Purchase, notification, and account-action endpoints."""
 
+from datetime import datetime, timezone
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.modules.admin.audit_service import AdminAuditService
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.auth.repository import UserProfileRepository
 from app.modules.curriculum.models import EnrollmentStatus
 from app.modules.curriculum.repository import CourseRepository, UserEnrollmentRepository
-from app.modules.subscriptions.models import Purchase
+from app.modules.subscriptions.models import Payment, Purchase
 from app.modules.subscriptions.schemas import (
     NotificationSettings,
     NotificationSettingsUpdate,
@@ -94,6 +98,35 @@ def purchase_plan(
     purchase.amount_paid = float(plan["amount_paid"])
     purchase.currency = str(plan["currency"])
     purchase.status = "paid"
+    db.flush()
+
+    payment = Payment(
+        user_id=current_user.id,
+        provider="mock",
+        provider_payment_id=f"mock_{purchase.id}_{uuid4().hex}",
+        amount=purchase.amount_paid,
+        currency=purchase.currency,
+        status="paid",
+        paid_at=datetime.now(timezone.utc),
+    )
+    db.add(payment)
+    db.flush()
+    AdminAuditService(db).record(
+        admin=current_user,
+        action="payment.recorded",
+        resource_type="payment",
+        resource_id=payment.id,
+        old_value=None,
+        new_value={
+            "id": payment.id,
+            "user_id": payment.user_id,
+            "provider": payment.provider,
+            "provider_payment_id": payment.provider_payment_id,
+            "amount": float(payment.amount),
+            "currency": payment.currency,
+            "status": payment.status,
+        },
+    )
 
     db.commit()
     db.refresh(purchase)

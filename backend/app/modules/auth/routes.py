@@ -12,7 +12,7 @@ from app.core.database import get_db
 from app.core.security import create_access_token, decode_token, verify_password
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.exceptions import EmailAlreadyExists, InvalidCredentials
-from app.modules.auth.models import OAuthAccount, User
+from app.modules.auth.models import ROLE_ADMIN, ROLE_LEARNER, ROLE_SUPER_ADMIN, OAuthAccount, User
 from app.modules.auth.repository import UserProfileRepository
 from app.modules.auth.schemas import TokenOut, UserCreate, UserLogin, UserOut, UserUpdate
 from app.modules.auth.service import AuthService
@@ -35,6 +35,28 @@ def _profile_value(value: object) -> str | None:
     return getattr(value, "value", str(value))
 
 
+def _role_names(user: User) -> list[str]:
+    return user.role_names()
+
+
+def _primary_role(user: User) -> str:
+    roles = set(_role_names(user))
+    if ROLE_SUPER_ADMIN in roles:
+        return ROLE_SUPER_ADMIN
+    if ROLE_ADMIN in roles:
+        return ROLE_ADMIN
+    return ROLE_LEARNER
+
+
+def _token_data(user: User) -> dict[str, object]:
+    roles = _role_names(user)
+    return {
+        "sub": str(user.id),
+        "roles": roles,
+        "is_superuser": ROLE_SUPER_ADMIN in roles,
+    }
+
+
 def _build_user_out(
     *,
     user: User,
@@ -48,7 +70,10 @@ def _build_user_out(
         display_name=getattr(profile, "display_name", None) or user.name,
         created_at=user.created_at,
         auth_provider="google" if user.password_hash is None else "password",
-        is_superuser=user.is_superuser,
+        is_superuser=ROLE_SUPER_ADMIN in set(_role_names(user)),
+        is_active=user.is_active,
+        roles=_role_names(user),
+        role=_primary_role(user),
         diagnosis_completed=bool(profile and profile.diagnosis_completed),
         enrollment=(
             EnrollmentRead.model_validate(enrollment)
@@ -108,6 +133,10 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut:
         display_name=user.name,
         created_at=user.created_at,
         auth_provider="password",
+        is_superuser=ROLE_SUPER_ADMIN in set(_role_names(user)),
+        is_active=user.is_active,
+        roles=_role_names(user),
+        role=_primary_role(user),
         diagnosis_completed=False,
         enrollment=None,
         notifications=NotificationSettings(),
@@ -127,10 +156,7 @@ def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenOut:
             detail="Invalid email or password"
         )
 
-    token = create_access_token(data={
-        "sub": str(user.id),
-        "is_superuser": user.is_superuser,
-    })
+    token = create_access_token(data=_token_data(user))
     return TokenOut(access_token=token)
 
 @router.get("/me", response_model=UserOut)
@@ -337,10 +363,7 @@ def google_callback(
         db.commit()
         db.refresh(user)
 
-        jwt_token = create_access_token(data={
-            "sub": str(user.id),
-            "is_superuser": user.is_superuser,
-        })
+        jwt_token = create_access_token(data=_token_data(user))
         redirect_url = f"{frontend_base}/callback?token={jwt_token}&next=profile"
         return RedirectResponse(url=redirect_url)
 
@@ -352,10 +375,7 @@ def google_callback(
     )
 
     # --- Issue our own JWT ---
-    jwt_token = create_access_token(data={
-        "sub": str(user.id),
-        "is_superuser": user.is_superuser,
-    })
+    jwt_token = create_access_token(data=_token_data(user))
 
     # --- Redirect frontend with token ---
     # We pass the token as a query param. The frontend reads it and stores it.

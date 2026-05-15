@@ -27,6 +27,9 @@ class UserOut(BaseModel):
     created_at: datetime
     auth_provider: str = "password"
     is_superuser: bool = False
+    is_active: bool = True
+    roles: list[str] = Field(default_factory=lambda: ["learner"])
+    role: str = "learner"
     diagnosis_completed: bool = False  # tells frontend where to send the user
     enrollment: EnrollmentRead | None = None
     phone_number: str | None = None
