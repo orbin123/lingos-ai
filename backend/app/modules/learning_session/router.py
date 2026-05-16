@@ -79,6 +79,35 @@ async def start_session(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@rest_router.post(
+    "/sessions/{session_id}/restart",
+    response_model=StartSessionResponse,
+    status_code=status.HTTP_200_OK,
+)
+def restart_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StartSessionResponse:
+    service = LearningSessionService(db)
+    try:
+        return service.restart_session(
+            session_id=session_id,
+            user_id=current_user.id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover — unexpected
+        logger.exception(
+            "restart_session failed session_id=%s user_id=%s",
+            session_id,
+            current_user.id,
+        )
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @rest_router.get(
     "/sessions/by-task/{user_task_id}",
     response_model=LearningSessionSnapshotRead,

@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import { LayoutDashboard, MoreHorizontal, RotateCcw } from "lucide-react";
 
+import { api } from "@/lib/api";
 import { markDailyChatEntered } from "@/lib/daily-session-entry";
 import {
   TaskChatLoadingSkeleton,
@@ -121,22 +123,6 @@ function BackIcon() {
     </svg>
   );
 }
-function FlameIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-      <path d="M8 14c2.5 0 4.5-2 4.5-4.5 0-2-1-3-2-4.5 0 1.5-.7 2-1.5 2 0-1.5-1-3-2.5-4.5 0 3-3 4-3 7C3.5 12 5.5 14 8 14z" fill="#f97316" />
-    </svg>
-  );
-}
-function MoreIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <circle cx="3.5" cy="8" r="1.3" fill="currentColor" />
-      <circle cx="8" cy="8" r="1.3" fill="currentColor" />
-      <circle cx="12.5" cy="8" r="1.3" fill="currentColor" />
-    </svg>
-  );
-}
 function SendIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -191,8 +177,49 @@ function LogoIcon() {
 }
 
 /* ── Sub-components ──────────────────────────────────────────────────── */
-function Topbar({ skillLabel, sceneLabel }: { skillLabel: string; sceneLabel: string }) {
+function Topbar({
+  skillLabel,
+  sceneLabel,
+  onRestart,
+  restarting,
+}: {
+  skillLabel: string;
+  sceneLabel: string;
+  onRestart: () => void;
+  restarting: boolean;
+}) {
   const router = useRouter();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
+
+  const goToDashboard = () => {
+    setMenuOpen(false);
+    router.push("/dashboard");
+  };
+
+  const restart = () => {
+    setMenuOpen(false);
+    onRestart();
+  };
+
   return (
     <div style={{
       position: "sticky", top: 0, zIndex: 50,
@@ -242,22 +269,89 @@ function Topbar({ skillLabel, sceneLabel }: { skillLabel: string; sceneLabel: st
 
         <div style={{ flex: 1 }} />
 
-        <div style={{
-          display: "inline-flex", alignItems: "center", gap: 6,
-          background: "white", border: "1px solid oklch(85% 0.025 240)", borderRadius: 999,
-          padding: "6px 12px", fontSize: 12.5, fontWeight: 700, color: "oklch(20% 0.09 245)",
-        }}>
-          <FlameIcon /> 7 day streak
-        </div>
+        <div ref={menuRef} style={{ position: "relative" }}>
+          <button
+            aria-label="Session options"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+            style={{
+              width: 36, height: 36, borderRadius: "50%",
+              background: "white", border: "1px solid oklch(85% 0.025 240)",
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              color: "oklch(28% 0.08 245)", cursor: "pointer",
+            }}
+          >
+            <MoreHorizontal size={17} strokeWidth={2.4} />
+          </button>
 
-        <button style={{
-          width: 36, height: 36, borderRadius: "50%",
-          background: "white", border: "1px solid oklch(85% 0.025 240)",
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          color: "oklch(28% 0.08 245)", cursor: "pointer",
-        }}>
-          <MoreIcon />
-        </button>
+          {menuOpen && (
+            <div
+              role="menu"
+              aria-label="Session options"
+              style={{
+                position: "absolute",
+                top: 44,
+                right: 0,
+                width: 210,
+                padding: 6,
+                borderRadius: 14,
+                background: "white",
+                border: "1px solid oklch(85% 0.025 240)",
+                boxShadow: "0 14px 34px rgba(35,55,100,0.18)",
+              }}
+            >
+              <button
+                role="menuitem"
+                disabled={restarting}
+                onClick={restart}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 11px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "transparent",
+                  color: "oklch(28% 0.08 245)",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  fontFamily: "inherit",
+                  cursor: restarting ? "not-allowed" : "pointer",
+                  opacity: restarting ? 0.55 : 1,
+                  textAlign: "left",
+                }}
+              >
+                <RotateCcw size={15} />
+                {restarting ? "Restarting..." : "Restart session"}
+              </button>
+              <button
+                role="menuitem"
+                onClick={goToDashboard}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 11px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "transparent",
+                  color: "oklch(28% 0.08 245)",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  fontFamily: "inherit",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <LayoutDashboard size={15} />
+                Back to dashboard
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -670,6 +764,7 @@ export default function ChatSessionPage() {
   const [loadingType, setLoadingType] = useState<TaskChatLoadingType>(
     initialConnectionState === "connecting" ? "teacher_loading" : null,
   );
+  const [restarting, setRestarting] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pendingSendsRef = useRef<WSOutgoing[]>([]);
@@ -972,6 +1067,52 @@ export default function ChatSessionPage() {
     if (label === "Next activity") setPhase("practice");
   }
 
+  async function handleRestartSession() {
+    if (!sessionId || restarting) return;
+    const confirmed = window.confirm(
+      "Restart this chat session? Your completed dashboard activities will stay completed.",
+    );
+    if (!confirmed) return;
+
+    setRestarting(true);
+    setLoadingType("teacher_loading");
+    try {
+      const res = await api.post<{
+        session_id: string;
+        topic: string;
+        skill_name: string;
+        task_type: string;
+        user_task_id?: number | null;
+        message: string;
+      }>(`/api/learning/sessions/${encodeURIComponent(sessionId)}/restart`);
+
+      pendingSendsRef.current = [];
+      wsRef.current?.close();
+      wsRef.current = null;
+      setEvents([]);
+      setComposer("");
+      setPhase(res.data.message === "Session complete" ? "ended" : "teaching");
+      setSkillName(res.data.skill_name || "");
+      setConnectionState("connecting");
+      setReconnectAttempt((attempt) => attempt + 1);
+      markDailyChatEntered(res.data.session_id);
+      queryClient.invalidateQueries({ queryKey: ["task", "next"] });
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } }; message?: string })
+          ?.response?.data?.detail ||
+        (err as { message?: string })?.message ||
+        "Could not restart this session.";
+      setLoadingType(null);
+      setEvents((prev) => [
+        ...prev,
+        { kind: "chat", role: "ai", content: detail },
+      ]);
+    } finally {
+      setRestarting(false);
+    }
+  }
+
   const setTaskAnswers = useCallback((eventIdx: number, next: Record<string, unknown>) => {
     setEvents((prev) =>
       prev.map((e, i) =>
@@ -1052,7 +1193,12 @@ export default function ChatSessionPage() {
           backgroundSize: "22px 22px", zIndex: 0,
         }} />
 
-        <Topbar skillLabel={skillName || "Lesson"} sceneLabel={sceneLabel} />
+        <Topbar
+          skillLabel={skillName || "Lesson"}
+          sceneLabel={sceneLabel}
+          onRestart={handleRestartSession}
+          restarting={restarting}
+        />
 
         <main ref={stageRef} style={{
           position: "relative", zIndex: 1,

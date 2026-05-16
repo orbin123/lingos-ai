@@ -355,6 +355,86 @@ class LearningSessionService:
             message="Session ready",
         )
 
+    def restart_session(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+    ) -> StartSessionResponse:
+        """Restart the active chat loop without undoing dashboard progress."""
+        session = self._load_session(session_id)
+        if session.user_id != user_id:
+            raise PermissionError(
+                f"User {user_id} cannot restart session {session_id}"
+            )
+
+        self._refresh_queue_statuses(session)
+
+        if self._all_queue_tasks_complete(session):
+            session.phase = "ended"
+            self.session_repo.save(session)
+            self.db.commit()
+            return StartSessionResponse(
+                session_id=session.session_id,
+                topic=session.topic,
+                skill_name=session.skill_name,
+                task_type=session.task_type,
+                user_task_id=session.user_task_id,
+                message="Session complete",
+            )
+
+        queue = sorted(
+            list(session.task_queue or []),
+            key=lambda item: int(item.get("sequence_index") or 0),
+        )
+        first_incomplete = next(
+            (
+                item
+                for item in queue
+                if item.get("status") != UserTaskStatus.COMPLETED.value
+            ),
+            None,
+        )
+
+        if first_incomplete is not None:
+            user_task_id = first_incomplete.get("user_task_id")
+            user_task = (
+                self.user_task_repo.get_by_id(int(user_task_id))
+                if user_task_id is not None
+                else None
+            )
+            if user_task is None:
+                raise LookupError(
+                    f"UserTask {user_task_id} does not exist for session restart"
+                )
+            next_index = int(first_incomplete.get("sequence_index") or 0)
+            self._apply_active_user_task(
+                session,
+                user_task,
+                next_index,
+                reset_result_state=True,
+            )
+            session.current_activity_order = next_index + 1
+            self._refresh_queue_statuses(session)
+
+        session.messages = []
+        session.user_submission = None
+        session.evaluation = None
+        session.feedback = None
+        session.understanding_confirmed = False
+        session.phase = "teaching"
+        self.session_repo.save(session)
+        self.db.commit()
+
+        return StartSessionResponse(
+            session_id=session.session_id,
+            topic=session.topic,
+            skill_name=session.skill_name,
+            task_type=session.task_type,
+            user_task_id=session.user_task_id,
+            message="Session restarted",
+        )
+
     async def _create_session_from_user_task(
         self,
         *,
@@ -391,27 +471,13 @@ class LearningSessionService:
             .first()
         )
         if existing is not None:
-            template = self._template_for_retry(existing)
-            user_profile = self._retry_generation_profile(
-                session=existing,
-                template=template,
-            )
-            task_content = await self.generator.generate(template, user_profile)
-            existing.pre_generated_tasks = task_content
-            existing.messages = []
-            existing.phase = "teaching"
-            existing.user_submission = None
-            existing.evaluation = None
-            existing.understanding_confirmed = False
-            existing.current_task_index = 0
-            self.db.commit()
             return StartSessionResponse(
                 session_id=existing.session_id,
                 topic=existing.topic,
                 skill_name=existing.skill_name,
                 task_type=existing.task_type,
                 user_task_id=user_task_id,
-                message="Session restarted",
+                message="Session resumed",
             )
 
         task = user_task.task

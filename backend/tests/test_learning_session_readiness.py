@@ -10,7 +10,7 @@ from app.modules.learning_session.service import (
     LearningSessionService,
     _looks_like_understanding,
 )
-from app.modules.tasks.models import UserTaskStatus
+from app.modules.tasks.models import TaskType, UserTaskStatus
 
 
 def test_learning_readiness_does_not_match_ok_inside_books() -> None:
@@ -101,12 +101,175 @@ def test_daily_queue_respects_requested_incomplete_task() -> None:
     )
 
 
+def test_restart_session_clears_state_and_preserves_completed_progress() -> None:
+    task_one = _fake_user_task(1, UserTaskStatus.COMPLETED, "First activity")
+    task_two = _fake_user_task(2, UserTaskStatus.PENDING, "Second activity")
+    session = _FakeSession(
+        session_id="session-1",
+        user_id=7,
+        enrollment_id=10,
+        user_task_id=1,
+        topic="First activity",
+        skill_name="grammar",
+        activity_type="read",
+        task_type="reading",
+        user_level=5,
+        pre_generated_tasks={"widget": "fill_in_blanks"},
+        messages=[{"role": "ai", "content": "Old chat", "type": "chat"}],
+        phase="feedback",
+        current_task_index=0,
+        current_activity_order=1,
+        task_queue=[
+            {"user_task_id": 1, "sequence_index": 0, "status": "completed"},
+            {"user_task_id": 2, "sequence_index": 1, "status": "pending"},
+        ],
+        user_submission={"b1": "went"},
+        evaluation={"percentage": 80},
+        feedback={"overall_message": "Nice"},
+        understanding_confirmed=True,
+    )
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = _FakeDB()
+    service.session_repo = _FakeSessionRepo(session)
+    service.user_task_repo = SimpleNamespace(
+        get_by_id=lambda user_task_id: {1: task_one, 2: task_two}.get(user_task_id)
+    )
+
+    response = service.restart_session(session_id="session-1", user_id=7)
+
+    assert response.message == "Session restarted"
+    assert session.phase == "teaching"
+    assert session.messages == []
+    assert session.user_submission is None
+    assert session.evaluation is None
+    assert session.feedback is None
+    assert session.understanding_confirmed is False
+    assert session.user_task_id == 2
+    assert session.current_task_index == 1
+    assert session.current_activity_order == 2
+    assert task_one.status == UserTaskStatus.COMPLETED
+    assert task_two.status == UserTaskStatus.IN_PROGRESS
+    assert session.task_queue[0]["status"] == "completed"
+    assert session.task_queue[1]["status"] == "in_progress"
+
+
+def test_restart_session_does_not_reopen_completed_day() -> None:
+    task_one = _fake_user_task(1, UserTaskStatus.COMPLETED, "First activity")
+    task_two = _fake_user_task(2, UserTaskStatus.COMPLETED, "Second activity")
+    session = _FakeSession(
+        session_id="session-1",
+        user_id=7,
+        enrollment_id=10,
+        user_task_id=2,
+        topic="Second activity",
+        skill_name="grammar",
+        activity_type="read",
+        task_type="reading",
+        user_level=5,
+        pre_generated_tasks={"widget": "fill_in_blanks"},
+        messages=[{"role": "ai", "content": "Done", "type": "chat"}],
+        phase="feedback",
+        current_task_index=1,
+        current_activity_order=2,
+        task_queue=[
+            {"user_task_id": 1, "sequence_index": 0, "status": "completed"},
+            {"user_task_id": 2, "sequence_index": 1, "status": "completed"},
+        ],
+        user_submission={"b1": "went"},
+        evaluation={"percentage": 80},
+        feedback={"overall_message": "Nice"},
+        understanding_confirmed=True,
+    )
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = _FakeDB()
+    service.session_repo = _FakeSessionRepo(session)
+    service.user_task_repo = SimpleNamespace(
+        get_by_id=lambda user_task_id: {1: task_one, 2: task_two}.get(user_task_id)
+    )
+
+    response = service.restart_session(session_id="session-1", user_id=7)
+
+    assert response.message == "Session complete"
+    assert session.phase == "ended"
+    assert session.messages == [{"role": "ai", "content": "Done", "type": "chat"}]
+    assert session.feedback == {"overall_message": "Nice"}
+    assert task_one.status == UserTaskStatus.COMPLETED
+    assert task_two.status == UserTaskStatus.COMPLETED
+
+
+def test_restart_session_rejects_other_users_session() -> None:
+    session = _FakeSession(
+        session_id="session-1",
+        user_id=7,
+        task_queue=[],
+    )
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = _FakeDB()
+    service.session_repo = _FakeSessionRepo(session)
+    service.user_task_repo = SimpleNamespace(get_by_id=lambda user_task_id: None)
+
+    with pytest.raises(PermissionError):
+        service.restart_session(session_id="session-1", user_id=9)
+
+
+def test_existing_daily_session_resume_preserves_messages() -> None:
+    task = _fake_user_task(1, UserTaskStatus.IN_PROGRESS, "Active activity")
+    existing = _FakeSession(
+        session_id="session-1",
+        user_id=7,
+        enrollment_id=10,
+        user_task_id=1,
+        topic="Active activity",
+        skill_name="grammar",
+        activity_type="read",
+        task_type="reading",
+        user_level=5,
+        pre_generated_tasks={"widget": "fill_in_blanks"},
+        messages=[{"role": "ai", "content": "Keep going", "type": "chat"}],
+        phase="practice_task",
+        current_task_index=0,
+        current_activity_order=1,
+        task_queue=[
+            {"user_task_id": 1, "sequence_index": 0, "status": "in_progress"},
+        ],
+        user_submission=None,
+        evaluation=None,
+        feedback=None,
+        understanding_confirmed=True,
+    )
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = _FakeDB()
+    service.session_repo = _FakeSessionRepo(existing)
+    service._find_daily_session = lambda *, enrollment, bundle: existing
+
+    response = service._create_or_resume_daily_session(
+        user_id=7,
+        enrollment=SimpleNamespace(id=10, user_id=7),
+        bundle=[task],
+        requested_user_task_id=None,
+    )
+
+    assert response.message == "Session resumed"
+    assert existing.messages == [
+        {"role": "ai", "content": "Keep going", "type": "chat"}
+    ]
+    assert existing.phase == "practice_task"
+
+
 class _FakeDB:
     def commit(self) -> None:
         pass
 
 
 class _FakeSessionRepo:
+    def __init__(self, session=None):
+        self.session = session
+
+    def get_by_session_id(self, session_id):
+        if self.session is not None and self.session.session_id == session_id:
+            return self.session
+        return None
+
     def save(self, session):
         return session
 
@@ -121,6 +284,28 @@ def _streaming_service() -> LearningSessionService:
     service.db = _FakeDB()
     service.session_repo = _FakeSessionRepo()
     return service
+
+
+def _fake_user_task(user_task_id: int, status: UserTaskStatus, title: str):
+    return SimpleNamespace(
+        id=user_task_id,
+        task_id=100 + user_task_id,
+        status=status,
+        completed_at=None,
+        task=SimpleNamespace(
+            title=title,
+            task_type=TaskType.READING,
+            difficulty=5,
+            content={
+                "widget": "fill_in_blanks",
+                "topic_name": title,
+                "sub_skill": "grammar",
+                "activity": "read",
+                "sub_level": 5,
+            },
+            task_skills=[],
+        ),
+    )
 
 
 def _teaching_session():
