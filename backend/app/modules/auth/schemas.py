@@ -1,6 +1,7 @@
 """Pydantic schemas for auth module - API boundary contracts"""
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -37,6 +38,10 @@ class UserOut(BaseModel):
     native_language: str | None = None
     primary_goals: list[str] = Field(default_factory=list)
     personalisation_context: str = ""
+    # Structured view derived by the Personalization Engine. Surfaced so the
+    # frontend can show "what the AI knows about you" and gate copy on
+    # extraction_source (llm / fallback / empty).
+    structured_personalisation: dict[str, Any] | None = None
     self_assessed_level: str | None = None
     goal: str | None = None
     interests: list[str] = Field(default_factory=list)

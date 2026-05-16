@@ -21,6 +21,7 @@ from app.modules.diagnosis.schemas import (
     ReadAloudAnalysisOut,
 )
 from app.modules.diagnosis.scoring import compute_skill_scores
+from app.modules.personalization.service import PersonalizationService
 from app.modules.progress.repository import SkillPointsRepository
 from app.modules.skills.repository import (
     SkillRepository,
@@ -134,6 +135,15 @@ class DiagnosisService:
 
         # 6. Commit transaction
         self.db.commit()
+
+        # 6b. Refresh structured personalisation so the planner has a
+        # populated profile by the first lesson. Best-effort — a failure
+        # here must not surface to the user.
+        try:
+            await PersonalizationService(self.db).refresh_for_user(user_id)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
 
         # 7. Call AI feedback agent
         weakest = sorted(skill_scores.items(), key=lambda kv: kv[1])[:2]

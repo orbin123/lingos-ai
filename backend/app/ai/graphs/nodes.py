@@ -209,6 +209,28 @@ async def task_delivery_node(state: LearningSessionState) -> dict[str, Any]:
                 profile.setdefault(
                     "topic", daily_plan.get("topic_name") or state.get("topic") or ""
                 )
+                # Surface the planner-generated lesson context so task
+                # templates that opt into {lesson_context}, {vocabulary_domain},
+                # {conversation_style} can render personalized scenarios.
+                teacher_instructions = daily_plan.get("teacher_instructions") or {}
+                if teacher_instructions:
+                    profile.setdefault("teacher_instructions", teacher_instructions)
+                    for key in (
+                        "lesson_context",
+                        "vocabulary_domain",
+                        "conversation_style",
+                    ):
+                        value = teacher_instructions.get(key)
+                        if value:
+                            profile.setdefault(key, value)
+                if daily_plan.get("communication_goal"):
+                    profile.setdefault(
+                        "communication_goal", daily_plan["communication_goal"]
+                    )
+                if daily_plan.get("language_focus"):
+                    profile.setdefault(
+                        "language_focus", daily_plan["language_focus"]
+                    )
                 task_content = await generator.generate(template, profile)
                 task_content.setdefault("widget", widget)
                 updated_state_patch["task_content"] = task_content
@@ -373,12 +395,20 @@ async def feedback_node(state: LearningSessionState) -> dict[str, Any]:
     evaluation = state.get("evaluation") or {}
     score = int(round(float(evaluation.get("percentage", 0.0))))
 
+    learner_profile = state.get("learner_profile") or {}
+    structured_personalisation = learner_profile.get("structured_personalisation")
+    daily_plan = state.get("daily_plan") or {}
+    teacher_instructions = daily_plan.get("teacher_instructions") or {}
+    lesson_context = teacher_instructions.get("lesson_context") or None
+
     try:
         feedback_obj = await generate_feedback(
             task_content=task_content,
             user_answers=user_submission,
             evaluation_report=evaluation,
             score=score,
+            structured_personalisation=structured_personalisation,
+            lesson_context=lesson_context,
         )
         feedback_dict = feedback_obj.model_dump()
     except Exception:

@@ -243,3 +243,19 @@ class DailyPlanRepository:
         self.db.add(new_row)
         self.db.flush()
         return new_row
+
+    def delete_for_user(self, *, user_id: int) -> int:
+        """Delete every cached plan for one user. Returns the row count.
+
+        Used when the user's personalisation profile changes — every
+        cached lesson plan is now stale and must regenerate lazily on
+        next access. Non-destructive: user responses, evaluations, and
+        feedback live in other tables and are untouched.
+        """
+        deleted = (
+            self.db.query(DailyPlan)
+            .filter(DailyPlan.user_id == user_id)
+            .delete(synchronize_session=False)
+        )
+        self.db.flush()
+        return int(deleted)

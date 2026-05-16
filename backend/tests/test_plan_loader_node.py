@@ -69,7 +69,9 @@ def _patch_enrollment(monkeypatch, *, user_id: int) -> SimpleNamespace:
 def _patch_topic(monkeypatch) -> CourseTopic:
     topic = CourseTopic(
         week=1, day=2, topic_id="1:2", sub_skill="vocabulary",
-        sub_level=1, topic_name="Everyday Words — Family & Home",
+        sub_level=1,
+        communication_goal="talk about the people around you",
+        language_focus="everyday vocabulary: people and places",
     )
     monkeypatch.setattr(
         nodes_module, "get_course_topic",
@@ -95,7 +97,7 @@ def test_plan_loader_generates_persists_and_then_loads_from_db(
             "week": topic_entry.week,
             "day": topic_entry.day,
             "topic_id": topic_entry.topic_id,
-            "topic_name": topic_entry.topic_name,
+            "topic_name": topic_entry.display_label,
             "sub_skill": topic_entry.sub_skill,
             "sub_level": topic_entry.sub_level,
             "generated_at": "2026-05-13T00:00:00+00:00",

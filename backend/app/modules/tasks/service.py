@@ -179,28 +179,45 @@ class TaskService:
             week=week,
             day=day,
         )
-        topic_name = course_topic.topic_name if course_topic else (
+        topic_name = course_topic.display_label if course_topic else (
             plan.skill_name if plan else "today's English topic"
         )
+        communication_goal = (
+            course_topic.communication_goal if course_topic else topic_name
+        )
+        language_focus = (
+            course_topic.language_focus if course_topic else ""
+        )
         topic_sub_level = course_topic.sub_level if course_topic else None
+        structured_personalisation = (
+            profile.structured_personalisation
+            if profile and profile.structured_personalisation
+            else None
+        )
         content_guidance = self._content_guidance(
             interests=interests,
             primary_goals=primary_goals,
             course_topic=topic_name,
         )
+        base_profile: dict = {
+            "topic": topic_name,
+            "course_topic": topic_name,
+            "communication_goal": communication_goal,
+            "language_focus": language_focus,
+            "topic_id": course_topic.topic_id if course_topic else "",
+            "interests": interests,
+            "primary_goals": primary_goals,
+            "self_assessed_level": self_assessed_level,
+            "personalisation_context": personalisation_context,
+            "structured_personalisation": structured_personalisation,
+            "content_guidance": content_guidance,
+        }
         if not scores:
             # No diagnosis yet — return safe defaults
             return {
+                **base_profile,
                 "sub_level": topic_sub_level or 3,
                 "weak_areas": "general grammar, basic vocabulary",
-                "topic": topic_name,
-                "course_topic": topic_name,
-                "topic_id": course_topic.topic_id if course_topic else "",
-                "interests": interests,
-                "primary_goals": primary_goals,
-                "self_assessed_level": self_assessed_level,
-                "personalisation_context": personalisation_context,
-                "content_guidance": content_guidance,
             }
 
         # Sort ascending so weakest come first
@@ -218,16 +235,9 @@ class TaskService:
         weak_areas = ", ".join(weak_area_names) if weak_area_names else "general grammar"
 
         return {
+            **base_profile,
             "sub_level": topic_sub_level or sub_level,
             "weak_areas": weak_areas,
-            "topic": topic_name,
-            "course_topic": topic_name,
-            "topic_id": course_topic.topic_id if course_topic else "",
-            "interests": interests,
-            "primary_goals": primary_goals,
-            "self_assessed_level": self_assessed_level,
-            "personalisation_context": personalisation_context,
-            "content_guidance": content_guidance,
         }
 
     @staticmethod

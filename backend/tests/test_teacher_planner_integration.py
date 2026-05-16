@@ -40,9 +40,15 @@ def test_format_planner_section_includes_words_and_keys() -> None:
     assert "do_not_reveal" in rendered
 
 
-def test_format_planner_section_returns_empty_when_missing() -> None:
-    assert _format_planner_section(None) == ""
-    assert _format_planner_section({}) == ""
+def test_format_planner_section_returns_neutral_fallback_when_missing() -> None:
+    """When no planner data is supplied, the teacher prompt must still get a
+    short instruction (a 'none' note) so the LLM never sees a blank slot."""
+    for empty_input in (None, {}):
+        rendered = _format_planner_section(empty_input)
+        assert rendered.startswith("Planner guidance: none")
+        # Critical: the prompt block stays single-line and does NOT impersonate
+        # a real planner block with structured key/value pairs.
+        assert "Planner guidance for this lesson" not in rendered
 
 
 def test_build_user_prompt_includes_planner_block_when_supplied() -> None:
