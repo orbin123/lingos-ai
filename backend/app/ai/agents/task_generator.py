@@ -139,6 +139,30 @@ class TaskGeneratorAgent:
                     "Use a fresh, everyday scenario appropriate for the course topic."
                 )
 
+        # Pull planner-supplied personalisation context if the orchestration
+        # layer plumbed it through. Templates that opt into these placeholders
+        # get the concrete scenario; legacy templates ignore them safely.
+        teacher_instructions = user_profile.get("teacher_instructions") or {}
+        lesson_context = (
+            str(user_profile.get("lesson_context") or "").strip()
+            or str(teacher_instructions.get("lesson_context") or "").strip()
+            or course_topic
+        )
+        vocabulary_domain = (
+            str(user_profile.get("vocabulary_domain") or "").strip()
+            or str(teacher_instructions.get("vocabulary_domain") or "").strip()
+            or "everyday English"
+        )
+        conversation_style = (
+            str(user_profile.get("conversation_style") or "").strip()
+            or str(teacher_instructions.get("conversation_style") or "").strip()
+            or "neutral and encouraging"
+        )
+        communication_goal = str(
+            user_profile.get("communication_goal") or course_topic
+        ).strip()
+        language_focus = str(user_profile.get("language_focus") or "").strip()
+
         prompt_vars = {
             **user_profile,
             "tier": tier.value,
@@ -149,6 +173,11 @@ class TaskGeneratorAgent:
             "primary_goals": primary_goals or "general English improvement",
             "personalisation_context": personalisation_context or "none",
             "content_guidance": content_guidance,
+            "lesson_context": lesson_context,
+            "vocabulary_domain": vocabulary_domain,
+            "conversation_style": conversation_style,
+            "communication_goal": communication_goal,
+            "language_focus": language_focus,
             "avoid_example_reuse_instruction": (
                 "Do not copy any seed/example passage, office story, names, "
                 "setting, or sentence pattern. Keep the schema, but create "

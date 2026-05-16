@@ -43,3 +43,18 @@ export function getResumeSessionIdForToday(): string | null {
     return null;
   }
 }
+
+/**
+ * Drop the stored resume sessionId so the next visit starts a fresh
+ * session. Use after a profile-personalisation change, or when the
+ * learner explicitly chooses "Start fresh" — otherwise the entry page
+ * keeps offering to resume yesterday's already-cached task content.
+ */
+export function clearDailyChatEntry(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* quota / private mode */
+  }
+}

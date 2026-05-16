@@ -17,10 +17,25 @@ import {
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { authApi, type UserOut, type UserUpdateInput } from "@/lib/auth-api";
+import { clearDailyChatEntry } from "@/lib/daily-session-entry";
 import { diagnosisApi } from "@/lib/diagnosis-api";
 import { progressApi, type SkillScoreSnapshot } from "@/lib/progress-api";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuthStore } from "@/store/authStore";
+
+// Fields whose change should invalidate today's resume sessionId — the
+// backend wipes daily_plans on these edits, so the cached chat session
+// would point at stale generated content.
+const PERSONALIZATION_FIELDS: ReadonlyArray<keyof UserUpdateInput> = [
+  "personalisation_context",
+  "primary_goals",
+  "country",
+  "native_language",
+];
+
+function shouldInvalidateSession(payload: UserUpdateInput): boolean {
+  return PERSONALIZATION_FIELDS.some((field) => field in payload);
+}
 
 type ProfileTab = "edit" | "personalisation" | "diagnosis";
 
@@ -116,8 +131,15 @@ function ProfilePageInner() {
 
   const updateMutation = useMutation({
     mutationFn: authApi.updateMe,
-    onSuccess: (user) => {
+    onSuccess: (user, variables) => {
       queryClient.setQueryData(["me"], user);
+      // When personalisation-relevant fields change, the backend wipes the
+      // user's cached daily plans. Drop the stored resume sessionId so the
+      // next chat visit starts a fresh, freshly-personalised session instead
+      // of resuming yesterday's pre-generated content.
+      if (shouldInvalidateSession(variables)) {
+        clearDailyChatEntry();
+      }
     },
   });
   const startDiagnosisMutation = useMutation({

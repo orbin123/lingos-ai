@@ -740,7 +740,7 @@ class LearningSessionService:
             day=enrollment.current_day_in_week,
         )
 
-    def _profile_context(self, user_id: int) -> dict[str, str]:
+    def _profile_context(self, user_id: int) -> dict[str, Any]:
         profile = UserProfileRepository(self.db).get_by_user_id(user_id)
         if profile is None:
             return {
@@ -748,6 +748,7 @@ class LearningSessionService:
                 "primary_goals": "",
                 "personalisation_context": "",
                 "self_assessed_level": "beginner",
+                "structured_personalisation": None,
             }
         return {
             "interests": profile.interests.strip() if profile.interests else "",
@@ -764,6 +765,7 @@ class LearningSessionService:
                 if profile.self_assessed_level
                 else "beginner"
             ),
+            "structured_personalisation": profile.structured_personalisation,
         }
 
     def _generation_profile(
@@ -798,9 +800,18 @@ class LearningSessionService:
             "topic": topic,
             "course_topic": topic,
             "topic_id": course_topic.topic_id if course_topic else "",
+            "communication_goal": (
+                course_topic.communication_goal if course_topic else topic
+            ),
+            "language_focus": (
+                course_topic.language_focus if course_topic else ""
+            ),
             "interests": interests,
             "primary_goals": primary_goals,
             "personalisation_context": profile_context["personalisation_context"],
+            "structured_personalisation": profile_context.get(
+                "structured_personalisation"
+            ),
             "self_assessed_level": profile_context["self_assessed_level"],
             "content_guidance": " ".join(content_guidance_parts),
         }

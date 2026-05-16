@@ -1,5 +1,8 @@
 """Data access for User, UserProfile, and OAuthAccount."""
 
+from datetime import datetime, timezone
+from typing import Any
+
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
@@ -239,6 +242,26 @@ class UserProfileRepository:
         """Create a profile with default values (used right after signup)."""
         profile = UserProfile(user_id=user_id)
         self.db.add(profile)
+        self.db.flush()
+        return profile
+
+    def set_structured_personalisation(
+        self,
+        *,
+        user_id: int,
+        payload: dict[str, Any],
+    ) -> UserProfile | None:
+        """Write the structured personalisation JSON onto the profile.
+
+        Stamps `structured_personalisation_updated_at` so we can detect
+        staleness. Returns None if the profile doesn't exist (shouldn't
+        happen in practice — every user has a profile from signup).
+        """
+        profile = self.get_by_user_id(user_id)
+        if profile is None:
+            return None
+        profile.structured_personalisation = payload
+        profile.structured_personalisation_updated_at = datetime.now(timezone.utc)
         self.db.flush()
         return profile
 

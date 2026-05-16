@@ -18,7 +18,22 @@ from app.modules.auth.schemas import TokenOut, UserCreate, UserLogin, UserOut, U
 from app.modules.auth.service import AuthService
 from app.modules.curriculum.schemas import EnrollmentRead
 from app.modules.curriculum.service import EnrollmentService
+from app.modules.personalization.service import PersonalizationService
 from app.modules.subscriptions.schemas import NotificationSettings
+
+
+# Profile fields whose change should re-trigger the Personalization Engine.
+# Keep this list narrow — fields like phone_number or display_name don't
+# affect teaching context and shouldn't pay an LLM call.
+_PERSONALIZATION_FIELDS: tuple[str, ...] = (
+    "personalisation_context",
+    "primary_goals",
+    "interests",
+    "goal",
+    "country",
+    "native_language",
+    "self_assessed_level",
+)
 
 router = APIRouter()
 
@@ -86,6 +101,9 @@ def _build_user_out(
         primary_goals=_split_csv(getattr(profile, "primary_goals", "") if profile else ""),
         personalisation_context=(
             getattr(profile, "personalisation_context", "") if profile else ""
+        ),
+        structured_personalisation=(
+            getattr(profile, "structured_personalisation", None) if profile else None
         ),
         self_assessed_level=(
             _profile_value(getattr(profile, "self_assessed_level", None))
@@ -171,7 +189,7 @@ def me(
 
 
 @router.patch("/me", response_model=UserOut)
-def update_me(
+async def update_me(
     payload: UserUpdate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -208,6 +226,12 @@ def update_me(
                 )
             current_user.email = new_email
 
+    # Snapshot the personalization-relevant fields before mutation so we can
+    # tell whether a refresh is needed.
+    before = {
+        field: getattr(profile, field, None) for field in _PERSONALIZATION_FIELDS
+    }
+
     for field in ("phone_number", "country", "native_language", "personalisation_context"):
         if field in updates:
             value = updates[field]
@@ -220,6 +244,16 @@ def update_me(
     db.commit()
     db.refresh(current_user)
     db.refresh(profile)
+
+    personalization_changed = any(
+        before[field] != getattr(profile, field, None)
+        for field in _PERSONALIZATION_FIELDS
+    )
+    if personalization_changed:
+        await PersonalizationService(db).refresh_for_user(current_user.id)
+        db.commit()
+        db.refresh(profile)
+
     enrollment = EnrollmentService(db).get_for_user(current_user.id)
     return _build_user_out(user=current_user, profile=profile, enrollment=enrollment)
 

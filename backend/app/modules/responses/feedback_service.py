@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.ai import AIRequestLoggingService
 from app.ai.agents import generate_feedback
+from app.modules.auth.repository import UserProfileRepository
 from app.modules.responses.exceptions import (
     EvaluationNotFound,
     FeedbackGenerationFailed,
@@ -64,6 +65,23 @@ class FeedbackService:
         # 4. Reshape — Agent 3 expects specific keys.
         score_int = int(round(float(evaluation.percentage)))
 
+        # Pull the learner's structured personalisation so the feedback
+        # tone reflects their real-life context. Best-effort: missing data
+        # falls through as None and the agent produces neutral feedback.
+        structured_personalisation = None
+        try:
+            profile = UserProfileRepository(self.db).get_by_user_id(user_task.user_id)
+            if profile is not None:
+                structured_personalisation = profile.structured_personalisation
+        except Exception:
+            structured_personalisation = None
+        lesson_context = None
+        if isinstance(task.content, dict):
+            lesson_context = (
+                task.content.get("lesson_context")
+                or task.content.get("topic_name")
+            )
+
         # 5. Call the LLM. Wrap in try/except so we surface a clean
         # business error instead of leaking pydantic/openai internals.
         started = time.perf_counter()
@@ -73,6 +91,8 @@ class FeedbackService:
                 user_answers=response.content,
                 evaluation_report=evaluation.report,
                 score=score_int,
+                structured_personalisation=structured_personalisation,
+                lesson_context=lesson_context,
             )
         except ValidationError as e:
             AIRequestLoggingService(self.db).record_failure(

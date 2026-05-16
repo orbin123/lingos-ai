@@ -1,8 +1,11 @@
 """Agent 0 - Teaching Agent.
 
-Prepares the learner before the practice widget appears. The teaching
-agent explains the concept behind the task, asks a short concept-check
-question, and deliberately avoids leaking the generated practice answers.
+Talks the learner through the lesson before the practice widget appears.
+The teacher is a communication coach, NOT a textbook quizmaster:
+- It anchors every lesson in the planner's concrete lesson_context.
+- It draws vocabulary and examples from the learner's vocabulary_domain.
+- It reframes concept checks as practical scenarios, never "What is X?".
+- It never reveals practice-task answers.
 """
 
 from __future__ import annotations
@@ -35,71 +38,32 @@ class TeachingOutput(BaseModel):
         return cleaned[:3]
 
 
-_GENERIC_TEACHING_STEPS = [
-    (
-        "concept",
-        "Establish the core meaning of the topic using one learner-relevant example.",
-    ),
-    (
-        "form",
-        "Teach the main form or pattern the learner must notice in the task.",
-    ),
-    (
-        "contrast",
-        "Show a useful contrast or common trap so the learner can choose correctly.",
-    ),
-    (
-        "application",
-        "Ask the learner to transform or create one example using the pattern.",
-    ),
-    (
-        "readiness",
-        "Check readiness and move toward the practice task.",
-    ),
-]
-
-_PRESENT_SIMPLE_TEACHING_STEPS = [
-    (
-        "habits_and_routines",
-        "Confirm that Present Simple describes habits, routines, and facts.",
-    ),
-    (
-        "base_verb_subjects",
-        "Teach I/you/we/they + base verb: I read, you play, they study.",
-    ),
-    (
-        "third_person_s",
-        "Teach he/she/it + verb-s or -es: she reads, he studies, it works.",
-    ),
-    (
-        "frequency_clues",
-        "Teach frequency words and time clues: always, often, usually, every day, a few times a week.",
-    ),
-    (
-        "fill_blank_strategy",
-        "Apply the strategy for blanks: find the subject, find the time clue, choose the verb form.",
-    ),
-    (
-        "readiness",
-        "Check whether the learner is ready for the practice task.",
-    ),
-]
-
 _SYSTEM_PROMPT = """
-You are the Teaching Agent for an English learning app.
+You are the Teaching Agent for an English learning app. You are a
+communication coach, not a textbook quizmaster.
 
-Your role:
-- Teach the concept before the learner sees the practice task.
-- Be warm, curious, and practical, like a strong one-on-one tutor.
-- Focus on the thinking process the learner needs for the task.
-- Ask one short concept-check or curiosity question.
+Your job each turn:
+- Anchor the lesson in the lesson_context the Planner gave you.
+- Teach the language_focus through that scenario — never as an abstract
+  grammar rule.
+- Use vocabulary from the vocabulary_domain when picking examples.
+- Reframe concept-check questions as practical scenarios the learner would
+  actually face. Ask "How would you say this to your team lead in
+  standup?" — not "What is father?" or "What is the present simple?"
 
-Hard boundaries:
+Voice:
+- Warm, curious, direct. Like a strong one-on-one mentor.
+- One coaching nudge per turn. Short. Conversational.
+- Match the conversation_style the Planner specified.
+
+Hard bans:
+- No textbook framing ("The Present Simple is used to express…").
+- No childish or family-based examples for learners with a professional
+  or academic domain.
+- No "What is X?" definition questions. Ask scenario-based questions.
+- No markdown headings, no bullet lists, no long lectures.
 - Do not reveal answers from the practice task.
-- Do not mention or quote the hidden generated passage.
-- Do not create examples that are too similar to a likely practice passage.
-- Do not write long lectures.
-- Do not use markdown headings or bullet lists.
+- Do not quote or invent passages that mirror the upcoming practice item.
 """.strip()
 
 
@@ -120,8 +84,7 @@ def _learner_needs_clarification(text: str) -> bool:
         "didn't understand", "didnt understand", "did not understand",
         "not understand", "not clear", "unclear", "confused",
         "don't get", "dont get", "didn't get", "didnt get",
-        "what is", "what are", "why", "how", "can you explain",
-        "explain again", "not ready", "not yet",
+        "can you explain", "explain again", "not ready", "not yet",
     )
     return any(marker in cleaned for marker in clarification_markers)
 
@@ -133,51 +96,27 @@ def _recent_conversation_excerpt(conversation: list[dict], *, limit: int = 6) ->
         if not content or content.startswith("["):
             continue
         role = str(message.get("role") or "").lower()
-        speaker = "Learner" if role == "user" else "Tutor"
+        speaker = "Learner" if role == "user" else "Coach"
         lines.append(f"{speaker}: {content[:500]}")
     return "\n".join(lines)
 
 
-def _teaching_steps_for(topic: str) -> list[tuple[str, str]]:
-    normalized = topic.lower()
-    if "present simple" in normalized or "simple present" in normalized:
-        return _PRESENT_SIMPLE_TEACHING_STEPS
-    return _GENERIC_TEACHING_STEPS
-
-
-def _learner_turn_count(conversation: list[dict]) -> int:
-    return sum(1 for message in conversation if message.get("role") == "user")
-
-
-def _teaching_step_index(conversation: list[dict], steps: list[tuple[str, str]]) -> int:
-    if not steps:
-        return 0
-    return min(_learner_turn_count(conversation), len(steps) - 1)
-
-
-def _format_teaching_agenda(
-    *,
-    topic: str,
-    conversation: list[dict],
-) -> tuple[str, str, str]:
-    steps = _teaching_steps_for(topic)
-    step_index = _teaching_step_index(conversation, steps)
-    agenda_lines = []
-    for index, (name, goal) in enumerate(steps):
-        marker = "current" if index == step_index else "upcoming"
-        if index < step_index:
-            marker = "covered"
-        agenda_lines.append(f"{index + 1}. {name} ({marker}): {goal}")
-    current_name, current_goal = steps[step_index]
-    return "\n".join(agenda_lines), current_name, current_goal
-
-
 def _format_planner_section(teacher_instructions: dict[str, Any] | None) -> str:
-    """Render the Planner's teacher_instructions as a prompt block, or empty."""
+    """Render the Planner's teacher_instructions as a prompt block.
+
+    The new fields (lesson_context, vocabulary_domain, conversation_style)
+    are highlighted at the top because they steer the coach's voice.
+    """
     if not teacher_instructions:
-        return ""
-    lines = ["Planner guidance for this lesson (prefer this over generic defaults):"]
+        return (
+            "Planner guidance: none — use a neutral, level-appropriate "
+            "everyday scenario and a warm, encouraging coach voice."
+        )
+    lines = ["Planner guidance for this lesson (load-bearing — follow it):"]
     for key in (
+        "lesson_context",
+        "vocabulary_domain",
+        "conversation_style",
         "sub_skill_context",
         "learning_goal",
         "teaching_approach",
@@ -195,6 +134,25 @@ def _format_planner_section(teacher_instructions: dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
+def _format_structured_personalisation(structured: dict[str, Any] | None) -> str:
+    """Surface the learner's personalisation so the coach can match voice."""
+    if not structured:
+        return "Learner personalisation: not extracted yet — use neutral defaults."
+    source = structured.get("extraction_source", "llm")
+    if source == "empty":
+        return "Learner personalisation: empty — use a neutral everyday scenario."
+    domain = structured.get("domain") or "general"
+    contexts = structured.get("communication_contexts") or []
+    pain = structured.get("pain_points") or []
+    tone = structured.get("tone_preference") or "neutral"
+    parts = [f"domain={domain}", f"tone={tone}"]
+    if contexts:
+        parts.append("contexts=[" + ", ".join(contexts) + "]")
+    if pain:
+        parts.append("pain_points=[" + ", ".join(pain) + "]")
+    return "Learner personalisation: " + "; ".join(parts)
+
+
 def _build_user_prompt(
     *,
     topic: str,
@@ -209,21 +167,13 @@ def _build_user_prompt(
     profile = learner_profile or {}
     interests = profile.get("interests") or "not specified"
     goals = profile.get("primary_goals") or profile.get("goal") or "general English"
-    personalisation_context = profile.get("personalisation_context") or ""
+    structured = profile.get("structured_personalisation")
     recent_user_message = _last_user_message(conversation or [])
     recent_conversation = _recent_conversation_excerpt(conversation or [])
     is_first_turn = not recent_user_message
     needs_clarification = _learner_needs_clarification(recent_user_message)
-    agenda, current_step, current_goal = _format_teaching_agenda(
-        topic=topic,
-        conversation=conversation or [],
-    )
     planner_section = _format_planner_section(teacher_instructions)
-    if needs_clarification:
-        current_step = "clarify_confusion"
-        current_goal = (
-            "Answer the learner's stated confusion before advancing the lesson."
-        )
+    personalisation_section = _format_structured_personalisation(structured)
 
     output_instruction = (
         "Create one natural chat reply of 2-4 short sentences. Return only "
@@ -239,20 +189,19 @@ def _build_user_prompt(
     )
 
     return f"""
-Topic of the day: {topic}
+Lesson topic label: {topic}
 Sub-skill: {sub_skill}
 Practice task type coming next: {task_type}
 Learner sub-level: {user_level}/10
 Learner interests: {interests}
 Learner goals: {goals}
-Personalisation notes: {personalisation_context or "none"}
-{planner_section or "Planner guidance: none — fall back to generic teaching defaults."}
+{personalisation_section}
+
+{planner_section}
+
 Latest learner message: {recent_user_message or "none yet"}
 Recent conversation:
 {recent_conversation or "none yet"}
-Teaching agenda:
-{agenda}
-Current teaching target: {current_step} — {current_goal}
 Learner needs clarification: {"yes" if needs_clarification else "no"}
 
 {output_instruction}
@@ -260,44 +209,40 @@ Learner needs clarification: {"yes" if needs_clarification else "no"}
 Teaching turn mode: {"first turn" if is_first_turn else "respond to learner"}
 
 If this is the first teaching turn:
-- Explain the key idea behind the topic in simple language.
-- Teach the learner what to notice during a fill-in-the-blanks task.
-- Ask a small question that checks understanding or makes them curious.
+- Open with a single sentence that puts the learner inside the
+  lesson_context above. Make it feel real, not academic.
+- Introduce the key idea behind the language_focus using one example
+  drawn from vocabulary_domain. Keep it under three short sentences.
+- Ask ONE concept-check question phrased as a practical scenario the
+  learner would actually face. Never "What is X?".
 
 If the learner answered your previous concept-check question:
-- Briefly respond to their answer.
-- Connect their exact answer back to the grammar idea.
-- If their answer has a grammar issue, correct only the most important one.
-- Plain acknowledgements like "yes", "yeah", "ok", or "okay" are not concept-check answers.
-- Do not treat them as answers to concept-check questions unless your previous
-  message explicitly asked whether the concept was clear or whether they were ready.
-- If the current teaching target is readiness, stop asking new grammar or
-  personal-example questions. Ask directly whether the concept is clear and
-  whether they feel ready for the practice task.
-- Teach or probe the current teaching target above.
-- Ask a new probing question that moves forward to the next grammatical idea,
-  not another personal preference question.
-- If their answer is already strong, ask whether they feel ready for practice.
-- Do not ask the same question again.
-- Do not restate the opening explanation.
-- Do not move to practice yourself.
+- Briefly acknowledge what they said.
+- Tie their answer back to the language pattern you're teaching.
+- If their answer has a language slip, correct only the most important
+  one — gently, in passing.
+- Plain acknowledgements like "yes", "yeah", "ok" are not real answers.
+  Treat them as "ready?" cues only if you just asked about readiness.
+- If teaching_approach is mostly covered, ask whether they feel ready
+  for the practice task — but only when it's natural to ask.
 
 If the learner asked a question:
-- Answer it directly.
-- Then ask one small follow-up or readiness question.
+- Answer it directly, anchored back in the lesson_context.
+- Then a single small follow-up that moves the lesson forward.
 
-If the learner says they do not understand, are confused, or are not ready:
-- Pause the agenda and clarify the exact confusion.
-- Do not move to the practice task.
+If the learner says they don't understand, are confused, or are not ready:
+- Pause and clarify the exact confusion using one fresh example from the
+  vocabulary_domain.
+- Do not move to the practice task this turn.
 - Do not ask if they are ready in this turn.
-- Use one simple example, then ask a tiny check question about that confusion.
 
 Avoid repetition:
-- Do not begin with "The Present Simple tense is used..." after the first turn.
-- Do not repeat the previous tutor message in different words.
-- Do not keep asking about the same activity, book, genre, author, or routine.
-- Personal examples are only scaffolding; use them to teach the next concept.
-- Make the next reply depend on the learner's latest answer.
+- Do not start with "The Present Simple is used…" or any textbook
+  opener. Stay inside the scenario.
+- Do not repeat the previous coach message in different words.
+- Do not loop on the same example. Each turn should advance.
+- Use vocabulary from vocabulary_domain. If the learner has a clear
+  professional domain, do not pull family/school/childhood examples.
 
 {final_instruction}
 """.strip()
@@ -340,9 +285,9 @@ class TeachingAgent:
             logger.exception("TeachingAgent failed; using fallback teaching output")
             return TeachingOutput(
                 messages=[
-                    f"Today we are learning {topic}. Before the task, focus on the clue words around each blank.",
-                    "Ask yourself: who is doing the action, and is the sentence about past, present, or future?",
-                    "What clue would you check first when you see a blank in a sentence?",
+                    f"Let's work on {topic} through a real situation.",
+                    "Pay attention to the language pattern in the example I just used.",
+                    "When you're ready, tell me how you'd say something similar in your own words.",
                 ]
             )
 

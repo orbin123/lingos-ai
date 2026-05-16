@@ -32,11 +32,14 @@ def _stub_llm_output() -> PlannerLLMOutput:
     return PlannerLLMOutput(
         teacher_instructions=TeacherInstructions(
             sub_skill_context="Vocabulary intro for beginners.",
-            learning_goal="Teach 8-10 family/home words.",
+            learning_goal="Teach 8-10 everyday words for talking about people.",
             words_to_cover=["mother", "father", "house"],
             teaching_approach="Use one simple example per word; sentences under 10 words.",
             concept_check_focus="Ask learner to use one word in a sentence about home.",
             do_not_reveal="Do not reveal MCQ blanks or exact options.",
+            lesson_context="introducing the people closest to you to a new neighbour",
+            vocabulary_domain="everyday English: family and home",
+            conversation_style="warm and encouraging",
         ),
         evaluation_focuses=_stub_focuses(),
     )
@@ -98,7 +101,9 @@ def test_generate_daily_plan_end_to_end_with_mocked_llm(monkeypatch) -> None:
     if topic_entry is None or topic_entry.sub_skill != "vocabulary":
         topic_entry = CourseTopic(
             week=1, day=2, topic_id="1:2", sub_skill="vocabulary",
-            sub_level=1, topic_name="Everyday Words — Family & Home",
+            sub_level=1,
+            communication_goal="talk about the people around you",
+            language_focus="everyday vocabulary: people and places",
         )
 
     plan = asyncio.run(generate_daily_plan(
@@ -110,6 +115,7 @@ def test_generate_daily_plan_end_to_end_with_mocked_llm(monkeypatch) -> None:
 
     expected_top_keys = {
         "user_id", "course_slug", "week", "day", "topic_id", "topic_name",
+        "communication_goal", "language_focus",
         "sub_skill", "sub_level", "generated_at", "teacher_instructions",
         "activities",
     }
@@ -119,6 +125,9 @@ def test_generate_daily_plan_end_to_end_with_mocked_llm(monkeypatch) -> None:
     assert plan["sub_skill"] == "vocabulary"
     assert len(plan["activities"]) == 4
     assert plan["teacher_instructions"]["words_to_cover"] == ["mother", "father", "house"]
+    assert plan["teacher_instructions"]["lesson_context"]
+    assert plan["teacher_instructions"]["vocabulary_domain"]
+    assert plan["teacher_instructions"]["conversation_style"]
     assert plan["activities"][0]["template_id"] == "full_vocabulary_read_v1"
 
 
@@ -133,7 +142,9 @@ def test_generate_daily_plan_falls_back_when_llm_raises(monkeypatch) -> None:
 
     topic_entry = CourseTopic(
         week=1, day=2, topic_id="1:2", sub_skill="vocabulary",
-        sub_level=1, topic_name="Everyday Words — Family & Home",
+        sub_level=1,
+        communication_goal="talk about the people around you",
+        language_focus="everyday vocabulary: people and places",
     )
 
     plan = asyncio.run(generate_daily_plan(
@@ -146,5 +157,10 @@ def test_generate_daily_plan_falls_back_when_llm_raises(monkeypatch) -> None:
     assert len(plan["activities"]) == 4
     assert plan["teacher_instructions"]["sub_skill_context"]
     assert plan["teacher_instructions"]["do_not_reveal"]
+    # Fallback must still populate the new personalization fields so
+    # downstream agents never see a partial teacher_instructions object.
+    assert plan["teacher_instructions"]["lesson_context"]
+    assert plan["teacher_instructions"]["vocabulary_domain"]
+    assert plan["teacher_instructions"]["conversation_style"]
     for activity in plan["activities"]:
         assert activity["evaluation_focus"]["focus_areas"]

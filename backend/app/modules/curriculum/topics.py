@@ -1,4 +1,11 @@
-"""Course topic lookup for week/day learning plans."""
+"""Course topic lookup for week/day learning plans.
+
+Each curriculum entry is objective-driven: it pairs a communication goal
+(what the learner should be able to *do*) with a language focus (the
+linguistic anchor — grammar pattern, sound set, fluency drill, etc.).
+The Planner combines this objective with the learner's structured
+personalisation to pick the concrete scenario.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +23,13 @@ class CourseTopic:
     topic_id: str
     sub_skill: str
     sub_level: int
-    topic_name: str
+    communication_goal: str
+    language_focus: str
+
+    @property
+    def display_label(self) -> str:
+        """Human-readable label used by legacy consumers (frontend, task content)."""
+        return f"{self.communication_goal} — {self.language_focus}"
 
 
 _COURSE_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "courses"
@@ -37,7 +50,8 @@ def _load_topics(duration_weeks: int) -> dict[tuple[int, int], CourseTopic]:
             topic_id=str(item["topic_id"]),
             sub_skill=str(item["sub_skill"]),
             sub_level=int(item["sub_level"]),
-            topic_name=str(item["topic_name"]),
+            communication_goal=str(item["communication_goal"]),
+            language_focus=str(item["language_focus"]),
         )
         topics[(topic.week, topic.day)] = topic
     return topics

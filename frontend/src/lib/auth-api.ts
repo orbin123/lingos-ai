@@ -3,6 +3,23 @@ import type { EnrollmentRead } from "./courses-api";
 import type { NotificationSettings } from "./subscriptions-api";
 import type { LoginInput, RegisterInput } from "./validators/auth";
 
+/**
+ * Structured personalisation — server-derived JSON that the planner /
+ * teacher / task generator / feedback agents consume directly. Populated
+ * by the backend Personalization Engine from the free-text
+ * `personalisation_context` plus the rest of the profile. Not user-editable
+ * directly; refresh happens on profile save and diagnosis completion.
+ */
+export interface StructuredPersonalisation {
+  domain: string;
+  communication_contexts: string[];
+  priority_skills: string[];
+  pain_points: string[];
+  tone_preference: "casual" | "neutral" | "professional" | "academic";
+  extraction_source: "llm" | "fallback" | "empty";
+  extracted_at: string;
+}
+
 // Backend response shapes
 export interface UserOut {
   id: number;
@@ -22,6 +39,7 @@ export interface UserOut {
   native_language: string | null;
   primary_goals: string[];
   personalisation_context: string;
+  structured_personalisation: StructuredPersonalisation | null;
   self_assessed_level: string | null;
   goal: string | null;
   interests: string[];

@@ -1,9 +1,11 @@
 """Authentication module models - User and related tables"""
 
+from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import Boolean, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, UniqueConstraint
 from sqlalchemy import Enum as SQLAlchemyEnum, ForeignKey, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -355,6 +357,20 @@ class UserProfile(Base, IDMixin, TimestampMixin):
         default="",
         server_default="",
         nullable=False,
+    )
+
+    # Structured view of personalisation_context (+ goals, interests, etc.),
+    # produced by the Personalization Engine. Cached so lesson generation
+    # doesn't pay an LLM extraction call per turn. Refreshed on profile save
+    # or diagnosis completion. Nullable until first extraction.
+    structured_personalisation: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=True,
+    )
+
+    structured_personalisation_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     diagnosis_completed: Mapped[bool] = mapped_column(

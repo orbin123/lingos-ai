@@ -15,7 +15,7 @@ The single public entry point is `generate_feedback(...)`.
 """
 
 import json
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -64,8 +64,14 @@ class FeedbackOutput(BaseModel):
 # 2. SYSTEM PROMPT — agent personality + rules (constant per call)
 # ---------------------------------------------------------------------------
 FEEDBACK_SYSTEM_PROMPT = """\
-You are a strict but kind English tutor. You give feedback to non-native
-English learners on their task answers.
+You are a strict but kind English communication coach. You give feedback
+to non-native English learners on their task answers.
+
+You speak like a mentor who knows the learner's real-life context — not
+like a textbook. When a lesson_context or learner personalisation is
+provided, tie your feedback back to the situations the learner actually
+faces (e.g. "in your next standup…", "when you introduce yourself on
+campus…"). When it's not provided, stay neutral and encouraging.
 
 YOUR RULES (follow exactly):
 1. NEVER write empty praise like "Good job!" or "Well done!" alone.
@@ -76,9 +82,10 @@ YOUR RULES (follow exactly):
    - what is wrong
    - why it is wrong (the rule)
    - a small memory trick to remember the rule
-5. End with ONE concrete practice suggestion. Not vague advice.
+5. End with ONE concrete practice suggestion. Not vague advice. Anchor it
+   in the learner's lesson_context or domain whenever possible.
 6. If all answers are correct, still give one tip to push the learner
-   to the next level.
+   to the next level — phrased for their real-life context when known.
 7. For error_spotting reports:
    - false_positive: explain that the sentence was already correct.
    - false_negative: explain what the learner missed, using correction
@@ -115,15 +122,55 @@ Return your response in the required JSON schema. Nothing else.
 # ---------------------------------------------------------------------------
 # 3. HUMAN MESSAGE TEMPLATE — formats the per-call data
 # ---------------------------------------------------------------------------
+def _format_personalisation_block(
+    *,
+    structured_personalisation: dict[str, Any] | None,
+    lesson_context: str | None,
+) -> str:
+    """Render the optional contextual block for the human message.
+
+    Empty when no personalisation is available — caller-friendly defaults
+    keep the prompt working for evaluations that pre-date personalisation.
+    """
+    if not structured_personalisation and not lesson_context:
+        return ""
+    lines = ["LEARNER CONTEXT (use to tailor tone, not to change scoring):"]
+    if lesson_context:
+        lines.append(f"- lesson_context: {lesson_context}")
+    if structured_personalisation:
+        source = structured_personalisation.get("extraction_source") or "llm"
+        if source == "empty":
+            lines.append("- personalisation: empty (use neutral encouragement)")
+        else:
+            domain = structured_personalisation.get("domain") or "general"
+            contexts = structured_personalisation.get("communication_contexts") or []
+            pain = structured_personalisation.get("pain_points") or []
+            tone = structured_personalisation.get("tone_preference") or "neutral"
+            lines.append(f"- domain: {domain}")
+            lines.append(f"- tone: {tone}")
+            if contexts:
+                lines.append("- communication_contexts: " + ", ".join(contexts))
+            if pain:
+                lines.append("- pain_points: " + ", ".join(pain))
+    return "\n".join(lines) + "\n\n"
+
+
 def _build_human_message(
     task_content: dict,
     user_answers: dict,
     evaluation_report: dict,
     score: int,
+    *,
+    structured_personalisation: dict[str, Any] | None = None,
+    lesson_context: str | None = None,
 ) -> str:
     """Format task + answers + eval into one message for the LLM."""
+    personalisation_block = _format_personalisation_block(
+        structured_personalisation=structured_personalisation,
+        lesson_context=lesson_context,
+    )
     return f"""\
-ORIGINAL TASK:
+{personalisation_block}ORIGINAL TASK:
 {json.dumps(task_content, indent=2)}
 
 USER's ANSWERS:
@@ -146,6 +193,9 @@ async def generate_feedback(
     user_answers: dict,
     evaluation_report: dict,
     score: int,
+    *,
+    structured_personalisation: dict[str, Any] | None = None,
+    lesson_context: str | None = None,
 ) -> FeedbackOutput:
     """Call the Feedback Agent. Returns a validated FeedbackOutput.
 
@@ -155,6 +205,11 @@ async def generate_feedback(
       - Token + cost logging at INFO level
       - Provider-error translation into our LLMError family
 
+    `structured_personalisation` and `lesson_context` are optional. When
+    provided, the agent uses them to make the tone contextual and
+    motivational (e.g. "in your next standup…"). They have NO effect on
+    scoring — that comes from the evaluation_report.
+
     Raises:
         LLMValidationError: the LLM returned content that didn't match
             the FeedbackOutput schema (very rare with structured output).
@@ -162,7 +217,12 @@ async def generate_feedback(
     """
     client = get_default_llm_client()
     human_message = _build_human_message(
-        task_content, user_answers, evaluation_report, score
+        task_content,
+        user_answers,
+        evaluation_report,
+        score,
+        structured_personalisation=structured_personalisation,
+        lesson_context=lesson_context,
     )
 
     try:
