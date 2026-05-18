@@ -1,4 +1,10 @@
-"""Business logic for chat-driven learning sessions.
+"""DEPRECATED — Phase 7. Use `app.modules.sessions.service.SessionService`.
+
+The new sessions flow (`/api/sessions/*`) supersedes this module. Routes
+here remain mounted as a rollback path for the legacy /task/chat UI;
+Phase 8 cleanup removes both the routes and this module.
+
+Business logic for chat-driven learning sessions.
 
 The service has two surfaces:
 

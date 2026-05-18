@@ -57,3 +57,38 @@ export const SKILL_ORDER: ReadonlyArray<string> = [
   "comprehension",
   "tone",
 ];
+
+/**
+ * Alias resolver. Different parts of the system have shipped sub-skill
+ * identifiers under three different vocabularies over time:
+ *
+ *   canonical (legacy DB):  expression / comprehension / tone
+ *   doc / spec wording:     thought_org / listening / tone_social
+ *   long-form legacy enum:  thought_organization / listening / tone
+ *
+ * `normalizeSkillKey` collapses all of them down to the canonical legacy
+ * identifier so callers can keep ONE map for labels, colors, scores, etc.
+ * Pass any string in; get the legacy identifier out (unknown inputs are
+ * returned unchanged so the caller can decide).
+ */
+const _ALIASES: Record<string, string> = {
+  // doc / spec wording
+  thought_org: "expression",
+  listening: "comprehension",
+  tone_social: "tone",
+  // long-form legacy enum (used by app/tasks/schemas/base.py SubSkill)
+  thought_organization: "expression",
+};
+
+export function normalizeSkillKey(input: string): string {
+  return _ALIASES[input] ?? input;
+}
+
+/**
+ * Default per-skill score dict — every legacy key initialised to 0.0.
+ * Components use this as the fallback when API data is missing so the
+ * spider chart / progress bars still render with the right axis set.
+ */
+export function emptySkillScores(): Record<string, number> {
+  return Object.fromEntries(SKILL_ORDER.map((k) => [k, 0]));
+}

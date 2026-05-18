@@ -35,11 +35,12 @@ class Settings(BaseSettings):
     # Frontend
     frontend_url: str = "http://localhost:3000"
 
-    # Restructure flow (Phase 3+). Default OFF so the legacy
-    # learning_session pipeline continues to serve traffic while the new
-    # sessions endpoints are wired in behind tests. Flip to True per
-    # environment once the new flow is ready to take traffic.
-    use_new_session_flow: bool = False
+    # Restructure flow (Phase 3+). Flipped to True in Phase 7 — the new
+    # sessions API now serves traffic by default. Legacy `learning_session`
+    # endpoints remain mounted alongside it as a fallback; flip this to
+    # False in any environment where you need to roll back without a
+    # deploy. Phase 8 (true cutover) removes the legacy code path.
+    use_new_session_flow: bool = True
 
     # AI / LLM
     OPENAI_API_KEY: str

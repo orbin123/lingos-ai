@@ -8,6 +8,7 @@ import { progressApi, type DifficultyDistribution, type RecentActivity, type Ski
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuthStore } from "@/store/authStore";
+import { normalizeSkillKey } from "@/lib/skill-labels";
 
 // ─── CSS vars / tokens (matching existing app palette) ────────────────────────
 const T = {
@@ -215,19 +216,22 @@ function CardLink({ children, onClick }: { children: React.ReactNode; onClick?: 
 }
 
 // ─── Score progression chart ──────────────────────────────────────────────────
+// Keyed by the canonical LEGACY sub-skill identifiers (the same set in
+// `@/lib/skill-labels.SKILL_ORDER`). Incoming names from the backend are
+// normalised through `normalizeSkillKey` before lookup so doc/long-form
+// aliases ("thought_org", "thought_organization") resolve correctly.
 const SKILL_COLORS: Record<string, string> = {
-  grammar: "#0070C4",
-  vocabulary: "#7c3aed",
-  fluency: "#10b981",
+  grammar:       "#0070C4",
+  vocabulary:    "#7c3aed",
   pronunciation: "#ef4444",
-  thought: "#f59e0b",
-  listening: "#06b6d4",
-  tone: "#ec4899",
+  fluency:       "#10b981",
+  expression:    "#f59e0b",
+  comprehension: "#06b6d4",
+  tone:          "#ec4899",
 };
 
 function skillColor(name: string) {
-  const key = name.toLowerCase().split(/[\s_&]/)[0];
-  return SKILL_COLORS[key] ?? "#888";
+  return SKILL_COLORS[normalizeSkillKey(name)] ?? "#888";
 }
 
 function ProgressChart({ labels = [], series = [] }: { labels?: string[]; series?: SkillHistorySeries[] }) {

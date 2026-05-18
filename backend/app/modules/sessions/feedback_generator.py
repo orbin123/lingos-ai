@@ -34,9 +34,12 @@ class FeedbackResult:
 
 
 class FeedbackGenerator(Protocol):
-    """Turn an EvaluationResult into structured, user-facing feedback."""
+    """Turn an EvaluationResult into structured, user-facing feedback.
 
-    def generate(
+    Async because production implementations call out to an LLM (Phase 4+).
+    """
+
+    async def generate(
         self,
         *,
         archetype: ArchetypeSpec,
@@ -46,14 +49,14 @@ class FeedbackGenerator(Protocol):
 
 
 class StubFeedbackGenerator:
-    """Deterministic feedback used in Phase 3.
+    """Deterministic feedback. Used in tests and as offline fallback.
 
     Produces a minimal but valid `FeedbackResult` so the lifecycle and
-    persistence paths work end-to-end. Phase 4 replaces with the LLM-driven
-    Feedback Agent.
+    persistence paths work end-to-end. Production uses the LLM-driven
+    feedback agent from `app.ai.sessions`.
     """
 
-    def generate(
+    async def generate(
         self,
         *,
         archetype: ArchetypeSpec,
@@ -74,7 +77,7 @@ class StubFeedbackGenerator:
             score=rounded,
             summary=(
                 f"Stub feedback for {archetype.name} — scored {rounded}/10. "
-                "Phase 4 replaces this with archetype-aware LLM feedback."
+                "Production uses archetype-aware LLM feedback."
             ),
             did_well=("Submitted a response on time.",),
             mistakes=(),

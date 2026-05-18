@@ -44,6 +44,24 @@ from app.modules.skills.repository import SkillRepository
 from app.scoring import CourseLength, get_archetype
 
 
+def _make_session_service(db: Session) -> SessionService:
+    """Construct the production-wired SessionService.
+
+    Imports the LLM factory lazily so test environments that don't load
+    OpenAI credentials don't pay the import cost. The factory itself can
+    still be patched in tests via dependency injection on the service.
+    """
+    from app.ai.sessions import build_default_agents
+
+    evaluator, feedback_generator, task_generator = build_default_agents()
+    return SessionService(
+        db,
+        evaluator=evaluator,
+        feedback_generator=feedback_generator,
+        task_generator=task_generator,
+    )
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,15 +95,15 @@ router = APIRouter(
     response_model=SessionStartResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def start_session(
+async def start_session(
     payload: SessionStartRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SessionStartResponse:
     try:
-        service = SessionService(db)
+        service = _make_session_service(db)
         course_length = CourseLength(payload.course_length)
-        session = service.start_session(
+        session = await service.start_session(
             user_id=current_user.id,
             day_id=payload.day_id,
             course_length=course_length,
@@ -116,7 +134,7 @@ def next_activity(
     db: Session = Depends(get_db),
 ) -> NextActivityResponse:
     try:
-        service = SessionService(db)
+        service = _make_session_service(db)
         attempt = service.next_activity(session_id=session_id, user_id=current_user.id)
         spec = get_archetype(attempt.archetype_id)
         return NextActivityResponse(
@@ -142,7 +160,7 @@ def next_activity(
     "/{session_id}/activities/{sequence}/submit",
     response_model=SubmitActivityResponse,
 )
-def submit_activity(
+async def submit_activity(
     session_id: str,
     sequence: int,
     payload: SubmitActivityRequest,
@@ -150,8 +168,8 @@ def submit_activity(
     db: Session = Depends(get_db),
 ) -> SubmitActivityResponse:
     try:
-        service = SessionService(db)
-        attempt, evaluation, feedback = service.submit_activity(
+        service = _make_session_service(db)
+        attempt, evaluation, feedback = await service.submit_activity(
             session_id=session_id,
             user_id=current_user.id,
             sequence=sequence,
@@ -195,14 +213,14 @@ def submit_activity(
     "/{session_id}/complete",
     response_model=SessionScorecardRead,
 )
-def complete_session(
+async def complete_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> SessionScorecardRead:
     try:
-        service = SessionService(db)
-        scorecard, report = service.complete_session(
+        service = _make_session_service(db)
+        scorecard, report = await service.complete_session(
             session_id=session_id, user_id=current_user.id
         )
         logger.info(
@@ -230,7 +248,7 @@ def get_scorecard(
     db: Session = Depends(get_db),
 ) -> SessionScorecardRead | None:
     try:
-        service = SessionService(db)
+        service = _make_session_service(db)
         scorecard = service.get_scorecard(session_id=session_id, user_id=current_user.id)
         if scorecard is None:
             raise HTTPException(

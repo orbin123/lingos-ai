@@ -1,4 +1,11 @@
-"""Business logic for accepting + grading a user's response to a task."""
+"""DEPRECATED — Phase 7. Use `app.modules.sessions.service.SessionService`.
+
+The new sessions flow handles submit / evaluate / feedback through
+`SessionService.submit_activity`. This module remains live as a fallback
+for the legacy /task/chat UI; Phase 8 retires it.
+
+Business logic for accepting + grading a user's response to a task.
+"""
 
 from sqlalchemy.orm import Session
 
