@@ -244,6 +244,27 @@ def client(
                 },
             )
 
+    class FakeTTSService:
+        async def synthesize(
+            self,
+            *,
+            text: str,
+            voice: str | None = None,
+            speed: float = 1.0,
+            style_instructions: str | None = None,
+        ) -> dict:
+            return {
+                "audio_url": "/audio/ab/abcdef1234567890.mp3",
+                "duration_seconds": 11.8,
+                "cache_hit": False,
+            }
+
+    class FakeBlobStorage:
+        async def get(self, *, key: str) -> bytes | None:
+            if key == "abcdef1234567890.mp3":
+                return b"route fake mp3"
+            return None
+
     monkeypatch.setattr(challenges_service, "IELTSChallengeGenerator", FakeGenerator)
     monkeypatch.setattr(
         challenges_service,
@@ -254,6 +275,16 @@ def client(
         challenges_service,
         "IELTSChallengeFeedbackAgent",
         FakeFeedbackAgent,
+    )
+    monkeypatch.setattr(
+        challenges_service,
+        "get_default_tts_service",
+        lambda: FakeTTSService(),
+    )
+    monkeypatch.setattr(
+        challenges_service,
+        "get_default_blob_storage",
+        lambda: FakeBlobStorage(),
     )
 
     def override_get_db():
@@ -308,6 +339,7 @@ def test_all_challenge_read_routes_are_mounted() -> None:
     assert "/api/v1/challenges/{slug}" in paths
     assert "/api/v1/challenges/{slug}/history" in paths
     assert "/api/v1/challenge-attempts/{attempt_id}" in paths
+    assert "/api/v1/challenge-attempts/{attempt_id}/audio/{audio_key}" in paths
     assert "/api/v1/challenges/{slug}/levels/{level_number}/attempts" in paths
     assert "/api/v1/challenge-attempts/{attempt_id}/submit" in paths
 
@@ -396,7 +428,18 @@ def test_start_attempt_stores_generated_text_task(
     assert "community gardens" in body["task_payload"]["sections"]["writing"]["items"][0][
         "prompt"
     ]
+    listening = body["task_payload"]["sections"]["listening"]
+    assert listening["audio_storage_key"] == "abcdef1234567890.mp3"
+    assert listening["audio_url"] == (
+        f"/api/v1/challenge-attempts/{body['id']}/audio/abcdef1234567890.mp3"
+    )
+    assert listening["audio_duration_seconds"] == 11.8
     assert body["response_payload"] is None
+
+    audio_response = client.get(listening["audio_url"])
+    assert audio_response.status_code == 200
+    assert audio_response.content == b"route fake mp3"
+    assert audio_response.headers["content-type"].startswith("audio/mpeg")
 
 
 def test_start_attempt_rejects_locked_level(
@@ -423,7 +466,7 @@ def test_submit_attempt_persists_payload_and_scores(
         "response_payload": {
             "reading": {"r1": "A", "r2": "B"},
             "writing": {"w1": "Short response"},
-            "listening": {},
+            "listening": {"l1": "A"},
             "speaking": {},
         }
     }
@@ -437,11 +480,13 @@ def test_submit_attempt_persists_payload_and_scores(
     body = response.json()
     assert body["status"] == "completed"
     assert body["response_payload"] == payload["response_payload"]
-    assert body["overall_score"] == 7.0
+    assert body["overall_score"] == 7.5
     assert body["passed"] is True
+    assert body["section_scores"]["listening"] == 9.0
     assert body["section_scores"]["reading"] == 9.0
     assert body["section_scores"]["writing"] == 6.0
-    assert body["evaluation_report"]["mode"] == "phase_4_text_sections"
+    assert body["evaluation_report"]["mode"] == "phase_5_listening"
+    assert body["evaluation_report"]["listening"]["total_correct"] == 1
     assert body["feedback_report"]["overall_summary"] == "Fake Phase 4 feedback."
 
 

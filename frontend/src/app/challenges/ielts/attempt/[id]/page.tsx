@@ -54,6 +54,7 @@ interface WritingSectionPayload {
 interface ListeningSectionPayload {
   audio_script?: string;
   audio_url?: string | null;
+  audio_cache_hit?: boolean;
   audio_duration_seconds?: number;
   items?: MCQItem[];
 }
@@ -64,7 +65,7 @@ interface SpeakingSectionPayload {
 }
 
 interface ChallengeResponses {
-  listening: Record<string, never>;
+  listening: Record<string, string>;
   reading: Record<string, string>;
   writing: Record<string, string>;
   speaking: Record<string, never>;
@@ -103,7 +104,7 @@ function readStringMap(value: unknown): Record<string, string> {
 
 function normalizeResponses(payload: Record<string, unknown> | null): ChallengeResponses {
   return {
-    listening: {},
+    listening: readStringMap(payload?.listening),
     reading: readStringMap(payload?.reading),
     writing: readStringMap(payload?.writing),
     speaking: {},
@@ -134,9 +135,15 @@ function countWords(text: string): number {
 function progressLabel(
   section: SectionKey,
   responses: ChallengeResponses,
+  listening: ListeningSectionPayload,
   reading: ReadingSectionPayload,
   writing: WritingSectionPayload,
 ): string {
+  if (section === "listening") {
+    const total = listening.items?.length ?? 0;
+    const answered = Object.keys(responses.listening).length;
+    return `${Math.min(answered, total)}/${total} answered`;
+  }
   if (section === "reading") {
     const total = reading.items?.length ?? 0;
     const answered = Object.keys(responses.reading).length;
@@ -237,7 +244,6 @@ export default function ChallengeAttemptPage() {
     submitMutation.mutate(
       {
         ...responsesRef.current,
-        listening: {},
         speaking: {},
       },
       {
@@ -413,7 +419,7 @@ export default function ChallengeAttemptPage() {
                           color: active ? "rgba(180,210,240,0.9)" : "#4a6880",
                         }}
                       >
-                        {progressLabel(key, responses, reading, writing)}
+                        {progressLabel(key, responses, listening, reading, writing)}
                       </small>
                     </span>
                   </button>
@@ -429,7 +435,17 @@ export default function ChallengeAttemptPage() {
             )}
 
             {activeSection === "listening" && (
-              <ListeningSection payload={listening} disabled={!inProgress} />
+              <ListeningSection
+                payload={listening}
+                disabled={!inProgress}
+                answers={responses.listening}
+                onAnswer={(itemId, optionLetter) =>
+                  setResponses((prev) => ({
+                    ...prev,
+                    listening: { ...prev.listening, [itemId]: optionLetter },
+                  }))
+                }
+              />
             )}
             {activeSection === "reading" && (
               <ReadingSection
@@ -471,18 +487,27 @@ export default function ChallengeAttemptPage() {
 
 function ListeningSection({
   payload,
+  answers,
   disabled,
+  onAnswer,
 }: {
   payload: ListeningSectionPayload;
+  answers: Record<string, string>;
   disabled: boolean;
+  onAnswer: (itemId: string, optionLetter: string) => void;
 }) {
   const items = payload.items ?? [];
+  const audioUrl = typeof payload.audio_url === "string" ? payload.audio_url : null;
   return (
     <section style={panelStyle}>
       <SectionHeading
         Icon={Headphones}
         title="Listening"
-        meta={disabled ? "Submitted" : `${items.length} questions`}
+        meta={
+          payload.audio_duration_seconds
+            ? `${Math.round(payload.audio_duration_seconds)}s audio`
+            : `${items.length} questions`
+        }
       />
       {items.length === 0 ? (
         <PlaceholderContent
@@ -492,15 +517,133 @@ function ListeningSection({
         />
       ) : (
         <>
-          <div style={mutedBandStyle}>
-            <p style={{ margin: 0, color: "#4a6880", lineHeight: 1.6, fontSize: 14 }}>
-              {payload.audio_script ?? "Transcript unavailable."}
-            </p>
-          </div>
-          <QuestionList items={items} disabled selected={{}} onAnswer={() => undefined} />
+          {audioUrl ? (
+            <ListeningAudioPlayer audioUrl={audioUrl} disabled={disabled} />
+          ) : (
+            <>
+              <div style={mutedBandStyle}>
+                <p
+                  style={{ margin: 0, color: "#4a6880", lineHeight: 1.6, fontSize: 14 }}
+                >
+                  Audio is temporarily unavailable. Use the transcript fallback for
+                  this attempt.
+                </p>
+              </div>
+              <div style={transcriptStyle}>
+                {payload.audio_script ?? "Transcript unavailable."}
+              </div>
+            </>
+          )}
+          <QuestionList
+            items={items}
+            disabled={disabled}
+            selected={answers}
+            onAnswer={onAnswer}
+          />
         </>
       )}
     </section>
+  );
+}
+
+function ListeningAudioPlayer({
+  audioUrl,
+  disabled,
+}: {
+  audioUrl: string;
+  disabled: boolean;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [playsUsed, setPlaysUsed] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const maxPlays = 3;
+
+  useEffect(() => {
+    let cancelled = false;
+    setObjectUrl(null);
+    setLoadError(null);
+    setPlaysUsed(0);
+    setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
+
+    challengesApi
+      .getAttemptAudio(audioUrl)
+      .then((blob) => {
+        if (cancelled) return;
+        const nextUrl = URL.createObjectURL(blob);
+        objectUrlRef.current = nextUrl;
+        setObjectUrl(nextUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError("Could not load the protected audio clip.");
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
+  }, [audioUrl]);
+
+  const handlePlay = async () => {
+    const audio = audioRef.current;
+    if (!audio || disabled || playsUsed >= maxPlays) return;
+    if (audio.ended) audio.currentTime = 0;
+    setPlaysUsed((count) => count + 1);
+    try {
+      await audio.play();
+    } catch {
+      setPlaysUsed((count) => Math.max(0, count - 1));
+      setLoadError("The browser could not start playback.");
+    }
+  };
+
+  const progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const remainingPlays = Math.max(0, maxPlays - playsUsed);
+
+  return (
+    <div style={audioPlayerStyle}>
+      <audio
+        ref={audioRef}
+        src={objectUrl ?? undefined}
+        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration || 0)}
+        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+      />
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={handlePlay}
+          disabled={disabled || !objectUrl || playsUsed >= maxPlays || isPlaying}
+          style={submitButtonStyle}
+        >
+          <Headphones size={15} aria-hidden />
+          {playsUsed === 0 ? "Play" : "Replay"}
+        </button>
+        <span style={{ color: "#4a6880", fontSize: 13, fontWeight: 800 }}>
+          {objectUrl
+            ? `${remainingPlays} plays left`
+            : loadError ?? "Preparing audio..."}
+        </span>
+      </div>
+      <div style={audioProgressTrackStyle} aria-hidden>
+        <div style={{ ...audioProgressFillStyle, width: `${progress}%` }} />
+      </div>
+      <div style={wordCountStyle}>
+        {formatRemaining(currentTime)} / {formatRemaining(duration)}
+      </div>
+      {loadError && <div style={{ ...alertStyle, marginTop: 12 }}>{loadError}</div>}
+    </div>
   );
 }
 
@@ -1290,6 +1433,40 @@ const mutedBandStyle: CSSProperties = {
   borderRadius: 14,
   padding: "22px 24px",
   marginBottom: 18,
+};
+
+const transcriptStyle: CSSProperties = {
+  background: "#0f1e30",
+  color: "#edf5ff",
+  borderRadius: 14,
+  padding: "16px 18px",
+  lineHeight: 1.65,
+  marginBottom: 18,
+  fontSize: 14,
+};
+
+const audioPlayerStyle: CSSProperties = {
+  background: "#f5f8fc",
+  border: "1.5px solid #d0dde9",
+  borderRadius: 14,
+  padding: "18px 20px",
+  marginBottom: 18,
+};
+
+const audioProgressTrackStyle: CSSProperties = {
+  width: "100%",
+  height: 9,
+  borderRadius: 999,
+  background: "#dbe6f0",
+  overflow: "hidden",
+  marginTop: 16,
+};
+
+const audioProgressFillStyle: CSSProperties = {
+  height: "100%",
+  borderRadius: 999,
+  background: "#0070C4",
+  transition: "width 0.15s linear",
 };
 
 const placeholderSectionStyle: CSSProperties = {

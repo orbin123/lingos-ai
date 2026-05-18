@@ -26,9 +26,11 @@ from app.modules.challenges.models import (
     ChallengeLevel,
 )
 from app.modules.challenges.service import (
+    ChallengeAudioNotFound,
     ChallengeDailyAttemptLimitExceeded,
     ChallengeReadService,
     academic_reading_band,
+    grade_listening_section,
     grade_reading_section,
     round_to_half_band,
 )
@@ -209,6 +211,40 @@ class FakeGenerator:
         return deepcopy(_generated_payload())
 
 
+class FakeTTSService:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def synthesize(
+        self,
+        *,
+        text: str,
+        voice: str | None = None,
+        speed: float = 1.0,
+        style_instructions: str | None = None,
+    ) -> dict:
+        self.calls.append(
+            {
+                "text": text,
+                "voice": voice,
+                "speed": speed,
+                "style_instructions": style_instructions,
+            }
+        )
+        return {
+            "audio_url": "/audio/ab/abcdef1234567890.mp3",
+            "duration_seconds": 12.4,
+            "cache_hit": False,
+        }
+
+
+class FakeBlobStorage:
+    async def get(self, *, key: str) -> bytes | None:
+        if key == "abcdef1234567890.mp3":
+            return b"fake mp3 bytes"
+        return None
+
+
 class FakeWritingEvaluator:
     async def evaluate(self, *, context: dict) -> WritingEvaluationReport:
         return _fake_writing_report()
@@ -257,6 +293,18 @@ def test_reading_answer_key_grading() -> None:
     assert report.questions[1].correct is False
 
 
+def test_listening_answer_key_grading() -> None:
+    report = grade_listening_section(
+        task_payload=_generated_payload(),
+        response_payload={"listening": {"l1": "A"}},
+    )
+
+    assert report.total_correct == 1
+    assert report.total_questions == 1
+    assert report.raw_scaled_40 == 40
+    assert report.section_band == 9.0
+
+
 def test_writing_schema_rejects_non_half_band() -> None:
     report = _fake_writing_report().model_dump()
     report["items"][0]["criteria"]["task_response"]["band"] = 6.25
@@ -274,6 +322,7 @@ async def test_submit_persists_phase4_scores_and_feedback(db_session: Session) -
         generator=FakeGenerator(),
         writing_evaluator=FakeWritingEvaluator(),
         feedback_generator=FakeFeedbackAgent(),
+        tts_service=FakeTTSService(),
     )
     attempt = await service.start_attempt(slug="ielts", level_number=1, user_id=user.id)
 
@@ -283,7 +332,7 @@ async def test_submit_persists_phase4_scores_and_feedback(db_session: Session) -
         response_payload={
             "reading": {"r1": "A", "r2": "C"},
             "writing": {"w1": "Cities should invest in parks because they help health."},
-            "listening": {},
+            "listening": {"l1": "A"},
             "speaking": {},
         },
     )
@@ -291,12 +340,14 @@ async def test_submit_persists_phase4_scores_and_feedback(db_session: Session) -
     assert submitted.status == ChallengeAttemptStatus.COMPLETED
     assert submitted.response_payload["writing"]["w1"].startswith("Cities")
     assert submitted.section_scores == {
-        "listening": 6.5,
+        "listening": 9.0,
         "reading": 5.5,
         "writing": 6.5,
         "speaking": 6.5,
     }
-    assert float(submitted.overall_score) == 6.5
+    assert float(submitted.overall_score) == 7.0
+    assert submitted.evaluation_report["mode"] == "phase_5_listening"
+    assert submitted.evaluation_report["listening"]["total_correct"] == 1
     assert submitted.evaluation_report["reading"]["total_correct"] == 1
     assert submitted.evaluation_report["writing"]["section_band"] == 6.5
     assert submitted.feedback_report["overall_summary"] == "Specific fake feedback."
@@ -314,6 +365,7 @@ async def test_evaluator_failure_uses_fallback_without_losing_response(
         generator=FakeGenerator(),
         writing_evaluator=evaluator,
         feedback_generator=FakeFeedbackAgent(),
+        tts_service=FakeTTSService(),
     )
     attempt = await service.start_attempt(slug="ielts", level_number=1, user_id=user.id)
 
@@ -323,7 +375,7 @@ async def test_evaluator_failure_uses_fallback_without_losing_response(
         response_payload={
             "reading": {"r1": "A", "r2": "B"},
             "writing": {"w1": "I agree because public parks are useful."},
-            "listening": {},
+            "listening": {"l1": "A"},
             "speaking": {},
         },
     )
@@ -333,6 +385,7 @@ async def test_evaluator_failure_uses_fallback_without_losing_response(
         "I agree because public parks are useful."
     )
     assert submitted.section_scores["reading"] == 9.0
+    assert submitted.section_scores["listening"] == 9.0
     assert submitted.section_scores["writing"] == 5.0
     assert submitted.evaluation_report["writing"]["summary"] == (
         "AI writing evaluation is temporarily unavailable."
@@ -348,6 +401,7 @@ async def test_feedback_failure_stores_local_fallback(db_session: Session) -> No
         generator=FakeGenerator(),
         writing_evaluator=FakeWritingEvaluator(),
         feedback_generator=FailingFeedbackAgent(),
+        tts_service=FakeTTSService(),
     )
     attempt = await service.start_attempt(slug="ielts", level_number=1, user_id=user.id)
 
@@ -357,12 +411,15 @@ async def test_feedback_failure_stores_local_fallback(db_session: Session) -> No
         response_payload={
             "reading": {"r1": "A", "r2": "B"},
             "writing": {"w1": "Parks are useful for many people."},
-            "listening": {},
+            "listening": {"l1": "A"},
             "speaking": {},
         },
     )
 
     assert "temporarily unavailable" in submitted.feedback_report["overall_summary"]
+    assert "1 of 1 listening" in submitted.feedback_report["sections"]["listening"][
+        "went_well"
+    ][0]
     assert submitted.feedback_report["sections"]["writing"]["next_tip"]
 
 
@@ -377,6 +434,7 @@ async def test_expired_submit_marks_timed_out_and_still_evaluates(
         generator=FakeGenerator(),
         writing_evaluator=FakeWritingEvaluator(),
         feedback_generator=FakeFeedbackAgent(),
+        tts_service=FakeTTSService(),
     )
     attempt = await service.start_attempt(slug="ielts", level_number=1, user_id=user.id)
     attempt.expires_at = datetime.now(timezone.utc) - timedelta(seconds=10)
@@ -388,7 +446,7 @@ async def test_expired_submit_marks_timed_out_and_still_evaluates(
         response_payload={
             "reading": {"r1": "A", "r2": "B"},
             "writing": {"w1": "Parks are useful for many people."},
-            "listening": {},
+            "listening": {"l1": "A"},
             "speaking": {},
         },
     )
@@ -433,4 +491,45 @@ async def test_daily_attempt_cap_rejects_eleventh_start(db_session: Session) -> 
         await ChallengeReadService(
             db_session,
             generator=FakeGenerator(),
+            tts_service=FakeTTSService(),
         ).start_attempt(slug="ielts", level_number=1, user_id=user.id)
+
+
+@pytest.mark.asyncio
+async def test_start_attempt_attaches_protected_listening_audio(
+    db_session: Session,
+) -> None:
+    seed_ielts_challenge(db_session)
+    user = _make_user(db_session)
+    tts = FakeTTSService()
+    service = ChallengeReadService(
+        db_session,
+        generator=FakeGenerator(),
+        tts_service=tts,
+        blob_storage=FakeBlobStorage(),
+    )
+
+    attempt = await service.start_attempt(slug="ielts", level_number=1, user_id=user.id)
+    listening = attempt.task_payload["sections"]["listening"]
+
+    assert tts.calls[0]["text"] == "A tutor discusses better public parks."
+    assert listening["audio_storage_key"] == "abcdef1234567890.mp3"
+    assert listening["audio_url"] == (
+        f"/api/v1/challenge-attempts/{attempt.id}/audio/abcdef1234567890.mp3"
+    )
+    assert listening["audio_duration_seconds"] == 12.4
+
+    audio_bytes, content_type = await service.get_attempt_audio(
+        attempt_id=attempt.id,
+        user_id=user.id,
+        audio_key="abcdef1234567890.mp3",
+    )
+    assert audio_bytes == b"fake mp3 bytes"
+    assert content_type == "audio/mpeg"
+
+    with pytest.raises(ChallengeAudioNotFound):
+        await service.get_attempt_audio(
+            attempt_id=attempt.id,
+            user_id=user.id,
+            audio_key="wrong.mp3",
+        )
