@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.modules.challenges.models import ChallengeAttemptStatus
 
@@ -70,6 +71,12 @@ class ChallengeAttemptRead(BaseModel):
     created_at: datetime
 
 
+class ChallengeAttemptSubmitRequest(BaseModel):
+    """Raw learner responses for one challenge attempt."""
+
+    response_payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class ChallengeHistoryAttempt(BaseModel):
     """One personal attempt row for challenge history."""
 
@@ -94,4 +101,3 @@ class ChallengeHistoryRead(BaseModel):
     challenge_slug: str
     challenge_name: str
     attempts: list[ChallengeHistoryAttempt]
-

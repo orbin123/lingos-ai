@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -38,7 +40,7 @@ class ChallengeRepository:
 
 
 class ChallengeAttemptRepository:
-    """Read helpers for learner challenge attempts."""
+    """Persistence helpers for learner challenge attempts."""
 
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -92,6 +94,17 @@ class ChallengeAttemptRepository:
         ).all()
         return {level_id: int(count) for level_id, count in rows}
 
+    def count_started_since(self, *, user_id: int, since: datetime) -> int:
+        """Count attempts started by a user in a rolling window."""
+        return int(
+            self.db.execute(
+                select(func.count(ChallengeAttempt.id)).where(
+                    ChallengeAttempt.user_id == user_id,
+                    ChallengeAttempt.started_at >= since,
+                )
+            ).scalar_one()
+        )
+
     def list_for_challenge(
         self,
         *,
@@ -111,3 +124,52 @@ class ChallengeAttemptRepository:
             ).scalars()
         )
 
+    def list_recent_completed_for_challenge(
+        self,
+        *,
+        user_id: int,
+        challenge_id: int,
+        limit: int = 5,
+    ) -> list[ChallengeAttempt]:
+        return list(
+            self.db.execute(
+                select(ChallengeAttempt)
+                .join(ChallengeLevel, ChallengeLevel.id == ChallengeAttempt.challenge_level_id)
+                .where(
+                    ChallengeAttempt.user_id == user_id,
+                    ChallengeLevel.challenge_id == challenge_id,
+                    ChallengeAttempt.status == ChallengeAttemptStatus.COMPLETED,
+                )
+                .options(selectinload(ChallengeAttempt.level))
+                .order_by(ChallengeAttempt.completed_at.desc(), ChallengeAttempt.id.desc())
+                .limit(limit)
+            ).scalars()
+        )
+
+    def create(
+        self,
+        *,
+        user_id: int,
+        level_id: int,
+        started_at: datetime,
+        expires_at: datetime,
+        task_payload: dict,
+    ) -> ChallengeAttempt:
+        attempt = ChallengeAttempt(
+            user_id=user_id,
+            challenge_level_id=level_id,
+            status=ChallengeAttemptStatus.IN_PROGRESS,
+            started_at=started_at,
+            expires_at=expires_at,
+            task_payload=task_payload,
+            response_payload=None,
+            overall_score=None,
+            section_scores=None,
+            passed=None,
+            evaluation_report=None,
+            feedback_report=None,
+        )
+        self.db.add(attempt)
+        self.db.flush()
+        self.db.refresh(attempt)
+        return attempt

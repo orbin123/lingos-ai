@@ -12,9 +12,12 @@ Persistence happens in the service layer (responses/service.py).
 
 import json
 import logging
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from app.tasks.schemas.base import ScoringMethod
 
 logger = logging.getLogger(__name__)
 
