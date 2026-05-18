@@ -103,6 +103,12 @@ class SkillPointsLog(Base, IDMixin, CreatedAtMixin):
         ForeignKey("user_tasks.id", ondelete="SET NULL"),
         nullable=True, index=True,
     )
+    # New in Phase 3: link a points entry to its source `daily_sessions` row.
+    # Nullable so legacy entries (written via the WMA path) remain valid.
+    session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("daily_sessions.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
 
     def __repr__(self) -> str:
         return (

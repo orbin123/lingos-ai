@@ -4,16 +4,12 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useDiagnosisStore } from "@/store/diagnosisStore";
+import { SKILL_LABEL_FALLBACK } from "@/lib/skill-labels";
 
-const SKILL_LABELS: Record<string, string> = {
-  grammar: "Grammar",
-  vocabulary: "Vocabulary",
-  pronunciation: "Pronunciation",
-  fluency: "Fluency",
-  expression: "Expression",
-  tone: "Tone",
-  comprehension: "Comprehension",
-};
+// Phase 5: shared static fallback for the seven sub-skill labels. Backend
+// ships `display_label` in newer endpoints; prefer that when the payload
+// includes it (the diagnosis result currently does not — keep static fallback).
+const SKILL_LABELS: Record<string, string> = SKILL_LABEL_FALLBACK;
 
 // Diagnosis scores are capped at 4 (out of a real 0-10 scale).
 // Multiply by 2.5 to display on 0-10 scale.

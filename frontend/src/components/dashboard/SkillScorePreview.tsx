@@ -2,19 +2,19 @@
 
 import { useEffect, useState } from "react";
 
-interface SkillScorePreviewProps {
-  scores: Record<string, number>;
-}
+import { SKILL_LABEL_FALLBACK, SKILL_ORDER, getSkillLabel } from "@/lib/skill-labels";
 
-const SKILL_LABELS: Record<string, string> = {
-  grammar: "Grammar",
-  vocabulary: "Vocabulary",
-  pronunciation: "Pronunciation",
-  fluency: "Fluency",
-  thought_org: "Thought Org.",
-  listening: "Listening",
-  tone: "Tone & Register",
-};
+interface SkillScorePreviewProps {
+  /** Score per sub-skill, keyed by backend identifier (legacy names). */
+  scores: Record<string, number>;
+  /**
+   * Optional API-provided display labels (`{skill_name: display_label}`).
+   * When omitted, the static fallback in `@/lib/skill-labels` is used.
+   * The fallback is keyed to the LEGACY backend identifiers so labels
+   * resolve correctly even when the API hasn't been updated yet.
+   */
+  labels?: Record<string, string>;
+}
 
 function getBarColor(score: number): string {
   if (score < 5) return "oklch(58% 0.2 15)";
@@ -22,25 +22,27 @@ function getBarColor(score: number): string {
   return "oklch(48% 0.18 155)";
 }
 
-export function SkillScorePreview({ scores }: SkillScorePreviewProps) {
+export function SkillScorePreview({ scores, labels }: SkillScorePreviewProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Trigger animation after mount
     const timer = setTimeout(() => setMounted(true), 50);
     return () => clearTimeout(timer);
   }, []);
 
-  const skillKeys = Object.keys(SKILL_LABELS);
+  // Render in canonical SKILL_ORDER. Skills present in `scores` but unknown
+  // to SKILL_ORDER (defensive: future skills) tail-append.
+  const knownKeys = SKILL_ORDER.filter((k) => k in SKILL_LABEL_FALLBACK);
+  const extraKeys = Object.keys(scores).filter((k) => !knownKeys.includes(k));
+  const skillKeys = [...knownKeys, ...extraKeys];
 
   return (
     <section>
-      {/* Bars */}
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {skillKeys.map((key, index) => {
           const score = scores[key] ?? 0;
           const pct = Math.min((score / 10) * 100, 100);
-          const label = SKILL_LABELS[key] || key;
+          const label = getSkillLabel(key, labels);
 
           return (
             <div
@@ -51,20 +53,18 @@ export function SkillScorePreview({ scores }: SkillScorePreviewProps) {
                 gap: 12,
               }}
             >
-              {/* Label */}
               <span
                 style={{
                   fontSize: 13,
                   fontWeight: 500,
                   color: "oklch(40% 0.07 240)",
-                  width: 100,
+                  width: 120,
                   flexShrink: 0,
                 }}
               >
                 {label}
               </span>
 
-              {/* Bar track */}
               <div
                 style={{
                   flex: 1,
@@ -74,7 +74,6 @@ export function SkillScorePreview({ scores }: SkillScorePreviewProps) {
                   overflow: "hidden",
                 }}
               >
-                {/* Bar fill */}
                 <div
                   style={{
                     height: "100%",
@@ -86,7 +85,6 @@ export function SkillScorePreview({ scores }: SkillScorePreviewProps) {
                 />
               </div>
 
-              {/* Score */}
               <span
                 style={{
                   fontSize: 13,

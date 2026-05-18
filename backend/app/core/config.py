@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     # Frontend
     frontend_url: str = "http://localhost:3000"
 
+    # Restructure flow (Phase 3+). Default OFF so the legacy
+    # learning_session pipeline continues to serve traffic while the new
+    # sessions endpoints are wired in behind tests. Flip to True per
+    # environment once the new flow is ready to take traffic.
+    use_new_session_flow: bool = False
+
     # AI / LLM
     OPENAI_API_KEY: str
     LANGCHAIN_TRACING_V2: bool = True

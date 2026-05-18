@@ -24,6 +24,7 @@ from app.modules.learning_session.router import (
     rest_router as learning_session_rest_router,
     ws_router as learning_session_ws_router,
 )
+from app.modules.sessions.routes import router as sessions_router
 from app.modules.tasks.routes import router as tasks_router
 
 load_dotenv("../.env")
@@ -91,3 +92,7 @@ app.include_router(subscription_router)
 app.include_router(users_router)
 app.include_router(learning_session_rest_router, prefix="/api")
 app.include_router(learning_session_ws_router)
+# New sessions API (Phase 3+). Routes themselves return 404 when the
+# `use_new_session_flow` flag is off — mounting unconditionally keeps the
+# OpenAPI spec stable across environments.
+app.include_router(sessions_router, prefix="/api")

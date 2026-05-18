@@ -10,12 +10,17 @@ class SkillScoreSnapshot(BaseModel):
 
     Used by the spider chart on the dashboard. Returns all 7 skills
     for the current user.
+
+    `skill_name` is the stable internal identifier (e.g. 'expression').
+    `display_label` is the user-facing label (e.g. 'Thought Organization').
+    The frontend renders `display_label` and keys data by `skill_name`.
     """
 
     model_config = ConfigDict(from_attributes=True)
 
     skill_id: int
     skill_name: str
+    display_label: str
     score: float
 
 
@@ -33,6 +38,7 @@ class SkillHistorySeries(BaseModel):
 
     skill_id: int
     skill_name: str
+    display_label: str
     scores: list[float]
 
 
@@ -53,6 +59,7 @@ class WeeklySnapshot(BaseModel):
     tasks_completed: int
     weekly_task_goal: int
     best_skill_name: str | None
+    best_skill_display_label: str | None
     best_skill_score: float | None
 
 
@@ -124,6 +131,7 @@ class SkillWithPointsRead(BaseModel):
 
     skill_id: int
     skill_name: str
+    display_label: str
     wma_score: float
     points_score: float
     points: int

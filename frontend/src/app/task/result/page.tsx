@@ -3,17 +3,12 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useTaskStore } from "@/store/taskStore";
+import { SKILL_LABEL_FALLBACK } from "@/lib/skill-labels";
 
-// Pretty labels for skill keys (same set used on diagnosis result)
-const SKILL_LABELS: Record<string, string> = {
-  grammar: "Grammar",
-  vocabulary: "Vocabulary",
-  pronunciation: "Pronunciation",
-  fluency: "Fluency",
-  expression: "Expression",
-  tone: "Tone",
-  comprehension: "Comprehension",
-};
+// Pretty labels for skill keys. Backend ships these via `display_label` in
+// API responses; this is the static fallback for components that don't
+// receive the API-provided labels.
+const SKILL_LABELS: Record<string, string> = SKILL_LABEL_FALLBACK;
 
 // The Feedback Agent returns a `body` JSON. Shape can vary, so we render
 // it defensively. We try a few common keys; otherwise we show JSON.

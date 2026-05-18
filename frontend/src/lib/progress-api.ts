@@ -2,7 +2,10 @@ import { api } from "./api";
 
 export interface SkillScoreSnapshot {
   skill_id: number;
+  /** Backend internal identifier — keys data by this. */
   skill_name: string;
+  /** User-facing label shipped by the API (Phase 5+). Frontend renders this. */
+  display_label: string;
   score: number;
 }
 
@@ -12,6 +15,7 @@ export interface WeeklySnapshot {
   tasks_completed: number;
   weekly_task_goal: number;
   best_skill_name: string | null;
+  best_skill_display_label: string | null;
   best_skill_score: number | null;
 }
 
@@ -41,6 +45,7 @@ export interface StatsFeedback {
 export interface SkillHistorySeries {
   skill_id: number;
   skill_name: string;
+  display_label: string;
   scores: number[];
 }
 
