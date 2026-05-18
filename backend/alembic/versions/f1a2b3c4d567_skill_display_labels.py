@@ -1,7 +1,7 @@
 """skills: add display_label column + backfill friendly names
 
 Revision ID: f1a2b3c4d567
-Revises: e0f1a2b3c456
+Revises: d1e0f234a567
 Create Date: 2026-05-18 11:00:00.000000
 
 Adds a `display_label` column to `skills` and populates it with the
@@ -30,7 +30,7 @@ from alembic import op
 
 
 revision: str = "f1a2b3c4d567"
-down_revision: Union[str, Sequence[str], None] = "e0f1a2b3c456"
+down_revision: Union[str, Sequence[str], None] = "d1e0f234a567"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
