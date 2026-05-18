@@ -55,6 +55,14 @@ export interface ChallengeAttemptRead {
   created_at: string;
 }
 
+export interface ChallengeSpeakingUploadRead {
+  prompt_id: string;
+  audio_url: string;
+  audio_storage_key: string;
+  content_type: string;
+  size_bytes: number;
+}
+
 export const challengesApi = {
   list: () => api.get<ChallengeListItem[]>("/api/v1/challenges").then((r) => r.data),
 
@@ -79,6 +87,23 @@ export const challengesApi = {
         response_payload: responsePayload,
       })
       .then((r) => r.data),
+
+  uploadSpeakingTake: (
+    attemptId: number,
+    promptId: string,
+    audioBlob: Blob,
+    filename = "speaking.webm",
+  ) => {
+    const formData = new FormData();
+    formData.append("audio", audioBlob, filename);
+    return api
+      .post<ChallengeSpeakingUploadRead>(
+        `/api/v1/challenge-attempts/${attemptId}/speaking/${promptId}/upload`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } },
+      )
+      .then((r) => r.data);
+  },
 
   getAttemptAudio: (audioUrl: string) =>
     api

@@ -23,6 +23,11 @@ from app.modules.challenges.models import (
 from app.modules.challenges.evaluation_schemas import (
     IELTSFeedbackReport,
     SectionFeedback,
+    SpeakingCriteriaEvaluation,
+    SpeakingCriterionEvaluation,
+    SpeakingEvaluationReport,
+    SpeakingPromptEvaluation,
+    SpeakingPronunciationEvaluation,
     WritingCriteriaEvaluation,
     WritingCriterionEvaluation,
     WritingEvaluationReport,
@@ -226,6 +231,50 @@ def client(
                 summary="Route test writing evaluation.",
             )
 
+    class FakeSpeakingEvaluator:
+        async def evaluate(self, *, context: dict) -> SpeakingEvaluationReport:
+            criteria = SpeakingCriteriaEvaluation(
+                fluency_and_coherence=SpeakingCriterionEvaluation(
+                    band=6.0,
+                    rationale="The transcript gives a connected answer.",
+                ),
+                lexical_resource=SpeakingCriterionEvaluation(
+                    band=6.0,
+                    rationale="Vocabulary is relevant to the prompt.",
+                ),
+                grammatical_range_and_accuracy=SpeakingCriterionEvaluation(
+                    band=6.0,
+                    rationale="Grammar is understandable.",
+                ),
+                pronunciation=SpeakingPronunciationEvaluation(
+                    available=False,
+                    band=None,
+                    rationale=(
+                        "Pronunciation requires audio-level scoring and is not "
+                        "evaluated in Phase 6."
+                    ),
+                ),
+            )
+            return SpeakingEvaluationReport(
+                mode="ai_speaking_phase_6",
+                items=[
+                    SpeakingPromptEvaluation(
+                        item_id="s1",
+                        prompt="Describe a green space in your city.",
+                        transcript_excerpt=context["speaking_responses"]["s1"][
+                            "transcript"
+                        ],
+                        transcript_word_count=8,
+                        criteria=criteria,
+                        band=6.0,
+                        summary="Route test speaking evaluation.",
+                    )
+                ],
+                section_band=6.0,
+                pronunciation_available=False,
+                summary="Route test speaking evaluation.",
+            )
+
     class FakeFeedbackAgent:
         async def generate(self, *, context: dict) -> IELTSFeedbackReport:
             section_feedback = SectionFeedback(
@@ -265,11 +314,59 @@ def client(
                 return b"route fake mp3"
             return None
 
+    class FakeSTTService:
+        async def transcribe(
+            self,
+            *,
+            audio_bytes: bytes,
+            filename: str,
+            language: str = "en",
+            with_timestamps: bool = False,
+        ) -> dict:
+            return {
+                "text": "I visit a small park because it is calm and useful.",
+                "language": language,
+                "duration_seconds": 3.6,
+                "words": None,
+            }
+
+    class FakeSpeakingAudioStorage:
+        store: dict[str, bytes] = {}
+
+        def __init__(self, *, root_dir, public_url_prefix) -> None:
+            self.root_dir = root_dir
+            self.public_url_prefix = public_url_prefix
+
+        async def put(self, *, key: str, data: bytes, content_type: str) -> dict:
+            self.store[key] = data
+            return {
+                "public_url": f"/internal/{key}",
+                "storage_key": key,
+                "content_type": content_type,
+                "size_bytes": len(data),
+            }
+
+        async def get(self, *, key: str) -> bytes | None:
+            return self.store.get(key)
+
+        async def exists(self, *, key: str) -> bool:
+            return key in self.store
+
+        def url_for(self, *, key: str) -> str:
+            return f"/internal/{key}"
+
+    FakeSpeakingAudioStorage.store = {}
+
     monkeypatch.setattr(challenges_service, "IELTSChallengeGenerator", FakeGenerator)
     monkeypatch.setattr(
         challenges_service,
         "IELTSChallengeWritingEvaluator",
         FakeWritingEvaluator,
+    )
+    monkeypatch.setattr(
+        challenges_service,
+        "IELTSChallengeSpeakingEvaluator",
+        FakeSpeakingEvaluator,
     )
     monkeypatch.setattr(
         challenges_service,
@@ -285,6 +382,16 @@ def client(
         challenges_service,
         "get_default_blob_storage",
         lambda: FakeBlobStorage(),
+    )
+    monkeypatch.setattr(
+        challenges_service,
+        "get_default_stt_service",
+        lambda: FakeSTTService(),
+    )
+    monkeypatch.setattr(
+        challenges_service,
+        "LocalBlobStorage",
+        FakeSpeakingAudioStorage,
     )
 
     def override_get_db():
@@ -340,6 +447,14 @@ def test_all_challenge_read_routes_are_mounted() -> None:
     assert "/api/v1/challenges/{slug}/history" in paths
     assert "/api/v1/challenge-attempts/{attempt_id}" in paths
     assert "/api/v1/challenge-attempts/{attempt_id}/audio/{audio_key}" in paths
+    assert (
+        "/api/v1/challenge-attempts/{attempt_id}/speaking/{prompt_id}/audio/{audio_key}"
+        in paths
+    )
+    assert (
+        "/api/v1/challenge-attempts/{attempt_id}/speaking/{prompt_id}/upload"
+        in paths
+    )
     assert "/api/v1/challenges/{slug}/levels/{level_number}/attempts" in paths
     assert "/api/v1/challenge-attempts/{attempt_id}/submit" in paths
 
@@ -480,13 +595,60 @@ def test_submit_attempt_persists_payload_and_scores(
     body = response.json()
     assert body["status"] == "completed"
     assert body["response_payload"] == payload["response_payload"]
-    assert body["overall_score"] == 7.5
+    assert body["overall_score"] == 6.0
     assert body["passed"] is True
     assert body["section_scores"]["listening"] == 9.0
     assert body["section_scores"]["reading"] == 9.0
     assert body["section_scores"]["writing"] == 6.0
-    assert body["evaluation_report"]["mode"] == "phase_5_listening"
+    assert body["section_scores"]["speaking"] == 0.0
+    assert body["evaluation_report"]["mode"] == "phase_6_speaking"
     assert body["evaluation_report"]["listening"]["total_correct"] == 1
+    assert body["feedback_report"]["overall_summary"] == "Fake Phase 4 feedback."
+
+
+def test_route_start_upload_speaking_submit_scores_transcript(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    seed_ielts_challenge(db_session)
+    db_session.commit()
+    start_response = client.post("/api/v1/challenges/ielts/levels/1/attempts")
+    attempt_id = start_response.json()["id"]
+
+    upload_response = client.post(
+        f"/api/v1/challenge-attempts/{attempt_id}/speaking/s1/upload",
+        files={"audio": ("speaking.webm", b"route webm bytes", "audio/webm")},
+    )
+
+    assert upload_response.status_code == 201
+    upload = upload_response.json()
+    assert upload["prompt_id"] == "s1"
+    assert upload["audio_url"].endswith(upload["audio_storage_key"])
+
+    replay_response = client.get(upload["audio_url"])
+    assert replay_response.status_code == 200
+    assert replay_response.content == b"route webm bytes"
+    assert replay_response.headers["content-type"].startswith("audio/webm")
+
+    submit_response = client.post(
+        f"/api/v1/challenge-attempts/{attempt_id}/submit",
+        json={
+            "response_payload": {
+                "reading": {"r1": "A"},
+                "writing": {"w1": "Short response"},
+                "listening": {"l1": "A"},
+                "speaking": {"s1": upload},
+            }
+        },
+    )
+
+    assert submit_response.status_code == 200
+    body = submit_response.json()
+    speaking_response = body["response_payload"]["speaking"]["s1"]
+    assert speaking_response["transcript"].startswith("I visit a small park")
+    assert body["evaluation_report"]["mode"] == "phase_6_speaking"
+    assert body["evaluation_report"]["speaking"]["pronunciation_available"] is False
+    assert body["section_scores"]["speaking"] == 6.0
     assert body["feedback_report"]["overall_summary"] == "Fake Phase 4 feedback."
 
 

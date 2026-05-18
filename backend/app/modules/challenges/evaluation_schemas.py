@@ -86,6 +86,63 @@ class WritingEvaluationReport(IELTSBandModel):
     summary: NonEmptyString
 
 
+class SpeakingCriterionEvaluation(IELTSBandModel):
+    """One transcript-only IELTS Speaking criterion score."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    band: float = Field(ge=0.0, le=9.0)
+    rationale: NonEmptyString
+
+
+class SpeakingPronunciationEvaluation(BaseModel):
+    """Pronunciation policy for Phase 6 transcript-only speaking scoring."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    available: Literal[False]
+    band: None = None
+    rationale: NonEmptyString
+
+
+class SpeakingCriteriaEvaluation(BaseModel):
+    """Phase 6 speaking criteria with pronunciation explicitly unavailable."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fluency_and_coherence: SpeakingCriterionEvaluation
+    lexical_resource: SpeakingCriterionEvaluation
+    grammatical_range_and_accuracy: SpeakingCriterionEvaluation
+    pronunciation: SpeakingPronunciationEvaluation
+
+
+class SpeakingPromptEvaluation(IELTSBandModel):
+    """Transcript-only speaking evaluation for one prompt."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: NonEmptyString
+    prompt: NonEmptyString
+    transcript_excerpt: str = ""
+    transcript_word_count: int = Field(ge=0)
+    criteria: SpeakingCriteriaEvaluation
+    band: float = Field(ge=0.0, le=9.0)
+    summary: NonEmptyString
+    transcript_error: str | None = None
+
+
+class SpeakingEvaluationReport(IELTSBandModel):
+    """Structured Phase 6 transcript-only speaking evaluation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["ai_speaking_phase_6"]
+    items: list[SpeakingPromptEvaluation] = Field(default_factory=list)
+    section_band: float = Field(ge=0.0, le=9.0)
+    pronunciation_available: Literal[False]
+    summary: NonEmptyString
+
+
 class ReadingQuestionEvaluation(BaseModel):
     """Deterministic correctness for one MCQ reading item."""
 
@@ -144,11 +201,11 @@ class UnifiedEvaluationReport(IELTSBandModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["phase_4_text_sections", "phase_5_listening"]
+    mode: Literal["phase_4_text_sections", "phase_5_listening", "phase_6_speaking"]
     reading: ReadingEvaluationReport
     writing: WritingEvaluationReport
     listening: ReadingEvaluationReport | StubSectionEvaluation
-    speaking: StubSectionEvaluation
+    speaking: SpeakingEvaluationReport | StubSectionEvaluation
     section_scores: SectionScores
     overall_score: float = Field(ge=0.0, le=9.0)
 
