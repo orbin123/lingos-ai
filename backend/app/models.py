@@ -27,6 +27,11 @@ from app.modules.curriculum.models import (  # noqa: F401
 from app.modules.curriculum.v2_models import (  # noqa: F401
     CurriculumDay, CurriculumWeek, TaskArchetype,
 )
+from app.modules.challenges.models import (  # noqa: F401
+    Challenge,
+    ChallengeAttempt,
+    ChallengeLevel,
+)
 from app.modules.tasks.models import Task, TaskSkill, UserTask  # noqa: F401
 from app.modules.responses.models import (  # noqa: F401
     UserResponse, Evaluation, Feedback,

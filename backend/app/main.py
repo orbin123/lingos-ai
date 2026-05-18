@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.core.rate_limit import AdminRateLimitMiddleware
 from app.modules.admin.routes import router as admin_router
 from app.modules.auth.routes import router as auth_router
+from app.modules.challenges.routes import router as challenges_router
 from app.modules.curriculum.routes import router as curriculum_router
 from app.modules.diagnosis.routes import router as diagnosis_router
 from app.modules.progress.routes import router as progress_router
@@ -90,6 +91,7 @@ app.include_router(progress_router)
 app.include_router(ai_router)
 app.include_router(subscription_router)
 app.include_router(users_router)
+app.include_router(challenges_router, prefix="/api")
 app.include_router(learning_session_rest_router, prefix="/api")
 app.include_router(learning_session_ws_router)
 # New sessions API (Phase 3+). Routes themselves return 404 when the

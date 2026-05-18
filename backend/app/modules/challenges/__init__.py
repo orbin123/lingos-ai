@@ -1,0 +1,2 @@
+"""Generic challenge framework module."""
+
