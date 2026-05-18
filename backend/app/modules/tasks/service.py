@@ -1,4 +1,11 @@
-"""Business logic for assigning the next task to a user.
+"""DEPRECATED — Phase 7. The new sessions flow handles task delivery.
+
+`SessionService.start_session` in `app.modules.sessions` produces the
+daily activity skeleton via `plan_session` + the LLM `TaskGenerator`.
+This module's `get_or_create_day_bundle` remains for the legacy
+/tasks/next path; Phase 8 retires it.
+
+Business logic for assigning the next task to a user.
 
 Orchestrates: enrollment → rotation engine → task pool → assignment +
 history update.  When an LLM-generated template is available the service

@@ -11,15 +11,16 @@ import { DailyTaskPanel } from "@/components/dashboard/DailyTaskPanel";
 import { SkillScorePreview } from "@/components/dashboard/SkillScorePreview";
 import { shouldShowAdminConsoleButton } from "@/lib/admin-access";
 
-const DEFAULT_SCORES: Record<string, number> = {
-  grammar: 6.0,
-  vocabulary: 5.0,
-  pronunciation: 4.0,
-  fluency: 5.5,
-  thought_org: 4.5,
-  listening: 7.0,
-  tone: 6.5,
-};
+// Empty fallback — every legacy sub-skill at 0.0. The dashboard reads real
+// scores from the API when available; this is just what the SkillScorePreview
+// renders when the user hasn't completed any sessions yet.
+//
+// Keyed by the canonical legacy identifiers from `@/lib/skill-labels`. Do
+// NOT add doc names ("thought_org") or long-form names ("thought_organization")
+// here — those duplicate rows on the preview bar chart. See Phase 0 §2.
+import { emptySkillScores, normalizeSkillKey } from "@/lib/skill-labels";
+
+const DEFAULT_SCORES: Record<string, number> = emptySkillScores();
 
 const adminConsoleButtonStyle: React.CSSProperties = {
   minHeight: 40,
@@ -341,10 +342,21 @@ export default function DashboardPage() {
   const enrollment = user?.enrollment;
   const userRecord = user as unknown as Record<string, unknown> | undefined;
   const rawScores = userRecord?.skill_scores;
-  const scores =
-    rawScores && typeof rawScores === "object" && !Array.isArray(rawScores)
-      ? (rawScores as Record<string, number>)
-      : DEFAULT_SCORES;
+  // Normalise incoming keys through `normalizeSkillKey` so that data shipped
+  // under doc names ("thought_org") or long-form names ("thought_organization")
+  // gets folded onto the canonical legacy identifier. Without this step the
+  // SkillScorePreview tail-appends extra rows for the aliases (see Phase 0 §2
+  // and the regression that prompted this fix).
+  const scores: Record<string, number> = (() => {
+    if (!rawScores || typeof rawScores !== "object" || Array.isArray(rawScores)) {
+      return DEFAULT_SCORES;
+    }
+    const out: Record<string, number> = { ...DEFAULT_SCORES };
+    for (const [k, v] of Object.entries(rawScores as Record<string, unknown>)) {
+      if (typeof v === "number") out[normalizeSkillKey(k)] = v;
+    }
+    return out;
+  })();
   const showAdminConsole = shouldShowAdminConsoleButton(user);
 
   return (

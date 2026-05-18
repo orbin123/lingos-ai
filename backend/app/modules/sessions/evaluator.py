@@ -25,9 +25,12 @@ class EvaluationResult:
 
 
 class Evaluator(Protocol):
-    """Score a user's response against an archetype's rubric."""
+    """Score a user's response against an archetype's rubric.
 
-    def evaluate(
+    Async because production implementations call out to an LLM (Phase 4+).
+    """
+
+    async def evaluate(
         self,
         *,
         archetype: ArchetypeSpec,
@@ -37,11 +40,11 @@ class Evaluator(Protocol):
 
 
 class StubEvaluator:
-    """Deterministic evaluator used in Phase 3.
+    """Deterministic evaluator. Used in tests and as offline fallback.
 
     Returns the configured `default_score` when a response is present; 0.0
-    when the response is missing. Phase 4 replaces this with an LLM-driven
-    implementation that consults the archetype rubric.
+    when the response is missing. The production default in
+    `SessionService` is the LLM-driven evaluator from `app.ai.sessions`.
 
     Tests inject a different `default_score` to exercise tier boundaries.
     """
@@ -51,7 +54,7 @@ class StubEvaluator:
             raise ValueError(f"default_score must be 0..10, got {default_score}")
         self.default_score = float(default_score)
 
-    def evaluate(
+    async def evaluate(
         self,
         *,
         archetype: ArchetypeSpec,
@@ -68,7 +71,7 @@ class StubEvaluator:
             raw_score=self.default_score,
             rubric_scores={r: self.default_score for r in archetype.rubric},
             evaluator_notes=(
-                "Phase 3 stub evaluator — returns a constant score. "
-                "Phase 4 wires in the LLM-driven Evaluator agent."
+                "Stub evaluator — returns a constant score. "
+                "Production uses the LLM-driven evaluator in app.ai.sessions."
             ),
         )

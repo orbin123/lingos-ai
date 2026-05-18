@@ -60,6 +60,10 @@ from app.modules.sessions.repository import (
     ScorecardRepository,
 )
 from app.modules.sessions.scoring_writer import ApplyReport, apply_session_scorecard
+from app.modules.sessions.task_generator import (
+    StubTaskGenerator,
+    TaskGenerator,
+)
 from app.modules.skills.repository import SkillRepository
 from app.scoring import (
     ActivityScore,
@@ -85,12 +89,17 @@ class SessionService:
         *,
         evaluator: Evaluator | None = None,
         feedback_generator: FeedbackGenerator | None = None,
+        task_generator: TaskGenerator | None = None,
     ) -> None:
         self.db = db
+        # The three injectable agents default to stubs. Production wiring
+        # (FastAPI dep / route factory) replaces these with the LLM-driven
+        # implementations from `app.ai.sessions`.
         self.evaluator: Evaluator = evaluator or StubEvaluator()
         self.feedback_generator: FeedbackGenerator = (
             feedback_generator or StubFeedbackGenerator()
         )
+        self.task_generator: TaskGenerator = task_generator or StubTaskGenerator()
 
         self.sessions_repo = DailySessionRepository(db)
         self.attempts_repo = ActivityAttemptRepository(db)
@@ -104,7 +113,7 @@ class SessionService:
 
     # ── start ──────────────────────────────────────────────────────
 
-    def start_session(
+    async def start_session(
         self,
         *,
         user_id: int,
@@ -112,6 +121,8 @@ class SessionService:
         course_length: CourseLength,
         tasks_per_day: int,
         allowed_activities: set[str],
+        sub_level: int | None = None,
+        user_interests: list[str] | None = None,
         now: datetime | None = None,
     ) -> DailySession:
         """Create a new session for `(user_id, day_id)`. Raises if one is open."""
@@ -151,8 +162,22 @@ class SessionService:
         )
         self.sessions_repo.add(session)
 
+        # Look up the parent week so the task generator can pick a content
+        # depth that matches the user's CEFR + sub_level. Falls back to the
+        # week's sub_level_min if no explicit sub_level is provided.
+        week = session.day_id  # placeholder; replaced below from day.week_id
+        parent_week = day.week  # loaded via relationship
+        effective_sub_level = sub_level or parent_week.sub_level_min
+
         for activity in plan:
-            self._materialise_attempt(session=session, day=day, plan=activity)
+            await self._materialise_attempt(
+                session=session,
+                day=day,
+                plan=activity,
+                cefr_level=parent_week.cefr_level,
+                sub_level=effective_sub_level,
+                user_interests=user_interests,
+            )
 
         self.db.commit()
         self.db.refresh(session)
@@ -180,7 +205,7 @@ class SessionService:
 
     # ── submit ─────────────────────────────────────────────────────
 
-    def submit_activity(
+    async def submit_activity(
         self,
         *,
         session_id: str,
@@ -212,7 +237,7 @@ class SessionService:
         attempt.status = AttemptStatus.SUBMITTED
 
         # Run the evaluator.
-        eval_result: EvaluationResult = self.evaluator.evaluate(
+        eval_result: EvaluationResult = await self.evaluator.evaluate(
             archetype=spec,
             task_content=attempt.task_content,
             user_response=user_response,
@@ -232,7 +257,7 @@ class SessionService:
         self.evaluations_repo.add(evaluation)
 
         # Run the feedback generator.
-        fb: FeedbackResult = self.feedback_generator.generate(
+        fb: FeedbackResult = await self.feedback_generator.generate(
             archetype=spec,
             evaluation=eval_result,
             user_response=user_response,
@@ -266,7 +291,7 @@ class SessionService:
 
     # ── complete ───────────────────────────────────────────────────
 
-    def complete_session(
+    async def complete_session(
         self,
         *,
         session_id: str,
@@ -366,45 +391,36 @@ class SessionService:
         if session.status is SessionStatus.ABANDONED:
             raise SessionAbandoned(f"session {session.session_id!r} was abandoned")
 
-    def _materialise_attempt(
+    async def _materialise_attempt(
         self,
         *,
         session: DailySession,
         day: CurriculumDay,
         plan: PlannedActivity,
+        cefr_level: str,
+        sub_level: int,
+        user_interests: list[str] | None,
     ) -> ActivityAttempt:
         spec = get_archetype(plan.archetype_id)
+        generated = await self.task_generator.generate(
+            archetype=spec,
+            day_topic=day.topic,
+            explanation_brief=day.explanation_brief,
+            cefr_level=cefr_level,
+            sub_level=sub_level,
+            user_interests=user_interests,
+        )
         attempt = ActivityAttempt(
             session_id=session.id,
             archetype_id=plan.archetype_id,
             sequence=plan.sequence,
             is_mandatory=plan.is_mandatory,
             status=AttemptStatus.PENDING,
-            task_content=self._stub_task_content(day=day, archetype=spec),
+            task_content=generated.content,
         )
         self.db.add(attempt)
         self.db.flush()
         return attempt
-
-    @staticmethod
-    def _stub_task_content(*, day: CurriculumDay, archetype: ArchetypeSpec) -> dict:
-        """Phase 3 placeholder. Phase 4 replaces with Task-Generator output.
-
-        Carries enough for the frontend to render a sensible "this is the
-        task" screen without LLM-generated content yet.
-        """
-        return {
-            "phase": "stub",
-            "archetype_id": archetype.archetype_id,
-            "archetype_name": archetype.name,
-            "ui_widget": archetype.ui_widget,
-            "core_activity": archetype.core_activity,
-            "topic": day.topic,
-            "explanation_brief": day.explanation_brief,
-            "instructions": (
-                f"Practice {archetype.name.lower()} on the topic '{day.topic}'."
-            ),
-        }
 
     def _current_points_for(self, user_id: int) -> dict[str, int]:
         """Build `{sub_skill: int_points}` for the user, filling missing skills with 0."""

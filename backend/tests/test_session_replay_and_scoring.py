@@ -1,15 +1,14 @@
 """Replay rule + end-to-end scoring writer integration.
 
-Covers:
-  - First session for (user, day_id) writes points to SkillPoints + log
-  - Second session for same (user, day_id) yields a scorecard but no points
-  - Scoring engine math flows correctly into the scorecard
-  - SkillPointsLog entries reference the originating session
+Async after Phase 4 (the SessionService start/submit/complete path went
+async to support the LLM agents). Tests inject the deterministic Stub*
+agents to keep the suite offline.
 """
 
 from __future__ import annotations
 
 import pytest
+import pytest_asyncio  # noqa: F401
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -113,7 +112,7 @@ def _user_id(db) -> int:
     return db.query(User).first().id
 
 
-def _run_complete_session(
+async def _run_complete_session(
     db, *, score: float = 8.0, tasks_per_day: int = 2,
 ) -> tuple[SessionService, str]:
     service = SessionService(
@@ -121,7 +120,7 @@ def _run_complete_session(
         evaluator=StubEvaluator(default_score=score),
         feedback_generator=StubFeedbackGenerator(),
     )
-    session = service.start_session(
+    session = await service.start_session(
         user_id=_user_id(db),
         day_id="day_24_05_03",
         course_length=CourseLength.WEEKS_24,
@@ -129,13 +128,13 @@ def _run_complete_session(
         allowed_activities={"read", "write", "listen", "speak"},
     )
     for seq in range(1, tasks_per_day + 1):
-        service.submit_activity(
+        await service.submit_activity(
             session_id=session.session_id,
             user_id=session.user_id,
             sequence=seq,
             user_response={"answer": "x"},
         )
-    service.complete_session(
+    await service.complete_session(
         session_id=session.session_id, user_id=session.user_id,
     )
     return service, session.session_id
@@ -145,34 +144,32 @@ def _run_complete_session(
 
 
 class TestReplayRule:
-    def test_first_session_awards_points(self, db_session):
-        _, session_id = _run_complete_session(db_session, score=8.0, tasks_per_day=2)
-        # Points should be present in SkillPoints.
+    @pytest.mark.asyncio
+    async def test_first_session_awards_points(self, db_session):
+        _, session_id = await _run_complete_session(db_session, score=8.0, tasks_per_day=2)
         rows = db_session.query(SkillPoints).all()
         assert rows, "expected at least one SkillPoints row written"
-        # Audit log should reference the session_id.
         log_rows = db_session.query(SkillPointsLog).all()
         assert log_rows
         for log in log_rows:
             assert log.session_id is not None
             assert log.reason.startswith("session:")
 
-    def test_second_session_for_same_day_awards_nothing(self, db_session):
-        # Run #1: applies points.
-        service1, _ = _run_complete_session(db_session, score=8.0, tasks_per_day=2)
+    @pytest.mark.asyncio
+    async def test_second_session_for_same_day_awards_nothing(self, db_session):
+        service1, _ = await _run_complete_session(db_session, score=8.0, tasks_per_day=2)
         first_totals = {
             row.skill_id: int(row.points)
             for row in db_session.query(SkillPoints).all()
         }
         assert first_totals, "first session should have written points"
 
-        # Run #2: same day → is_first_attempt should be False.
         service2 = SessionService(
             db_session,
             evaluator=StubEvaluator(default_score=8.0),
             feedback_generator=StubFeedbackGenerator(),
         )
-        session2 = service2.start_session(
+        session2 = await service2.start_session(
             user_id=_user_id(db_session),
             day_id="day_24_05_03",
             course_length=CourseLength.WEEKS_24,
@@ -181,30 +178,28 @@ class TestReplayRule:
         )
         assert session2.is_first_attempt is False
         for seq in (1, 2):
-            service2.submit_activity(
+            await service2.submit_activity(
                 session_id=session2.session_id,
                 user_id=session2.user_id,
                 sequence=seq,
                 user_response={"answer": "x"},
             )
-        scorecard2, report2 = service2.complete_session(
+        scorecard2, report2 = await service2.complete_session(
             session_id=session2.session_id, user_id=session2.user_id,
         )
 
-        # Scorecard records the calculated earnings…
         assert sum(scorecard2.points_earned.values()) > 0
-        # …but no points were applied.
         assert report2.applied is False
         assert scorecard2.points_applied is False
-        # And SkillPoints totals are unchanged from after run #1.
         second_totals = {
             row.skill_id: int(row.points)
             for row in db_session.query(SkillPoints).all()
         }
         assert second_totals == first_totals
 
-    def test_replay_writes_no_audit_log_rows(self, db_session):
-        _run_complete_session(db_session, score=8.0, tasks_per_day=2)
+    @pytest.mark.asyncio
+    async def test_replay_writes_no_audit_log_rows(self, db_session):
+        await _run_complete_session(db_session, score=8.0, tasks_per_day=2)
         first_log_count = db_session.query(SkillPointsLog).count()
 
         service2 = SessionService(
@@ -212,7 +207,7 @@ class TestReplayRule:
             evaluator=StubEvaluator(default_score=8.0),
             feedback_generator=StubFeedbackGenerator(),
         )
-        session2 = service2.start_session(
+        session2 = await service2.start_session(
             user_id=_user_id(db_session),
             day_id="day_24_05_03",
             course_length=CourseLength.WEEKS_24,
@@ -220,13 +215,13 @@ class TestReplayRule:
             allowed_activities={"read", "write"},
         )
         for seq in (1, 2):
-            service2.submit_activity(
+            await service2.submit_activity(
                 session_id=session2.session_id,
                 user_id=session2.user_id,
                 sequence=seq,
                 user_response={"answer": "x"},
             )
-        service2.complete_session(
+        await service2.complete_session(
             session_id=session2.session_id, user_id=session2.user_id,
         )
 
@@ -237,7 +232,8 @@ class TestReplayRule:
 
 
 class TestScoringIntegration:
-    def test_scorecard_matches_engine_math(self, db_session):
+    @pytest.mark.asyncio
+    async def test_scorecard_matches_engine_math(self, db_session):
         """Two READ_CLOZE + one WRITE_SENT_TRANS at Excellent should produce
         deterministic points matching what the engine would compute directly."""
         # READ_CLOZE weights: grammar 0.50, vocabulary 0.35, expression 0.15
@@ -249,7 +245,7 @@ class TestScoringIntegration:
         #   grammar:     66.0 → 66
         #   vocabulary:  30.25 → 30
         #   expression:  13.75 → 14
-        _, session_id = _run_complete_session(db_session, score=8.0, tasks_per_day=2)
+        await _run_complete_session(db_session, score=8.0, tasks_per_day=2)
         scorecard = db_session.query(SessionScorecard).one()
         assert scorecard.points_earned == {
             "grammar": 66,
@@ -257,8 +253,8 @@ class TestScoringIntegration:
             "expression": 14,
         }
 
-    def test_subskill_totals_after_reflects_starting_points(self, db_session):
-        """Seed SkillPoints with starting totals; scorecard adds onto them."""
+    @pytest.mark.asyncio
+    async def test_subskill_totals_after_reflects_starting_points(self, db_session):
         skill_ids = {row.name: row.id for row in db_session.query(Skill).all()}
         for name in ("grammar", "vocabulary"):
             db_session.add(SkillPoints(
@@ -269,15 +265,14 @@ class TestScoringIntegration:
             ))
         db_session.commit()
 
-        _, session_id = _run_complete_session(db_session, score=8.0, tasks_per_day=2)
+        await _run_complete_session(db_session, score=8.0, tasks_per_day=2)
         scorecard = db_session.query(SessionScorecard).one()
         assert scorecard.subskill_totals_after["grammar"] == 3000 + 66
         assert scorecard.subskill_totals_after["vocabulary"] == 3000 + 30
-        # Expression had no seed, so total == delta only.
         assert scorecard.subskill_totals_after["expression"] == 14
 
-    def test_cap_does_not_block_earned_log(self, db_session):
-        """SkillPoints at cap stays at cap; scorecard still records the earned delta."""
+    @pytest.mark.asyncio
+    async def test_cap_does_not_block_earned_log(self, db_session):
         skill_ids = {row.name: row.id for row in db_session.query(Skill).all()}
         db_session.add(SkillPoints(
             user_id=_user_id(db_session),
@@ -286,14 +281,11 @@ class TestScoringIntegration:
             display_score=10.0,
         ))
         db_session.commit()
-        _, _ = _run_complete_session(db_session, score=8.0, tasks_per_day=2)
+        await _run_complete_session(db_session, score=8.0, tasks_per_day=2)
         scorecard = db_session.query(SessionScorecard).one()
-        # Delta still recorded.
         assert scorecard.points_earned["grammar"] > 0
-        # Totals stop at the cap.
         assert scorecard.subskill_totals_after["grammar"] == MAX_POINTS_PER_SUBSKILL
         assert scorecard.dashboard_after["grammar"] == 10.0
-        # SkillPoints row still capped.
         row = db_session.query(SkillPoints).filter_by(
             skill_id=skill_ids["grammar"],
         ).one()

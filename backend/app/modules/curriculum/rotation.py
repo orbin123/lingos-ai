@@ -1,4 +1,11 @@
-"""Rotation engine — decides which (skill, activity, difficulty) the user
+"""DEPRECATED — Phase 7. Skill-as-spine is dead.
+
+The new sessions flow uses theme-week + day-topic from `curriculum_v2`
+and a deterministic planner (`app.modules.sessions.planner`). This
+rotation engine + `WEEK_SCHEDULE` only serve the legacy /tasks/next
+bundle path. Phase 8 retires both.
+
+Rotation engine — decides which (skill, activity, difficulty) the user
 should practice today.
 
 This module is INTENTIONALLY DB-FREE. It takes plain data in, returns plain

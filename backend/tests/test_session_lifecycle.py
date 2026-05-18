@@ -1,17 +1,14 @@
 """End-to-end SessionService lifecycle tests against in-memory SQLite.
 
-Exercises:
-  - start_session
-  - next_activity loop
-  - submit_activity (with stub evaluator)
-  - complete_session (scoring engine integration + scorecard persistence)
-  - replay rule (second session for same day earns no points)
-  - idempotency of complete
+Async after Phase 4 — the LLM-driven agents are async, so the whole
+SessionService start/submit/complete path is async. Tests inject the
+deterministic Stub* agents to keep the suite offline.
 """
 
 from __future__ import annotations
 
 import pytest
+import pytest_asyncio  # noqa: F401  — ensures the asyncio plugin is loaded
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -127,9 +124,10 @@ def _user_id(db) -> int:
 
 
 class TestStartSession:
-    def test_creates_session_with_mandatory_attempts(self, db_session):
+    @pytest.mark.asyncio
+    async def test_creates_session_with_mandatory_attempts(self, db_session):
         service = SessionService(db_session, evaluator=StubEvaluator(default_score=7.0))
-        session = service.start_session(
+        session = await service.start_session(
             user_id=_user_id(db_session),
             day_id="day_24_05_03",
             course_length=CourseLength.WEEKS_24,
@@ -147,9 +145,10 @@ class TestStartSession:
         ]
         assert [a.is_mandatory for a in session.attempts] == [True, True, False, False]
 
-    def test_blocks_second_in_progress_session(self, db_session):
+    @pytest.mark.asyncio
+    async def test_blocks_second_in_progress_session(self, db_session):
         service = SessionService(db_session)
-        service.start_session(
+        await service.start_session(
             user_id=_user_id(db_session),
             day_id="day_24_05_03",
             course_length=CourseLength.WEEKS_24,
@@ -157,7 +156,7 @@ class TestStartSession:
             allowed_activities={"read", "write"},
         )
         with pytest.raises(SessionAlreadyOpen):
-            service.start_session(
+            await service.start_session(
                 user_id=_user_id(db_session),
                 day_id="day_24_05_03",
                 course_length=CourseLength.WEEKS_24,
@@ -165,9 +164,10 @@ class TestStartSession:
                 allowed_activities={"read", "write"},
             )
 
-    def test_attempts_carry_stub_task_content(self, db_session):
+    @pytest.mark.asyncio
+    async def test_attempts_carry_stub_task_content(self, db_session):
         service = SessionService(db_session)
-        session = service.start_session(
+        session = await service.start_session(
             user_id=_user_id(db_session),
             day_id="day_24_05_03",
             course_length=CourseLength.WEEKS_24,
@@ -184,13 +184,13 @@ class TestStartSession:
 
 
 class TestSessionLifecycle:
-    def _start(self, db, tasks_per_day=4, score=7.0):
+    async def _start(self, db, tasks_per_day=4, score=7.0):
         service = SessionService(
             db,
             evaluator=StubEvaluator(default_score=score),
             feedback_generator=StubFeedbackGenerator(),
         )
-        session = service.start_session(
+        session = await service.start_session(
             user_id=_user_id(db),
             day_id="day_24_05_03",
             course_length=CourseLength.WEEKS_24,
@@ -199,8 +199,9 @@ class TestSessionLifecycle:
         )
         return service, session
 
-    def test_full_happy_path(self, db_session):
-        service, session = self._start(db_session, tasks_per_day=4, score=8.0)
+    @pytest.mark.asyncio
+    async def test_full_happy_path(self, db_session):
+        service, session = await self._start(db_session, tasks_per_day=4, score=8.0)
 
         # Walk through all 4 activities.
         for expected_seq in range(1, 5):
@@ -208,7 +209,7 @@ class TestSessionLifecycle:
                 session_id=session.session_id, user_id=session.user_id,
             )
             assert attempt.sequence == expected_seq
-            attempt, evaluation, feedback = service.submit_activity(
+            attempt, evaluation, feedback = await service.submit_activity(
                 session_id=session.session_id,
                 user_id=session.user_id,
                 sequence=attempt.sequence,
@@ -221,7 +222,7 @@ class TestSessionLifecycle:
             assert feedback.score == 8
 
         # Complete the session.
-        scorecard, report = service.complete_session(
+        scorecard, report = await service.complete_session(
             session_id=session.session_id, user_id=session.user_id,
         )
         assert report.applied is True
@@ -235,35 +236,37 @@ class TestSessionLifecycle:
         assert refreshed.status is SessionStatus.COMPLETED
         assert refreshed.completed_at is not None
 
-    def test_submit_blocks_resubmit(self, db_session):
-        service, session = self._start(db_session, tasks_per_day=2)
-        service.submit_activity(
+    @pytest.mark.asyncio
+    async def test_submit_blocks_resubmit(self, db_session):
+        service, session = await self._start(db_session, tasks_per_day=2)
+        await service.submit_activity(
             session_id=session.session_id,
             user_id=session.user_id,
             sequence=1,
             user_response={"a": "b"},
         )
         with pytest.raises(AttemptAlreadySubmitted):
-            service.submit_activity(
+            await service.submit_activity(
                 session_id=session.session_id,
                 user_id=session.user_id,
                 sequence=1,
                 user_response={"a": "b"},
             )
 
-    def test_complete_is_idempotent(self, db_session):
-        service, session = self._start(db_session, tasks_per_day=2, score=8.0)
+    @pytest.mark.asyncio
+    async def test_complete_is_idempotent(self, db_session):
+        service, session = await self._start(db_session, tasks_per_day=2, score=8.0)
         for seq in (1, 2):
-            service.submit_activity(
+            await service.submit_activity(
                 session_id=session.session_id,
                 user_id=session.user_id,
                 sequence=seq,
                 user_response={"a": "b"},
             )
-        first, report1 = service.complete_session(
+        first, report1 = await service.complete_session(
             session_id=session.session_id, user_id=session.user_id,
         )
-        second, report2 = service.complete_session(
+        second, report2 = await service.complete_session(
             session_id=session.session_id, user_id=session.user_id,
         )
         assert first.id == second.id
@@ -271,9 +274,10 @@ class TestSessionLifecycle:
         assert report2.applied is False
         assert report2.reason == "session already completed"
 
-    def test_submitted_response_persists_on_attempt(self, db_session):
-        service, session = self._start(db_session, tasks_per_day=2)
-        service.submit_activity(
+    @pytest.mark.asyncio
+    async def test_submitted_response_persists_on_attempt(self, db_session):
+        service, session = await self._start(db_session, tasks_per_day=2)
+        await service.submit_activity(
             session_id=session.session_id,
             user_id=session.user_id,
             sequence=1,
@@ -291,13 +295,15 @@ class TestSessionLifecycle:
 
 class TestOwnership:
     def test_unknown_session_raises_not_found(self, db_session):
+        # next_activity is sync (no LLM); a plain sync test is fine.
         service = SessionService(db_session)
         with pytest.raises(SessionNotFound):
             service.next_activity(session_id="does-not-exist", user_id=_user_id(db_session))
 
-    def test_other_users_session_is_invisible(self, db_session):
+    @pytest.mark.asyncio
+    async def test_other_users_session_is_invisible(self, db_session):
         service = SessionService(db_session)
-        session = service.start_session(
+        session = await service.start_session(
             user_id=_user_id(db_session),
             day_id="day_24_05_03",
             course_length=CourseLength.WEEKS_24,

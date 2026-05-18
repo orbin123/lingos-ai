@@ -16,15 +16,19 @@ interface DailyTaskPanelProps {
 
 // ── Task display name helpers ────────────────────────────────────────────────
 
-const SUBSKILL_LABELS: Record<string, string> = {
-  grammar: "Grammar",
-  vocabulary: "Vocabulary",
-  pronunciation: "Pronunciation",
-  fluency: "Fluency",
-  thought_organization: "Thought Organization",
-  listening: "Listening",
-  tone: "Tone",
-};
+// Phase 7+: import from the single canonical source (`@/lib/skill-labels`).
+// Backend ships sub_skill values under three different vocabularies depending
+// on which path produced the task (legacy task templates use the long form
+// "thought_organization"; the new sessions flow + DB use the legacy "expression").
+// `normalizeSkillKey` folds them all onto the legacy identifier; the label
+// fallback resolves it to user-facing text.
+import {
+  SKILL_LABEL_FALLBACK,
+  getSkillLabel,
+  normalizeSkillKey,
+} from "@/lib/skill-labels";
+
+const SUBSKILL_LABELS: Record<string, string> = SKILL_LABEL_FALLBACK;
 
 const ACTIVITY_LABELS: Record<string, string> = {
   read: "Read",
@@ -46,7 +50,9 @@ const WIDGET_LABELS: Record<string, string> = {
 
 function getTaskDisplayTitle(task: UserTask["task"]): string {
   const c = task.content as unknown as Record<string, unknown> | null;
-  const subSkill = c?.sub_skill ? (SUBSKILL_LABELS[c.sub_skill as string] ?? String(c.sub_skill)) : "";
+  const subSkill = c?.sub_skill
+    ? getSkillLabel(normalizeSkillKey(String(c.sub_skill)))
+    : "";
   const activity = c?.activity ? (ACTIVITY_LABELS[c.activity as string] ?? String(c.activity)) : "";
   const widget   = c?.widget   ? (WIDGET_LABELS[c.widget as string]     ?? String(c.widget))   : "";
   if (subSkill && activity && widget) return `${subSkill} - ${activity} - ${widget}`;

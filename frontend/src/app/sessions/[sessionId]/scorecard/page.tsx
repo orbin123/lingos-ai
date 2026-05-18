@@ -1,0 +1,67 @@
+"use client";
+
+/**
+ * Terminal scorecard page (Phase 6).
+ *
+ * Reads the persisted scorecard for `sessionId`. Prefers the in-memory
+ * snapshot from `sessionStore` (already populated by the complete mutation)
+ * and falls back to `useSessionScorecard` for a clean fetch when the user
+ * lands here directly (e.g. via URL).
+ */
+
+import { useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
+
+import { SessionScorecard } from "@/components/sessions/SessionScorecard";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
+import { useSessionScorecard } from "@/hooks/useSessionsFlow";
+import { isSessionsFlowEnabled } from "@/lib/sessions-api";
+import { useSessionStore } from "@/store/sessionStore";
+
+
+export default function SessionScorecardPage() {
+  const params = useParams<{ sessionId: string }>();
+  const sessionId = params.sessionId;
+  const router = useRouter();
+  useRequireAuth();
+
+  useEffect(() => {
+    if (!isSessionsFlowEnabled()) {
+      router.replace("/dashboard");
+    }
+  }, [router]);
+
+  const cached = useSessionStore((s) => s.scorecard);
+  const cachedMatches = cached?.session_id === sessionId;
+  // Skip the fetch when we already have the right scorecard cached.
+  const query = useSessionScorecard(cachedMatches ? null : sessionId);
+
+  const scorecard = cachedMatches ? cached : query.data;
+
+  return (
+    <main
+      style={{
+        maxWidth: 720,
+        margin: "32px auto",
+        padding: "0 24px",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+      }}
+    >
+      {!scorecard && query.isLoading && <p>Loading scorecard&hellip;</p>}
+      {!scorecard && query.error && (
+        <p style={{ color: "oklch(35% 0.18 25)" }}>
+          {(query.error as Error).message}
+        </p>
+      )}
+      {scorecard && (
+        <SessionScorecard
+          scorecard={scorecard}
+          onDone={() => {
+            useSessionStore.getState().clear();
+            router.push("/dashboard");
+          }}
+        />
+      )}
+    </main>
+  );
+}

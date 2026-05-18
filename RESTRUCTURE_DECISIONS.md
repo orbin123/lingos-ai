@@ -70,6 +70,78 @@ This split is implemented in `app/scoring/engine.py` as two separate
 functions: `aggregate_session()` returns uncapped earnings;
 `apply_to_totals()` clamps the totals.
 
+### 4. Phase 7 cutover — safe, additive
+
+Status as of Phase 7:
+- Backend `use_new_session_flow` default is **True**.
+- Frontend `NEXT_PUBLIC_USE_NEW_SESSION_FLOW` default is **true** (in
+  `.env.example`; `.env.local` flipped to match).
+- Legacy modules (`learning_session/`, `responses/`, `tasks/service.py`,
+  `curriculum/rotation.py`) carry a "DEPRECATED — Phase 7" banner in
+  their module docstrings. They remain **mounted and functional** as a
+  rollback path.
+- No tables dropped. `enrollment_skill_history` is still consumed by the
+  legacy `tasks/service.py` rotation engine; dropping it now would break
+  the rollback contract.
+- No code deletions. Phase 8 (true cutover) handles destructive cleanup
+  after observation in production.
+
+To roll back: set both flags to False — no redeploy required.
+
+### 5. Phase 4 LLM agents — wired into production
+
+The three sessions agents (`LLMEvaluator`, `LLMFeedbackGenerator`,
+`LLMTaskGenerator`) live in `app/ai/sessions/` and are constructed via
+`build_default_agents()` in routes. They use ONE parameterized prompt
+each rather than the spec's per-archetype prompt files — the archetype's
+rubric / weight_map is interpolated at call time.
+
+Failure mode: every agent has a graceful fallback. If the LLM is
+unavailable users see degraded but consistent output (mid-range scores,
+stub feedback wording, stub task content) rather than a 500. Logged at
+WARNING.
+
+---
+
+## Phase 8 backlog (destructive cutover — not done yet)
+
+Sequence carefully, after observing the Phase 7 flag-on flow in
+production for at least one full week:
+
+1. **Delete `learning_session/` module** (~2061 LOC). Remove WebSocket
+   route, `LearningSession` model + table, all tests.
+2. **Delete `responses/` module** (everything outside the legacy admin
+   QA review flow). Move admin-facing pieces to `admin/` if needed.
+3. **Delete `tasks/service.py`** (1451 LOC of rotation glue) and the
+   `/tasks/next` route. Keep `Task` / `UserTask` ORM if anything reads
+   them; otherwise drop those tables too.
+4. **Delete `curriculum/rotation.py`**, `curriculum/constants.py`
+   (the `WEEK_SCHEDULE` half), `curriculum/topics.py`, and the legacy
+   `data/courses/topics_*.json` + `beginner_*.json` files.
+5. **Drop tables**:
+   - `enrollment_skill_history` (orphan once tasks/service.py is gone)
+   - `learning_sessions`
+   - `user_responses`, `evaluations`, `feedbacks` (after admin QA path
+     migrates to `activity_feedback`)
+   - Eventually `user_skill_scores` (WMA cache) once stats/dashboard
+     migrate to `SkillPoints`.
+6. **Drop legacy `task_type_enum` values** that no longer appear in
+   `Task` rows.
+7. **Delete obsolete tests** (`test_curriculum_rotation`,
+   `test_planner_e2e_five_days`, `test_learning_session_readiness`,
+   `test_points_calculator`, etc.) — these currently produce the 16
+   pre-existing failures.
+8. **Remove the feature flag** itself.
+9. **Frontend**:
+   - Delete `/task/chat/*` routes
+   - Delete `useNextTask`, `useSubmitResponse`, `taskStore`
+   - Delete legacy `task-widgets/*` set in favour of the new
+     `components/sessions/widgets/*` set
+   - Wire `DailyTaskPanel` to `/sessions/start` natively (no flag
+     branch).
+10. **Diagnosis remap** — diagnosis still seeds `UserSkillScore`. Switch
+    to `SkillPoints` once the legacy WMA path goes.
+
 ---
 
 ## Deferred (revisit at the listed phase)
