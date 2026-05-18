@@ -158,10 +158,15 @@ def get_current_scores(
     user has not completed diagnosis yet (no rows seeded).
     """
     rows = SkillPointsRepository(db).get_all_for_user(current_user.id)
+    skills_by_id = {s.id: s for s in db.query(Skill).all()}
     return [
         SkillScoreSnapshot(
             skill_id=row.skill_id,
-            skill_name=db.get(Skill, row.skill_id).name,
+            skill_name=skills_by_id[row.skill_id].name,
+            display_label=(
+                skills_by_id[row.skill_id].display_label
+                or skills_by_id[row.skill_id].name
+            ),
             score=float(row.display_score),
         )
         for row in rows
@@ -215,10 +220,15 @@ def get_stats_dashboard(
 
     # ── Skill scores from SkillPoints (gamification display score) ──
     skill_points_rows = SkillPointsRepository(db).get_all_for_user(current_user.id)
+    skills_by_id: dict[int, Skill] = {s.id: s for s in db.query(Skill).all()}
     scores = [
         SkillScoreSnapshot(
             skill_id=row.skill_id,
-            skill_name=db.get(Skill, row.skill_id).name,
+            skill_name=skills_by_id[row.skill_id].name,
+            display_label=(
+                skills_by_id[row.skill_id].display_label
+                or skills_by_id[row.skill_id].name
+            ),
             score=float(row.display_score),
         )
         for row in skill_points_rows
@@ -338,7 +348,8 @@ def get_stats_dashboard(
             series.append(round(last_val, 1))
         skill_history.append(SkillHistorySeries(
             skill_id=sid,
-            skill_name=db.get(Skill, sid).name,
+            skill_name=skills_by_id[sid].name,
+            display_label=skills_by_id[sid].display_label or skills_by_id[sid].name,
             scores=series,
         ))
 
@@ -397,6 +408,7 @@ def get_stats_dashboard(
             tasks_completed=int(tasks_completed),
             weekly_task_goal=WEEKLY_TASK_GOAL,
             best_skill_name=best_skill.skill_name if best_skill else None,
+            best_skill_display_label=best_skill.display_label if best_skill else None,
             best_skill_score=best_skill.score if best_skill else None,
         ),
         skill_scores=scores,

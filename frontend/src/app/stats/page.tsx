@@ -35,14 +35,18 @@ const MOCK_PRACTICE = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+// Axes use the LEGACY backend sub-skill identifiers as keys. The displayed
+// label is the friendlier wording shipped via `display_label` in the API
+// (and mirrored in `@/lib/skill-labels` for fallback). See Phase 5 of the
+// restructure.
 const SKILL_AXES = [
-  { key: "grammar",      label: "Grammar" },
-  { key: "vocabulary",   label: "Vocabulary" },
-  { key: "pronunciation",label: "Pronunciation" },
-  { key: "fluency",      label: "Fluency" },
-  { key: "thought",      label: "Thought Org." },
-  { key: "listening",    label: "Listening" },
-  { key: "tone",         label: "Tone & Register" },
+  { key: "grammar",       label: "Grammar" },
+  { key: "vocabulary",    label: "Vocabulary" },
+  { key: "pronunciation", label: "Pronunciation" },
+  { key: "fluency",       label: "Fluency" },
+  { key: "expression",    label: "Thought Organization" },
+  { key: "comprehension", label: "Listening" },
+  { key: "tone",          label: "Tone & Social" },
 ] as const;
 
 const DEFAULT_SCORES = [6, 5, 4, 5.5, 4.5, 5.8, 4.2];
@@ -54,15 +58,25 @@ function normalizeSkillName(n: string) {
 function displaySkillName(n: string | null) {
   if (!n) return "No data yet";
   const norm = normalizeSkillName(n);
-  if (norm.includes("thought")) return "Thought Org.";
-  if (norm.includes("tone")) return "Tone & Register";
+  // Prefer the LEGACY-keyed fallback in `@/lib/skill-labels` for the three
+  // sub-skills whose internal identifier differs from their display label.
+  if (norm === "expression") return "Thought Organization";
+  if (norm === "comprehension") return "Listening";
+  if (norm === "tone") return "Tone & Social";
   return norm.split(" ").map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
 }
 
 function axisScores(scores: SkillScoreSnapshot[]) {
+  // Exact key match against LEGACY backend identifiers. Components that
+  // need the friendlier label should prefer `s.display_label` when present
+  // (Phase 5+), then fall back to `axis.label`.
   return SKILL_AXES.map((axis, i) => {
-    const match = scores.find(s => normalizeSkillName(s.skill_name).includes(axis.key));
-    return { label: axis.label, score: match?.score ?? DEFAULT_SCORES[i], skill_id: match?.skill_id ?? 0 };
+    const match = scores.find(s => s.skill_name === axis.key);
+    return {
+      label: (match as { display_label?: string } | undefined)?.display_label ?? axis.label,
+      score: match?.score ?? DEFAULT_SCORES[i],
+      skill_id: match?.skill_id ?? 0,
+    };
   });
 }
 

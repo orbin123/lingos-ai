@@ -19,7 +19,16 @@ class Skill(Base, IDMixin, CreatedAtMixin):
     name: Mapped[str] = mapped_column(
         String(50), unique=True, nullable=False, index=True
     )
+    # Longer-form description ("Grammar & Sentence Construction"). Optional —
+    # admin tools and skill detail pages use this.
     description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # Short user-facing label rendered on dashboards / scorecards. Distinct
+    # from `name` (which is the internal identifier) and from `description`
+    # (which is longer-form). Added in Phase 5 so the API ships a friendly
+    # label and the frontend doesn't need to mirror the mapping itself.
+    display_label: Mapped[str] = mapped_column(
+        String(60), nullable=False, default=""
+    )
 
     def __repr__(self) -> str:
         return f"<Skill(id={self.id}, name={self.name!r})>"

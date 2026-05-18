@@ -24,6 +24,9 @@ from app.modules.skills.models import Skill, UserSkillScore  # noqa: F401
 from app.modules.curriculum.models import (  # noqa: F401
     Course, UserEnrollment, EnrollmentSkillHistory, DailyPlan,
 )
+from app.modules.curriculum.v2_models import (  # noqa: F401
+    CurriculumDay, CurriculumWeek, TaskArchetype,
+)
 from app.modules.tasks.models import Task, TaskSkill, UserTask  # noqa: F401
 from app.modules.responses.models import (  # noqa: F401
     UserResponse, Evaluation, Feedback,
@@ -31,3 +34,10 @@ from app.modules.responses.models import (  # noqa: F401
 from app.modules.progress.models import ProgressLog, SkillPoints, SkillPointsLog  # noqa: F401
 from app.modules.subscriptions.models import Payment, Purchase, Subscription  # noqa: F401
 from app.modules.learning_session.models import LearningSession  # noqa: F401
+from app.modules.sessions.models import (  # noqa: F401
+    ActivityAttempt,
+    ActivityEvaluation,
+    ActivityFeedback,
+    DailySession,
+    SessionScorecard,
+)

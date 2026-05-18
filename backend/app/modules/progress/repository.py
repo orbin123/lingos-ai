@@ -155,14 +155,20 @@ class SkillPointsLogRepository:
         points_earned: int,
         reason: str,
         user_task_id: int | None = None,
+        session_id: int | None = None,
     ) -> SkillPointsLog:
-        """Insert one log row. Service layer handles the commit."""
+        """Insert one log row. Service layer handles the commit.
+
+        `user_task_id` is the legacy WMA path; `session_id` is the new
+        sessions-based path. Pass whichever applies (both nullable).
+        """
         log = SkillPointsLog(
             user_id=user_id,
             skill_id=skill_id,
             points_earned=points_earned,
             reason=reason,
             user_task_id=user_task_id,
+            session_id=session_id,
         )
         self.db.add(log)
         self.db.flush()
