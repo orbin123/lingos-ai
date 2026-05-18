@@ -140,14 +140,14 @@ class SectionScores(BaseModel):
 
 
 class UnifiedEvaluationReport(IELTSBandModel):
-    """Full Phase 4 evaluation persisted on a challenge attempt."""
+    """Full challenge evaluation persisted on a challenge attempt."""
 
     model_config = ConfigDict(extra="forbid")
 
-    mode: Literal["phase_4_text_sections"]
+    mode: Literal["phase_4_text_sections", "phase_5_listening"]
     reading: ReadingEvaluationReport
     writing: WritingEvaluationReport
-    listening: StubSectionEvaluation
+    listening: ReadingEvaluationReport | StubSectionEvaluation
     speaking: StubSectionEvaluation
     section_scores: SectionScores
     overall_score: float = Field(ge=0.0, le=9.0)

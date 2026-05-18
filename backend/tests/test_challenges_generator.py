@@ -184,6 +184,22 @@ def _completed_attempt_with_topic(
     db.commit()
 
 
+class FakeTTSService:
+    async def synthesize(
+        self,
+        *,
+        text: str,
+        voice: str | None = None,
+        speed: float = 1.0,
+        style_instructions: str | None = None,
+    ) -> dict:
+        return {
+            "audio_url": "/audio/ab/abcdef1234567890.mp3",
+            "duration_seconds": 10.0,
+            "cache_hit": True,
+        }
+
+
 def test_generated_ielts_payload_schema_accepts_valid_payload() -> None:
     payload = GeneratedIELTSTaskPayload.model_validate(_valid_generated_payload())
 
@@ -244,6 +260,7 @@ async def test_start_attempt_uses_generator_and_user_history(
     attempt = await ChallengeReadService(
         db_session,
         generator=generator,
+        tts_service=FakeTTSService(),
     ).start_attempt(
         slug="ielts",
         level_number=1,
@@ -255,6 +272,9 @@ async def test_start_attempt_uses_generator_and_user_history(
         "Community Repair Cafes"
     )
     assert attempt.task_payload["sections"]["writing"]["items"][0]["item_id"] == "w1"
+    assert attempt.task_payload["sections"]["listening"]["audio_storage_key"] == (
+        "abcdef1234567890.mp3"
+    )
     assert generator.contexts[0]["level_config"]["sections"]["reading"][
         "num_questions"
     ] == 4
@@ -282,6 +302,7 @@ async def test_start_attempt_falls_back_to_starter_after_generator_failures(
         attempt = await ChallengeReadService(
             db_session,
             generator=generator,
+            tts_service=FakeTTSService(),
         ).start_attempt(
             slug="ielts",
             level_number=1,

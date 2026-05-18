@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Protocol
@@ -13,6 +14,8 @@ from app.ai.agents.ielts_challenge_evaluator import IELTSChallengeWritingEvaluat
 from app.ai.agents.ielts_challenge_feedback import IELTSChallengeFeedbackAgent
 from app.ai.agents.ielts_challenge_generator import IELTSChallengeGenerator
 from app.ai.llm import LLMError
+from app.ai.storage import IBlobStorage, StorageError, get_default_blob_storage
+from app.ai.tts import SynthesisResult, TTSError, get_default_tts_service
 from app.modules.challenges.evaluation_schemas import (
     IELTSFeedbackReport,
     ReadingEvaluationReport,
@@ -51,6 +54,10 @@ logger = logging.getLogger(__name__)
 
 DAILY_ATTEMPT_LIMIT = 10
 PHASE_4_PLACEHOLDER_BAND = 6.5
+PHASE_5_LISTENING_STYLE = (
+    "Speak clearly and naturally for an IELTS listening practice clip. "
+    "Use a calm pace, neutral accent, and realistic tutor delivery."
+)
 
 
 class ChallengeTaskGenerator(Protocol):
@@ -68,6 +75,19 @@ class ChallengeWritingEvaluator(Protocol):
 class ChallengeFeedbackGenerator(Protocol):
     async def generate(self, *, context: dict[str, Any]) -> IELTSFeedbackReport:
         """Generate learner feedback from evaluation context."""
+        ...
+
+
+class ChallengeTTSService(Protocol):
+    async def synthesize(
+        self,
+        *,
+        text: str,
+        voice: str | None = None,
+        speed: float = 1.0,
+        style_instructions: str | None = None,
+    ) -> SynthesisResult:
+        """Synthesize text and return a cached audio URL."""
         ...
 
 
@@ -91,6 +111,10 @@ class ChallengeDailyAttemptLimitExceeded(Exception):
     """Raised when a learner exceeds the rolling challenge attempt cap."""
 
 
+class ChallengeAudioNotFound(Exception):
+    """Raised when a challenge audio clip cannot be served to the user."""
+
+
 class ChallengeReadService:
     """Orchestration for challenge catalog, attempts and learner progress."""
 
@@ -101,6 +125,8 @@ class ChallengeReadService:
         generator: ChallengeTaskGenerator | None = None,
         writing_evaluator: ChallengeWritingEvaluator | None = None,
         feedback_generator: ChallengeFeedbackGenerator | None = None,
+        tts_service: ChallengeTTSService | None = None,
+        blob_storage: IBlobStorage | None = None,
     ) -> None:
         self.db = db
         self.challenge_repo = ChallengeRepository(db)
@@ -108,6 +134,8 @@ class ChallengeReadService:
         self._generator = generator
         self._writing_evaluator = writing_evaluator
         self._feedback_generator = feedback_generator
+        self._tts_service = tts_service
+        self._blob_storage = blob_storage
 
     def list_challenges(self) -> list[ChallengeListItem]:
         challenges = self.challenge_repo.list_active()
@@ -200,12 +228,17 @@ class ChallengeReadService:
             level=level,
             user_id=user_id,
         )
+        task_payload = await self._attach_listening_audio(task_payload=task_payload)
         attempt = self.attempt_repo.create(
             user_id=user_id,
             level_id=level.id,
             started_at=now,
             expires_at=now + timedelta(seconds=level.time_limit_seconds),
             task_payload=task_payload,
+        )
+        attempt.task_payload = self._protect_listening_audio_url(
+            task_payload=task_payload,
+            attempt_id=attempt.id,
         )
         self.db.commit()
         self.db.refresh(attempt)
@@ -252,6 +285,29 @@ class ChallengeReadService:
         self.db.refresh(attempt)
         return attempt
 
+    async def get_attempt_audio(
+        self,
+        *,
+        attempt_id: int,
+        user_id: int,
+        audio_key: str,
+    ) -> tuple[bytes, str]:
+        """Return owner-checked listening audio bytes for one attempt."""
+        attempt = self.get_attempt(attempt_id=attempt_id, user_id=user_id)
+        allowed_key = _listening_audio_storage_key(attempt.task_payload)
+        if allowed_key is None or audio_key != allowed_key:
+            raise ChallengeAudioNotFound(f"audio {audio_key!r} not found")
+
+        try:
+            audio_bytes = await self._get_blob_storage().get(key=audio_key)
+        except StorageError as exc:
+            raise ChallengeAudioNotFound(f"audio {audio_key!r} unavailable") from exc
+
+        if audio_bytes is None:
+            raise ChallengeAudioNotFound(f"audio {audio_key!r} not found")
+
+        return audio_bytes, _content_type_for_audio_key(audio_key)
+
     def _check_daily_attempt_limit(self, *, user_id: int, now: datetime) -> None:
         window_start = now - timedelta(hours=24)
         attempt_count = self.attempt_repo.count_started_since(
@@ -273,17 +329,13 @@ class ChallengeReadService:
             task_payload=attempt.task_payload,
             response_payload=response_payload,
         )
+        listening = grade_listening_section(
+            task_payload=attempt.task_payload,
+            response_payload=response_payload,
+        )
         writing = await self._evaluate_writing_with_fallback(
             attempt=attempt,
             response_payload=response_payload,
-        )
-        listening = StubSectionEvaluation(
-            mode="hardcoded_phase_4_placeholder",
-            section_band=PHASE_4_PLACEHOLDER_BAND,
-            summary=(
-                "Listening is still a Phase 4 placeholder; real audio scoring "
-                "arrives in Phase 5."
-            ),
         )
         speaking = StubSectionEvaluation(
             mode="hardcoded_phase_4_placeholder",
@@ -309,7 +361,7 @@ class ChallengeReadService:
             / 4
         )
         return UnifiedEvaluationReport(
-            mode="phase_4_text_sections",
+            mode="phase_5_listening",
             reading=reading,
             writing=writing,
             listening=listening,
@@ -317,6 +369,77 @@ class ChallengeReadService:
             section_scores=section_scores,
             overall_score=overall_score,
         )
+
+    async def _attach_listening_audio(self, *, task_payload: dict) -> dict:
+        """Synthesize and cache the listening transcript for a generated attempt."""
+        payload = deepcopy(task_payload)
+        sections = _as_dict(payload.get("sections"))
+        listening = _as_dict(sections.get("listening"))
+        script = listening.get("audio_script")
+        if not isinstance(script, str) or not script.strip():
+            logger.warning("challenge_listening_audio_missing_script")
+            return payload
+
+        try:
+            result = await self._get_tts_service().synthesize(
+                text=script,
+                style_instructions=PHASE_5_LISTENING_STYLE,
+            )
+        except (TTSError, StorageError) as exc:
+            logger.warning("challenge_listening_audio_failed err=%s", exc)
+            listening["audio_url"] = None
+            listening["audio_duration_seconds"] = None
+            listening["audio_cache_hit"] = False
+            sections["listening"] = listening
+            payload["sections"] = sections
+            return payload
+        except Exception:
+            logger.exception("challenge_listening_audio_failed_unexpected")
+            listening["audio_url"] = None
+            listening["audio_duration_seconds"] = None
+            listening["audio_cache_hit"] = False
+            sections["listening"] = listening
+            payload["sections"] = sections
+            return payload
+
+        storage_key = _storage_key_from_audio_url(result["audio_url"])
+        listening["audio_url"] = result["audio_url"]
+        listening["audio_storage_key"] = storage_key
+        listening["audio_duration_seconds"] = round(float(result["duration_seconds"]), 2)
+        listening["audio_cache_hit"] = bool(result["cache_hit"])
+        listening["instructions"] = (
+            "Listen to the audio clip and choose the best answer for each question."
+        )
+        sections["listening"] = listening
+        payload["sections"] = sections
+        return payload
+
+    @staticmethod
+    def _protect_listening_audio_url(
+        *,
+        task_payload: dict,
+        attempt_id: int,
+    ) -> dict:
+        """Rewrite cached static audio URLs to the owner-checked attempt route."""
+        payload = deepcopy(task_payload)
+        storage_key = _listening_audio_storage_key(payload)
+        if storage_key is None:
+            return payload
+
+        sections = _as_dict(payload.get("sections"))
+        listening = _as_dict(sections.get("listening"))
+        listening["audio_url"] = (
+            f"/api/v1/challenge-attempts/{attempt_id}/audio/{storage_key}"
+        )
+        sections["listening"] = listening
+        payload["sections"] = sections
+        return payload
+
+    def _get_tts_service(self) -> ChallengeTTSService:
+        return self._tts_service or get_default_tts_service()
+
+    def _get_blob_storage(self) -> IBlobStorage:
+        return self._blob_storage or get_default_blob_storage()
 
     async def _evaluate_writing_with_fallback(
         self,
@@ -525,6 +648,17 @@ class ChallengeReadService:
     ) -> IELTSFeedbackReport:
         reading_total = evaluation_report.reading.total_questions
         reading_correct = evaluation_report.reading.total_correct
+        listening = evaluation_report.listening
+        listening_total = (
+            listening.total_questions
+            if isinstance(listening, ReadingEvaluationReport)
+            else 0
+        )
+        listening_correct = (
+            listening.total_correct
+            if isinstance(listening, ReadingEvaluationReport)
+            else 0
+        )
         return IELTSFeedbackReport(
             mode="phase_4_feedback",
             overall_summary=(
@@ -533,9 +667,13 @@ class ChallengeReadService:
             ),
             sections={
                 "listening": SectionFeedback(
-                    went_well=["The placeholder listening section was included."],
-                    needs_work=["Detailed listening scoring arrives in Phase 5."],
-                    next_tip="Use the transcript to practise identifying key details.",
+                    went_well=[
+                        f"You answered {listening_correct} of {listening_total} listening items correctly."
+                    ],
+                    needs_work=[
+                        "Review any missed listening items against the clip transcript after the attempt."
+                    ],
+                    next_tip="Listen for the sentence that directly supports each answer.",
                 ),
                 "reading": SectionFeedback(
                     went_well=[
@@ -1090,15 +1228,46 @@ def grade_reading_section(
     response_payload: dict,
 ) -> ReadingEvaluationReport:
     """Grade generated Reading MCQs from the persisted answer key."""
+    return _grade_mcq_section(
+        task_payload=task_payload,
+        response_payload=response_payload,
+        section_key="reading",
+        band_mapper=academic_reading_band,
+    )
+
+
+def grade_listening_section(
+    *,
+    task_payload: dict,
+    response_payload: dict,
+) -> ReadingEvaluationReport:
+    """Grade generated Listening MCQs from the persisted answer key."""
+    return _grade_mcq_section(
+        task_payload=task_payload,
+        response_payload=response_payload,
+        section_key="listening",
+        band_mapper=ielts_listening_band,
+    )
+
+
+def _grade_mcq_section(
+    *,
+    task_payload: dict,
+    response_payload: dict,
+    section_key: str,
+    band_mapper,
+) -> ReadingEvaluationReport:
+    """Grade one generated MCQ section and return the shared report shape."""
     sections = _as_dict((task_payload or {}).get("sections"))
-    reading = _as_dict(sections.get("reading"))
-    items = _list_of_dicts(reading.get("items"))
-    responses = _as_dict((response_payload or {}).get("reading"))
+    section = _as_dict(sections.get(section_key))
+    items = _list_of_dicts(section.get("items"))
+    responses = _as_dict((response_payload or {}).get(section_key))
 
     question_reports: list[ReadingQuestionEvaluation] = []
     total_correct = 0
     for index, item in enumerate(items):
-        item_id = str(item.get("item_id") or f"r{index + 1}")
+        prefix = "l" if section_key == "listening" else "r"
+        item_id = str(item.get("item_id") or f"{prefix}{index + 1}")
         options = [
             str(option)
             for option in item.get("options", [])
@@ -1122,7 +1291,9 @@ def grade_reading_section(
         question_reports.append(
             ReadingQuestionEvaluation(
                 item_id=item_id,
-                prompt=str(item.get("prompt") or f"Reading question {index + 1}"),
+                prompt=str(
+                    item.get("prompt") or f"{section_key.title()} question {index + 1}"
+                ),
                 user_answer=str(user_answer) if user_answer is not None else None,
                 correct_answer=correct_answer,
                 correct_index=correct_index,
@@ -1138,7 +1309,7 @@ def grade_reading_section(
         total_correct=total_correct,
         total_questions=total_questions,
         raw_scaled_40=raw_scaled_40,
-        section_band=academic_reading_band(raw_scaled_40),
+        section_band=band_mapper(raw_scaled_40),
         questions=question_reports,
     )
 
@@ -1156,6 +1327,35 @@ def academic_reading_band(raw_score_out_of_40: int) -> float:
         (23, 6.0),
         (19, 5.5),
         (15, 5.0),
+        (13, 4.5),
+        (10, 4.0),
+        (8, 3.5),
+        (6, 3.0),
+        (4, 2.5),
+        (3, 2.0),
+        (2, 1.5),
+        (1, 1.0),
+        (0, 0.0),
+    ]
+    for threshold, band in thresholds:
+        if raw_score >= threshold:
+            return band
+    return 0.0
+
+
+def ielts_listening_band(raw_score_out_of_40: int) -> float:
+    """Map an IELTS Listening raw score to an approximate band."""
+    raw_score = max(0, min(40, int(raw_score_out_of_40)))
+    thresholds = [
+        (39, 9.0),
+        (37, 8.5),
+        (35, 8.0),
+        (32, 7.5),
+        (30, 7.0),
+        (26, 6.5),
+        (23, 6.0),
+        (18, 5.5),
+        (16, 5.0),
         (13, 4.5),
         (10, 4.0),
         (8, 3.5),
@@ -1200,6 +1400,44 @@ def _normalise_option_letter(value: Any) -> str | None:
         if 0 <= number <= 3:
             return _option_letter(number)
     return text
+
+
+def _storage_key_from_audio_url(audio_url: str) -> str | None:
+    """Extract the local blob key from a cached audio URL."""
+    if not isinstance(audio_url, str) or not audio_url.strip():
+        return None
+    cleaned = audio_url.split("?", 1)[0].rstrip("/")
+    parts = [part for part in cleaned.split("/") if part]
+    if not parts:
+        return None
+    key = parts[-1]
+    if "/" in key or "\\" in key or ".." in key or len(key) < 2:
+        return None
+    return key
+
+
+def _listening_audio_storage_key(task_payload: dict) -> str | None:
+    sections = _as_dict((task_payload or {}).get("sections"))
+    listening = _as_dict(sections.get("listening"))
+    storage_key = listening.get("audio_storage_key")
+    if isinstance(storage_key, str) and storage_key.strip():
+        return storage_key.strip()
+    audio_url = listening.get("audio_url")
+    if isinstance(audio_url, str):
+        return _storage_key_from_audio_url(audio_url)
+    return None
+
+
+def _content_type_for_audio_key(audio_key: str) -> str:
+    suffix = audio_key.rsplit(".", 1)[-1].lower() if "." in audio_key else ""
+    return {
+        "mp3": "audio/mpeg",
+        "opus": "audio/opus",
+        "aac": "audio/aac",
+        "flac": "audio/flac",
+        "wav": "audio/wav",
+        "pcm": "audio/L16",
+    }.get(suffix, "application/octet-stream")
 
 
 def _has_any_writing_response(response_payload: dict) -> bool:

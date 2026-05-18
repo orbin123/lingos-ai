@@ -79,4 +79,9 @@ export const challengesApi = {
         response_payload: responsePayload,
       })
       .then((r) => r.data),
+
+  getAttemptAudio: (audioUrl: string) =>
+    api
+      .get<Blob>(audioUrl, { responseType: "blob" })
+      .then((r) => r.data),
 };

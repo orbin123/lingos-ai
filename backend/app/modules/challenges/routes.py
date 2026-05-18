@@ -1,6 +1,9 @@
 """HTTP endpoints for challenge catalog and learner progress reads."""
 
+from io import BytesIO
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -14,6 +17,7 @@ from app.modules.challenges.schemas import (
     ChallengeListItem,
 )
 from app.modules.challenges.service import (
+    ChallengeAudioNotFound,
     ChallengeAttemptNotFound,
     ChallengeDailyAttemptLimitExceeded,
     ChallengeLevelLocked,
@@ -93,6 +97,32 @@ def get_challenge_attempt(
     except ChallengeAttemptNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return ChallengeAttemptRead.model_validate(attempt)
+
+
+@router.get(
+    "/challenge-attempts/{attempt_id}/audio/{audio_key}",
+    status_code=status.HTTP_200_OK,
+)
+async def get_challenge_attempt_audio(
+    attempt_id: int,
+    audio_key: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Stream one owner-checked listening audio clip for an attempt."""
+    service = ChallengeReadService(db)
+    try:
+        audio_bytes, content_type = await service.get_attempt_audio(
+            attempt_id=attempt_id,
+            user_id=current_user.id,
+            audio_key=audio_key,
+        )
+    except ChallengeAttemptNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ChallengeAudioNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return StreamingResponse(BytesIO(audio_bytes), media_type=content_type)
 
 
 @router.post(
