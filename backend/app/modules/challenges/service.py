@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import hashlib
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import ValidationError
@@ -13,8 +15,17 @@ from pydantic import ValidationError
 from app.ai.agents.ielts_challenge_evaluator import IELTSChallengeWritingEvaluator
 from app.ai.agents.ielts_challenge_feedback import IELTSChallengeFeedbackAgent
 from app.ai.agents.ielts_challenge_generator import IELTSChallengeGenerator
+from app.ai.agents.ielts_challenge_speaking_evaluator import (
+    IELTSChallengeSpeakingEvaluator,
+)
 from app.ai.llm import LLMError
-from app.ai.storage import IBlobStorage, StorageError, get_default_blob_storage
+from app.ai.storage import (
+    IBlobStorage,
+    LocalBlobStorage,
+    StorageError,
+    get_default_blob_storage,
+)
+from app.ai.stt import STTError, TranscriptionResult, get_default_stt_service
 from app.ai.tts import SynthesisResult, TTSError, get_default_tts_service
 from app.modules.challenges.evaluation_schemas import (
     IELTSFeedbackReport,
@@ -22,7 +33,11 @@ from app.modules.challenges.evaluation_schemas import (
     ReadingQuestionEvaluation,
     SectionFeedback,
     SectionScores,
-    StubSectionEvaluation,
+    SpeakingCriteriaEvaluation,
+    SpeakingCriterionEvaluation,
+    SpeakingEvaluationReport,
+    SpeakingPromptEvaluation,
+    SpeakingPronunciationEvaluation,
     UnifiedEvaluationReport,
     WritingCriteriaEvaluation,
     WritingCriterionEvaluation,
@@ -53,10 +68,28 @@ from app.modules.challenges.schemas import (
 logger = logging.getLogger(__name__)
 
 DAILY_ATTEMPT_LIMIT = 10
-PHASE_4_PLACEHOLDER_BAND = 6.5
 PHASE_5_LISTENING_STYLE = (
     "Speak clearly and naturally for an IELTS listening practice clip. "
     "Use a calm pace, neutral accent, and realistic tutor delivery."
+)
+MAX_SPEAKING_AUDIO_BYTES = 5 * 1024 * 1024
+SPEAKING_TRANSCRIPT_ERROR = (
+    "Transcription failed. This speaking response could not be scored."
+)
+PRONUNCIATION_UNAVAILABLE_RATIONALE = (
+    "Pronunciation requires audio-level scoring and is not evaluated in Phase 6."
+)
+ALLOWED_SPEAKING_AUDIO_TYPES = frozenset(
+    {
+        "audio/webm",
+        "video/webm",
+        "audio/ogg",
+        "audio/mp4",
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/wav",
+        "audio/x-wav",
+    }
 )
 
 
@@ -69,6 +102,12 @@ class ChallengeTaskGenerator(Protocol):
 class ChallengeWritingEvaluator(Protocol):
     async def evaluate(self, *, context: dict[str, Any]) -> WritingEvaluationReport:
         """Evaluate writing responses from prompt context."""
+        ...
+
+
+class ChallengeSpeakingEvaluator(Protocol):
+    async def evaluate(self, *, context: dict[str, Any]) -> SpeakingEvaluationReport:
+        """Evaluate speaking transcripts from prompt context."""
         ...
 
 
@@ -88,6 +127,19 @@ class ChallengeTTSService(Protocol):
         style_instructions: str | None = None,
     ) -> SynthesisResult:
         """Synthesize text and return a cached audio URL."""
+        ...
+
+
+class ChallengeSTTService(Protocol):
+    async def transcribe(
+        self,
+        *,
+        audio_bytes: bytes,
+        filename: str,
+        language: str = "en",
+        with_timestamps: bool = False,
+    ) -> TranscriptionResult:
+        """Transcribe uploaded speaking audio."""
         ...
 
 
@@ -115,6 +167,14 @@ class ChallengeAudioNotFound(Exception):
     """Raised when a challenge audio clip cannot be served to the user."""
 
 
+class ChallengeSpeakingUploadRejected(Exception):
+    """Raised when a speaking upload fails request validation."""
+
+    def __init__(self, message: str, *, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class ChallengeReadService:
     """Orchestration for challenge catalog, attempts and learner progress."""
 
@@ -124,18 +184,24 @@ class ChallengeReadService:
         *,
         generator: ChallengeTaskGenerator | None = None,
         writing_evaluator: ChallengeWritingEvaluator | None = None,
+        speaking_evaluator: ChallengeSpeakingEvaluator | None = None,
         feedback_generator: ChallengeFeedbackGenerator | None = None,
         tts_service: ChallengeTTSService | None = None,
+        stt_service: ChallengeSTTService | None = None,
         blob_storage: IBlobStorage | None = None,
+        speaking_audio_storage: IBlobStorage | None = None,
     ) -> None:
         self.db = db
         self.challenge_repo = ChallengeRepository(db)
         self.attempt_repo = ChallengeAttemptRepository(db)
         self._generator = generator
         self._writing_evaluator = writing_evaluator
+        self._speaking_evaluator = speaking_evaluator
         self._feedback_generator = feedback_generator
         self._tts_service = tts_service
+        self._stt_service = stt_service
         self._blob_storage = blob_storage
+        self._speaking_audio_storage = speaking_audio_storage
 
     def list_challenges(self) -> list[ChallengeListItem]:
         challenges = self.challenge_repo.list_active()
@@ -257,6 +323,10 @@ class ChallengeReadService:
 
         now = datetime.now(timezone.utc)
         expired = now > self._as_utc(attempt.expires_at) + timedelta(seconds=5)
+        response_payload = await self._transcribe_speaking_responses(
+            attempt=attempt,
+            response_payload=response_payload,
+        )
         attempt.response_payload = response_payload
         attempt.completed_at = now
         attempt.status = (
@@ -308,6 +378,98 @@ class ChallengeReadService:
 
         return audio_bytes, _content_type_for_audio_key(audio_key)
 
+    async def upload_speaking_response(
+        self,
+        *,
+        attempt_id: int,
+        user_id: int,
+        prompt_id: str,
+        audio_bytes: bytes,
+        content_type: str | None,
+    ) -> dict[str, Any]:
+        """Store one owner-checked speaking take and return protected metadata."""
+        attempt = self.get_attempt(attempt_id=attempt_id, user_id=user_id)
+        if attempt.status != ChallengeAttemptStatus.IN_PROGRESS:
+            raise ChallengeSpeakingUploadRejected(
+                "speaking uploads are only accepted for in-progress attempts",
+                status_code=409,
+            )
+
+        prompt_ids = _speaking_prompt_ids(attempt.task_payload)
+        if prompt_id not in prompt_ids:
+            raise ChallengeSpeakingUploadRejected(
+                f"unknown speaking prompt_id {prompt_id!r}",
+                status_code=404,
+            )
+        if not audio_bytes:
+            raise ChallengeSpeakingUploadRejected(
+                "audio upload must be non-empty",
+                status_code=400,
+            )
+        if len(audio_bytes) > MAX_SPEAKING_AUDIO_BYTES:
+            raise ChallengeSpeakingUploadRejected(
+                "audio upload exceeds the 5 MB limit",
+                status_code=413,
+            )
+
+        normalized_type = _normalise_content_type(content_type)
+        if normalized_type not in ALLOWED_SPEAKING_AUDIO_TYPES:
+            raise ChallengeSpeakingUploadRejected(
+                "unsupported speaking audio type",
+                status_code=415,
+            )
+
+        extension = _extension_for_audio_type(normalized_type)
+        digest = hashlib.sha256(audio_bytes).hexdigest()[:20]
+        storage_key = (
+            f"{digest}-attempt{attempt.id}-{prompt_id}{extension}"
+        )
+        stored = await self._get_speaking_audio_storage().put(
+            key=storage_key,
+            data=audio_bytes,
+            content_type=normalized_type,
+        )
+        return {
+            "prompt_id": prompt_id,
+            "audio_url": _protected_speaking_audio_url(
+                attempt_id=attempt.id,
+                prompt_id=prompt_id,
+                storage_key=storage_key,
+            ),
+            "audio_storage_key": stored["storage_key"],
+            "content_type": normalized_type,
+            "size_bytes": stored["size_bytes"],
+        }
+
+    async def get_speaking_audio(
+        self,
+        *,
+        attempt_id: int,
+        user_id: int,
+        prompt_id: str,
+        audio_key: str,
+    ) -> tuple[bytes, str]:
+        """Return owner-checked speaking audio bytes for one uploaded take."""
+        self.get_attempt(attempt_id=attempt_id, user_id=user_id)
+        if not _speaking_audio_key_matches_attempt(
+            audio_key=audio_key,
+            attempt_id=attempt_id,
+            prompt_id=prompt_id,
+        ):
+            raise ChallengeAudioNotFound(f"speaking audio {audio_key!r} not found")
+
+        try:
+            audio_bytes = await self._get_speaking_audio_storage().get(key=audio_key)
+        except StorageError as exc:
+            raise ChallengeAudioNotFound(
+                f"speaking audio {audio_key!r} unavailable"
+            ) from exc
+
+        if audio_bytes is None:
+            raise ChallengeAudioNotFound(f"speaking audio {audio_key!r} not found")
+
+        return audio_bytes, _content_type_for_audio_key(audio_key)
+
     def _check_daily_attempt_limit(self, *, user_id: int, now: datetime) -> None:
         window_start = now - timedelta(hours=24)
         attempt_count = self.attempt_repo.count_started_since(
@@ -337,13 +499,9 @@ class ChallengeReadService:
             attempt=attempt,
             response_payload=response_payload,
         )
-        speaking = StubSectionEvaluation(
-            mode="hardcoded_phase_4_placeholder",
-            section_band=PHASE_4_PLACEHOLDER_BAND,
-            summary=(
-                "Speaking is still a Phase 4 placeholder; upload, transcription, "
-                "and scoring arrive in Phase 6."
-            ),
+        speaking = await self._evaluate_speaking_with_fallback(
+            attempt=attempt,
+            response_payload=response_payload,
         )
         section_scores = SectionScores(
             listening=listening.section_band,
@@ -361,7 +519,7 @@ class ChallengeReadService:
             / 4
         )
         return UnifiedEvaluationReport(
-            mode="phase_5_listening",
+            mode="phase_6_speaking",
             reading=reading,
             writing=writing,
             listening=listening,
@@ -440,6 +598,21 @@ class ChallengeReadService:
 
     def _get_blob_storage(self) -> IBlobStorage:
         return self._blob_storage or get_default_blob_storage()
+
+    def _get_stt_service(self) -> ChallengeSTTService:
+        return self._stt_service or get_default_stt_service()
+
+    def _get_speaking_audio_storage(self) -> IBlobStorage:
+        if self._speaking_audio_storage is not None:
+            return self._speaking_audio_storage
+
+        from app.core.config import settings
+
+        self._speaking_audio_storage = LocalBlobStorage(
+            root_dir=Path(settings.STT_CACHE_DIR) / "speaking_audio",
+            public_url_prefix="/internal/challenge-speaking",
+        )
+        return self._speaking_audio_storage
 
     async def _evaluate_writing_with_fallback(
         self,
@@ -641,6 +814,248 @@ class ChallengeReadService:
             summary=reason,
         )
 
+    async def _transcribe_speaking_responses(
+        self,
+        *,
+        attempt: ChallengeAttempt,
+        response_payload: dict,
+    ) -> dict:
+        payload = deepcopy(response_payload or {})
+        speaking_responses = _as_dict(payload.get("speaking"))
+        if not speaking_responses:
+            payload["speaking"] = {}
+            return payload
+
+        prompt_ids = set(_speaking_prompt_ids(attempt.task_payload))
+        enriched_responses: dict[str, Any] = {}
+        for prompt_id, raw_response in speaking_responses.items():
+            if not isinstance(prompt_id, str) or prompt_id not in prompt_ids:
+                enriched_responses[prompt_id] = raw_response
+                continue
+            if not isinstance(raw_response, dict):
+                enriched_responses[prompt_id] = {
+                    "transcript": "",
+                    "transcript_error": "Submitted speaking metadata was invalid.",
+                }
+                continue
+
+            enriched = dict(raw_response)
+            storage_key = str(enriched.get("audio_storage_key") or "").strip()
+            if not _speaking_audio_key_matches_attempt(
+                audio_key=storage_key,
+                attempt_id=attempt.id,
+                prompt_id=prompt_id,
+            ):
+                enriched["transcript"] = ""
+                enriched["transcript_error"] = (
+                    "Submitted speaking audio metadata could not be verified."
+                )
+                enriched_responses[prompt_id] = enriched
+                continue
+
+            enriched["audio_url"] = _protected_speaking_audio_url(
+                attempt_id=attempt.id,
+                prompt_id=prompt_id,
+                storage_key=storage_key,
+            )
+            try:
+                audio_bytes = await self._get_speaking_audio_storage().get(
+                    key=storage_key
+                )
+                if audio_bytes is None:
+                    raise StorageError("speaking audio blob missing")
+                result = await self._get_stt_service().transcribe(
+                    audio_bytes=audio_bytes,
+                    filename=storage_key,
+                    language="en",
+                    with_timestamps=False,
+                )
+            except (StorageError, STTError):
+                logger.exception(
+                    "challenge_speaking_transcription_failed attempt_id=%s prompt_id=%s",
+                    attempt.id,
+                    prompt_id,
+                )
+                enriched["transcript"] = ""
+                enriched["transcript_error"] = SPEAKING_TRANSCRIPT_ERROR
+            except Exception:
+                logger.exception(
+                    "challenge_speaking_transcription_failed_unexpected "
+                    "attempt_id=%s prompt_id=%s",
+                    attempt.id,
+                    prompt_id,
+                )
+                enriched["transcript"] = ""
+                enriched["transcript_error"] = SPEAKING_TRANSCRIPT_ERROR
+            else:
+                enriched["transcript"] = result["text"]
+                enriched["transcript_language"] = result["language"]
+                enriched["transcript_duration_seconds"] = result["duration_seconds"]
+                enriched.pop("transcript_error", None)
+
+            enriched_responses[prompt_id] = enriched
+
+        payload["speaking"] = enriched_responses
+        return payload
+
+    async def _evaluate_speaking_with_fallback(
+        self,
+        *,
+        attempt: ChallengeAttempt,
+        response_payload: dict,
+    ) -> SpeakingEvaluationReport:
+        if not _has_any_speaking_transcript(response_payload):
+            return self._fallback_speaking_evaluation(
+                attempt=attempt,
+                response_payload=response_payload,
+                reason="No usable speaking transcript was submitted.",
+            )
+
+        evaluator = self._speaking_evaluator or IELTSChallengeSpeakingEvaluator()
+        context = self._speaking_evaluation_context(
+            attempt=attempt,
+            response_payload=response_payload,
+        )
+        for attempt_number in (1, 2):
+            try:
+                report = await evaluator.evaluate(context=context)
+                return self._normalise_speaking_report(
+                    SpeakingEvaluationReport.model_validate(report)
+                )
+            except (LLMError, ValidationError) as exc:
+                if attempt_number == 1:
+                    logger.warning(
+                        "challenge_speaking_evaluation_retry attempt_id=%s err=%s",
+                        attempt.id,
+                        exc,
+                    )
+                    continue
+                logger.exception(
+                    "challenge_speaking_evaluation_fallback attempt_id=%s",
+                    attempt.id,
+                )
+            except Exception:
+                logger.exception(
+                    "challenge_speaking_evaluation_fallback_unexpected attempt_id=%s",
+                    attempt.id,
+                )
+                break
+
+        return self._fallback_speaking_evaluation(
+            attempt=attempt,
+            response_payload=response_payload,
+            reason="AI speaking evaluation is temporarily unavailable.",
+        )
+
+    def _speaking_evaluation_context(
+        self,
+        *,
+        attempt: ChallengeAttempt,
+        response_payload: dict,
+    ) -> dict[str, Any]:
+        task_payload = attempt.task_payload or {}
+        sections = _as_dict(task_payload.get("sections"))
+        return {
+            "attempt_id": attempt.id,
+            "task_payload": task_payload,
+            "response_payload": response_payload,
+            "speaking_task": sections.get("speaking", {}),
+            "speaking_responses": _as_dict(response_payload.get("speaking")),
+        }
+
+    @staticmethod
+    def _normalise_speaking_report(
+        report: SpeakingEvaluationReport,
+    ) -> SpeakingEvaluationReport:
+        items: list[SpeakingPromptEvaluation] = []
+        for item in report.items:
+            criterion_bands = [
+                item.criteria.fluency_and_coherence.band,
+                item.criteria.lexical_resource.band,
+                item.criteria.grammatical_range_and_accuracy.band,
+            ]
+            items.append(
+                item.model_copy(
+                    update={
+                        "criteria": item.criteria.model_copy(
+                            update={
+                                "pronunciation": SpeakingPronunciationEvaluation(
+                                    available=False,
+                                    band=None,
+                                    rationale=PRONUNCIATION_UNAVAILABLE_RATIONALE,
+                                )
+                            }
+                        ),
+                        "band": round_to_half_band(sum(criterion_bands) / 3),
+                    }
+                )
+            )
+
+        section_band = (
+            round_to_half_band(sum(item.band for item in items) / len(items))
+            if items
+            else 0.0
+        )
+        return report.model_copy(
+            update={
+                "items": items,
+                "section_band": section_band,
+                "pronunciation_available": False,
+            }
+        )
+
+    def _fallback_speaking_evaluation(
+        self,
+        *,
+        attempt: ChallengeAttempt,
+        response_payload: dict,
+        reason: str,
+    ) -> SpeakingEvaluationReport:
+        prompts = _speaking_prompt_map(attempt.task_payload)
+        speaking_responses = _as_dict((response_payload or {}).get("speaking"))
+        if not prompts and speaking_responses:
+            prompts = {
+                prompt_id: f"Speaking prompt {index + 1}"
+                for index, prompt_id in enumerate(speaking_responses)
+            }
+        if not prompts:
+            prompts = {"s1": "Speaking prompt"}
+
+        items: list[SpeakingPromptEvaluation] = []
+        for prompt_id, prompt in prompts.items():
+            response = _as_dict(speaking_responses.get(prompt_id))
+            transcript = str(response.get("transcript") or "").strip()
+            band = 5.0 if transcript else 0.0
+            transcript_error = response.get("transcript_error")
+            items.append(
+                SpeakingPromptEvaluation(
+                    item_id=prompt_id,
+                    prompt=prompt,
+                    transcript_excerpt=transcript[:240],
+                    transcript_word_count=count_words(transcript),
+                    criteria=_fallback_speaking_criteria(
+                        section_band=band,
+                        reason=reason,
+                    ),
+                    band=band,
+                    summary=reason,
+                    transcript_error=(
+                        str(transcript_error) if transcript_error else None
+                    ),
+                )
+            )
+
+        section_band = round_to_half_band(
+            sum(item.band for item in items) / len(items)
+        )
+        return SpeakingEvaluationReport(
+            mode="ai_speaking_phase_6",
+            items=items,
+            section_band=section_band,
+            pronunciation_available=False,
+            summary=reason,
+        )
+
     @staticmethod
     def _fallback_feedback_report(
         *,
@@ -658,6 +1073,15 @@ class ChallengeReadService:
             listening.total_correct
             if isinstance(listening, ReadingEvaluationReport)
             else 0
+        )
+        speaking = evaluation_report.speaking
+        speaking_band = (
+            speaking.section_band
+            if isinstance(speaking, SpeakingEvaluationReport)
+            else evaluation_report.section_scores.speaking
+        )
+        speaking_items = (
+            len(speaking.items) if isinstance(speaking, SpeakingEvaluationReport) else 0
         )
         return IELTSFeedbackReport(
             mode="phase_4_feedback",
@@ -697,9 +1121,22 @@ class ChallengeReadService:
                     ),
                 ),
                 "speaking": SectionFeedback(
-                    went_well=["The placeholder speaking section was included."],
-                    needs_work=["Detailed speaking scoring arrives in Phase 6."],
-                    next_tip="Practise one prompt aloud for 30 seconds.",
+                    went_well=[
+                        (
+                            f"Your transcript-only Speaking band was {speaking_band:.1f} "
+                            f"across {speaking_items} prompt(s)."
+                        )
+                    ],
+                    needs_work=[
+                        (
+                            "Pronunciation is not scored yet because Phase 6 evaluates "
+                            "speaking from transcripts only."
+                        )
+                    ],
+                    next_tip=(
+                        "Record a short answer, then replay it and revise one sentence "
+                        "for clearer organisation."
+                    ),
                 ),
             },
         )
@@ -1428,10 +1865,80 @@ def _listening_audio_storage_key(task_payload: dict) -> str | None:
     return None
 
 
+def _speaking_prompt_map(task_payload: dict) -> dict[str, str]:
+    sections = _as_dict((task_payload or {}).get("sections"))
+    speaking = _as_dict(sections.get("speaking"))
+    raw_prompts = speaking.get("speaking_prompts")
+    if not isinstance(raw_prompts, list):
+        return {}
+
+    prompts: dict[str, str] = {}
+    for index, prompt in enumerate(raw_prompts):
+        if isinstance(prompt, str) and prompt.strip():
+            prompts[f"s{index + 1}"] = prompt.strip()
+    return prompts
+
+
+def _speaking_prompt_ids(task_payload: dict) -> list[str]:
+    return list(_speaking_prompt_map(task_payload).keys())
+
+
+def _protected_speaking_audio_url(
+    *,
+    attempt_id: int,
+    prompt_id: str,
+    storage_key: str,
+) -> str:
+    return (
+        f"/api/v1/challenge-attempts/{attempt_id}/speaking/"
+        f"{prompt_id}/audio/{storage_key}"
+    )
+
+
+def _speaking_audio_key_matches_attempt(
+    *,
+    audio_key: str,
+    attempt_id: int,
+    prompt_id: str,
+) -> bool:
+    if (
+        not audio_key
+        or "/" in audio_key
+        or "\\" in audio_key
+        or ".." in audio_key
+        or len(audio_key) < 2
+    ):
+        return False
+    expected_suffix = f"-attempt{attempt_id}-{prompt_id}"
+    stem = audio_key.rsplit(".", 1)[0]
+    return stem.endswith(expected_suffix)
+
+
+def _normalise_content_type(content_type: str | None) -> str:
+    return (content_type or "").split(";", 1)[0].strip().lower()
+
+
+def _extension_for_audio_type(content_type: str) -> str:
+    return {
+        "audio/webm": ".webm",
+        "video/webm": ".webm",
+        "audio/ogg": ".ogg",
+        "audio/mp4": ".mp4",
+        "audio/mpeg": ".mp3",
+        "audio/mp3": ".mp3",
+        "audio/wav": ".wav",
+        "audio/x-wav": ".wav",
+    }.get(content_type, ".webm")
+
+
 def _content_type_for_audio_key(audio_key: str) -> str:
     suffix = audio_key.rsplit(".", 1)[-1].lower() if "." in audio_key else ""
     return {
         "mp3": "audio/mpeg",
+        "mp4": "audio/mp4",
+        "m4a": "audio/mp4",
+        "webm": "audio/webm",
+        "ogg": "audio/ogg",
         "opus": "audio/opus",
         "aac": "audio/aac",
         "flac": "audio/flac",
@@ -1443,6 +1950,15 @@ def _content_type_for_audio_key(audio_key: str) -> str:
 def _has_any_writing_response(response_payload: dict) -> bool:
     writing_responses = _as_dict((response_payload or {}).get("writing"))
     return any(str(value).strip() for value in writing_responses.values())
+
+
+def _has_any_speaking_transcript(response_payload: dict) -> bool:
+    speaking_responses = _as_dict((response_payload or {}).get("speaking"))
+    for value in speaking_responses.values():
+        response = _as_dict(value)
+        if str(response.get("transcript") or "").strip():
+            return True
+    return False
 
 
 def _fallback_writing_criteria(
@@ -1459,6 +1975,27 @@ def _fallback_writing_criteria(
         coherence_and_cohesion=criterion,
         lexical_resource=criterion,
         grammatical_range_and_accuracy=criterion,
+    )
+
+
+def _fallback_speaking_criteria(
+    *,
+    section_band: float,
+    reason: str,
+) -> SpeakingCriteriaEvaluation:
+    criterion = SpeakingCriterionEvaluation(
+        band=section_band,
+        rationale=reason,
+    )
+    return SpeakingCriteriaEvaluation(
+        fluency_and_coherence=criterion,
+        lexical_resource=criterion,
+        grammatical_range_and_accuracy=criterion,
+        pronunciation=SpeakingPronunciationEvaluation(
+            available=False,
+            band=None,
+            rationale=PRONUNCIATION_UNAVAILABLE_RATIONALE,
+        ),
     )
 
 

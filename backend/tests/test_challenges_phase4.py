@@ -343,10 +343,10 @@ async def test_submit_persists_phase4_scores_and_feedback(db_session: Session) -
         "listening": 9.0,
         "reading": 5.5,
         "writing": 6.5,
-        "speaking": 6.5,
+        "speaking": 0.0,
     }
-    assert float(submitted.overall_score) == 7.0
-    assert submitted.evaluation_report["mode"] == "phase_5_listening"
+    assert float(submitted.overall_score) == 5.5
+    assert submitted.evaluation_report["mode"] == "phase_6_speaking"
     assert submitted.evaluation_report["listening"]["total_correct"] == 1
     assert submitted.evaluation_report["reading"]["total_correct"] == 1
     assert submitted.evaluation_report["writing"]["section_band"] == 6.5
@@ -387,6 +387,7 @@ async def test_evaluator_failure_uses_fallback_without_losing_response(
     assert submitted.section_scores["reading"] == 9.0
     assert submitted.section_scores["listening"] == 9.0
     assert submitted.section_scores["writing"] == 5.0
+    assert submitted.section_scores["speaking"] == 0.0
     assert submitted.evaluation_report["writing"]["summary"] == (
         "AI writing evaluation is temporarily unavailable."
     )

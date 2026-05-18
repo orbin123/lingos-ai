@@ -77,6 +77,16 @@ class ChallengeAttemptSubmitRequest(BaseModel):
     response_payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class ChallengeSpeakingUploadRead(BaseModel):
+    """Protected metadata for one uploaded speaking take."""
+
+    prompt_id: str
+    audio_url: str
+    audio_storage_key: str
+    content_type: str
+    size_bytes: int
+
+
 class ChallengeHistoryAttempt(BaseModel):
     """One personal attempt row for challenge history."""
 

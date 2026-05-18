@@ -20,7 +20,10 @@ import {
 } from "lucide-react";
 import { authApi } from "@/lib/auth-api";
 import { challengesApi } from "@/lib/challenges-api";
-import type { ChallengeAttemptRead } from "@/lib/challenges-api";
+import type {
+  ChallengeAttemptRead,
+  ChallengeSpeakingUploadRead,
+} from "@/lib/challenges-api";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuthStore } from "@/store/authStore";
 
@@ -64,11 +67,15 @@ interface SpeakingSectionPayload {
   speaking_duration_seconds?: number;
 }
 
+type SpeakingResponseValue = ChallengeSpeakingUploadRead & {
+  duration_seconds?: number;
+};
+
 interface ChallengeResponses {
   listening: Record<string, string>;
   reading: Record<string, string>;
   writing: Record<string, string>;
-  speaking: Record<string, never>;
+  speaking: Record<string, SpeakingResponseValue>;
 }
 
 const emptyResponses: ChallengeResponses = {
@@ -102,12 +109,47 @@ function readStringMap(value: unknown): Record<string, string> {
   );
 }
 
+function readSpeakingMap(value: unknown): Record<string, SpeakingResponseValue> {
+  if (!isRecord(value)) return {};
+  const entries = Object.entries(value)
+    .map(([key, raw]) => {
+      if (!isRecord(raw)) return null;
+      const audioUrl = raw.audio_url;
+      const audioStorageKey = raw.audio_storage_key;
+      const contentType = raw.content_type;
+      const sizeBytes = raw.size_bytes;
+      if (
+        typeof audioUrl !== "string" ||
+        typeof audioStorageKey !== "string" ||
+        typeof contentType !== "string" ||
+        typeof sizeBytes !== "number"
+      ) {
+        return null;
+      }
+      const duration =
+        typeof raw.duration_seconds === "number" ? raw.duration_seconds : undefined;
+      return [
+        key,
+        {
+          prompt_id: key,
+          audio_url: audioUrl,
+          audio_storage_key: audioStorageKey,
+          content_type: contentType,
+          size_bytes: sizeBytes,
+          ...(duration ? { duration_seconds: duration } : {}),
+        },
+      ] as const;
+    })
+    .filter((entry): entry is readonly [string, SpeakingResponseValue] => entry !== null);
+  return Object.fromEntries(entries);
+}
+
 function normalizeResponses(payload: Record<string, unknown> | null): ChallengeResponses {
   return {
     listening: readStringMap(payload?.listening),
     reading: readStringMap(payload?.reading),
     writing: readStringMap(payload?.writing),
-    speaking: {},
+    speaking: readSpeakingMap(payload?.speaking),
   };
 }
 
@@ -138,6 +180,7 @@ function progressLabel(
   listening: ListeningSectionPayload,
   reading: ReadingSectionPayload,
   writing: WritingSectionPayload,
+  speaking: SpeakingSectionPayload,
 ): string {
   if (section === "listening") {
     const total = listening.items?.length ?? 0;
@@ -156,7 +199,9 @@ function progressLabel(
     ).length;
     return `${answered}/${prompts.length} drafted`;
   }
-  return "placeholder";
+  const prompts = speaking.speaking_prompts ?? [];
+  const uploaded = Object.keys(responses.speaking).length;
+  return `${Math.min(uploaded, prompts.length)}/${prompts.length} uploaded`;
 }
 
 export default function ChallengeAttemptPage() {
@@ -242,10 +287,7 @@ export default function ChallengeAttemptPage() {
     submitInFlightRef.current = true;
     setSubmitError(null);
     submitMutation.mutate(
-      {
-        ...responsesRef.current,
-        speaking: {},
-      },
+      { ...responsesRef.current },
       {
         onSettled: () => {
           submitInFlightRef.current = false;
@@ -419,7 +461,14 @@ export default function ChallengeAttemptPage() {
                           color: active ? "rgba(180,210,240,0.9)" : "#4a6880",
                         }}
                       >
-                        {progressLabel(key, responses, listening, reading, writing)}
+                        {progressLabel(
+                          key,
+                          responses,
+                          listening,
+                          reading,
+                          writing,
+                          speaking,
+                        )}
                       </small>
                     </span>
                   </button>
@@ -474,7 +523,20 @@ export default function ChallengeAttemptPage() {
               />
             )}
             {activeSection === "speaking" && (
-              <SpeakingSection payload={speaking} disabled={!inProgress} />
+              <SpeakingSection
+                attemptId={attemptId}
+                payload={speaking}
+                disabled={!inProgress}
+                answers={responses.speaking}
+                onAnswer={(promptId, value) =>
+                  setResponses((prev) => {
+                    const nextSpeaking = { ...prev.speaking };
+                    if (value) nextSpeaking[promptId] = value;
+                    else delete nextSpeaking[promptId];
+                    return { ...prev, speaking: nextSpeaking };
+                  })
+                }
+              />
             )}
 
             {isComplete && <ResultsPanel attempt={currentAttempt} />}
@@ -727,11 +789,17 @@ function WritingSection({
 }
 
 function SpeakingSection({
+  attemptId,
   payload,
   disabled,
+  answers,
+  onAnswer,
 }: {
+  attemptId: number;
   payload: SpeakingSectionPayload;
   disabled: boolean;
+  answers: Record<string, SpeakingResponseValue>;
+  onAnswer: (promptId: string, value: SpeakingResponseValue | null) => void;
 }) {
   const prompts = payload.speaking_prompts ?? ["Describe a skill you improved."];
   return (
@@ -751,11 +819,15 @@ function SpeakingSection({
         <div style={{ display: "grid", gap: 14 }}>
           {prompts.map((prompt, index) => (
             <SpeakingRecorder
-              key={`${prompt}-${index}`}
+              key={`s${index + 1}`}
+              attemptId={attemptId}
+              promptId={`s${index + 1}`}
               prompt={prompt}
               disabled={disabled}
               durationSeconds={payload.speaking_duration_seconds ?? 30}
               index={index + 1}
+              initialAnswer={answers[`s${index + 1}`]}
+              onUploaded={onAnswer}
             />
           ))}
         </div>
@@ -764,25 +836,59 @@ function SpeakingSection({
   );
 }
 
+function pickSpeakingMimeType(): string {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+    "audio/mp4",
+  ];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
+}
+
+function extensionForMime(mime: string): string {
+  if (mime.includes("ogg")) return ".ogg";
+  if (mime.includes("mp4")) return ".mp4";
+  return ".webm";
+}
+
 function SpeakingRecorder({
+  attemptId,
+  promptId,
   prompt,
   disabled,
   durationSeconds,
   index,
+  initialAnswer,
+  onUploaded,
 }: {
+  attemptId: number;
+  promptId: string;
   prompt: string;
   disabled: boolean;
   durationSeconds: number;
   index: number;
+  initialAnswer?: SpeakingResponseValue;
+  onUploaded: (promptId: string, value: SpeakingResponseValue | null) => void;
 }) {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const intervalRef = useRef<number | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+  const mimeTypeRef = useRef("audio/webm");
+  const recordingStartedAtRef = useRef(0);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [localBlob, setLocalBlob] = useState<Blob | null>(null);
+  const [duration, setDuration] = useState(0);
+  const [uploaded, setUploaded] = useState<SpeakingResponseValue | null>(
+    initialAnswer ?? null,
+  );
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cleanupStream = () => {
@@ -794,6 +900,13 @@ function SpeakingRecorder({
     }
   };
 
+  const setPreviewBlob = (blob: Blob) => {
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    const nextUrl = URL.createObjectURL(blob);
+    audioUrlRef.current = nextUrl;
+    setAudioUrl(nextUrl);
+  };
+
   const stopRecording = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
       recorderRef.current.stop();
@@ -801,7 +914,7 @@ function SpeakingRecorder({
   }, []);
 
   const startRecording = async () => {
-    if (disabled || recording) return;
+    if (disabled || recording || uploading) return;
     if (typeof MediaRecorder === "undefined") {
       setError("Recording is not supported in this browser.");
       return;
@@ -812,21 +925,31 @@ function SpeakingRecorder({
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      const recorder = new MediaRecorder(stream);
+      const mimeType = pickSpeakingMimeType();
+      mimeTypeRef.current = mimeType || "audio/webm";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
       recorderRef.current = recorder;
       recorder.ondataavailable = (event: BlobEvent) => {
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
       recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType });
-        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
-        const nextUrl = URL.createObjectURL(blob);
-        audioUrlRef.current = nextUrl;
-        setAudioUrl(nextUrl);
+        const recordedDuration = Math.max(
+          1,
+          Math.round((Date.now() - recordingStartedAtRef.current) / 1000),
+        );
+        const usedMime = recorder.mimeType || mimeType || "audio/webm";
+        const blob = new Blob(chunksRef.current, { type: usedMime });
+        mimeTypeRef.current = usedMime;
+        setPreviewBlob(blob);
+        setLocalBlob(blob);
+        setDuration(recordedDuration);
+        setUploaded(null);
+        onUploaded(promptId, null);
         setRecording(false);
         cleanupStream();
       };
       recorder.start(250);
+      recordingStartedAtRef.current = Date.now();
       setRecording(true);
       intervalRef.current = window.setInterval(() => {
         setElapsed((current) => {
@@ -842,12 +965,56 @@ function SpeakingRecorder({
     }
   };
 
+  const uploadTake = async () => {
+    if (!localBlob || disabled || uploading || recording) return;
+    setUploading(true);
+    setError(null);
+    try {
+      const extension = extensionForMime(localBlob.type || mimeTypeRef.current);
+      const result = await challengesApi.uploadSpeakingTake(
+        attemptId,
+        promptId,
+        localBlob,
+        `speaking-${promptId}${extension}`,
+      );
+      const next = {
+        ...result,
+        duration_seconds: duration,
+      };
+      setUploaded(next);
+      onUploaded(promptId, next);
+    } catch {
+      setError("Upload failed. Please try again or re-record this prompt.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   useEffect(() => {
     return () => {
       cleanupStream();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    setUploaded(initialAnswer ?? null);
+  }, [initialAnswer?.audio_storage_key, initialAnswer]);
+
+  useEffect(() => {
+    if (!initialAnswer?.audio_url || localBlob || audioUrl) return;
+    let cancelled = false;
+    challengesApi
+      .getAttemptAudio(initialAnswer.audio_url)
+      .then((blob) => {
+        if (cancelled) return;
+        setPreviewBlob(blob);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [initialAnswer?.audio_url, localBlob, audioUrl]);
 
   return (
     <div style={questionCardStyle}>
@@ -858,7 +1025,7 @@ function SpeakingRecorder({
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <button
           type="button"
-          disabled={disabled}
+          disabled={disabled || uploading}
           onClick={recording ? stopRecording : startRecording}
           style={{
             ...iconActionStyle,
@@ -871,18 +1038,43 @@ function SpeakingRecorder({
         <div style={{ color: "#4a6880", fontSize: 14, fontWeight: 700 }}>
           {recording
             ? `${formatRemaining(elapsed)} / ${formatRemaining(durationSeconds)}`
+            : uploading
+              ? "Uploading take..."
+              : uploaded
+                ? "Uploaded for scoring"
             : audioUrl
               ? "Local recording ready"
               : "Tap to record"}
         </div>
+        {audioUrl && !recording && !uploaded && (
+          <button
+            type="button"
+            disabled={disabled || uploading}
+            onClick={uploadTake}
+            style={submitButtonStyle}
+          >
+            <Send size={15} aria-hidden />
+            Use this take
+          </button>
+        )}
         {audioUrl && !recording && (
-          <button type="button" onClick={startRecording} style={secondaryButtonStyle}>
+          <button
+            type="button"
+            disabled={disabled || uploading}
+            onClick={startRecording}
+            style={secondaryButtonStyle}
+          >
             <RotateCcw size={16} aria-hidden />
             Re-record
           </button>
         )}
       </div>
       {audioUrl && <audio controls src={audioUrl} style={{ width: "100%", marginTop: 12 }} />}
+      {uploaded && (
+        <div style={{ ...mutedBandStyle, marginTop: 12 }}>
+          Uploaded {Math.round(uploaded.size_bytes / 1024)} KB for prompt {promptId}.
+        </div>
+      )}
       {error && <div style={{ ...alertStyle, marginTop: 12 }}>{error}</div>}
     </div>
   );
@@ -1010,7 +1202,7 @@ function ResultsPanel({ attempt }: { attempt: ChallengeAttemptRead }) {
   const feedbackSections = isRecord(feedbackReport.sections)
     ? feedbackReport.sections
     : {};
-  const nextTips = (["reading", "writing"] as SectionKey[])
+  const nextTips = (["reading", "writing", "speaking"] as SectionKey[])
     .map((section) => {
       const sectionFeedback = feedbackSections[section];
       if (!isRecord(sectionFeedback) || typeof sectionFeedback.next_tip !== "string") {
@@ -1035,7 +1227,7 @@ function ResultsPanel({ attempt }: { attempt: ChallengeAttemptRead }) {
           </h2>
           <p style={{ margin: "8px 0 0", color: "#4a6880", lineHeight: 1.6, fontSize: 14 }}>
             {feedbackSummary ??
-              "Reading was graded from the answer key, Writing was evaluated, and placeholder Listening/Speaking bands were applied."}
+              "Reading and Listening were graded from answer keys, Writing was evaluated, and Speaking was scored from transcripts only."}
           </p>
         </div>
       </div>

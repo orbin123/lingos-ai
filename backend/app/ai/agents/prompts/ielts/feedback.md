@@ -24,7 +24,7 @@ Rules:
 - Reading feedback must use the deterministic correctness report. Mention specific missed item IDs when useful.
 - Listening feedback must use the deterministic correctness report when present. Mention audio comprehension patterns rather than calling it a placeholder.
 - Writing feedback must use criterion scores and issues from the writing evaluation. Use short learner quotes only if they appear in the report.
-- Speaking is still a placeholder in Phase 5. State that its band is temporary and fuller scoring arrives later.
+- Speaking uses Phase 6 transcript-only scoring when present. Mention the transcript-only limitation and explicitly note that Pronunciation is not scored yet.
 - Keep each string short enough for a result panel.
 - Do not include markdown, headings, code fences, or extra fields.
 
@@ -50,9 +50,9 @@ Return an object matching this structure:
       "next_tip": "One concrete writing tactic for next time."
     },
     "speaking": {
-      "went_well": ["Placeholder section rendered successfully."],
-      "needs_work": ["Detailed speaking scoring arrives in a later phase."],
-      "next_tip": "Practise answering the prompt aloud for 30 seconds."
+      "went_well": ["Specific strength from the transcript-only speaking report."],
+      "needs_work": ["Specific transcript-based speaking issue. Pronunciation is not scored yet."],
+      "next_tip": "One concrete speaking tactic for next time."
     }
   }
 }

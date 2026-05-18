@@ -2,7 +2,7 @@
 
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,7 @@ from app.modules.challenges.schemas import (
     ChallengeDetailRead,
     ChallengeHistoryRead,
     ChallengeListItem,
+    ChallengeSpeakingUploadRead,
 )
 from app.modules.challenges.service import (
     ChallengeAudioNotFound,
@@ -24,6 +25,7 @@ from app.modules.challenges.service import (
     ChallengeLevelNotFound,
     ChallengeNotFound,
     ChallengeReadService,
+    ChallengeSpeakingUploadRejected,
 )
 
 
@@ -125,6 +127,65 @@ async def get_challenge_attempt_audio(
     return StreamingResponse(BytesIO(audio_bytes), media_type=content_type)
 
 
+@router.get(
+    "/challenge-attempts/{attempt_id}/speaking/{prompt_id}/audio/{audio_key}",
+    status_code=status.HTTP_200_OK,
+)
+async def get_challenge_attempt_speaking_audio(
+    attempt_id: int,
+    prompt_id: str,
+    audio_key: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Stream one owner-checked speaking upload for an attempt."""
+    service = ChallengeReadService(db)
+    try:
+        audio_bytes, content_type = await service.get_speaking_audio(
+            attempt_id=attempt_id,
+            user_id=current_user.id,
+            prompt_id=prompt_id,
+            audio_key=audio_key,
+        )
+    except ChallengeAttemptNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ChallengeAudioNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return StreamingResponse(BytesIO(audio_bytes), media_type=content_type)
+
+
+@router.post(
+    "/challenge-attempts/{attempt_id}/speaking/{prompt_id}/upload",
+    response_model=ChallengeSpeakingUploadRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_challenge_attempt_speaking(
+    attempt_id: int,
+    prompt_id: str,
+    audio: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ChallengeSpeakingUploadRead:
+    """Accept one browser-recorded speaking take for a live attempt."""
+    service = ChallengeReadService(db)
+    audio_bytes = await audio.read()
+    try:
+        result = await service.upload_speaking_response(
+            attempt_id=attempt_id,
+            user_id=current_user.id,
+            prompt_id=prompt_id,
+            audio_bytes=audio_bytes,
+            content_type=audio.content_type,
+        )
+    except ChallengeAttemptNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ChallengeSpeakingUploadRejected as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    return ChallengeSpeakingUploadRead.model_validate(result)
+
+
 @router.post(
     "/challenges/{slug}/levels/{level_number}/attempts",
     response_model=ChallengeAttemptRead,
@@ -166,7 +227,7 @@ async def submit_challenge_attempt(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ChallengeAttemptRead:
-    """Persist raw section responses and return Phase 4 evaluation/feedback."""
+    """Persist raw section responses and return current phase evaluation/feedback."""
     service = ChallengeReadService(db)
     try:
         attempt = await service.submit_attempt(
