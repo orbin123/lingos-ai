@@ -1,26 +1,24 @@
-"""Curriculum module models — Course, UserEnrollment, EnrollmentSkillHistory.
+"""V2 curriculum tables — theme-week / day-topic / task-archetype.
 
-The curriculum is structure-only. It does NOT store daily tasks (those live
-in the tasks module). What a user does on Day N is decided at runtime by
-the rotation engine, based on:
-  - day_of_week → fixed skill (from WEEK_SCHEDULE constant)
-  - last activity for that skill → next activity (round-robin)
-  - week number → difficulty target
+These tables back the new restructured flow introduced in Phase 2 of the
+restructure. The legacy `Course`, `UserEnrollment`, `DailyPlan`, and
+`EnrollmentSkillHistory` rows continue to serve production until Phase 7
+retires them.
+
+Keep this file isolated from `models.py` so Phase 7 can delete it cleanly.
 """
 
-from datetime import date, datetime
 from enum import Enum
 
 from sqlalchemy import (
     Boolean,
-    CheckConstraint,
-    Date,
-    DateTime,
     Enum as SQLAlchemyEnum,
     ForeignKey,
     Index,
+    Integer,
     JSON,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -28,239 +26,174 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.core.mixins import IDMixin, TimestampMixin
-from app.modules.tasks.models import TaskType
 
 
-# Enums
-
-class CourseLevel(str, Enum):
-    """Target proficiency for a course (helps users pick)."""
-    BEGINNER = "beginner"
-    INTERMEDIATE = "intermediate"
-    ADVANCED = "advanced"
+# Allowed `course_length` values. Kept as plain strings rather than importing
+# `app.scoring.CourseLength` to avoid coupling the ORM to the scoring module
+# at import time. Tests and migrations assert these match.
+_COURSE_LENGTH_VALUES = ("24w", "48w")
 
 
-class CourseStatus(str, Enum):
-    """Lifecycle of a course definition."""
-    DRAFT = "draft"
-    ACTIVE = "active"
-    ARCHIVED = "archived"
+class ThemeType(str, Enum):
+    """The four weekly theme types from the restructure spec §5."""
+
+    GRAMMAR = "grammar"
+    COMMUNICATION = "communication"
+    VOCABULARY = "vocabulary"
+    CONFIDENCE = "confidence"
 
 
-class EnrollmentStatus(str, Enum):
-    """Lifecycle of a user's enrollment."""
-    ACTIVE = "active"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    ABANDONED = "abandoned"
+class CoreActivity(str, Enum):
+    """Core activity type for an archetype — one of read / write / listen / speak."""
+
+    READ = "read"
+    WRITE = "write"
+    LISTEN = "listen"
+    SPEAK = "speak"
 
 
-# Course — static catalog row
+# ── CurriculumWeek ─────────────────────────────────────────────────
 
-class Course(Base, IDMixin, TimestampMixin):
-    """A curriculum the user can enroll in.
 
-    Holds only metadata. No daily plan stored here — the rotation engine
-    generates the daily plan from constants at runtime.
+class CurriculumWeek(Base, IDMixin, TimestampMixin):
+    """One week of the new curriculum: theme, title, CEFR level, learning goal.
+
+    The week table holds no content beyond the brief. Day topics live in
+    `curriculum_days`; archetype suggestions live there too.
     """
 
-    __tablename__ = "courses"
+    __tablename__ = "curriculum_weeks"
+    __table_args__ = (
+        UniqueConstraint("course_length", "week_number", name="uq_curriculum_week"),
+        Index("ix_curriculum_week_lookup", "course_length", "week_number"),
+    )
 
-    slug: Mapped[str] = mapped_column(
-        String(50), unique=True, index=True, nullable=False
+    week_id: Mapped[str] = mapped_column(
+        String(16), unique=True, index=True, nullable=False
+    )
+    course_length: Mapped[str] = mapped_column(
+        SQLAlchemyEnum(
+            *_COURSE_LENGTH_VALUES,
+            name="course_length_enum",
+            create_type=False,  # migration owns CREATE TYPE on Postgres
+        ),
+        nullable=False,
+    )
+    week_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    theme_type: Mapped[ThemeType] = mapped_column(
+        SQLAlchemyEnum(
+            ThemeType,
+            name="theme_type_enum",
+            values_callable=lambda e: [m.value for m in e],
+            create_type=False,
+        ),
+        nullable=False,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[str] = mapped_column(String(500), nullable=False, default="")
-    duration_weeks: Mapped[int] = mapped_column(nullable=False)  # 24 or 48
-    target_level: Mapped[CourseLevel] = mapped_column(
-        SQLAlchemyEnum(
-            CourseLevel,
-            name="course_level_enum",
-            values_callable=lambda e: [m.value for m in e],
-            create_type=False,
-        ),
-        nullable=False,
-    )
-    status: Mapped[CourseStatus] = mapped_column(
-        SQLAlchemyEnum(
-            CourseStatus,
-            name="course_status_enum",
-            values_callable=lambda e: [m.value for m in e],
-            create_type=False,
-        ),
-        nullable=False,
-        default=CourseStatus.ACTIVE,
-        index=True,
-    )
+    cefr_level: Mapped[str] = mapped_column(String(8), nullable=False)
+    sub_level_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    sub_level_max: Mapped[int] = mapped_column(Integer, nullable=False)
+    learning_goal: Mapped[str] = mapped_column(Text, nullable=False)
 
-    def __repr__(self) -> str:
-        return f"<Course(id={self.id}, slug={self.slug!r}, weeks={self.duration_weeks})>"
-
-
-# UserEnrollment — user's position in a course
-
-class UserEnrollment(Base, IDMixin, TimestampMixin):
-    """A user's active path through a course.
-
-    MVP rule: one ACTIVE enrollment per user (enforced by unique partial
-    index — but we use a simple unique on user_id for MVP since we don't
-    yet support multiple historical enrollments).
-
-    `current_week` and `current_day_in_week` are advanced when the user
-    completes a task (handled in a later sprint, not S7).
-    """
-
-    __tablename__ = "user_enrollments"
-    __table_args__ = (
-        CheckConstraint(
-            "tasks_per_day BETWEEN 2 AND 4",
-            name="ck_user_enrollments_tasks_per_day_2_4",
-        ),
-    )
-
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,        # MVP: one enrollment per user
-        index=True,
-    )
-    course_id: Mapped[int] = mapped_column(
-        ForeignKey("courses.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    current_week: Mapped[int] = mapped_column(nullable=False, default=1)
-    current_day_in_week: Mapped[int] = mapped_column(nullable=False, default=1)
-    tasks_per_day: Mapped[int] = mapped_column(nullable=False, default=2)
-    allow_reading: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    allow_writing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    allow_listening: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    allow_speaking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    current_day_started_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    last_completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
-    status: Mapped[EnrollmentStatus] = mapped_column(
-        SQLAlchemyEnum(
-            EnrollmentStatus,
-            name="enrollment_status_enum",
-            values_callable=lambda e: [m.value for m in e],
-            create_type=False,
-        ),
-        nullable=False,
-        default=EnrollmentStatus.ACTIVE,
-        index=True,
-    )
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    # Relationships
-    course: Mapped["Course"] = relationship()
-    skill_history: Mapped[list["EnrollmentSkillHistory"]] = relationship(
-        back_populates="enrollment", cascade="all, delete-orphan"
+    days: Mapped[list["CurriculumDay"]] = relationship(
+        back_populates="week",
+        cascade="all, delete-orphan",
+        order_by="CurriculumDay.day_number",
     )
 
     def __repr__(self) -> str:
         return (
-            f"<UserEnrollment(id={self.id}, user_id={self.user_id}, "
-            f"week={self.current_week}, day={self.current_day_in_week})>"
+            f"<CurriculumWeek({self.week_id}: {self.theme_type.value} — {self.title!r})>"
         )
 
 
-# EnrollmentSkillHistory — rotation memory
+# ── CurriculumDay ──────────────────────────────────────────────────
 
-class EnrollmentSkillHistory(Base, IDMixin, TimestampMixin):
-    """Per-(enrollment, skill) record of the most recent activity used.
 
-    The rotation engine reads this to decide the NEXT activity (round-robin).
-    Example: if last_activity_type for grammar = READING, next will be WRITING.
+class CurriculumDay(Base, IDMixin, TimestampMixin):
+    """One day inside a week: topic + brief + activity recommendations.
+
+    `suggested_archetypes` is a JSON dict `{activity: [archetype_id, ...]}`.
+    Archetype IDs are filtered against the parent week's CEFR level at seed
+    time, so the planner can pick any of them without further checks.
     """
 
-    __tablename__ = "enrollment_skill_history"
+    __tablename__ = "curriculum_days"
+    __table_args__ = (
+        UniqueConstraint("week_id", "day_number", name="uq_curriculum_day"),
+    )
 
-    enrollment_id: Mapped[int] = mapped_column(
-        ForeignKey("user_enrollments.id", ondelete="CASCADE"),
+    day_id: Mapped[str] = mapped_column(
+        String(24), unique=True, index=True, nullable=False
+    )
+    week_id: Mapped[int] = mapped_column(
+        ForeignKey("curriculum_weeks.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    skill_id: Mapped[int] = mapped_column(
-        ForeignKey("skills.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+    day_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    topic: Mapped[str] = mapped_column(String(200), nullable=False)
+    explanation_brief: Mapped[str] = mapped_column(Text, nullable=False)
+    default_activities: Mapped[list[str]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False
     )
-    last_activity_type: Mapped[TaskType | None] = mapped_column(
+    mandatory_activities: Mapped[list[str]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False
+    )
+    suggested_archetypes: Mapped[dict[str, list[str]]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False
+    )
+
+    week: Mapped["CurriculumWeek"] = relationship(back_populates="days")
+
+    def __repr__(self) -> str:
+        return f"<CurriculumDay({self.day_id}: {self.topic!r})>"
+
+
+# ── TaskArchetype ──────────────────────────────────────────────────
+
+
+class TaskArchetype(Base, TimestampMixin):
+    """Static archetype definition mirrored from `app.scoring.ARCHETYPE_REGISTRY`.
+
+    Lives in the DB so admin tools and downstream services can read it via
+    standard queries. The Python registry stays the source of truth; the
+    seeder enforces parity.
+
+    `archetype_id` is the natural primary key — no surrogate int — so logs
+    and references read naturally (`WRITE_EMAIL` not `42`).
+    """
+
+    __tablename__ = "task_archetypes"
+    __table_args__ = (Index("ix_task_archetype_core_activity", "core_activity"),)
+
+    archetype_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    core_activity: Mapped[CoreActivity] = mapped_column(
         SQLAlchemyEnum(
-            TaskType,
-            name="task_type_enum",
+            CoreActivity,
+            name="core_activity_enum",
             values_callable=lambda e: [m.value for m in e],
             create_type=False,
         ),
-        nullable=True,
+        nullable=False,
     )
-    times_practiced: Mapped[int] = mapped_column(nullable=False, default=0)
-    last_practiced_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    ui_widget: Mapped[str] = mapped_column(String(60), nullable=False)
+    themes_supported: Mapped[list[str]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False
     )
-
-    # Relationships
-    enrollment: Mapped["UserEnrollment"] = relationship(back_populates="skill_history")
-
-    __table_args__ = (
-        UniqueConstraint("enrollment_id", "skill_id", name="uq_enrollment_skill"),
+    cefr_min: Mapped[str] = mapped_column(String(8), nullable=False)
+    cefr_max: Mapped[str] = mapped_column(String(8), nullable=False)
+    weight_map: Mapped[dict[str, float]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False
+    )
+    rubric: Mapped[list[str]] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False
+    )
+    mvp: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<EnrollmentSkillHistory(enrollment_id={self.enrollment_id}, "
-            f"skill_id={self.skill_id}, last={self.last_activity_type})>"
-        )
-
-
-# DailyPlan — Planner Agent contract per (user, course, week, day)
-
-class DailyPlan(Base, IDMixin, TimestampMixin):
-    """Per-(user, course, week, day) plan produced by the Planner Agent.
-
-    Generated lazily on the first session open for a given day. Read by
-    downstream agents (Teacher, Task Generator, Evaluator) so they share a
-    consistent, level-aware view of the day's lesson.
-
-    `course_slug` is denormalised (not an FK) so a saved plan remains
-    interpretable even if the underlying course definition changes.
-    """
-
-    __tablename__ = "daily_plans"
-    __table_args__ = (
-        UniqueConstraint(
-            "user_id", "course_slug", "week", "day",
-            name="uq_daily_plan_user_day",
-        ),
-        Index(
-            "ix_daily_plan_lookup",
-            "user_id", "course_slug", "week", "day",
-        ),
-    )
-
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    course_slug: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    week: Mapped[int] = mapped_column(nullable=False)
-    day: Mapped[int] = mapped_column(nullable=False)
-    topic_id: Mapped[str] = mapped_column(String(16), nullable=False)
-    plan_json: Mapped[dict] = mapped_column(
-        JSON().with_variant(JSONB, "postgresql"),
-        nullable=False,
-    )
-    generated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<DailyPlan(user_id={self.user_id}, course={self.course_slug!r}, "
-            f"week={self.week}, day={self.day})>"
-        )
+        return f"<TaskArchetype({self.archetype_id}: {self.name!r})>"
