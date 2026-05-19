@@ -1,8 +1,6 @@
-"""REST endpoints for the new daily-session lifecycle.
+"""REST endpoints for the daily-session lifecycle.
 
 All endpoints require auth (the caller's `user_id` is taken from the JWT).
-Gated by `settings.use_new_session_flow` — when off, every route returns 404
-so the legacy flow remains the canonical surface.
 """
 
 from __future__ import annotations
@@ -12,7 +10,6 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
@@ -70,26 +67,7 @@ def _make_session_service(db: Session) -> SessionService:
 logger = logging.getLogger(__name__)
 
 
-def _ensure_flag_on() -> None:
-    """Router-level dependency — short-circuits with 404 when the flag is off.
-
-    Declared at router level (not inside each route function) so it resolves
-    BEFORE `get_current_user`. That way an unauthenticated request to a
-    flag-off endpoint gets 404 rather than 401, matching the contract that
-    the endpoint "doesn't exist" when the flag is off.
-    """
-    if not settings.use_new_session_flow:
-        raise HTTPException(
-            status_code=404,
-            detail="USE_NEW_SESSION_FLOW is off — new sessions API is disabled",
-        )
-
-
-router = APIRouter(
-    prefix="/sessions",
-    tags=["sessions"],
-    dependencies=[Depends(_ensure_flag_on)],
-)
+router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 # ── POST /sessions/start ───────────────────────────────────────────

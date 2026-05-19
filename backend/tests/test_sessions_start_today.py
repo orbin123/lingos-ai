@@ -205,9 +205,3 @@ class TestStartToday:
         assert resp.status_code == 404
         assert "course_length='24w'" in resp.json()["detail"]
         assert "week=99" in resp.json()["detail"]
-
-    def test_404_when_flag_off(self, client, monkeypatch):
-        from app.core.config import settings
-        monkeypatch.setattr(settings, "use_new_session_flow", False)
-        resp = client.post("/api/sessions/start-today")
-        assert resp.status_code == 404

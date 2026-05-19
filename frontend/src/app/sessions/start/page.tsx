@@ -1,12 +1,11 @@
 "use client";
 
 /**
- * Start-a-new-session page (Phase 6).
+ * Manual start-a-session page — admin / dev tooling.
  *
- * Minimal form that POSTs `/api/sessions/start` and redirects to the
- * session shell. For Phase 6 the form is hand-driven — Phase 7+ wires it
- * to the dashboard CTA + enrollment-aware defaults so users don't see this
- * page directly.
+ * Posts `/api/sessions/start` with hand-entered values and redirects to
+ * the session shell. Production users hit the dashboard, which uses
+ * `/api/sessions/start-today` instead.
  */
 
 import { useState } from "react";
@@ -14,7 +13,7 @@ import { useRouter } from "next/navigation";
 
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useStartSession } from "@/hooks/useSessionsFlow";
-import { isSessionsFlowEnabled, type CourseLength } from "@/lib/sessions-api";
+import { type CourseLength } from "@/lib/sessions-api";
 
 
 export default function StartSessionPage() {
@@ -26,19 +25,6 @@ export default function StartSessionPage() {
   const [tasksPerDay, setTasksPerDay] = useState<2 | 3 | 4>(2);
 
   const start = useStartSession();
-
-  if (!isSessionsFlowEnabled()) {
-    return (
-      <main style={pageStyle}>
-        <p>
-          The new sessions flow is currently disabled. Set
-          <code> NEXT_PUBLIC_USE_NEW_SESSION_FLOW=true</code> in your
-          frontend env and the backend&rsquo;s
-          <code> use_new_session_flow=true</code> to enable it.
-        </p>
-      </main>
-    );
-  }
 
   return (
     <main style={pageStyle}>

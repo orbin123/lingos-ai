@@ -39,7 +39,3 @@ class NoActivitiesPlanned(SessionError):
 
 class InvalidTasksPerDay(SessionError):
     """422 — tasks_per_day outside 2..4."""
-
-
-class NewSessionFlowDisabled(SessionError):
-    """404 — `USE_NEW_SESSION_FLOW` is off."""
