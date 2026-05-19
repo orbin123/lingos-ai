@@ -6,6 +6,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { LayoutDashboard, MoreHorizontal, RotateCcw } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { tasksApi } from "@/lib/tasks-api";
+import {
+  extensionForMime,
+  isVoiceRecordingSupported,
+  useVoiceRecorder,
+} from "@/lib/hooks/useVoiceRecorder";
 import { markDailyChatEntered } from "@/lib/daily-session-entry";
 import {
   TaskChatLoadingSkeleton,
@@ -649,6 +655,74 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
   );
 }
 
+const MAX_RECORD_MS = 60_000;
+
+function StopGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+      <rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor" />
+    </svg>
+  );
+}
+function Spinner() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2" />
+      <path d="M14 8a6 6 0 0 0-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <animateTransform attributeName="transform" type="rotate" from="0 8 8" to="360 8 8" dur="0.9s" repeatCount="indefinite" />
+      </path>
+    </svg>
+  );
+}
+
+function formatElapsed(ms: number): string {
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function ProgressRing({ progress }: { progress: number }) {
+  const size = 36;
+  const stroke = 2.5;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - Math.min(1, Math.max(0, progress)));
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      style={{
+        position: "absolute",
+        inset: 0,
+        transform: "rotate(-90deg)",
+      }}
+    >
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="rgba(0,112,196,0.15)"
+        strokeWidth={stroke}
+      />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        fill="none"
+        stroke="#0070C4"
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        style={{ transition: "stroke-dashoffset 200ms linear" }}
+      />
+    </svg>
+  );
+}
+
 function Composer({
   value,
   onChange,
@@ -661,6 +735,103 @@ function Composer({
   placeholder: string;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const recorder = useVoiceRecorder();
+  const [voiceSupported, setVoiceSupported] = useState(true);
+  const autoStoppedRef = useRef(false);
+
+  useEffect(() => {
+    setVoiceSupported(isVoiceRecordingSupported());
+  }, []);
+
+  const isVoiceBusy =
+    recorder.state === "recording" ||
+    recorder.state === "transcribing";
+
+  const insertTranscript = (transcript: string) => {
+    const clean = transcript.trim();
+    if (!clean) return;
+    const el = ref.current;
+    let next: string;
+    let cursorPos: number;
+    if (el && typeof el.selectionStart === "number") {
+      const start = el.selectionStart;
+      const end = el.selectionEnd ?? start;
+      const before = value.slice(0, start);
+      const after = value.slice(end);
+      const needsLeadingSpace = before.length > 0 && !/\s$/.test(before);
+      const needsTrailingSpace = after.length > 0 && !/^\s/.test(after);
+      const insert =
+        (needsLeadingSpace ? " " : "") +
+        clean +
+        (needsTrailingSpace ? " " : "");
+      next = before + insert + after;
+      cursorPos = (before + insert).length;
+    } else {
+      const sep = value.length > 0 && !/\s$/.test(value) ? " " : "";
+      next = value + sep + clean;
+      cursorPos = next.length;
+    }
+    onChange(next);
+    // Restore cursor on the next tick (after React re-renders).
+    requestAnimationFrame(() => {
+      if (ref.current) {
+        ref.current.focus();
+        try {
+          ref.current.setSelectionRange(cursorPos, cursorPos);
+        } catch {
+          /* ignore */
+        }
+        ref.current.style.height = "auto";
+        ref.current.style.height = Math.min(140, ref.current.scrollHeight) + "px";
+      }
+    });
+  };
+
+  const finalizeRecording = useCallback(async () => {
+    const blob = await recorder.stop();
+    if (!blob || blob.size === 0) {
+      recorder.setError("No audio captured. Try again.");
+      return;
+    }
+    recorder.setTranscribing(true);
+    try {
+      const ext = extensionForMime(recorder.mimeType || "audio/webm");
+      const result = await tasksApi.transcribeAudio(blob, `voice${ext}`);
+      const transcript = (result.transcript || "").trim();
+      if (!transcript) {
+        recorder.setError("No speech detected.");
+        return;
+      }
+      insertTranscript(transcript);
+      recorder.setTranscribing(false);
+    } catch {
+      recorder.setError("Couldn't transcribe — try again.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recorder, value]);
+
+  // Auto-finalize when the 1-minute cap is hit.
+  useEffect(() => {
+    if (
+      recorder.state === "recording" &&
+      recorder.elapsedMs >= MAX_RECORD_MS &&
+      !autoStoppedRef.current
+    ) {
+      autoStoppedRef.current = true;
+      finalizeRecording();
+    }
+    if (recorder.state === "idle" || recorder.state === "error") {
+      autoStoppedRef.current = false;
+    }
+  }, [recorder.state, recorder.elapsedMs, finalizeRecording]);
+
+  // Clear an error if the user starts typing.
+  useEffect(() => {
+    if (recorder.state === "error" && value.length > 0) {
+      recorder.setError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value);
@@ -670,6 +841,27 @@ function Composer({
     }
   };
 
+  const handleMicClick = async () => {
+    if (recorder.state === "idle" || recorder.state === "error") {
+      await recorder.start();
+    } else if (recorder.state === "recording") {
+      autoStoppedRef.current = true;
+      await finalizeRecording();
+    }
+  };
+
+  const progress = Math.min(1, recorder.elapsedMs / MAX_RECORD_MS);
+  const sendDisabled = !value.trim() || isVoiceBusy;
+
+  const micTitle = (() => {
+    switch (recorder.state) {
+      case "recording": return "Stop recording";
+      case "transcribing": return "Transcribing…";
+      case "error": return recorder.errorMessage ?? "Try again";
+      default: return "Record voice message";
+    }
+  })();
+
   return (
     <div style={{
       position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 40,
@@ -677,6 +869,21 @@ function Composer({
       background: "linear-gradient(to bottom, rgba(232,240,252,0) 0%, rgba(232,240,252,0.7) 50%, rgba(232,240,252,0.92) 100%)",
       backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
     }}>
+      {(isVoiceBusy || recorder.state === "error") && (
+        <div style={{
+          maxWidth: 720, margin: "0 auto 6px",
+          display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8,
+          fontSize: 12, color: recorder.state === "error" ? "#c0392b" : "oklch(40% 0.08 240)",
+        }}>
+          {recorder.state === "error" ? (
+            <span>{recorder.errorMessage}</span>
+          ) : recorder.state === "transcribing" ? (
+            <span>Transcribing…</span>
+          ) : (
+            <span>{formatElapsed(recorder.elapsedMs)} / 1:00</span>
+          )}
+        </div>
+      )}
       <div style={{
         maxWidth: 720, margin: "0 auto",
         display: "flex", alignItems: "flex-end", gap: 10,
@@ -694,7 +901,7 @@ function Composer({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              if (value.trim()) onSend();
+              if (!sendDisabled) onSend();
             }
           }}
           style={{
@@ -706,25 +913,49 @@ function Composer({
           }}
         />
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button style={{
-            width: 36, height: 36, borderRadius: "50%",
-            background: "transparent", border: "none",
-            color: "oklch(45% 0.07 240)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            cursor: "pointer",
-          }}>
-            <MicIcon />
-          </button>
+          {voiceSupported && (
+            <div style={{ position: "relative", width: 36, height: 36 }}>
+              {recorder.state === "recording" && (
+                <ProgressRing progress={progress} />
+              )}
+              <button
+                type="button"
+                onClick={handleMicClick}
+                disabled={recorder.state === "transcribing"}
+                title={micTitle}
+                aria-label={micTitle}
+                style={{
+                  position: "absolute", inset: 0,
+                  width: 36, height: 36, borderRadius: "50%",
+                  background: recorder.state === "recording"
+                    ? "rgba(0,112,196,0.08)"
+                    : "transparent",
+                  border: "none",
+                  color: recorder.state === "error" ? "#c0392b" : "oklch(45% 0.07 240)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: recorder.state === "transcribing" ? "wait" : "pointer",
+                }}
+              >
+                {recorder.state === "transcribing" ? (
+                  <Spinner />
+                ) : recorder.state === "recording" ? (
+                  <StopGlyph />
+                ) : (
+                  <MicIcon />
+                )}
+              </button>
+            </div>
+          )}
           <button
             onClick={onSend}
-            disabled={!value.trim()}
+            disabled={sendDisabled}
             style={{
               width: 38, height: 38, borderRadius: "50%",
               background: "#0070C4", color: "white", border: "none",
               display: "flex", alignItems: "center", justifyContent: "center",
               boxShadow: "0 4px 12px rgba(0,112,196,0.35)",
-              cursor: value.trim() ? "pointer" : "not-allowed",
-              opacity: value.trim() ? 1 : 0.5,
+              cursor: sendDisabled ? "not-allowed" : "pointer",
+              opacity: sendDisabled ? 0.5 : 1,
             }}
           >
             <SendIcon />
