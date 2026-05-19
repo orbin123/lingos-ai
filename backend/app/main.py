@@ -26,6 +26,7 @@ from app.modules.learning_session.router import (
     ws_router as learning_session_ws_router,
 )
 from app.modules.sessions.routes import router as sessions_router
+from app.modules.streaks.routes import router as streaks_router
 from app.modules.tasks.routes import router as tasks_router
 
 load_dotenv("../.env")
@@ -98,3 +99,4 @@ app.include_router(learning_session_ws_router)
 # `use_new_session_flow` flag is off — mounting unconditionally keeps the
 # OpenAPI spec stable across environments.
 app.include_router(sessions_router, prefix="/api")
+app.include_router(streaks_router, prefix="/api")

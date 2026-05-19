@@ -9,6 +9,7 @@ import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { DailyTaskPanel } from "@/components/dashboard/DailyTaskPanel";
 import { SkillScorePreview } from "@/components/dashboard/SkillScorePreview";
+import { ActivityGridCard } from "@/components/streak/ActivityGridCard";
 import { shouldShowAdminConsoleButton } from "@/lib/admin-access";
 
 // Empty fallback — every legacy sub-skill at 0.0. The dashboard reads real
@@ -115,73 +116,6 @@ function GoalRing({ pct }: { pct: number }) {
         </span>
       </div>
     </div>
-  );
-}
-
-function ActivityHeatmap() {
-  const [cells] = useState(() =>
-    Array.from({ length: 91 }, () => {
-      const r = Math.random();
-      return r < 0.25 ? 0 : r < 0.5 ? 1 : r < 0.75 ? 2 : r < 0.92 ? 3 : 4;
-    }),
-  );
-
-  function cellColor(lvl: number) {
-    if (lvl === 0) return "oklch(94% 0.02 240)";
-    if (lvl === 1) return "oklch(88% 0.06 240)";
-    if (lvl === 2) return "oklch(78% 0.1 230)";
-    if (lvl === 3) return "oklch(62% 0.14 230)";
-    return "#0070C4";
-  }
-
-  return (
-    <>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(13, 1fr)",
-          gap: 4,
-          marginTop: 10,
-        }}
-      >
-        {cells.map((lvl, i) => (
-          <div
-            key={i}
-            style={{
-              aspectRatio: "1",
-              borderRadius: 4,
-              background: cellColor(lvl),
-            }}
-          />
-        ))}
-      </div>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          marginTop: 12,
-          fontSize: 11,
-          color: "oklch(45% 0.07 240)",
-          fontWeight: 600,
-        }}
-      >
-        <span>Less</span>
-        {[0, 1, 2, 3, 4].map((lvl) => (
-          <div
-            key={lvl}
-            style={{
-              width: 10,
-              height: 10,
-              borderRadius: 3,
-              background: cellColor(lvl),
-            }}
-          />
-        ))}
-        <span>More</span>
-        <span style={{ marginLeft: "auto" }}>Last 13 weeks</span>
-      </div>
-    </>
   );
 }
 
@@ -647,25 +581,8 @@ function EnrolledView({
             </div>
           </div>
 
-          {/* Activity heatmap */}
-          <Card>
-            <div style={{ marginBottom: 6 }}>
-              <div
-                style={{
-                  fontSize: 17,
-                  fontWeight: 800,
-                  color: "oklch(20% 0.09 245)",
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                Activity
-              </div>
-              <div style={{ fontSize: 12.5, color: "oklch(45% 0.07 240)", marginTop: 3 }}>
-                Sessions per day
-              </div>
-            </div>
-            <ActivityHeatmap />
-          </Card>
+          {/* 13-week activity grid */}
+          <ActivityGridCard />
 
           {/* Yesterday's wins */}
           <Card>

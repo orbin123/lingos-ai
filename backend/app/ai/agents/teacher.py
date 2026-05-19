@@ -153,6 +153,10 @@ def _format_structured_personalisation(structured: dict[str, Any] | None) -> str
     return "Learner personalisation: " + "; ".join(parts)
 
 
+def _learner_turn_count(conversation: list[dict]) -> int:
+    return sum(1 for m in conversation if m.get("role") == "user")
+
+
 def _build_user_prompt(
     *,
     topic: str,
@@ -174,6 +178,7 @@ def _build_user_prompt(
     needs_clarification = _learner_needs_clarification(recent_user_message)
     planner_section = _format_planner_section(teacher_instructions)
     personalisation_section = _format_structured_personalisation(structured)
+    turn_count = _learner_turn_count(conversation or [])
 
     output_instruction = (
         "Create one natural chat reply of 2-4 short sentences. Return only "
@@ -188,6 +193,17 @@ def _build_user_prompt(
         else "Keep each message short. Return only structured data."
     )
 
+    readiness_rule = (
+        f"\nREQUIRED — Learner turn count: {turn_count}. "
+        "You have already exchanged enough turns. "
+        "Do NOT ask another concept-check or scenario question this turn. "
+        "Give one short wrap-up sentence that ties what the learner said to "
+        "the lesson pattern, then ask EXACTLY: "
+        '"Ready to try the practice task?" — nothing else after that.'
+        if turn_count >= 3 and not needs_clarification
+        else ""
+    )
+
     return f"""
 Lesson topic label: {topic}
 Sub-skill: {sub_skill}
@@ -195,6 +211,7 @@ Practice task type coming next: {task_type}
 Learner sub-level: {user_level}/10
 Learner interests: {interests}
 Learner goals: {goals}
+Learner turns so far: {turn_count}
 {personalisation_section}
 
 {planner_section}
@@ -243,7 +260,7 @@ Avoid repetition:
 - Do not loop on the same example. Each turn should advance.
 - Use vocabulary from vocabulary_domain. If the learner has a clear
   professional domain, do not pull family/school/childhood examples.
-
+{readiness_rule}
 {final_instruction}
 """.strip()
 

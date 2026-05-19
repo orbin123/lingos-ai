@@ -1,9 +1,9 @@
 """Authentication module models - User and related tables"""
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 
-from sqlalchemy import JSON, Boolean, DateTime, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Integer, UniqueConstraint
 from sqlalchemy import Enum as SQLAlchemyEnum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -406,6 +406,46 @@ class UserProfile(Base, IDMixin, TimestampMixin):
         default=False,
         server_default="false",
         nullable=False,
+    )
+
+    # ── Streak / activity tracking ────────────────────────────────────
+    # IANA timezone identifier. Used to compute the user's local "today"
+    # for streak / activity-grid logic. Falls back to Asia/Kolkata.
+    timezone: Mapped[str] = mapped_column(
+        String(64),
+        default="Asia/Kolkata",
+        server_default="Asia/Kolkata",
+        nullable=False,
+    )
+
+    current_streak: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False,
+    )
+
+    longest_streak: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False,
+    )
+
+    # Date-only, expressed in the user's local timezone (NOT UTC).
+    last_activity_date: Mapped[date | None] = mapped_column(
+        Date, nullable=True,
+    )
+
+    streak_freezes: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False,
+    )
+
+    # Local-date the celebration animation was last acknowledged by the
+    # client. Prevents replay on refresh.
+    last_seen_streak_animation_date: Mapped[date | None] = mapped_column(
+        Date, nullable=True,
+    )
+
+    # The animation kind to play next time the dashboard loads — set
+    # inside record_daily_activity, cleared once acknowledged.
+    # One of: "initial" | "continued" | "frozen" | "reset" | None
+    last_animation_type: Mapped[str | None] = mapped_column(
+        String(16), nullable=True,
     )
 
     # Relationships

@@ -373,7 +373,7 @@ function StepWriting({ form }: { form: ReturnType<typeof useForm<DiagnosisFormIn
 type RecordState = "idle" | "recording" | "transcribing" | "done" | "error";
 
 function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisFormInput, unknown, DiagnosisInput>> }) {
-  const { setValue, watch, formState: { errors, submitCount } } = form;
+  const { setValue, watch } = form;
 
   const [recordState, setRecordState] = useState<RecordState>("idle");
   const [elapsed, setElapsed] = useState(0);          // seconds while recording
@@ -486,16 +486,6 @@ function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisForm
 
   const formatTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-  const blobError = errors.read_aloud?.audioBlob?.message as string | undefined;
-  const transcriptError = errors.read_aloud?.transcript?.message as string | undefined;
-  const hasRecorded = !!audioBlob;
-  const hasInteracted = recordState !== "idle";
-  const displayError = transcribeError ?? (
-    hasInteracted && (submitCount > 0 || hasRecorded)
-      ? (transcriptError ?? blobError)
-      : undefined
-  );
-
   return (
     <div className="space-y-3">
       <Eyebrow>Pronunciation</Eyebrow>
@@ -601,9 +591,6 @@ function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisForm
         )}
       </div>
 
-      {displayError && recordState !== "error" && (
-        <p className="text-[12.5px] font-medium text-red-600">{displayError}</p>
-      )}
     </div>
   );
 }
@@ -632,6 +619,8 @@ export default function DiagnosisPage() {
 
   const { mutate, isPending, error, reset } = useDiagnosis();
   const serverError = error ? getApiErrorMessage(error) : null;
+
+  const readAloudTranscript = form.watch("read_aloud.transcript") as string;
 
   useEffect(() => {
     const node = cardRef.current;
@@ -707,7 +696,7 @@ export default function DiagnosisPage() {
               </button>
 
               {isLastStep ? (
-                <button type="submit" disabled={isPending}
+                <button type="submit" disabled={isPending || !readAloudTranscript}
                   className="inline-flex items-center gap-2 rounded-full bg-[#0a0f1f] px-6 py-3 text-[14.5px] font-bold text-white shadow-[0_4px_18px_rgba(10,15,31,0.25)] transition-all hover:scale-[1.02] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60">
                   {isPending ? <><SpinIcon className="text-white" /> Submitting…</> : <>Submit diagnosis <ArrowRightIcon /></>}
                 </button>

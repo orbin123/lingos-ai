@@ -3,9 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, LogOut, Settings, User } from "lucide-react";
 import type { UserOut } from "@/lib/auth-api";
+import {
+  streakApi,
+  type ActivityGridCell,
+  type StreakData,
+} from "@/lib/streak-api";
+import { StreakCelebration } from "@/components/streak/StreakCelebration";
 
 interface NavbarProps {
   user: UserOut | undefined;
@@ -27,21 +34,42 @@ function getInitials(name: string | undefined): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-// Mock streak data — will be wired to real enrollment data later
-const MOCK_STREAK = {
-  streak: 5,
-  best: 21,
-  frozen: false,
-  days: [
-    { d: "M", n: 5, st: "done" },
-    { d: "T", n: 6, st: "done" },
-    { d: "W", n: 7, st: "done" },
-    { d: "T", n: 8, st: "done" },
-    { d: "F", n: 9, st: "today" },
-    { d: "S", n: 10, st: "future" },
-    { d: "S", n: 11, st: "future" },
-  ],
-};
+// Maps a single backend activity_grid cell to the navbar popup's
+// per-day "state" — done | today | miss | future | frozen.
+type DayState = "done" | "today" | "miss" | "future" | "frozen";
+
+interface PopupDay {
+  d: string; // weekday letter
+  n: number; // day-of-month
+  st: DayState;
+}
+
+const WEEKDAY_LETTER = ["S", "M", "T", "W", "T", "F", "S"] as const;
+
+function buildLastSevenDays(
+  grid: ActivityGridCell[],
+  todayIso: string | null,
+): PopupDay[] {
+  // The backend grid is ascending and always 91 cells; the last 7 are the
+  // most recent week (oldest → today). Each cell's `date` is YYYY-MM-DD in
+  // the user's timezone, so we parse with `T00:00:00` to avoid UTC drift.
+  const slice = grid.slice(-7);
+  return slice.map((cell) => {
+    const parts = cell.date.split("-").map((n) => Number.parseInt(n, 10));
+    const localDate = new Date(parts[0], parts[1] - 1, parts[2]);
+    const isToday = todayIso !== null && cell.date === todayIso;
+    let st: DayState;
+    if (cell.frozen_protected) st = "frozen";
+    else if (isToday) st = cell.completed ? "done" : "today";
+    else if (cell.completed) st = "done";
+    else st = "miss";
+    return {
+      d: WEEKDAY_LETTER[localDate.getDay()],
+      n: localDate.getDate(),
+      st,
+    };
+  });
+}
 
 function FlameIcon() {
   return (
@@ -73,7 +101,44 @@ function FlakeIcon() {
 
 function StreakPill() {
   const [open, setOpen] = useState(false);
-  const { streak, best, frozen, days } = MOCK_STREAK;
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  const { data, refetch } = useQuery<StreakData>({
+    queryKey: ["streak", "me"],
+    queryFn: streakApi.getMe,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (!popoverRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
+  const streak = data?.current_streak ?? 0;
+  const best = data?.longest_streak ?? 0;
+  // "Frozen" visual when the user has an active streak but hasn't completed
+  // today — fits the reference design (ice tint while at risk).
+  const frozen = !!data && !data.today_complete && data.current_streak > 0;
+
+  const todayIso = useMemo(() => {
+    if (!data) return null;
+    // Backend grid is ascending, today is always the last cell.
+    return data.activity_grid[data.activity_grid.length - 1]?.date ?? null;
+  }, [data]);
+
+  const days: PopupDay[] = useMemo(
+    () => (data ? buildLastSevenDays(data.activity_grid, todayIso) : []),
+    [data, todayIso],
+  );
+
+  const showCelebration =
+    !!data && data.should_show_animation && !!data.animation_type;
 
   const circleStyle: React.CSSProperties = {
     width: 30,
@@ -92,33 +157,43 @@ function StreakPill() {
       : "0 2px 8px rgba(255,122,24,0.4), inset 0 1px 0 rgba(255,255,255,0.4)",
   };
 
-  function dayColor(st: string) {
+  function dayColor(st: DayState) {
     if (st === "done") return "linear-gradient(135deg, #ff7a18, #ffb547)";
-    if (st === "today") return "linear-gradient(135deg, #ff7a18, #ffb547)";
+    if (st === "today") return "transparent";
+    if (st === "frozen") return "linear-gradient(135deg, #7dc8ff, #bfe5ff)";
     if (st === "miss") return "oklch(94% 0.02 240)";
     return "transparent";
   }
 
-  function dayBorder(st: string) {
+  function dayBorder(st: DayState) {
     if (st === "today") return "2px solid #0070C4";
     if (st === "future") return "1.5px dashed oklch(80% 0.03 240)";
     return "none";
   }
 
-  function dayTextColor(st: string) {
-    if (st === "done" || st === "today") return "white";
+  function dayTextColor(st: DayState) {
+    if (st === "done" || st === "frozen") return "white";
+    if (st === "today") return "#0070C4";
     if (st === "miss") return "oklch(60% 0.04 240)";
     return "oklch(65% 0.03 240)";
   }
 
   return (
-    <div
-      style={{ position: "relative" }}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
+    <div style={{ position: "relative" }} ref={popoverRef}>
+      {showCelebration && data?.animation_type && (
+        <StreakCelebration
+          streak={streak}
+          best={best}
+          animationType={data.animation_type}
+          onClose={() => refetch()}
+        />
+      )}
       {/* Pill trigger */}
-      <div
+      <button
+        type="button"
+        aria-label="Open streak details"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
         style={{
           display: "flex",
           alignItems: "center",
@@ -132,7 +207,8 @@ function StreakPill() {
               ? "0 4px 12px rgba(140,180,220,0.18)"
               : "0 4px 12px rgba(255,140,50,0.15)"
             : "none",
-          cursor: "default",
+          cursor: "pointer",
+          fontFamily: "inherit",
           transition: "border-color 0.15s, box-shadow 0.15s",
         }}
       >
@@ -161,9 +237,9 @@ function StreakPill() {
         >
           {frozen ? "Frozen" : `${streak} day${streak === 1 ? "" : "s"}`}
         </span>
-      </div>
+      </button>
 
-      {/* Hover panel */}
+      {/* Click-open panel */}
       {open && (
         <div
           style={{
@@ -278,8 +354,20 @@ function StreakPill() {
               gridTemplateColumns: "repeat(7, 1fr)",
               gap: 6,
               marginBottom: 14,
+              minHeight: 44,
             }}
           >
+            {days.length === 0 &&
+              Array.from({ length: 7 }).map((_, i) => (
+                <div
+                  key={`ph-${i}`}
+                  style={{
+                    aspectRatio: "1",
+                    borderRadius: 10,
+                    background: "oklch(96% 0.015 240)",
+                  }}
+                />
+              ))}
             {days.map((day, i) => (
               <div
                 key={i}
@@ -296,9 +384,11 @@ function StreakPill() {
                   color: dayTextColor(day.st),
                   border: dayBorder(day.st),
                   boxShadow:
-                    day.st === "done" || day.st === "today"
+                    day.st === "done"
                       ? "0 2px 6px rgba(255,122,24,0.3)"
-                      : "none",
+                      : day.st === "frozen"
+                        ? "0 2px 6px rgba(125,200,255,0.35)"
+                        : "none",
                   position: "relative",
                 }}
               >
@@ -318,6 +408,18 @@ function StreakPill() {
                     🔥
                   </span>
                 )}
+                {day.st === "frozen" && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 2,
+                      right: 3,
+                      fontSize: 7,
+                    }}
+                  >
+                    ❄
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -332,21 +434,35 @@ function StreakPill() {
               borderTop: "1px dashed oklch(88% 0.02 240)",
             }}
           >
-            {frozen ? (
+            {streak === 0 ? (
               <>
-                Streak frozen.{" "}
+                <strong style={{ color: "oklch(20% 0.09 245)", fontWeight: 700 }}>
+                  Complete a lesson today
+                </strong>{" "}
+                to start your streak.
+              </>
+            ) : frozen ? (
+              <>
+                Streak at risk.{" "}
                 <strong style={{ color: "oklch(20% 0.09 245)", fontWeight: 700 }}>
                   Show up today
                 </strong>{" "}
-                to thaw it and rebuild — your record is {best}.
+                to keep it going — your record is {best}.
+              </>
+            ) : data?.today_complete ? (
+              <>
+                <strong style={{ color: "oklch(20% 0.09 245)", fontWeight: 700 }}>
+                  Lit today.
+                </strong>{" "}
+                Come back tomorrow to climb to {streak + 1} — personal best {best}.
               </>
             ) : (
               <>
                 You&apos;re{" "}
                 <strong style={{ color: "oklch(20% 0.09 245)", fontWeight: 700 }}>
-                  {streak} days strong
+                  {streak} day{streak === 1 ? "" : "s"} strong
                 </strong>
-                . Keep going — your personal best is {best}.
+                . Keep going — personal best {best}.
               </>
             )}
           </div>

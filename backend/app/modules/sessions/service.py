@@ -361,6 +361,15 @@ class SessionService:
         session.status = SessionStatus.COMPLETED
         session.completed_at = now
 
+        # Record streak event in the same transaction. Idempotent under
+        # double-fire via the unique constraint on (user_id, local_date).
+        from app.modules.streaks.service import StreakService
+        StreakService(self.db).record_in_same_tx(
+            user_id=session.user_id,
+            session_id=session.id,
+            now_utc=now,
+        )
+
         self.db.commit()
         self.db.refresh(scorecard)
         return scorecard, report
