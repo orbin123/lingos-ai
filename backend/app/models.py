@@ -47,3 +47,4 @@ from app.modules.sessions.models import (  # noqa: F401
     SessionScorecard,
 )
 from app.modules.streaks.models import DailyActivity, StreakFreezeUsage  # noqa: F401
+from app.modules.preferences.models import UserCoursePreference  # noqa: F401
