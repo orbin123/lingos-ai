@@ -41,6 +41,7 @@ export interface SessionStartRequest {
 export interface AttemptSkeleton {
   sequence: number;
   archetype_id: string;
+  archetype_name: string;
   is_mandatory: boolean;
   status: AttemptStatus;
 }

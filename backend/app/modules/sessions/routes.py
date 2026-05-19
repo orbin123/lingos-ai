@@ -367,6 +367,10 @@ def _serialize_start(session) -> SessionStartResponse:
             AttemptSkeleton(
                 sequence=a.sequence,
                 archetype_id=a.archetype_id,
+                # Resolved from the in-process registry — no DB round-trip;
+                # the DB `task_archetypes` table is seeded from the same
+                # source so the values are guaranteed to agree.
+                archetype_name=get_archetype(a.archetype_id).name,
                 is_mandatory=a.is_mandatory,
                 status=a.status,
             )

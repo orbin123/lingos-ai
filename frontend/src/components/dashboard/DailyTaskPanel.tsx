@@ -1,68 +1,24 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AxiosError } from "axios";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type { EnrollmentRead } from "@/lib/courses-api";
 import { getApiErrorMessage } from "@/lib/errors";
-import { useNextTask } from "@/hooks/useNextTask";
-import { tasksApi, type UserTask } from "@/lib/tasks-api";
+import { useStartTodaySession } from "@/hooks/useSessionsFlow";
+import type {
+  AttemptSkeleton,
+  SessionStartResponse,
+} from "@/lib/sessions-api";
 
 interface DailyTaskPanelProps {
   enrollment: EnrollmentRead;
 }
 
-// ── Task display name helpers ────────────────────────────────────────────────
-
-// Phase 7+: import from the single canonical source (`@/lib/skill-labels`).
-// Backend ships sub_skill values under three different vocabularies depending
-// on which path produced the task (legacy task templates use the long form
-// "thought_organization"; the new sessions flow + DB use the legacy "expression").
-// `normalizeSkillKey` folds them all onto the legacy identifier; the label
-// fallback resolves it to user-facing text.
-import {
-  SKILL_LABEL_FALLBACK,
-  getSkillLabel,
-  normalizeSkillKey,
-} from "@/lib/skill-labels";
-
-const SUBSKILL_LABELS: Record<string, string> = SKILL_LABEL_FALLBACK;
-
-const ACTIVITY_LABELS: Record<string, string> = {
-  read: "Read",
-  write: "Write",
-  listen: "Listen",
-  speak: "Speak",
-};
-
-const WIDGET_LABELS: Record<string, string> = {
-  mcq: "MCQ",
-  fill_in_blanks: "Fill in Blanks",
-  open_text: "Open Text",
-  timed_text: "Timed Text",
-  structured_essay: "Structured Essay",
-  speak_and_record: "Speak & Record",
-  listen_and_respond: "Listen & Respond",
-  storyboard: "Storyboard",
-};
-
-function getTaskDisplayTitle(task: UserTask["task"]): string {
-  const c = task.content as unknown as Record<string, unknown> | null;
-  const subSkill = c?.sub_skill
-    ? getSkillLabel(normalizeSkillKey(String(c.sub_skill)))
-    : "";
-  const activity = c?.activity ? (ACTIVITY_LABELS[c.activity as string] ?? String(c.activity)) : "";
-  const widget   = c?.widget   ? (WIDGET_LABELS[c.widget as string]     ?? String(c.widget))   : "";
-  if (subSkill && activity && widget) return `${subSkill} - ${activity} - ${widget}`;
-  return task.title;
-}
-
 function activitiesPerDay(enrollment: EnrollmentRead) {
   return Math.max(2, Math.min(4, enrollment.tasks_per_day));
 }
-
 
 function PlayIcon() {
   return (
@@ -97,71 +53,26 @@ function ArrowIcon() {
   );
 }
 
-function RetryIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-      <path
-        d="M2.5 8A5.5 5.5 0 0 1 13 5.5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path d="M11 3l2 2.5-2.5 1.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <path
-        d="M13.5 8A5.5 5.5 0 0 1 3 10.5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path d="M5 13l-2-2.5 2.5-1.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
-  const taskQuery = useNextTask(true);
-  const bundle = taskQuery.data ?? [];
-  const [retryingId, setRetryingId] = useState<number | null>(null);
-  const [advanceError, setAdvanceError] = useState<string | null>(null);
+  const startToday = useStartTodaySession();
 
-  const isTaskComplete = useCallback(
-    (task: UserTask) => task.status === "completed",
-    [],
-  );
+  // Fire once per mount. The dashboard re-keys this component on
+  // (current_week, current_day_in_week), so mounting → fresh fetch is the
+  // right cadence; we don't poll.
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (firedRef.current) return;
+    firedRef.current = true;
+    startToday.mutate();
+  }, [startToday]);
 
-  const activeIndex = bundle.findIndex((task) => !isTaskComplete(task));
-  const allComplete = bundle.length > 0 && activeIndex === -1;
+  const session: SessionStartResponse | null = startToday.data ?? null;
+  const isLoading = startToday.isPending || (!session && !startToday.isError);
+  const error = startToday.error;
 
-  const handleRetry = useCallback(
-    async (e: React.MouseEvent, taskId: number) => {
-      e.stopPropagation();
-      setRetryingId(taskId);
-      try {
-        await tasksApi.retryTask(taskId);
-        await taskQuery.refetch();
-        router.push(`/task/chat?id=${taskId}`);
-      } catch {
-        setRetryingId(null);
-      }
-    },
-    [taskQuery, router],
-  );
-
-  const advanceMutation = useMutation({
-    mutationFn: tasksApi.completeDay,
-    onMutate: () => setAdvanceError(null),
-    onSuccess: async () => {
-      // Remove stale bundle immediately so we show the loading state for the
-      // new day rather than flashing "Advance to day N+2" with old data.
-      queryClient.removeQueries({ queryKey: ["task", "next"] });
-      await queryClient.invalidateQueries({ queryKey: ["me"] });
-    },
-    onError: (error) => {
-      setAdvanceError(getApiErrorMessage(error as AxiosError));
-    },
-  });
+  const completed = session?.status === "completed";
+  const abandoned = session?.status === "abandoned";
 
   return (
     <div
@@ -176,98 +87,127 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
         animation: "fadeSlideUp 0.4s ease both",
       }}
     >
-      {/* Card header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-end",
-          marginBottom: 14,
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: 17,
-              fontWeight: 800,
-              color: "oklch(20% 0.09 245)",
-              letterSpacing: "-0.01em",
-            }}
-          >
-            Today&apos;s plan
-          </div>
-          <div
-            style={{
-              fontSize: 12.5,
-              color: "oklch(45% 0.07 240)",
-              marginTop: 3,
-            }}
-          >
-            {enrollment.course.title} · {enrollment.course.duration_weeks}-week plan
-          </div>
-        </div>
-        <button
-          style={{
-            fontSize: 13,
-            fontWeight: 700,
-            color: "#0070C4",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            padding: 0,
-            fontFamily: "inherit",
-          }}
-        >
-          View week <ArrowIcon />
-        </button>
-      </div>
+      <PanelHeader enrollment={enrollment} />
 
-      {/* Plan meta tags */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <span
-          style={{
-            padding: "5px 12px",
-            borderRadius: 999,
-            background: "#d6e8f7",
-            color: "#00599e",
-            fontSize: 12,
-            fontWeight: 700,
-          }}
-        >
+        <Tag bg="#d6e8f7" color="#00599e">
           Day {enrollment.current_day_in_week}
-        </span>
-        <span
-          style={{
-            padding: "5px 12px",
-            borderRadius: 999,
-            background: "oklch(96% 0.04 290)",
-            color: "oklch(45% 0.16 290)",
-            fontSize: 12,
-            fontWeight: 700,
-          }}
-        >
+        </Tag>
+        <Tag bg="oklch(96% 0.04 290)" color="oklch(45% 0.16 290)">
           {enrollment.course.target_level}
-        </span>
-        <span
-          style={{
-            padding: "5px 12px",
-            borderRadius: 999,
-            background: "oklch(96% 0.04 60)",
-            color: "oklch(45% 0.14 60)",
-            fontSize: 12,
-            fontWeight: 700,
-          }}
-        >
-          {activitiesPerDay(enrollment)} tasks
-        </span>
+        </Tag>
+        <Tag bg="oklch(96% 0.04 60)" color="oklch(45% 0.14 60)">
+          {activitiesPerDay(enrollment)} activities
+        </Tag>
       </div>
 
+      {isLoading && <LoadingBlock />}
+
+      {error && !isLoading && (
+        <ErrorBlock
+          message={getApiErrorMessage(error as AxiosError)}
+          onRetry={() => {
+            firedRef.current = true;
+            startToday.mutate();
+          }}
+        />
+      )}
+
+      {!isLoading && !error && session && completed && <CompletedTodayBlock />}
+
+      {!isLoading && !error && session && abandoned && (
+        <AbandonedBlock onStartFresh={() => startToday.mutate()} />
+      )}
+
+      {!isLoading && !error && session && !completed && !abandoned && (
+        <ActiveSessionBlock
+          session={session}
+          onStart={() => router.push(`/sessions/${session.session_id}`)}
+        />
+      )}
+    </div>
+  );
+}
+
+function PanelHeader({ enrollment }: { enrollment: EnrollmentRead }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-end",
+        marginBottom: 14,
+      }}
+    >
+      <div>
+        <div
+          style={{
+            fontSize: 17,
+            fontWeight: 800,
+            color: "oklch(20% 0.09 245)",
+            letterSpacing: "-0.01em",
+          }}
+        >
+          Today&apos;s plan
+        </div>
+        <div
+          style={{
+            fontSize: 12.5,
+            color: "oklch(45% 0.07 240)",
+            marginTop: 3,
+          }}
+        >
+          {enrollment.course.title} · {enrollment.course.duration_weeks}-week plan
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Tag({
+  children,
+  bg,
+  color,
+}: {
+  children: React.ReactNode;
+  bg: string;
+  color: string;
+}) {
+  return (
+    <span
+      style={{
+        padding: "5px 12px",
+        borderRadius: 999,
+        background: bg,
+        color,
+        fontSize: 12,
+        fontWeight: 700,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ActiveSessionBlock({
+  session,
+  onStart,
+}: {
+  session: SessionStartResponse;
+  onStart: () => void;
+}) {
+  const attempts = session.attempts;
+  const activeIndex = attempts.findIndex((a) => a.status !== "evaluated");
+  const allDone = attempts.length > 0 && activeIndex === -1;
+  // `allDone` can hit before the session itself flips to `completed` (the
+  // user has answered every activity but hasn't called /complete yet). In
+  // that case we still let them tap into the session shell to finalize.
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div
         style={{
-          marginBottom: 16,
+          padding: "10px 12px",
           borderRadius: 12,
           background: "#eef6fc",
           border: "1px solid #c9deef",
@@ -275,272 +215,205 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
           fontSize: 12.5,
           fontWeight: 700,
           lineHeight: 1.45,
-          padding: "10px 12px",
         }}
       >
-        Today&apos;s activities run in one chat session.
+        {allDone
+          ? "All activities answered — finish the session to lock in your score."
+          : "Today's activities run in one session."}
       </div>
 
-      {/* Content */}
-      {taskQuery.isLoading && <LoadingBlock />}
-      {taskQuery.isError && (
-        <ErrorBlock
-          message={getApiErrorMessage(taskQuery.error as AxiosError)}
-          retryLabel={
-            (taskQuery.error as AxiosError)?.response?.status === 503
-              ? "Try again"
-              : "Retry"
-          }
-          onRetry={() => taskQuery.refetch()}
-        />
-      )}
-      {!taskQuery.isLoading && !taskQuery.isError && (bundle.length === 0 || allComplete) && (
-        <CompletedTodayBlock
-          enrollment={enrollment}
-          isAdvancing={advanceMutation.isPending}
-          error={advanceError}
-          onAdvance={() => advanceMutation.mutate()}
-        />
-      )}
-      {!taskQuery.isLoading && !taskQuery.isError && bundle.length > 0 && !allComplete && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          {bundle.map((task, index) => {
-            const complete = isTaskComplete(task);
-            const active = !complete && index === activeIndex;
-            const locked = !complete && index > activeIndex;
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-            let itemBg = "white";
-            let itemBorder = "1.5px solid oklch(88% 0.025 240)";
-            let itemOpacity = 1;
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {attempts.map((attempt, index) => (
+          <ActivityRow
+            key={attempt.sequence}
+            attempt={attempt}
+            isActive={!allDone && index === activeIndex}
+            isLocked={!allDone && index > activeIndex}
+            isComplete={attempt.status === "evaluated"}
+          />
+        ))}
+      </div>
 
-            if (complete) {
-              itemBg = "oklch(97% 0.04 155)";
-              itemBorder = "1.5px solid oklch(80% 0.08 155)";
-            } else if (active) {
-              itemBg = "linear-gradient(135deg, white, #d6e8f7)";
-              itemBorder = "2px solid #0070C4";
-            } else if (locked) {
-              itemBg = "oklch(97% 0.02 240)";
-              itemOpacity = 0.65;
-            }
+      <button
+        type="button"
+        onClick={onStart}
+        style={{
+          alignSelf: "stretch",
+          marginTop: 6,
+          padding: "13px 18px",
+          borderRadius: 14,
+          border: "none",
+          background: "#0070C4",
+          color: "white",
+          fontFamily: "inherit",
+          fontSize: 14,
+          fontWeight: 800,
+          cursor: "pointer",
+          boxShadow: "0 6px 18px rgba(0,112,196,0.22)",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+        }}
+      >
+        {allDone ? "Finish session" : activeIndex === 0 ? "Start session" : "Continue session"}
+        <ArrowIcon />
+      </button>
+    </div>
+  );
+}
 
-            const iconBg = complete
-              ? "oklch(58% 0.16 155)"
-              : active
-              ? "#0070C4"
-              : "oklch(94% 0.02 240)";
+function ActivityRow({
+  attempt,
+  isActive,
+  isLocked,
+  isComplete,
+}: {
+  attempt: AttemptSkeleton;
+  isActive: boolean;
+  isLocked: boolean;
+  isComplete: boolean;
+}) {
+  let itemBg = "white";
+  let itemBorder = "1.5px solid oklch(88% 0.025 240)";
+  let itemOpacity = 1;
 
-            const iconColor = complete || active ? "white" : "oklch(55% 0.04 240)";
+  if (isComplete) {
+    itemBg = "oklch(97% 0.04 155)";
+    itemBorder = "1.5px solid oklch(80% 0.08 155)";
+  } else if (isActive) {
+    itemBg = "linear-gradient(135deg, white, #d6e8f7)";
+    itemBorder = "2px solid #0070C4";
+  } else if (isLocked) {
+    itemBg = "oklch(97% 0.02 240)";
+    itemOpacity = 0.65;
+  }
 
-            return (
-              <div
-                key={task.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 14,
-                  padding: "16px 18px",
-                  borderRadius: 16,
-                  border: itemBorder,
-                  background: itemBg,
-                  opacity: itemOpacity,
-                  position: "relative",
-                }}
-              >
-                {/* Main clickable area */}
-                <button
-                  disabled={locked}
-                  onClick={() => !complete && router.push(`/task/chat?id=${task.id}`)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 14,
-                    flex: 1,
-                    minWidth: 0,
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    cursor: locked || complete ? "default" : "pointer",
-                    textAlign: "left",
-                    fontFamily: "inherit",
-                    transition: "transform 0.15s, box-shadow 0.15s",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (locked || complete) return;
-                    e.currentTarget.style.transform = "translateY(-1px)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = "translateY(0)";
-                  }}
-                >
-                  {/* Icon */}
-                  <div
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 12,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                      background: iconBg,
-                      color: iconColor,
-                      boxShadow:
-                        active
-                          ? "0 4px 10px rgba(0,112,196,0.3)"
-                          : complete
-                          ? "0 4px 10px rgba(80,180,120,0.2)"
-                          : "none",
-                    }}
-                  >
-                    {complete ? <CheckIcon /> : active ? <PlayIcon /> : <LockIcon />}
-                  </div>
+  const iconBg = isComplete
+    ? "oklch(58% 0.16 155)"
+    : isActive
+    ? "#0070C4"
+    : "oklch(94% 0.02 240)";
 
-                  {/* Body */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 700,
-                        color: "oklch(20% 0.09 245)",
-                        marginBottom: 4,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {getTaskDisplayTitle(task.task)}
-                    </div>
-                  </div>
+  const iconColor = isComplete || isActive ? "white" : "oklch(55% 0.04 240)";
 
-                  {/* CTA / Retry */}
-                  {complete ? (
-                    <span
-                      onClick={(e) => handleRetry(e, task.id)}
-                      style={{
-                        flexShrink: 0,
-                        width: 30,
-                        height: 30,
-                        borderRadius: 8,
-                        border: "1.5px solid oklch(75% 0.06 155)",
-                        background: retryingId === task.id ? "oklch(94% 0.04 155)" : "white",
-                        color: "oklch(43% 0.16 155)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        cursor: retryingId === task.id ? "default" : "pointer",
-                        transition: "background 0.15s, transform 0.15s",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (retryingId === task.id) return;
-                        e.currentTarget.style.background = "oklch(94% 0.06 155)";
-                        e.currentTarget.style.transform = "scale(1.1)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "white";
-                        e.currentTarget.style.transform = "scale(1)";
-                      }}
-                    >
-                      {retryingId === task.id ? (
-                        <span
-                          style={{
-                            width: 11,
-                            height: 11,
-                            borderRadius: "50%",
-                            border: "2px solid oklch(75% 0.06 155)",
-                            borderTopColor: "oklch(43% 0.16 155)",
-                            display: "inline-block",
-                            animation: "spin 0.7s linear infinite",
-                          }}
-                        />
-                      ) : (
-                        <RetryIcon />
-                      )}
-                    </span>
-                  ) : active ? (
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "#0070C4",
-                        flexShrink: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                      }}
-                    >
-                      Start <ArrowIcon />
-                    </span>
-                  ) : (
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: "oklch(55% 0.04 240)",
-                        flexShrink: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                      }}
-                    >
-                      Unlocks next
-                    </span>
-                  )}
-                </button>
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        padding: "14px 16px",
+        borderRadius: 16,
+        border: itemBorder,
+        background: itemBg,
+        opacity: itemOpacity,
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 12,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          background: iconBg,
+          color: iconColor,
+          boxShadow: isActive
+            ? "0 4px 10px rgba(0,112,196,0.3)"
+            : isComplete
+            ? "0 4px 10px rgba(80,180,120,0.2)"
+            : "none",
+        }}
+      >
+        {isComplete ? <CheckIcon /> : isActive ? <PlayIcon /> : <LockIcon />}
+      </div>
 
-                {/* Done label */}
-                {complete && (
-                  <span
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: "oklch(43% 0.16 155)",
-                      flexShrink: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                    }}
-                  >
-                    Done
-                  </span>
-                )}
-              </div>
-            );
-          })}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: 14.5,
+            fontWeight: 700,
+            color: "oklch(20% 0.09 245)",
+            marginBottom: 2,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {attempt.archetype_name}
         </div>
+        <div
+          style={{
+            fontSize: 12,
+            color: "oklch(45% 0.07 240)",
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+          }}
+        >
+          <span>Activity {attempt.sequence}</span>
+          {attempt.is_mandatory && (
+            <span
+              style={{
+                padding: "1px 6px",
+                borderRadius: 6,
+                background: "oklch(95% 0.05 30)",
+                color: "oklch(45% 0.16 30)",
+                fontWeight: 700,
+                fontSize: 10.5,
+                textTransform: "uppercase",
+                letterSpacing: 0.4,
+              }}
+            >
+              Mandatory
+            </span>
+          )}
+        </div>
+      </div>
+
+      {isComplete && (
+        <span
+          style={{
+            fontSize: 12.5,
+            fontWeight: 700,
+            color: "oklch(43% 0.16 155)",
+            flexShrink: 0,
+          }}
+        >
+          Done
+        </span>
+      )}
+      {isLocked && (
+        <span
+          style={{
+            fontSize: 12.5,
+            fontWeight: 700,
+            color: "oklch(55% 0.04 240)",
+            flexShrink: 0,
+          }}
+        >
+          Unlocks next
+        </span>
       )}
     </div>
   );
 }
 
-function nextDayLabel(enrollment: EnrollmentRead) {
-  if (enrollment.current_day_in_week < 7) {
-    return `Advance to day ${enrollment.current_day_in_week + 1}`;
-  }
-  return `Advance to week ${enrollment.current_week + 1}, day 1`;
-}
-
-function CompletedTodayBlock({
-  enrollment,
-  isAdvancing,
-  error,
-  onAdvance,
-}: {
-  enrollment: EnrollmentRead;
-  isAdvancing: boolean;
-  error: string | null;
-  onAdvance: () => void;
-}) {
+function CompletedTodayBlock() {
   return (
     <div
       style={{
-        padding: "28px 18px 10px",
+        padding: "28px 18px 12px",
         textAlign: "center",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: 14,
+        gap: 12,
       }}
     >
       <span
@@ -574,7 +447,7 @@ function CompletedTodayBlock({
             fontWeight: 800,
           }}
         >
-          Today&apos;s activities are complete
+          Today&apos;s session is complete
         </h3>
         <p
           style={{
@@ -584,34 +457,44 @@ function CompletedTodayBlock({
             lineHeight: 1.6,
           }}
         >
-          Review your work, then move the plan forward when you&apos;re ready.
+          Come back tomorrow — the next day unlocks automatically.
         </p>
       </div>
-      {error && (
-        <p style={{ margin: 0, color: "oklch(40% 0.15 15)", fontSize: 13 }}>
-          {error}
-        </p>
-      )}
+    </div>
+  );
+}
+
+function AbandonedBlock({ onStartFresh }: { onStartFresh: () => void }) {
+  return (
+    <div
+      style={{
+        padding: "22px 18px 10px",
+        textAlign: "center",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 12,
+      }}
+    >
+      <p style={{ margin: 0, color: "oklch(40% 0.07 240)", fontSize: 14 }}>
+        Your previous attempt for today was abandoned.
+      </p>
       <button
         type="button"
-        onClick={onAdvance}
-        disabled={isAdvancing}
+        onClick={onStartFresh}
         style={{
+          padding: "10px 18px",
+          borderRadius: 10,
           border: "none",
-          borderRadius: 12,
           background: "#0070C4",
           color: "white",
-          cursor: isAdvancing ? "not-allowed" : "pointer",
+          fontSize: 13,
+          fontWeight: 700,
+          cursor: "pointer",
           fontFamily: "inherit",
-          fontSize: 13.5,
-          fontWeight: 800,
-          opacity: isAdvancing ? 0.7 : 1,
-          padding: "12px 18px",
-          minWidth: 190,
-          boxShadow: "0 6px 18px rgba(0,112,196,0.22)",
         }}
       >
-        {isAdvancing ? "Advancing..." : nextDayLabel(enrollment)}
+        Start fresh
       </button>
     </div>
   );
@@ -633,7 +516,7 @@ function LoadingBlock() {
         }}
       />
       <p style={{ margin: 0, color: "oklch(45% 0.07 240)", fontSize: 14 }}>
-        Loading today&apos;s tasks...
+        Loading today&apos;s session...
       </p>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -642,11 +525,9 @@ function LoadingBlock() {
 
 function ErrorBlock({
   message,
-  retryLabel,
   onRetry,
 }: {
   message: string;
-  retryLabel: string;
   onRetry: () => void;
 }) {
   return (
@@ -677,7 +558,7 @@ function ErrorBlock({
           fontFamily: "inherit",
         }}
       >
-        {retryLabel}
+        Retry
       </button>
     </div>
   );

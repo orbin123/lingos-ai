@@ -176,6 +176,11 @@ class TestStartToday:
         # Mandatory slots must be present.
         assert any(a.startswith("READ_") for a in archetype_ids)
         assert any(a.startswith("WRITE_") for a in archetype_ids)
+        # Each attempt carries the registry name for the UI to render.
+        for attempt in body["attempts"]:
+            assert "archetype_name" in attempt
+            assert isinstance(attempt["archetype_name"], str)
+            assert attempt["archetype_name"]
 
     def test_resumes_in_progress_session_idempotently(self, client, db_session, user):
         _set_pref(db_session, user)
