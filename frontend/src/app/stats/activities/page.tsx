@@ -171,7 +171,7 @@ export default function AllActivitiesPage() {
                   <ActivityRow
                     key={a.id}
                     activity={a}
-                    onClick={() => router.push(`/task/history/${a.user_task_id}`)}
+                    onClick={() => undefined}
                   />
                 ))}
               </div>

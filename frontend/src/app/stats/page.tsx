@@ -629,10 +629,9 @@ export default function StatsPage() {
   const { isReady } = useRequireAuth();
   const [range, setRange] = useState<string>("7d");
 
-  const handleActivityClick = useCallback(
-    (userTaskId: number) => router.push(`/task/history/${userTaskId}`),
-    [router],
-  );
+  // Per-attempt detail view is not part of the sessions flow yet. Rows
+  // render in read-only mode for now.
+  const handleActivityClick = useCallback(() => undefined, []);
   const handleViewAll = useCallback(() => router.push("/stats/activities"), [router]);
 
   const userQuery = useQuery({
@@ -817,7 +816,7 @@ export default function StatsPage() {
                         <ActivityRow
                           key={a.id}
                           activity={a}
-                          onClick={() => handleActivityClick(a.user_task_id)}
+                          onClick={handleActivityClick}
                         />
                       ))
                     ) : (
