@@ -118,6 +118,11 @@ export const sessionsApi = {
       .post<SessionStartResponse>("/api/sessions/start", payload)
       .then((r) => r.data),
 
+  startToday: () =>
+    api
+      .post<SessionStartResponse>("/api/sessions/start-today")
+      .then((r) => r.data),
+
   nextActivity: (sessionId: string) =>
     api
       .get<NextActivityResponse>(`/api/sessions/${sessionId}/next-activity`)
