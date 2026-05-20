@@ -31,6 +31,9 @@ from app.modules.sessions.exceptions import (
 )
 from app.modules.sessions.schemas import (
     AttemptSkeleton,
+    DashboardPlanActivity,
+    DashboardStartResponse,
+    DashboardTodayPlanResponse,
     EvaluationRead,
     FeedbackRead,
     MistakeRead,
@@ -42,6 +45,13 @@ from app.modules.sessions.schemas import (
     SubmitActivityResponse,
 )
 from app.modules.sessions.service import SessionService
+from app.modules.curriculum.exceptions import EnrollmentNotActive, NotEnrolled
+from app.modules.curriculum.models import EnrollmentStatus, UserEnrollment
+from app.modules.curriculum.repository import UserEnrollmentRepository
+from app.modules.curriculum.v2_repository import CurriculumDayRepository
+from app.modules.sessions.models import AttemptStatus, DailySession, SessionStatus
+from app.modules.sessions.planner import plan_session
+from app.modules.sessions.repository import DailySessionRepository
 from app.modules.skills.repository import SkillRepository
 from app.scoring import CourseLength, get_archetype
 
@@ -71,6 +81,209 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 # ── POST /sessions/start ───────────────────────────────────────────
+
+
+def _course_length_for_enrollment(enrollment: UserEnrollment) -> str:
+    return f"{enrollment.course.duration_weeks}w"
+
+
+def _day_id_for_enrollment(enrollment: UserEnrollment) -> str:
+    return (
+        f"day_{enrollment.course.duration_weeks}_"
+        f"{enrollment.current_week:02d}_{enrollment.current_day_in_week:02d}"
+    )
+
+
+def _allowed_activities_for_enrollment(enrollment: UserEnrollment) -> set[str]:
+    allowed: set[str] = set()
+    if enrollment.allow_reading:
+        allowed.add("read")
+    if enrollment.allow_writing:
+        allowed.add("write")
+    if enrollment.allow_listening:
+        allowed.add("listen")
+    if enrollment.allow_speaking:
+        allowed.add("speak")
+    return allowed
+
+
+def _active_enrollment_for_user(db: Session, user_id: int) -> UserEnrollment:
+    enrollment = UserEnrollmentRepository(db).get_for_user(user_id)
+    if enrollment is None:
+        raise NotEnrolled("User is not enrolled in a course")
+    if enrollment.status is not EnrollmentStatus.ACTIVE:
+        raise EnrollmentNotActive("User enrollment is not active")
+    return enrollment
+
+
+def _activity_from_attempt(attempt) -> DashboardPlanActivity:
+    spec = get_archetype(attempt.archetype_id)
+    return DashboardPlanActivity(
+        sequence=attempt.sequence,
+        archetype_id=attempt.archetype_id,
+        archetype_name=spec.name,
+        core_activity=spec.core_activity,
+        ui_widget=spec.ui_widget,
+        is_mandatory=attempt.is_mandatory,
+        status=attempt.status,
+    )
+
+
+def _activity_from_plan(plan) -> DashboardPlanActivity:
+    spec = get_archetype(plan.archetype_id)
+    return DashboardPlanActivity(
+        sequence=plan.sequence,
+        archetype_id=plan.archetype_id,
+        archetype_name=spec.name,
+        core_activity=spec.core_activity,
+        ui_widget=spec.ui_widget,
+        is_mandatory=plan.is_mandatory,
+        status=AttemptStatus.PENDING,
+    )
+
+
+def _serialize_dashboard_plan(
+    *,
+    day_id: str,
+    topic: str,
+    session: DailySession | None,
+    activities: list[DashboardPlanActivity],
+    is_preview: bool,
+    mode: str | None = None,
+) -> DashboardTodayPlanResponse | DashboardStartResponse:
+    payload = {
+        "day_id": day_id,
+        "topic": topic,
+        "session_id": session.session_id if session is not None else None,
+        "status": session.status if session is not None else None,
+        "is_preview": is_preview,
+        "activities": activities,
+    }
+    if mode is not None:
+        return DashboardStartResponse(**payload, mode=mode)
+    return DashboardTodayPlanResponse(**payload)
+
+
+def _load_existing_today_session(
+    db: Session, *, user_id: int, day_id: str
+) -> DailySession | None:
+    sessions_repo = DailySessionRepository(db)
+    in_progress = sessions_repo.get_latest_for_day(
+        user_id=user_id, day_id=day_id, status=SessionStatus.IN_PROGRESS
+    )
+    if in_progress is not None:
+        return in_progress
+    return sessions_repo.get_latest_for_day(
+        user_id=user_id, day_id=day_id, status=SessionStatus.COMPLETED
+    )
+
+
+@router.get(
+    "/today-plan",
+    response_model=DashboardTodayPlanResponse,
+)
+def today_plan(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DashboardTodayPlanResponse:
+    try:
+        enrollment = _active_enrollment_for_user(db, current_user.id)
+        day_id = _day_id_for_enrollment(enrollment)
+        day = CurriculumDayRepository(db).get_by_day_id(day_id)
+        if day is None:
+            raise DayNotFound(f"day_id={day_id!r} not found in curriculum_days")
+
+        existing = _load_existing_today_session(db, user_id=current_user.id, day_id=day_id)
+        if existing is not None:
+            return _serialize_dashboard_plan(
+                day_id=day_id,
+                topic=day.topic,
+                session=existing,
+                activities=[_activity_from_attempt(a) for a in existing.attempts],
+                is_preview=False,
+            )
+
+        planned = plan_session(
+            day,
+            tasks_per_day=enrollment.tasks_per_day,
+            allowed_activities=_allowed_activities_for_enrollment(enrollment),
+        )
+        return _serialize_dashboard_plan(
+            day_id=day_id,
+            topic=day.topic,
+            session=None,
+            activities=[_activity_from_plan(a) for a in planned],
+            is_preview=True,
+        )
+    except NotEnrolled as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except EnrollmentNotActive as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except DayNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except NoActivitiesPlanned as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/today/start-or-continue",
+    response_model=DashboardStartResponse,
+)
+async def start_or_continue_today(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DashboardStartResponse:
+    try:
+        enrollment = _active_enrollment_for_user(db, current_user.id)
+        day_id = _day_id_for_enrollment(enrollment)
+        day = CurriculumDayRepository(db).get_by_day_id(day_id)
+        if day is None:
+            raise DayNotFound(f"day_id={day_id!r} not found in curriculum_days")
+
+        existing = _load_existing_today_session(db, user_id=current_user.id, day_id=day_id)
+        if existing is not None:
+            mode = (
+                "continue"
+                if existing.status is SessionStatus.IN_PROGRESS
+                else "completed"
+            )
+            return _serialize_dashboard_plan(
+                day_id=day_id,
+                topic=day.topic,
+                session=existing,
+                activities=[_activity_from_attempt(a) for a in existing.attempts],
+                is_preview=False,
+                mode=mode,
+            )
+
+        service = _make_session_service(db)
+        session = await service.start_session(
+            user_id=current_user.id,
+            day_id=day_id,
+            course_length=CourseLength(_course_length_for_enrollment(enrollment)),
+            tasks_per_day=enrollment.tasks_per_day,
+            allowed_activities=_allowed_activities_for_enrollment(enrollment),
+        )
+        return _serialize_dashboard_plan(
+            day_id=day_id,
+            topic=day.topic,
+            session=session,
+            activities=[_activity_from_attempt(a) for a in session.attempts],
+            is_preview=False,
+            mode="start",
+        )
+    except NotEnrolled as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except EnrollmentNotActive as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except DayNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except InvalidTasksPerDay as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except NoActivitiesPlanned as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SessionAlreadyOpen as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post(

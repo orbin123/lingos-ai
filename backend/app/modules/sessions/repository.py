@@ -50,23 +50,18 @@ class DailySessionRepository:
         ).scalar_one_or_none()
 
     def get_latest_for_day(
-        self, *, user_id: int, day_id: str
+        self, *, user_id: int, day_id: str, status: SessionStatus | None = None
     ) -> DailySession | None:
-        """Most recent session for `(user, day)` regardless of status.
-
-        Used by `start-today` to decide whether to resume an in-progress
-        session, surface a completed one ("come back tomorrow"), or start
-        a new attempt.
-        """
-        return self.db.execute(
+        stmt = (
             select(DailySession)
-            .where(
-                DailySession.user_id == user_id,
-                DailySession.day_id == day_id,
-            )
-            .order_by(DailySession.created_at.desc())
+            .options(selectinload(DailySession.attempts))
+            .where(DailySession.user_id == user_id, DailySession.day_id == day_id)
+            .order_by(DailySession.id.desc())
             .limit(1)
-        ).scalar_one_or_none()
+        )
+        if status is not None:
+            stmt = stmt.where(DailySession.status == status)
+        return self.db.execute(stmt).scalar_one_or_none()
 
     def has_completed_for_day(self, *, user_id: int, day_id: str) -> bool:
         existing = self.db.execute(
