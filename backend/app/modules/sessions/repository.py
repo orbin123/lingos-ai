@@ -49,6 +49,20 @@ class DailySessionRepository:
             )
         ).scalar_one_or_none()
 
+    def get_latest_for_day(
+        self, *, user_id: int, day_id: str, status: SessionStatus | None = None
+    ) -> DailySession | None:
+        stmt = (
+            select(DailySession)
+            .options(selectinload(DailySession.attempts))
+            .where(DailySession.user_id == user_id, DailySession.day_id == day_id)
+            .order_by(DailySession.id.desc())
+            .limit(1)
+        )
+        if status is not None:
+            stmt = stmt.where(DailySession.status == status)
+        return self.db.execute(stmt).scalar_one_or_none()
+
     def has_completed_for_day(self, *, user_id: int, day_id: str) -> bool:
         existing = self.db.execute(
             select(DailySession.id).where(

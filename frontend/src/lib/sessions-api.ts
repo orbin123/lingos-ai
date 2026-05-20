@@ -45,6 +45,29 @@ export interface AttemptSkeleton {
   status: AttemptStatus;
 }
 
+export interface DashboardPlanActivity {
+  sequence: number;
+  archetype_id: string;
+  archetype_name: string;
+  core_activity: "read" | "write" | "listen" | "speak";
+  ui_widget: string;
+  is_mandatory: boolean;
+  status: AttemptStatus;
+}
+
+export interface DashboardTodayPlanResponse {
+  day_id: string;
+  topic: string;
+  session_id: string | null;
+  status: SessionStatus | null;
+  is_preview: boolean;
+  activities: DashboardPlanActivity[];
+}
+
+export interface DashboardStartResponse extends DashboardTodayPlanResponse {
+  mode: "start" | "continue" | "completed";
+}
+
 export interface SessionStartResponse {
   session_id: string;
   day_id: string;
@@ -113,6 +136,16 @@ export interface SessionScorecardRead {
 // ── Endpoints ──────────────────────────────────────────────────────
 
 export const sessionsApi = {
+  todayPlan: () =>
+    api
+      .get<DashboardTodayPlanResponse>("/api/sessions/today-plan")
+      .then((r) => r.data),
+
+  startOrContinueToday: () =>
+    api
+      .post<DashboardStartResponse>("/api/sessions/today/start-or-continue")
+      .then((r) => r.data),
+
   start: (payload: SessionStartRequest) =>
     api
       .post<SessionStartResponse>("/api/sessions/start", payload)

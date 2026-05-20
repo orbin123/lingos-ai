@@ -17,6 +17,8 @@ import {
 
 import {
   sessionsApi,
+  type DashboardStartResponse,
+  type DashboardTodayPlanResponse,
   type SessionScorecardRead,
   type SessionStartRequest,
   type SessionStartResponse,
@@ -31,12 +33,53 @@ import { useSessionStore } from "@/store/sessionStore";
 
 export const sessionsKeys = {
   all: ["sessions"] as const,
+  todayPlan: () => [...sessionsKeys.all, "today-plan"] as const,
   byId: (sessionId: string) => [...sessionsKeys.all, sessionId] as const,
   nextActivity: (sessionId: string) =>
     [...sessionsKeys.byId(sessionId), "next-activity"] as const,
   scorecard: (sessionId: string) =>
     [...sessionsKeys.byId(sessionId), "scorecard"] as const,
 };
+
+
+// ── Dashboard daily plan ───────────────────────────────────────────
+
+export function useTodaySessionPlan() {
+  return useQuery<DashboardTodayPlanResponse>({
+    queryKey: sessionsKeys.todayPlan(),
+    queryFn: sessionsApi.todayPlan,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+}
+
+export function useStartOrContinueTodaySession() {
+  const queryClient = useQueryClient();
+  const setSession = useSessionStore((s) => s.setSession);
+
+  return useMutation<DashboardStartResponse, Error, void>({
+    mutationFn: sessionsApi.startOrContinueToday,
+    onSuccess: (session) => {
+      if (session.session_id) {
+        setSession({
+          session_id: session.session_id,
+          day_id: session.day_id,
+          course_length: session.day_id.startsWith("day_48_") ? "48w" : "24w",
+          status: session.status ?? "in_progress",
+          is_first_attempt: session.mode === "start",
+          started_at: new Date().toISOString(),
+          attempts: session.activities.map((activity) => ({
+            sequence: activity.sequence,
+            archetype_id: activity.archetype_id,
+            is_mandatory: activity.is_mandatory,
+            status: activity.status,
+          })),
+        });
+      }
+      queryClient.setQueryData(sessionsKeys.todayPlan(), session);
+    },
+  });
+}
 
 
 // ── Start ──────────────────────────────────────────────────────────

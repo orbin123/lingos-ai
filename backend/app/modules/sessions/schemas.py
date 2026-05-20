@@ -81,6 +81,35 @@ class SessionStartResponse(BaseModel):
     attempts: list[AttemptSkeleton]
 
 
+class DashboardPlanActivity(BaseModel):
+    """One activity row for the dashboard's read-only daily plan."""
+
+    sequence: int
+    archetype_id: str
+    archetype_name: str
+    core_activity: str
+    ui_widget: str
+    is_mandatory: bool
+    status: AttemptStatus
+
+
+class DashboardTodayPlanResponse(BaseModel):
+    """Read-only dashboard view of today's v2 plan."""
+
+    day_id: str
+    topic: str
+    session_id: str | None = None
+    status: SessionStatus | None = None
+    is_preview: bool
+    activities: list[DashboardPlanActivity]
+
+
+class DashboardStartResponse(DashboardTodayPlanResponse):
+    """Start/continue response for the dashboard CTA."""
+
+    mode: str
+
+
 # ── Next-activity ──────────────────────────────────────────────────
 
 

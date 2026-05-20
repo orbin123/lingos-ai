@@ -1,34 +1,19 @@
 "use client";
 
-import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AxiosError } from "axios";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type { EnrollmentRead } from "@/lib/courses-api";
 import { getApiErrorMessage } from "@/lib/errors";
-import { useNextTask } from "@/hooks/useNextTask";
-import { tasksApi, type UserTask } from "@/lib/tasks-api";
+import {
+  useStartOrContinueTodaySession,
+  useTodaySessionPlan,
+} from "@/hooks/useSessionsFlow";
+import type { DashboardPlanActivity } from "@/lib/sessions-api";
 
 interface DailyTaskPanelProps {
   enrollment: EnrollmentRead;
 }
-
-// ── Task display name helpers ────────────────────────────────────────────────
-
-// Phase 7+: import from the single canonical source (`@/lib/skill-labels`).
-// Backend ships sub_skill values under three different vocabularies depending
-// on which path produced the task (legacy task templates use the long form
-// "thought_organization"; the new sessions flow + DB use the legacy "expression").
-// `normalizeSkillKey` folds them all onto the legacy identifier; the label
-// fallback resolves it to user-facing text.
-import {
-  SKILL_LABEL_FALLBACK,
-  getSkillLabel,
-  normalizeSkillKey,
-} from "@/lib/skill-labels";
-
-const SUBSKILL_LABELS: Record<string, string> = SKILL_LABEL_FALLBACK;
 
 const ACTIVITY_LABELS: Record<string, string> = {
   read: "Read",
@@ -37,26 +22,9 @@ const ACTIVITY_LABELS: Record<string, string> = {
   speak: "Speak",
 };
 
-const WIDGET_LABELS: Record<string, string> = {
-  mcq: "MCQ",
-  fill_in_blanks: "Fill in Blanks",
-  open_text: "Open Text",
-  timed_text: "Timed Text",
-  structured_essay: "Structured Essay",
-  speak_and_record: "Speak & Record",
-  listen_and_respond: "Listen & Respond",
-  storyboard: "Storyboard",
-};
-
-function getTaskDisplayTitle(task: UserTask["task"]): string {
-  const c = task.content as unknown as Record<string, unknown> | null;
-  const subSkill = c?.sub_skill
-    ? getSkillLabel(normalizeSkillKey(String(c.sub_skill)))
-    : "";
-  const activity = c?.activity ? (ACTIVITY_LABELS[c.activity as string] ?? String(c.activity)) : "";
-  const widget   = c?.widget   ? (WIDGET_LABELS[c.widget as string]     ?? String(c.widget))   : "";
-  if (subSkill && activity && widget) return `${subSkill} - ${activity} - ${widget}`;
-  return task.title;
+function getActivityDisplayTitle(activity: DashboardPlanActivity): string {
+  const type = ACTIVITY_LABELS[activity.core_activity] ?? activity.core_activity;
+  return `${type} - ${activity.archetype_name}`;
 }
 
 function activitiesPerDay(enrollment: EnrollmentRead) {
@@ -97,71 +65,28 @@ function ArrowIcon() {
   );
 }
 
-function RetryIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-      <path
-        d="M2.5 8A5.5 5.5 0 0 1 13 5.5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path d="M11 3l2 2.5-2.5 1.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <path
-        d="M13.5 8A5.5 5.5 0 0 1 3 10.5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path d="M5 13l-2-2.5 2.5-1.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
-  const taskQuery = useNextTask(true);
-  const bundle = taskQuery.data ?? [];
-  const [retryingId, setRetryingId] = useState<number | null>(null);
-  const [advanceError, setAdvanceError] = useState<string | null>(null);
+  const planQuery = useTodaySessionPlan();
+  const startOrContinue = useStartOrContinueTodaySession();
+  const plan = planQuery.data;
+  const activities = plan?.activities ?? [];
 
-  const isTaskComplete = useCallback(
-    (task: UserTask) => task.status === "completed",
-    [],
-  );
+  const isActivityComplete = (activity: DashboardPlanActivity) =>
+    activity.status === "evaluated" || activity.status === "submitted";
 
-  const activeIndex = bundle.findIndex((task) => !isTaskComplete(task));
-  const allComplete = bundle.length > 0 && activeIndex === -1;
+  const activeIndex = activities.findIndex((activity) => !isActivityComplete(activity));
+  const allComplete = plan?.status === "completed";
 
-  const handleRetry = useCallback(
-    async (e: React.MouseEvent, taskId: number) => {
-      e.stopPropagation();
-      setRetryingId(taskId);
-      try {
-        await tasksApi.retryTask(taskId);
-        await taskQuery.refetch();
-        router.push(`/task/chat?id=${taskId}`);
-      } catch {
-        setRetryingId(null);
-      }
-    },
-    [taskQuery, router],
-  );
-
-  const advanceMutation = useMutation({
-    mutationFn: tasksApi.completeDay,
-    onMutate: () => setAdvanceError(null),
-    onSuccess: async () => {
-      // Remove stale bundle immediately so we show the loading state for the
-      // new day rather than flashing "Advance to day N+2" with old data.
-      queryClient.removeQueries({ queryKey: ["task", "next"] });
-      await queryClient.invalidateQueries({ queryKey: ["me"] });
-    },
-    onError: (error) => {
-      setAdvanceError(getApiErrorMessage(error as AxiosError));
-    },
-  });
+  function handleStartOrContinue() {
+    startOrContinue.mutate(undefined, {
+      onSuccess: (session) => {
+        if (session.session_id && session.mode !== "completed") {
+          router.push(`/task/chat/${session.session_id}`);
+        }
+      },
+    });
+  }
 
   return (
     <div
@@ -281,32 +206,22 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
         Today&apos;s activities run in one chat session.
       </div>
 
-      {/* Content */}
-      {taskQuery.isLoading && <LoadingBlock />}
-      {taskQuery.isError && (
+      {planQuery.isLoading && <LoadingBlock />}
+      {planQuery.isError && (
         <ErrorBlock
-          message={getApiErrorMessage(taskQuery.error as AxiosError)}
-          retryLabel={
-            (taskQuery.error as AxiosError)?.response?.status === 503
-              ? "Try again"
-              : "Retry"
-          }
-          onRetry={() => taskQuery.refetch()}
+          message={getApiErrorMessage(planQuery.error as AxiosError)}
+          retryLabel="Retry"
+          onRetry={() => planQuery.refetch()}
         />
       )}
-      {!taskQuery.isLoading && !taskQuery.isError && (bundle.length === 0 || allComplete) && (
-        <CompletedTodayBlock
-          enrollment={enrollment}
-          isAdvancing={advanceMutation.isPending}
-          error={advanceError}
-          onAdvance={() => advanceMutation.mutate()}
-        />
+      {!planQuery.isLoading && !planQuery.isError && allComplete && (
+        <CompletedTodayBlock />
       )}
-      {!taskQuery.isLoading && !taskQuery.isError && bundle.length > 0 && !allComplete && (
+      {!planQuery.isLoading && !planQuery.isError && !allComplete && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          {bundle.map((task, index) => {
-            const complete = isTaskComplete(task);
+          {activities.map((activity, index) => {
+            const complete = isActivityComplete(activity);
             const active = !complete && index === activeIndex;
             const locked = !complete && index > activeIndex;
 
@@ -335,7 +250,7 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
 
             return (
               <div
-                key={task.id}
+                key={`${activity.sequence}-${activity.archetype_id}`}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -348,33 +263,17 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
                   position: "relative",
                 }}
               >
-                {/* Main clickable area */}
-                <button
-                  disabled={locked}
-                  onClick={() => !complete && router.push(`/task/chat?id=${task.id}`)}
+                <div
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: 14,
                     flex: 1,
                     minWidth: 0,
-                    background: "none",
-                    border: "none",
-                    padding: 0,
-                    cursor: locked || complete ? "default" : "pointer",
                     textAlign: "left",
                     fontFamily: "inherit",
-                    transition: "transform 0.15s, box-shadow 0.15s",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (locked || complete) return;
-                    e.currentTarget.style.transform = "translateY(-1px)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = "translateY(0)";
                   }}
                 >
-                  {/* Icon */}
                   <div
                     style={{
                       width: 44,
@@ -410,53 +309,36 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {getTaskDisplayTitle(task.task)}
+                      {getActivityDisplayTitle(activity)}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "oklch(48% 0.06 240)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Activity {activity.sequence}
+                      {activity.is_mandatory ? " · Required" : " · Practice"}
                     </div>
                   </div>
 
-                  {/* CTA / Retry */}
                   {complete ? (
                     <span
-                      onClick={(e) => handleRetry(e, task.id)}
                       style={{
-                        flexShrink: 0,
-                        width: 30,
-                        height: 30,
-                        borderRadius: 8,
-                        border: "1.5px solid oklch(75% 0.06 155)",
-                        background: retryingId === task.id ? "oklch(94% 0.04 155)" : "white",
+                        fontSize: 13,
+                        fontWeight: 700,
                         color: "oklch(43% 0.16 155)",
+                        flexShrink: 0,
                         display: "flex",
                         alignItems: "center",
-                        justifyContent: "center",
-                        cursor: retryingId === task.id ? "default" : "pointer",
-                        transition: "background 0.15s, transform 0.15s",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (retryingId === task.id) return;
-                        e.currentTarget.style.background = "oklch(94% 0.06 155)";
-                        e.currentTarget.style.transform = "scale(1.1)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "white";
-                        e.currentTarget.style.transform = "scale(1)";
+                        gap: 4,
                       }}
                     >
-                      {retryingId === task.id ? (
-                        <span
-                          style={{
-                            width: 11,
-                            height: 11,
-                            borderRadius: "50%",
-                            border: "2px solid oklch(75% 0.06 155)",
-                            borderTopColor: "oklch(43% 0.16 155)",
-                            display: "inline-block",
-                            animation: "spin 0.7s linear infinite",
-                          }}
-                        />
-                      ) : (
-                        <RetryIcon />
-                      )}
+                      Done
                     </span>
                   ) : active ? (
                     <span
@@ -470,7 +352,7 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
                         gap: 4,
                       }}
                     >
-                      Start <ArrowIcon />
+                      Active
                     </span>
                   ) : (
                     <span
@@ -487,55 +369,64 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
                       Unlocks next
                     </span>
                   )}
-                </button>
-
-                {/* Done label */}
-                {complete && (
-                  <span
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: "oklch(43% 0.16 155)",
-                      flexShrink: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                    }}
-                  >
-                    Done
-                  </span>
-                )}
+                </div>
               </div>
             );
           })}
+          {activities.length === 0 && (
+            <p style={{ margin: 0, color: "oklch(45% 0.07 240)", fontSize: 14 }}>
+              No activities are planned for today yet.
+            </p>
+          )}
+          {activities.length > 0 && (
+            <button
+              type="button"
+              onClick={handleStartOrContinue}
+              disabled={startOrContinue.isPending}
+              style={{
+                width: "100%",
+                marginTop: 6,
+                border: "none",
+                borderRadius: 14,
+                background: "#0070C4",
+                color: "white",
+                cursor: startOrContinue.isPending ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+                fontSize: 14,
+                fontWeight: 800,
+                opacity: startOrContinue.isPending ? 0.7 : 1,
+                padding: "14px 18px",
+                boxShadow: "0 7px 20px rgba(0,112,196,0.24)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+              }}
+            >
+              {startOrContinue.isPending
+                ? "Preparing..."
+                : plan?.session_id
+                  ? "Continue session"
+                  : "Start session"}
+              {!startOrContinue.isPending && <ArrowIcon />}
+            </button>
+          )}
+          {startOrContinue.isError && (
+            <p style={{ margin: 0, color: "oklch(40% 0.15 15)", fontSize: 13 }}>
+              {getApiErrorMessage(startOrContinue.error as AxiosError)}
+            </p>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function nextDayLabel(enrollment: EnrollmentRead) {
-  if (enrollment.current_day_in_week < 7) {
-    return `Advance to day ${enrollment.current_day_in_week + 1}`;
-  }
-  return `Advance to week ${enrollment.current_week + 1}, day 1`;
-}
-
-function CompletedTodayBlock({
-  enrollment,
-  isAdvancing,
-  error,
-  onAdvance,
-}: {
-  enrollment: EnrollmentRead;
-  isAdvancing: boolean;
-  error: string | null;
-  onAdvance: () => void;
-}) {
+function CompletedTodayBlock() {
   return (
     <div
       style={{
-        padding: "28px 18px 10px",
+        padding: "28px 18px 18px",
         textAlign: "center",
         display: "flex",
         flexDirection: "column",
@@ -584,35 +475,9 @@ function CompletedTodayBlock({
             lineHeight: 1.6,
           }}
         >
-          Review your work, then move the plan forward when you&apos;re ready.
+          Your daily session has been scored and saved.
         </p>
       </div>
-      {error && (
-        <p style={{ margin: 0, color: "oklch(40% 0.15 15)", fontSize: 13 }}>
-          {error}
-        </p>
-      )}
-      <button
-        type="button"
-        onClick={onAdvance}
-        disabled={isAdvancing}
-        style={{
-          border: "none",
-          borderRadius: 12,
-          background: "#0070C4",
-          color: "white",
-          cursor: isAdvancing ? "not-allowed" : "pointer",
-          fontFamily: "inherit",
-          fontSize: 13.5,
-          fontWeight: 800,
-          opacity: isAdvancing ? 0.7 : 1,
-          padding: "12px 18px",
-          minWidth: 190,
-          boxShadow: "0 6px 18px rgba(0,112,196,0.22)",
-        }}
-      >
-        {isAdvancing ? "Advancing..." : nextDayLabel(enrollment)}
-      </button>
     </div>
   );
 }
@@ -633,7 +498,7 @@ function LoadingBlock() {
         }}
       />
       <p style={{ margin: 0, color: "oklch(45% 0.07 240)", fontSize: 14 }}>
-        Loading today&apos;s tasks...
+        Loading today&apos;s activities...
       </p>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
