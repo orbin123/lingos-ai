@@ -1,8 +1,14 @@
-"""Data access for production admin screens."""
+"""Data access for production admin screens.
+
+Phase 8: the admin views that read the legacy `tasks`/`responses`/
+`feedbacks` tables are temporarily disabled — routes return 501. The
+new daily-sessions tables (`activity_attempts`, `activity_feedback`)
+will be wired in by the admin team in a follow-up.
+"""
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import case, func
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.modules.admin.models import AIRequestLog, AdminAuditLog
@@ -21,7 +27,6 @@ from app.modules.admin.schemas import (
     AdminUserDetail,
     AdminUserListItem,
     AdminUserProfile,
-    FeedbackReviewItem,
     PaymentRead,
     SubscriptionRead,
     UserBillingRead,
@@ -39,10 +44,13 @@ from app.modules.auth.models import (
 )
 from app.modules.auth.permissions import ALL_PERMISSION_KEYS
 from app.modules.progress.models import SkillPoints
-from app.modules.responses.models import Evaluation, Feedback, UserResponse
-from app.modules.skills.models import Skill, UserSkillScore
+from app.modules.sessions.models import (
+    ActivityAttempt,
+    ActivityFeedback,
+    AttemptStatus,
+)
+from app.modules.skills.models import Skill
 from app.modules.subscriptions.models import Payment, Subscription
-from app.modules.tasks.models import Task, TaskStatus, UserTask, UserTaskStatus
 
 
 def _enum_value(value: object) -> str:
@@ -105,12 +113,14 @@ class AdminRepository:
             or 0
         )
         tasks_completed = (
-            self.db.query(func.count(UserTask.id))
-            .filter(UserTask.status == UserTaskStatus.COMPLETED)
+            self.db.query(func.count(ActivityAttempt.id))
+            .filter(ActivityAttempt.status == AttemptStatus.EVALUATED)
             .scalar()
             or 0
         )
-        feedback_generated = self.db.query(func.count(Feedback.id)).scalar() or 0
+        feedback_generated = (
+            self.db.query(func.count(ActivityFeedback.id)).scalar() or 0
+        )
         ai_requests_24h = (
             self.db.query(func.count(AIRequestLog.id))
             .filter(AIRequestLog.created_at >= since)
@@ -123,12 +133,9 @@ class AdminRepository:
             .scalar()
             or 0
         )
-        pending_feedback_reviews = (
-            self.db.query(func.count(Feedback.id))
-            .filter(Feedback.review_status == "pending")
-            .scalar()
-            or 0
-        )
+        # The new flow has no per-row review queue. Pending count is zero
+        # until an explicit review surface lands.
+        pending_feedback_reviews = 0
         recent_users = [
             AdminRecentUser(
                 id=user.id,
@@ -233,37 +240,6 @@ class AdminRepository:
             .first()
         )
 
-    def list_task_templates(self) -> list[Task]:
-        return self.db.query(Task).order_by(Task.created_at.desc(), Task.id.desc()).all()
-
-    def get_task_template(self, template_id: int) -> Task | None:
-        return self.db.get(Task, template_id)
-
-    def create_task_template(
-        self,
-        *,
-        title: str,
-        task_type: object,
-        difficulty: int,
-        status: object,
-        content: dict,
-    ) -> Task:
-        task = Task(
-            title=title,
-            task_type=task_type,
-            difficulty=difficulty,
-            status=status,
-            content=content,
-        )
-        self.db.add(task)
-        self.db.flush()
-        return task
-
-    def archive_task_template(self, task: Task) -> Task:
-        task.status = TaskStatus.ARCHIVED
-        self.db.flush()
-        return task
-
     def list_audit_logs(self, *, limit: int = 100) -> list[AdminAuditLogRead]:
         rows = (
             self.db.query(AdminAuditLog)
@@ -304,48 +280,6 @@ class AdminRepository:
         if log is None:
             return None
         return self._ai_log_out(log, include_sensitive=include_sensitive)
-
-    def list_feedback_review(self, *, limit: int = 100) -> list[FeedbackReviewItem]:
-        rows = (
-            self._feedback_review_query()
-            .order_by(
-                case((Feedback.review_status == "pending", 0), else_=1),
-                Feedback.created_at.desc(),
-                Feedback.id.desc(),
-            )
-            .limit(limit)
-            .all()
-        )
-        return [self._feedback_review_out(*row) for row in rows]
-
-    def get_feedback_review_item(self, feedback_id: int) -> FeedbackReviewItem | None:
-        row = self._feedback_review_query().filter(Feedback.id == feedback_id).first()
-        if row is None:
-            return None
-        return self._feedback_review_out(*row)
-
-    def get_feedback(self, feedback_id: int) -> Feedback | None:
-        return (
-            self.db.query(Feedback)
-            .options(joinedload(Feedback.evaluation))
-            .filter(Feedback.id == feedback_id)
-            .first()
-        )
-
-    def update_feedback_review(
-        self,
-        feedback: Feedback,
-        *,
-        review_status: str,
-        admin_note: str | None,
-        reviewer: User,
-    ) -> Feedback:
-        feedback.review_status = review_status
-        feedback.admin_note = admin_note
-        feedback.reviewed_by = reviewer.id
-        feedback.reviewed_at = datetime.now(timezone.utc)
-        self.db.flush()
-        return feedback
 
     def list_payments(self, *, limit: int = 100) -> list[PaymentRead]:
         rows = (
@@ -500,41 +434,6 @@ class AdminRepository:
             created_at=log.created_at,
         )
 
-    def _feedback_review_query(self):
-        return (
-            self.db.query(Feedback, Evaluation, UserResponse, UserTask, Task, User)
-            .join(Evaluation, Evaluation.id == Feedback.evaluation_id)
-            .join(UserResponse, UserResponse.id == Evaluation.response_id)
-            .join(UserTask, UserTask.id == UserResponse.user_task_id)
-            .join(Task, Task.id == UserTask.task_id)
-            .join(User, User.id == UserTask.user_id)
-            .options(joinedload(Feedback.reviewer))
-        )
-
-    def _feedback_review_out(
-        self,
-        feedback: Feedback,
-        evaluation: Evaluation,
-        response: UserResponse,
-        _user_task: UserTask,
-        task: Task,
-        user: User,
-    ) -> FeedbackReviewItem:
-        return FeedbackReviewItem(
-            id=feedback.id,
-            user=_log_user(user),
-            task_title=task.title,
-            user_response=sanitize_for_admin(response.content),
-            user_response_raw_text=mask_sensitive_text(response.raw_text),
-            ai_feedback=sanitize_for_admin(feedback.body),
-            score=float(evaluation.overall_score),
-            review_status=feedback.review_status,
-            reviewed_by=_log_user(feedback.reviewer),
-            reviewed_at=feedback.reviewed_at,
-            admin_note=mask_sensitive_text(feedback.admin_note),
-            created_at=feedback.created_at,
-        )
-
     def _profile_out(self, profile: UserProfile | None) -> AdminUserProfile | None:
         if profile is None:
             return None
@@ -557,77 +456,22 @@ class AdminRepository:
             .order_by(Skill.name.asc())
             .all()
         )
-        if points_rows:
-            return [
-                AdminSkillScore(
-                    skill_id=row.skill_id,
-                    skill_name=skill.name,
-                    score=float(row.display_score),
-                    source="points",
-                )
-                for row, skill in points_rows
-            ]
-
-        score_rows = (
-            self.db.query(UserSkillScore)
-            .join(Skill, Skill.id == UserSkillScore.skill_id)
-            .options(joinedload(UserSkillScore.skill))
-            .filter(UserSkillScore.user_id == user_id)
-            .order_by(Skill.name.asc())
-            .all()
-        )
         return [
             AdminSkillScore(
                 skill_id=row.skill_id,
-                skill_name=row.skill.name,
-                score=float(row.score),
-                source="skill_score",
+                skill_name=skill.name,
+                score=float(row.display_score),
+                source="points",
             )
-            for row in score_rows
+            for row, skill in points_rows
         ]
 
     def _recent_tasks(self, user_id: int) -> list[AdminRecentTask]:
-        rows = (
-            self.db.query(UserTask)
-            .options(joinedload(UserTask.task))
-            .filter(UserTask.user_id == user_id)
-            .order_by(UserTask.created_at.desc(), UserTask.id.desc())
-            .limit(10)
-            .all()
-        )
-        return [
-            AdminRecentTask(
-                id=row.id,
-                task_id=row.task_id,
-                title=row.task.title if row.task is not None else "Unknown task",
-                task_type=_enum_value(row.task.task_type) if row.task is not None else "",
-                status=_enum_value(row.status),
-                completed_at=row.completed_at,
-                created_at=row.created_at,
-            )
-            for row in rows
-        ]
+        # Disabled in Phase 8 — reads the legacy `user_tasks` table.
+        # Will be rewired against `activity_attempts` in a follow-up.
+        return []
 
     def _recent_feedback(self, user_id: int) -> list[AdminRecentFeedback]:
-        rows = (
-            self.db.query(Feedback, Evaluation, Task)
-            .join(Evaluation, Evaluation.id == Feedback.evaluation_id)
-            .join(UserResponse, UserResponse.id == Evaluation.response_id)
-            .join(UserTask, UserTask.id == UserResponse.user_task_id)
-            .join(Task, Task.id == UserTask.task_id)
-            .filter(UserTask.user_id == user_id)
-            .order_by(Feedback.created_at.desc(), Feedback.id.desc())
-            .limit(10)
-            .all()
-        )
-        return [
-            AdminRecentFeedback(
-                id=feedback.id,
-                task_title=task.title,
-                task_type=_enum_value(task.task_type),
-                score=float(evaluation.overall_score),
-                body=feedback.body,
-                created_at=feedback.created_at,
-            )
-            for feedback, evaluation, task in rows
-        ]
+        # Disabled in Phase 8 — reads the legacy `feedbacks` table. Will
+        # be rewired against `activity_feedback` in a follow-up.
+        return []

@@ -28,11 +28,6 @@ class ProgressLog(Base, IDMixin, CreatedAtMixin):
         nullable=False, index=True,
     )
     score: Mapped[float] = mapped_column(Numeric(3, 1), nullable=False)
-    # Optional context — link back to the task that caused this change
-    user_task_id: Mapped[int | None] = mapped_column(
-        ForeignKey("user_tasks.id", ondelete="SET NULL"),
-        nullable=True, index=True,
-    )
 
     def __repr__(self) -> str:
         return (
@@ -99,12 +94,7 @@ class SkillPointsLog(Base, IDMixin, CreatedAtMixin):
     )
     points_earned: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str] = mapped_column(String(100), nullable=False)
-    user_task_id: Mapped[int | None] = mapped_column(
-        ForeignKey("user_tasks.id", ondelete="SET NULL"),
-        nullable=True, index=True,
-    )
-    # New in Phase 3: link a points entry to its source `daily_sessions` row.
-    # Nullable so legacy entries (written via the WMA path) remain valid.
+    # Link a points entry to its source `daily_sessions` row.
     session_id: Mapped[int | None] = mapped_column(
         ForeignKey("daily_sessions.id", ondelete="SET NULL"),
         nullable=True, index=True,

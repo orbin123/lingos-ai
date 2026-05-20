@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.modules.curriculum.schemas import EnrollmentRead
+from app.modules.preferences.schemas import UserCoursePreferenceRead
 from app.modules.subscriptions.schemas import NotificationSettings
 
 class UserCreate(BaseModel):
@@ -32,7 +32,7 @@ class UserOut(BaseModel):
     roles: list[str] = Field(default_factory=lambda: ["learner"])
     role: str = "learner"
     diagnosis_completed: bool = False  # tells frontend where to send the user
-    enrollment: EnrollmentRead | None = None
+    preference: UserCoursePreferenceRead | None = None
     phone_number: str | None = None
     country: str | None = None
     native_language: str | None = None

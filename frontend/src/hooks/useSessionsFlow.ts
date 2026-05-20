@@ -93,6 +93,26 @@ export function useStartSession() {
 }
 
 
+// ── Start today (find-or-create) ───────────────────────────────────
+
+/**
+ * Resolves today's session from the user's stored preferences — no
+ * day_id or course_length required from the caller. Returns the
+ * existing session if one is in progress / completed for today,
+ * otherwise creates a fresh one.
+ *
+ * The dashboard's primary entry point. Direct callers needing finer
+ * control (admin tooling, tests) keep using `useStartSession`.
+ */
+export function useStartTodaySession() {
+  const setSession = useSessionStore((s) => s.setSession);
+  return useMutation<SessionStartResponse, Error, void>({
+    mutationFn: () => sessionsApi.startToday(),
+    onSuccess: (session) => setSession(session),
+  });
+}
+
+
 // ── Next activity ──────────────────────────────────────────────────
 
 export function useNextActivity(sessionId: string | null, options?: {

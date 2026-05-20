@@ -1,41 +1,11 @@
-"""The agent system for LingosAI.
+"""LLM-driven agents kept for the active runtime surfaces:
 
-Each agent lives in its own file, has a single responsibility, and exposes
-a small public surface so callers do not need to know whether the
-implementation is rule-based, LLM-based, or a future swap.
+- diagnosis_feedback   → diagnosis result narration
+- personalization      → onboarding personalisation extraction
+- ielts_challenge_*    → the IELTS Sprint challenges module
 
-    Agent 0 — Teaching         →  teacher.generate_teaching_turn()
-    Agent 1 — Task Generator   →  task_generator.generate_task()
-    Agent 2 — Evaluator        →  evaluator.EvaluationService
-    Agent 3 — Feedback         →  feedback.generate_feedback()
-
-Re-exporting the public symbols here lets callers do the clean import:
-
-    from app.ai.agents import generate_feedback, EvaluationService
+The sessions flow's evaluator / feedback / task-generator agents live
+under `app.ai.sessions` and are wired via `build_default_agents()`.
+Callers import the individual modules directly; this package no longer
+re-exports.
 """
-
-from app.ai.agents.evaluator import EvaluationService
-from app.ai.agents.feedback import FeedbackOutput, generate_feedback
-from app.ai.agents.planner import (
-    EvaluationFocus,
-    PlannerAgent,
-    PlannerLLMOutput,
-    TeacherInstructions,
-    generate_daily_plan,
-)
-from app.ai.agents.task_generator import generate_task
-from app.ai.agents.teacher import TeachingOutput, generate_teaching_turn
-
-__all__ = [
-    "EvaluationFocus",
-    "EvaluationService",
-    "FeedbackOutput",
-    "PlannerAgent",
-    "PlannerLLMOutput",
-    "TeacherInstructions",
-    "TeachingOutput",
-    "generate_daily_plan",
-    "generate_feedback",
-    "generate_task",
-    "generate_teaching_turn",
-]

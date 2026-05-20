@@ -1,8 +1,6 @@
-"""REST endpoints for the new daily-session lifecycle.
+"""REST endpoints for the daily-session lifecycle.
 
 All endpoints require auth (the caller's `user_id` is taken from the JWT).
-Gated by `settings.use_new_session_flow` — when off, every route returns 404
-so the legacy flow remains the canonical surface.
 """
 
 from __future__ import annotations
@@ -12,10 +10,14 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
+from app.modules.curriculum.repository import (
+    CurriculumDayRepository,
+    CurriculumWeekRepository,
+)
+from app.modules.preferences.service import PreferenceService
 from app.modules.sessions.exceptions import (
     AttemptAlreadySubmitted,
     AttemptNotFound,
@@ -75,26 +77,7 @@ def _make_session_service(db: Session) -> SessionService:
 logger = logging.getLogger(__name__)
 
 
-def _ensure_flag_on() -> None:
-    """Router-level dependency — short-circuits with 404 when the flag is off.
-
-    Declared at router level (not inside each route function) so it resolves
-    BEFORE `get_current_user`. That way an unauthenticated request to a
-    flag-off endpoint gets 404 rather than 401, matching the contract that
-    the endpoint "doesn't exist" when the flag is off.
-    """
-    if not settings.use_new_session_flow:
-        raise HTTPException(
-            status_code=404,
-            detail="USE_NEW_SESSION_FLOW is off — new sessions API is disabled",
-        )
-
-
-router = APIRouter(
-    prefix="/sessions",
-    tags=["sessions"],
-    dependencies=[Depends(_ensure_flag_on)],
-)
+router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 # ── POST /sessions/start ───────────────────────────────────────────
@@ -334,6 +317,93 @@ async def start_session(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+# ── POST /sessions/start-today ─────────────────────────────────────
+
+
+@router.post(
+    "/start-today",
+    response_model=SessionStartResponse,
+)
+async def start_today_session(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SessionStartResponse:
+    """Find-or-create the user's session for today.
+
+    Reads `UserCoursePreference` to resolve today's `day_id`. Returns:
+      - the in-progress session if one already exists (user resumes)
+      - the most recent completed/abandoned session for today, if one
+        exists (frontend renders "come back tomorrow" / retry as needed)
+      - a freshly started session otherwise
+
+    The lower-level `POST /sessions/start` remains available for tests and
+    admin tooling that need to pick a specific `day_id` or course length.
+    """
+    pref = PreferenceService(db).get(user_id=current_user.id)
+
+    week = CurriculumWeekRepository(db).get_by_number(
+        course_length=pref.course_length,
+        week_number=pref.current_week,
+    )
+    if week is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No curriculum week for course_length={pref.course_length!r} "
+                f"week={pref.current_week}"
+            ),
+        )
+    day = CurriculumDayRepository(db).get_for_week(
+        week_pk=week.id, day_number=pref.current_day_in_week,
+    )
+    if day is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No curriculum day for week_id={week.week_id!r} "
+                f"day={pref.current_day_in_week}"
+            ),
+        )
+
+    service = _make_session_service(db)
+
+    # Resume an existing session for today if one exists. Abandoned sessions
+    # are skipped so the user can start a fresh attempt.
+    existing = service.sessions_repo.get_latest_for_day(
+        user_id=current_user.id, day_id=day.day_id,
+    )
+    if existing is not None and existing.status.value != "abandoned":
+        # Re-fetch with attempts eagerly loaded for serialization.
+        full = service.sessions_repo.get_with_attempts(existing.session_id)
+        return _serialize_start(full)
+
+    course_length = CourseLength(pref.course_length)
+    allowed = {
+        activity
+        for activity, on in {
+            "read": pref.allow_read,
+            "write": pref.allow_write,
+            "listen": pref.allow_listen,
+            "speak": pref.allow_speak,
+        }.items()
+        if on
+    }
+
+    try:
+        session = await service.start_session(
+            user_id=current_user.id,
+            day_id=day.day_id,
+            course_length=course_length,
+            tasks_per_day=pref.tasks_per_day,
+            allowed_activities=allowed,
+        )
+        return _serialize_start(session)
+    except NoActivitiesPlanned as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except InvalidTasksPerDay as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 # ── GET /sessions/{id}/next-activity ───────────────────────────────
 
 
@@ -488,6 +558,10 @@ def _serialize_start(session) -> SessionStartResponse:
             AttemptSkeleton(
                 sequence=a.sequence,
                 archetype_id=a.archetype_id,
+                # Resolved from the in-process registry — no DB round-trip;
+                # the DB `task_archetypes` table is seeded from the same
+                # source so the values are guaranteed to agree.
+                archetype_name=get_archetype(a.archetype_id).name,
                 is_mandatory=a.is_mandatory,
                 status=a.status,
             )

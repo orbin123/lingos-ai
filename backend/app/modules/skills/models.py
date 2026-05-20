@@ -1,10 +1,10 @@
-"""Skill module models — Skill master table and per-user scores."""
+"""Skill module models — master table of the 7 tracked sub-skills."""
 
-from sqlalchemy import Boolean, ForeignKey, Numeric, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.core.mixins import CreatedAtMixin, IDMixin, TimestampMixin
+from app.core.mixins import CreatedAtMixin, IDMixin
 
 
 class Skill(Base, IDMixin, CreatedAtMixin):
@@ -19,55 +19,10 @@ class Skill(Base, IDMixin, CreatedAtMixin):
     name: Mapped[str] = mapped_column(
         String(50), unique=True, nullable=False, index=True
     )
-    # Longer-form description ("Grammar & Sentence Construction"). Optional —
-    # admin tools and skill detail pages use this.
     description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    # Short user-facing label rendered on dashboards / scorecards. Distinct
-    # from `name` (which is the internal identifier) and from `description`
-    # (which is longer-form). Added in Phase 5 so the API ships a friendly
-    # label and the frontend doesn't need to mirror the mapping itself.
     display_label: Mapped[str] = mapped_column(
         String(60), nullable=False, default=""
     )
 
     def __repr__(self) -> str:
         return f"<Skill(id={self.id}, name={self.name!r})>"
-
-
-class UserSkillScore(Base, IDMixin, TimestampMixin):
-    """
-    Current score for a user on a specific skill (cached state).
-
-    One row per (user, skill) pair. Updated on every relevant task.
-    History lives in ProgressLog.
-    """
-
-    __tablename__ = "user_skill_scores"
-
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    skill_id: Mapped[int] = mapped_column(
-        ForeignKey("skills.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    # Numeric(3, 1) → up to 999.9, plenty for 0.0–10.0 scores
-    score: Mapped[float] = mapped_column(
-        Numeric(3, 1), nullable=False, default=3.0
-    )
-
-    is_estimated: Mapped[bool] = mapped_column(
-        Boolean,
-        default=False,
-        server_default="false",
-        nullable=False,
-    )
-
-    # Relationships
-    skill: Mapped["Skill"] = relationship()
-
-    __table_args__ = (
-        UniqueConstraint("user_id", "skill_id", name="uq_user_skill"),
-    )
-
-    def __repr__(self) -> str:
-        return f"<UserSkillScore(user_id={self.user_id}, skill_id={self.skill_id}, score={self.score})>"

@@ -16,9 +16,9 @@ from app.modules.auth.models import ROLE_ADMIN, ROLE_LEARNER, ROLE_SUPER_ADMIN, 
 from app.modules.auth.repository import UserProfileRepository
 from app.modules.auth.schemas import TokenOut, UserCreate, UserLogin, UserOut, UserUpdate
 from app.modules.auth.service import AuthService
-from app.modules.curriculum.schemas import EnrollmentRead
-from app.modules.curriculum.service import EnrollmentService
 from app.modules.personalization.service import PersonalizationService
+from app.modules.preferences.repository import UserCoursePreferenceRepository
+from app.modules.preferences.schemas import UserCoursePreferenceRead
 from app.modules.subscriptions.schemas import NotificationSettings
 
 
@@ -76,7 +76,7 @@ def _build_user_out(
     *,
     user: User,
     profile: object | None,
-    enrollment: object | None,
+    preference: object | None,
 ) -> UserOut:
     return UserOut(
         id=user.id,
@@ -90,9 +90,9 @@ def _build_user_out(
         roles=_role_names(user),
         role=_primary_role(user),
         diagnosis_completed=bool(profile and profile.diagnosis_completed),
-        enrollment=(
-            EnrollmentRead.model_validate(enrollment)
-            if enrollment is not None
+        preference=(
+            UserCoursePreferenceRead.model_validate(preference)
+            if preference is not None
             else None
         ),
         phone_number=getattr(profile, "phone_number", None) if profile else None,
@@ -156,7 +156,7 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut:
         roles=_role_names(user),
         role=_primary_role(user),
         diagnosis_completed=False,
-        enrollment=None,
+        preference=None,
         notifications=NotificationSettings(),
     )
 
@@ -184,8 +184,8 @@ def me(
 ) -> UserOut:
     """Return the currently logged-in user's profile + diagnosis status."""
     profile = UserProfileRepository(db).get_by_user_id(current_user.id)
-    enrollment = EnrollmentService(db).get_for_user(current_user.id)
-    return _build_user_out(user=current_user, profile=profile, enrollment=enrollment)
+    preference = UserCoursePreferenceRepository(db).get_for_user(current_user.id)
+    return _build_user_out(user=current_user, profile=profile, preference=preference)
 
 
 @router.patch("/me", response_model=UserOut)

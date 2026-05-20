@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.modules.curriculum.v2_models import CurriculumDay
+from app.modules.curriculum.models import CurriculumDay
 from app.modules.sessions.exceptions import (
     InvalidTasksPerDay,
     NoActivitiesPlanned,

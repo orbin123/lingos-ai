@@ -1,65 +1,111 @@
-"""Pydantic schemas for the curriculum module — API request/response shapes."""
+"""Pydantic schemas for curriculum entities.
 
-from datetime import datetime
+Read/write shapes for the API layer plus internal service-layer plumbing.
+They mirror the ORM models in `models.py`.
+"""
+
+from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.curriculum.models import (
-    CourseLevel,
-    CourseStatus,
-    EnrollmentStatus,
-)
+from app.modules.curriculum.models import CoreActivity, ThemeType
 
 
-# Course response (read-only, exposed by future GET /courses)
-
-class CourseRead(BaseModel):
-    """Public view of a course (catalog item)."""
+class CurriculumDayRead(BaseModel):
+    """API/read shape for a single day record."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
-    slug: str
+    day_id: str
+    day_number: int
+    topic: str
+    explanation_brief: str
+    default_activities: list[str]
+    mandatory_activities: list[str]
+    suggested_archetypes: dict[str, list[str]]
+
+
+class CurriculumWeekRead(BaseModel):
+    """API/read shape for a week record + its 7 days."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    week_id: str
+    course_length: str
+    week_number: int
+    theme_type: ThemeType
     title: str
-    description: str
-    duration_weeks: int
-    target_level: CourseLevel
-    status: CourseStatus
+    cefr_level: str
+    sub_level_min: int
+    sub_level_max: int
+    learning_goal: str
+    days: list[CurriculumDayRead] = Field(default_factory=list)
 
 
-# Enrollment
-
-class EnrollmentCreate(BaseModel):
-    """Request body for POST /courses/enroll."""
-
-    course_slug: str = Field(..., min_length=1, max_length=50)
-
-
-class EnrollmentRead(BaseModel):
-    """Public view of a user's enrollment."""
+class TaskArchetypeRead(BaseModel):
+    """API/read shape for an archetype row."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
-    user_id: int
-    course_id: int
-    current_week: int
-    current_day_in_week: int
-    tasks_per_day: int
-    allow_reading: bool
-    allow_writing: bool
-    allow_listening: bool
-    allow_speaking: bool
-    status: EnrollmentStatus
-    started_at: datetime | None
-    course: CourseRead   # nested — frontend gets course details in one response
+    archetype_id: str
+    name: str
+    core_activity: CoreActivity
+    description: str
+    ui_widget: str
+    themes_supported: list[str]
+    cefr_min: str
+    cefr_max: str
+    weight_map: dict[str, float]
+    rubric: list[str]
+    mvp: bool
 
 
-class EnrollmentSettingsUpdate(BaseModel):
-    """User-configurable practice settings for the active enrollment."""
+# ── Internal seed payloads ─────────────────────────────────────────
 
-    tasks_per_day: int | None = Field(default=None, ge=2, le=4)
-    allow_reading: bool | None = None
-    allow_writing: bool | None = None
-    allow_listening: bool | None = None
-    allow_speaking: bool | None = None
+
+class CurriculumWeekSeed(BaseModel):
+    """Pre-write payload used by the seeder. Differs from Read by omitting `days`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    week_id: str
+    course_length: str
+    week_number: int
+    theme_type: ThemeType
+    title: str
+    cefr_level: str
+    sub_level_min: int
+    sub_level_max: int
+    learning_goal: str
+
+
+class CurriculumDaySeed(BaseModel):
+    """Pre-write payload for one day row."""
+
+    model_config = ConfigDict(frozen=True)
+
+    day_id: str
+    day_number: int
+    topic: str
+    explanation_brief: str
+    default_activities: list[str]
+    mandatory_activities: list[str]
+    suggested_archetypes: dict[str, list[str]]
+
+
+class TaskArchetypeSeed(BaseModel):
+    """Pre-write payload for one archetype row, mirrored from the Python registry."""
+
+    model_config = ConfigDict(frozen=True)
+
+    archetype_id: str
+    name: str
+    core_activity: CoreActivity
+    description: str
+    ui_widget: str
+    themes_supported: list[str]
+    cefr_min: str
+    cefr_max: str
+    weight_map: dict[str, float]
+    rubric: list[str]
+    mvp: bool

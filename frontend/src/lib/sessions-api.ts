@@ -1,20 +1,10 @@
 /**
- * Typed client for the new daily-sessions REST API (Phase 3+).
+ * Typed client for the daily-sessions REST API.
  *
- * Backend mounts the routes under `/api/sessions`. Gated by both the
- * backend `use_new_session_flow` flag and the frontend
- * `NEXT_PUBLIC_USE_NEW_SESSION_FLOW`. When either is off, the endpoints
- * return 404 — callers should check `isSessionsFlowEnabled()` before
- * navigating to any /sessions/* route.
+ * Backend mounts the routes under `/api/sessions`.
  */
 
 import { api } from "./api";
-
-// ── Feature flag ───────────────────────────────────────────────────
-
-export function isSessionsFlowEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_USE_NEW_SESSION_FLOW === "true";
-}
 
 // ── Status enums (must match backend exactly) ──────────────────────
 
@@ -41,6 +31,7 @@ export interface SessionStartRequest {
 export interface AttemptSkeleton {
   sequence: number;
   archetype_id: string;
+  archetype_name: string;
   is_mandatory: boolean;
   status: AttemptStatus;
 }
@@ -149,6 +140,11 @@ export const sessionsApi = {
   start: (payload: SessionStartRequest) =>
     api
       .post<SessionStartResponse>("/api/sessions/start", payload)
+      .then((r) => r.data),
+
+  startToday: () =>
+    api
+      .post<SessionStartResponse>("/api/sessions/start-today")
       .then((r) => r.data),
 
   nextActivity: (sessionId: string) =>

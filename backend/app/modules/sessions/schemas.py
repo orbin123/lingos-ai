@@ -63,6 +63,7 @@ class AttemptSkeleton(BaseModel):
 
     sequence: int
     archetype_id: str
+    archetype_name: str
     is_mandatory: bool
     status: AttemptStatus
 

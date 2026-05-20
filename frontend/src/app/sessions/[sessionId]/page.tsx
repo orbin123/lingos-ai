@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * New daily-session shell (Phase 6).
+ * Daily-session shell.
  *
  * Drives the activity-by-activity flow against /api/sessions/*:
  *   1. Fetch the next pending activity.
@@ -10,12 +10,9 @@
  *   4. On "Continue" → re-fetch next-activity.
  *   5. When backend returns 409 (no pending), render the "Complete session"
  *      action which calls /complete and navigates to the scorecard.
- *
- * Gated by `NEXT_PUBLIC_USE_NEW_SESSION_FLOW`. When off, the page redirects
- * to the dashboard so users on the legacy flow never reach a half-built UI.
  */
 
-import { createElement, useEffect, useState } from "react";
+import { createElement, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { ActivityFeedbackCard } from "@/components/sessions/ActivityFeedbackCard";
@@ -27,7 +24,6 @@ import {
   useNextActivity,
   useSubmitActivity,
 } from "@/hooks/useSessionsFlow";
-import { isSessionsFlowEnabled } from "@/lib/sessions-api";
 import { useSessionStore } from "@/store/sessionStore";
 
 
@@ -36,14 +32,6 @@ export default function SessionShellPage() {
   const sessionId = params.sessionId;
   const router = useRouter();
   useRequireAuth();
-
-  // Block the page entirely when the flag is off — same contract as the
-  // backend's _ensure_flag_on dependency.
-  useEffect(() => {
-    if (!isSessionsFlowEnabled()) {
-      router.replace("/dashboard");
-    }
-  }, [router]);
 
   const session = useSessionStore((s) => s.session);
   const lastFeedback = useSessionStore((s) => s.lastFeedback);
