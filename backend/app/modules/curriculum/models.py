@@ -1,11 +1,10 @@
-"""V2 curriculum tables — theme-week / day-topic / task-archetype.
+"""Curriculum tables — theme-week / day-topic / task-archetype.
 
-These tables back the new restructured flow introduced in Phase 2 of the
-restructure. The legacy `Course`, `UserEnrollment`, `DailyPlan`, and
-`EnrollmentSkillHistory` rows continue to serve production until Phase 7
-retires them.
-
-Keep this file isolated from `models.py` so Phase 7 can delete it cleanly.
+Backs the daily-sessions flow: each `CurriculumWeek` carries a theme +
+CEFR level + sub-level band; each `CurriculumDay` carries a topic +
+explanation brief + per-activity archetype suggestions; `TaskArchetype`
+mirrors the in-process `app.scoring.ARCHETYPE_REGISTRY` so admin tools
+can read it via standard queries.
 """
 
 from enum import Enum

@@ -13,7 +13,6 @@ from app.core.rate_limit import AdminRateLimitMiddleware
 from app.modules.admin.routes import router as admin_router
 from app.modules.auth.routes import router as auth_router
 from app.modules.challenges.routes import router as challenges_router
-from app.modules.curriculum.routes import router as curriculum_router
 from app.modules.diagnosis.routes import router as diagnosis_router
 from app.modules.progress.routes import router as progress_router
 from app.modules.subscriptions.routes import (
@@ -80,7 +79,6 @@ def health_check() -> dict[str, str]:
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(admin_router)
 app.include_router(diagnosis_router, prefix="/diagnosis", tags=["diagnosis"])
-app.include_router(curriculum_router)
 app.include_router(progress_router)
 app.include_router(ai_router)
 app.include_router(subscription_router)

@@ -8,7 +8,10 @@ import { useRouter } from "next/navigation";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { authApi } from "@/lib/auth-api";
-import { coursesApi, type EnrollmentSettingsInput } from "@/lib/courses-api";
+import {
+  preferencesApi,
+  type UserCoursePreferenceUpdate,
+} from "@/lib/preferences-api";
 import { subscriptionsApi } from "@/lib/subscriptions-api";
 import type { NotificationSettings } from "@/lib/subscriptions-api";
 import { useAuthStore } from "@/store/authStore";
@@ -20,19 +23,24 @@ const DEFAULT_NOTIFICATIONS: NotificationSettings = {
   feature_announcements: false,
 };
 
-type PracticeSettings = Required<EnrollmentSettingsInput>;
+type PracticeSettings = Required<
+  Pick<
+    UserCoursePreferenceUpdate,
+    "tasks_per_day" | "allow_read" | "allow_write" | "allow_listen" | "allow_speak"
+  >
+>;
 type ActivitySettingKey =
-  | "allow_reading"
-  | "allow_writing"
-  | "allow_listening"
-  | "allow_speaking";
+  | "allow_read"
+  | "allow_write"
+  | "allow_listen"
+  | "allow_speak";
 
 const DEFAULT_PRACTICE_SETTINGS: PracticeSettings = {
   tasks_per_day: 2,
-  allow_reading: true,
-  allow_writing: true,
-  allow_listening: true,
-  allow_speaking: true,
+  allow_read: true,
+  allow_write: true,
+  allow_listen: true,
+  allow_speak: true,
 };
 
 type ModalKind =
@@ -159,13 +167,13 @@ export default function SettingsPage() {
   };
   const practiceSettings: PracticeSettings = {
     ...DEFAULT_PRACTICE_SETTINGS,
-    ...(user?.enrollment
+    ...(user?.preference
       ? {
-          tasks_per_day: user.enrollment.tasks_per_day,
-          allow_reading: user.enrollment.allow_reading,
-          allow_writing: user.enrollment.allow_writing,
-          allow_listening: user.enrollment.allow_listening,
-          allow_speaking: user.enrollment.allow_speaking,
+          tasks_per_day: user.preference.tasks_per_day,
+          allow_read: user.preference.allow_read,
+          allow_write: user.preference.allow_write,
+          allow_listen: user.preference.allow_listen,
+          allow_speak: user.preference.allow_speak,
         }
       : {}),
     ...practiceOverride,
@@ -199,38 +207,35 @@ export default function SettingsPage() {
   });
 
   const practiceMutation = useMutation({
-    mutationFn: coursesApi.updateEnrollmentSettings,
+    mutationFn: preferencesApi.update,
     onError: () => {
       setPracticeOverride({});
     },
     onSuccess: async (saved) => {
       setPracticeOverride({
         tasks_per_day: saved.tasks_per_day,
-        allow_reading: saved.allow_reading,
-        allow_writing: saved.allow_writing,
-        allow_listening: saved.allow_listening,
-        allow_speaking: saved.allow_speaking,
+        allow_read: saved.allow_read,
+        allow_write: saved.allow_write,
+        allow_listen: saved.allow_listen,
+        allow_speak: saved.allow_speak,
       });
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["me"] }),
-        queryClient.invalidateQueries({ queryKey: ["task", "next"] }),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: ["me"] });
     },
   });
 
   const currentPlan = useMemo(() => {
     const purchase = purchaseQuery.data;
     if (purchase) return purchase;
-    const course = user?.enrollment?.course;
+    const courseLength = user?.preference?.course_length;
     return {
       id: 0,
       user_id: user?.id ?? 0,
-      plan_id: course?.slug ?? "beginner-24w",
-      plan_name: course?.duration_weeks === 48 ? "48-Week Plan" : "24-Week Foundation",
-      amount_paid: course?.duration_weeks === 48 ? 1999 : 999,
+      plan_id: courseLength === "48w" ? "beginner-48w" : "beginner-24w",
+      plan_name: courseLength === "48w" ? "48-Week Plan" : "24-Week Foundation",
+      amount_paid: courseLength === "48w" ? 1999 : 999,
       currency: "INR",
       status: "paid",
-      created_at: user?.enrollment?.started_at ?? "",
+      created_at: "",
     };
   }, [purchaseQuery.data, user]);
 
@@ -246,7 +251,7 @@ export default function SettingsPage() {
   };
 
   const updatePractice = (patch: Partial<PracticeSettings>) => {
-    if (!user?.enrollment) return;
+    if (!user?.preference) return;
     const next = { ...practiceSettings, ...patch };
     setPracticeOverride(next);
     practiceMutation.mutate(next);
@@ -255,10 +260,10 @@ export default function SettingsPage() {
   const toggleActivity = (key: ActivitySettingKey) => {
     const activeCount = (
       [
-        "allow_reading",
-        "allow_writing",
-        "allow_listening",
-        "allow_speaking",
+        "allow_read",
+        "allow_write",
+        "allow_listen",
+        "allow_speak",
       ] as ActivitySettingKey[]
     ).filter((activityKey) => practiceSettings[activityKey]).length;
     if (practiceSettings[key] && activeCount <= 2) return;
@@ -294,7 +299,7 @@ export default function SettingsPage() {
             onDetails={() => setModal("purchase-details")}
             onUpgrade={() => router.push("/pricing")}
           />
-          {user?.enrollment && (
+          {user?.preference && (
             <DailyPracticeCard
               settings={practiceSettings}
               isSaving={practiceMutation.isPending}
@@ -479,10 +484,10 @@ function DailyPracticeCard({
     label: string;
     detail: string;
   }> = [
-    { key: "allow_reading", label: "Read", detail: "Reading-based practice" },
-    { key: "allow_writing", label: "Write", detail: "Written answer practice" },
-    { key: "allow_listening", label: "Listen", detail: "Listening comprehension" },
-    { key: "allow_speaking", label: "Speak", detail: "Recorded speaking tasks" },
+    { key: "allow_read", label: "Read", detail: "Reading-based practice" },
+    { key: "allow_write", label: "Write", detail: "Written answer practice" },
+    { key: "allow_listen", label: "Listen", detail: "Listening comprehension" },
+    { key: "allow_speak", label: "Speak", detail: "Recorded speaking tasks" },
   ];
   const activeCount = activities.filter((activity) => settings[activity.key]).length;
 

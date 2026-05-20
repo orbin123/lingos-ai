@@ -1,5 +1,5 @@
 import { api } from "./api";
-import type { EnrollmentRead } from "./courses-api";
+import type { UserCoursePreferenceRead } from "./preferences-api";
 import type { NotificationSettings } from "./subscriptions-api";
 import type { LoginInput, RegisterInput } from "./validators/auth";
 
@@ -33,7 +33,7 @@ export interface UserOut {
   is_active: boolean;
   roles: string[];
   role: string;
-  enrollment: EnrollmentRead | null;
+  preference: UserCoursePreferenceRead | null;
   phone_number: string | null;
   country: string | null;
   native_language: string | null;

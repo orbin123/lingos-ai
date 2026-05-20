@@ -11,8 +11,7 @@ from app.modules.admin.audit_service import AdminAuditService
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.auth.repository import UserProfileRepository
-from app.modules.curriculum.models import EnrollmentStatus
-from app.modules.curriculum.repository import CourseRepository, UserEnrollmentRepository
+from app.modules.preferences.repository import UserCoursePreferenceRepository
 from app.modules.subscriptions.models import Payment, Purchase
 from app.modules.subscriptions.schemas import (
     NotificationSettings,
@@ -25,15 +24,18 @@ subscription_router = APIRouter(prefix="/api/subscriptions", tags=["subscription
 users_router = APIRouter(prefix="/api/users", tags=["users"])
 
 
-PLAN_CATALOG = {
+# Course length is the only per-plan piece of state the daily-sessions flow
+# cares about — the rest (title, level) is presentational and rendered by the
+# frontend from the plan_id directly.
+PLAN_CATALOG: dict[str, dict[str, object]] = {
     "beginner-24w": {
-        "course_slug": "beginner-24w",
+        "course_length": "24w",
         "name": "24-Week Foundation",
         "amount_paid": 999.0,
         "currency": "INR",
     },
     "beginner-48w": {
-        "course_slug": "beginner-48w",
+        "course_length": "48w",
         "name": "48-Week Plan",
         "amount_paid": 1999.0,
         "currency": "INR",
@@ -65,7 +67,7 @@ def purchase_plan(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PurchaseRead:
-    """Mock a purchase and attach the user to the selected course plan."""
+    """Mock a purchase and seed/update the user's course preference."""
     plan = PLAN_CATALOG.get(payload.plan_id)
     if plan is None:
         raise HTTPException(
@@ -73,20 +75,12 @@ def purchase_plan(
             detail="Unknown purchase plan.",
         )
 
-    course = CourseRepository(db).get_by_slug(plan["course_slug"])
-    if course is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="The course for this plan is not available.",
-        )
-
-    enrollment_repo = UserEnrollmentRepository(db)
-    enrollment = enrollment_repo.get_for_user(current_user.id)
-    if enrollment is None:
-        enrollment = enrollment_repo.create(user_id=current_user.id, course_id=course.id)
-    else:
-        enrollment.course_id = course.id
-        enrollment.status = EnrollmentStatus.ACTIVE
+    # Upsert the user's course preference with the plan's course_length.
+    # Lazy-create covers the common case where this is the user's first plan;
+    # an existing row gets its course_length bumped to match the new plan.
+    pref_repo = UserCoursePreferenceRepository(db)
+    preference = pref_repo.get_or_create_for_user(current_user.id)
+    preference.course_length = str(plan["course_length"])
 
     purchase = db.query(Purchase).filter(Purchase.user_id == current_user.id).first()
     if purchase is None:
@@ -138,15 +132,18 @@ def pause_course_access(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PurchaseRead:
-    """Pause the user's learning plan without changing purchase history."""
+    """Pause the user's learning plan without changing purchase history.
+
+    The status flip lives on `Purchase` only — `UserCoursePreference`
+    does not carry a status field today. If we need to gate session
+    access on `purchase.status == "paused"`, that lookup happens at the
+    sessions route.
+    """
     purchase = db.query(Purchase).filter(Purchase.user_id == current_user.id).first()
     if purchase is None:
         raise HTTPException(status_code=404, detail="No purchase found.")
 
     purchase.status = "paused"
-    enrollment = UserEnrollmentRepository(db).get_for_user(current_user.id)
-    if enrollment is not None:
-        enrollment.status = EnrollmentStatus.PAUSED
 
     db.commit()
     db.refresh(purchase)

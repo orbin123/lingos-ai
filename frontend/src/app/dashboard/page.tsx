@@ -273,7 +273,7 @@ export default function DashboardPage() {
     );
   }
 
-  const enrollment = user?.enrollment;
+  const preference = user?.preference;
   const userRecord = user as unknown as Record<string, unknown> | undefined;
   const rawScores = userRecord?.skill_scores;
   // Normalise incoming keys through `normalizeSkillKey` so that data shipped
@@ -345,9 +345,9 @@ export default function DashboardPage() {
         )}
 
         <DashboardLayout user={user} onSignOut={handleLogout}>
-          {enrollment ? (
+          {preference ? (
             <EnrolledView
-              enrollment={enrollment}
+              preference={preference}
               scores={scores}
               onViewStats={() => router.push("/stats")}
               onGoAdmin={() => router.push("/admin")}
@@ -375,12 +375,12 @@ export default function DashboardPage() {
    ════════════════════════════════════════════════════════════════════ */
 
 interface EnrolledViewProps {
-  enrollment: NonNullable<
+  preference: NonNullable<
     ReturnType<typeof import("@/lib/auth-api").authApi.me> extends Promise<
       infer U
     >
-      ? U extends { enrollment: infer E }
-        ? E
+      ? U extends { preference: infer P }
+        ? P
         : never
       : never
   >;
@@ -392,13 +392,14 @@ interface EnrolledViewProps {
 }
 
 function EnrolledView({
-  enrollment,
+  preference,
   scores,
   showAdminConsole,
   onGoAdmin,
   onViewStats,
   userName,
 }: EnrolledViewProps) {
+  const totalWeeks = preference.course_length === "48w" ? 48 : 24;
   return (
     <div
       style={{
@@ -438,7 +439,7 @@ function EnrolledView({
               marginBottom: 0,
             }}
           >
-            Week {enrollment.current_week}, Day {enrollment.current_day_in_week} — keep the momentum going.
+            Week {preference.current_week}, Day {preference.current_day_in_week} — keep the momentum going.
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
@@ -464,10 +465,10 @@ function EnrolledView({
           >
             <span style={{ color: "oklch(45% 0.07 240)" }}>Week</span>
             <span style={{ color: "#0070C4", fontWeight: 800 }}>
-              {enrollment.current_week}
+              {preference.current_week}
             </span>
             <span style={{ color: "oklch(45% 0.07 240)" }}>of</span>
-            <span style={{ fontWeight: 700 }}>{enrollment.course.duration_weeks}</span>
+            <span style={{ fontWeight: 700 }}>{totalWeeks}</span>
           </div>
         </div>
       </div>
@@ -483,8 +484,8 @@ function EnrolledView({
         {/* LEFT COLUMN */}
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
           <DailyTaskPanel
-            key={`${enrollment.current_week}-${enrollment.current_day_in_week}`}
-            enrollment={enrollment}
+            key={`${preference.current_week}-${preference.current_day_in_week}`}
+            preference={preference}
           />
 
           {/* Skill scores */}
@@ -560,7 +561,7 @@ function EnrolledView({
                 color: "white",
               }}
             >
-              Reach {enrollment.course.target_level} by Friday
+              Stay consistent across the week
             </div>
             <div
               style={{

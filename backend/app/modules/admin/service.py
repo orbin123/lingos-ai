@@ -1,4 +1,9 @@
-"""Business logic for admin APIs."""
+"""Business logic for admin APIs.
+
+Phase 8: task-template and feedback-review endpoints route to legacy
+tables and return 501 at the route layer. Their service methods are
+gone here too.
+"""
 
 from typing import Any
 
@@ -14,15 +19,10 @@ from app.modules.admin.schemas import (
     AdminSummary,
     AdminUserDetail,
     AdminUserListItem,
-    FeedbackReviewItem,
-    FeedbackReviewUpdate,
     PaymentRead,
     RolePermissionsUpdate,
     SubscriptionRead,
     SubscriptionUpdate,
-    TaskTemplateCreate,
-    TaskTemplateRead,
-    TaskTemplateUpdate,
     UserBillingRead,
     UserRolesUpdate,
 )
@@ -30,7 +30,6 @@ from app.modules.auth.models import DEFAULT_ROLE_NAMES, ROLE_SUPER_ADMIN, User
 from app.modules.auth.permissions import ALL_PERMISSION_KEYS
 from app.modules.auth.repository import RoleRepository
 from app.modules.subscriptions.models import Subscription
-from app.modules.tasks.models import Task, TaskStatus, TaskType
 
 
 class AdminService:
@@ -177,100 +176,6 @@ class AdminService:
             created_at=detail.created_at,
         )
 
-    def list_task_templates(self) -> list[TaskTemplateRead]:
-        return [self._task_out(task) for task in self.repo.list_task_templates()]
-
-    def create_task_template(
-        self,
-        payload: TaskTemplateCreate,
-        *,
-        actor: User,
-        ip_address: str | None = None,
-    ) -> TaskTemplateRead:
-        task = self.repo.create_task_template(
-            title=payload.title.strip(),
-            task_type=self._task_type(payload.task_type),
-            difficulty=payload.difficulty,
-            status=self._task_status(payload.status),
-            content=payload.content,
-        )
-        self.audit.record(
-            admin=actor,
-            action="task_template.create",
-            resource_type="task_template",
-            resource_id=task.id,
-            old_value=None,
-            new_value=self._task_snapshot(task),
-            ip_address=ip_address,
-        )
-        self.db.commit()
-        self.db.refresh(task)
-        return self._task_out(task)
-
-    def update_task_template(
-        self,
-        *,
-        template_id: int,
-        payload: TaskTemplateUpdate,
-        actor: User,
-        ip_address: str | None = None,
-    ) -> TaskTemplateRead | None:
-        task = self.repo.get_task_template(template_id)
-        if task is None:
-            return None
-
-        old_value = self._task_snapshot(task)
-        updates = payload.model_dump(exclude_unset=True)
-        if "title" in updates and updates["title"] is not None:
-            task.title = updates["title"].strip()
-        if "task_type" in updates and updates["task_type"] is not None:
-            task.task_type = self._task_type(updates["task_type"])
-        if "difficulty" in updates and updates["difficulty"] is not None:
-            task.difficulty = updates["difficulty"]
-        if "status" in updates and updates["status"] is not None:
-            task.status = self._task_status(updates["status"])
-        if "content" in updates and updates["content"] is not None:
-            task.content = updates["content"]
-
-        self.db.flush()
-        self.audit.record(
-            admin=actor,
-            action="task_template.update",
-            resource_type="task_template",
-            resource_id=task.id,
-            old_value=old_value,
-            new_value=self._task_snapshot(task),
-            ip_address=ip_address,
-        )
-        self.db.commit()
-        self.db.refresh(task)
-        return self._task_out(task)
-
-    def archive_task_template(
-        self,
-        template_id: int,
-        *,
-        actor: User,
-        ip_address: str | None = None,
-    ) -> TaskTemplateRead | None:
-        task = self.repo.get_task_template(template_id)
-        if task is None:
-            return None
-        old_value = self._task_snapshot(task)
-        self.repo.archive_task_template(task)
-        self.audit.record(
-            admin=actor,
-            action="task_template.archive",
-            resource_type="task_template",
-            resource_id=task.id,
-            old_value=old_value,
-            new_value=self._task_snapshot(task),
-            ip_address=ip_address,
-        )
-        self.db.commit()
-        self.db.refresh(task)
-        return self._task_out(task)
-
     def list_audit_logs(self) -> list[AdminAuditLogRead]:
         return self.repo.list_audit_logs()
 
@@ -282,39 +187,6 @@ class AdminService:
             log_id,
             include_sensitive=self._can_see_sensitive_ai(actor),
         )
-
-    def list_feedback_review(self) -> list[FeedbackReviewItem]:
-        return self.repo.list_feedback_review()
-
-    def update_feedback_review(
-        self,
-        *,
-        feedback_id: int,
-        payload: FeedbackReviewUpdate,
-        actor: User,
-        ip_address: str | None = None,
-    ) -> FeedbackReviewItem | None:
-        feedback = self.repo.get_feedback(feedback_id)
-        if feedback is None:
-            return None
-        old_value = self._feedback_review_snapshot(feedback)
-        self.repo.update_feedback_review(
-            feedback,
-            review_status=payload.review_status,
-            admin_note=payload.admin_note,
-            reviewer=actor,
-        )
-        self.audit.record(
-            admin=actor,
-            action="feedback.review",
-            resource_type="feedback",
-            resource_id=feedback.id,
-            old_value=old_value,
-            new_value=self._feedback_review_snapshot(feedback),
-            ip_address=ip_address,
-        )
-        self.db.commit()
-        return self.repo.get_feedback_review_item(feedback_id)
 
     def list_payments(self) -> list[PaymentRead]:
         return self.repo.list_payments()
@@ -361,30 +233,6 @@ class AdminService:
         self.db.refresh(subscription)
         return self.repo._subscription_out(subscription)
 
-    def _task_type(self, value: str) -> TaskType:
-        try:
-            return TaskType(value)
-        except ValueError as exc:
-            raise ValueError(f"Unknown task_type: {value}") from exc
-
-    def _task_status(self, value: str) -> TaskStatus:
-        try:
-            return TaskStatus(value)
-        except ValueError as exc:
-            raise ValueError(f"Unknown status: {value}") from exc
-
-    def _task_out(self, task: Task) -> TaskTemplateRead:
-        return TaskTemplateRead(
-            id=task.id,
-            title=task.title,
-            task_type=task.task_type.value,
-            difficulty=task.difficulty,
-            status=task.status.value,
-            content=task.content,
-            created_at=task.created_at,
-            updated_at=task.updated_at,
-        )
-
     def _user_status_snapshot(self, user: User) -> dict[str, Any]:
         return {
             "id": user.id,
@@ -412,27 +260,6 @@ class AdminService:
             "id": role.id,
             "name": role.name,
             "permissions": role.permission_keys(),
-        }
-
-    def _task_snapshot(self, task: Task) -> dict[str, Any]:
-        return {
-            "id": task.id,
-            "title": task.title,
-            "task_type": task.task_type.value,
-            "difficulty": task.difficulty,
-            "status": task.status.value,
-            "content": task.content,
-        }
-
-    def _feedback_review_snapshot(self, feedback) -> dict[str, Any]:
-        return {
-            "id": feedback.id,
-            "review_status": feedback.review_status,
-            "reviewed_by": feedback.reviewed_by,
-            "reviewed_at": (
-                feedback.reviewed_at.isoformat() if feedback.reviewed_at else None
-            ),
-            "admin_note": feedback.admin_note,
         }
 
     def _subscription_snapshot(self, subscription: Subscription) -> dict[str, Any]:

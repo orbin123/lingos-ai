@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AxiosError } from "axios";
 
-import type { EnrollmentRead } from "@/lib/courses-api";
+import type { UserCoursePreferenceRead } from "@/lib/preferences-api";
 import { getApiErrorMessage } from "@/lib/errors";
 import { useStartTodaySession } from "@/hooks/useSessionsFlow";
 import type {
@@ -13,11 +13,15 @@ import type {
 } from "@/lib/sessions-api";
 
 interface DailyTaskPanelProps {
-  enrollment: EnrollmentRead;
+  preference: UserCoursePreferenceRead;
 }
 
-function activitiesPerDay(enrollment: EnrollmentRead) {
-  return Math.max(2, Math.min(4, enrollment.tasks_per_day));
+function activitiesPerDay(preference: UserCoursePreferenceRead) {
+  return Math.max(2, Math.min(4, preference.tasks_per_day));
+}
+
+function courseLengthLabel(courseLength: "24w" | "48w"): string {
+  return courseLength === "48w" ? "48-week plan" : "24-week plan";
 }
 
 function PlayIcon() {
@@ -53,7 +57,7 @@ function ArrowIcon() {
   );
 }
 
-export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
+export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
   const router = useRouter();
   const startToday = useStartTodaySession();
 
@@ -87,17 +91,17 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
         animation: "fadeSlideUp 0.4s ease both",
       }}
     >
-      <PanelHeader enrollment={enrollment} />
+      <PanelHeader preference={preference} />
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <Tag bg="#d6e8f7" color="#00599e">
-          Day {enrollment.current_day_in_week}
+          Day {preference.current_day_in_week}
         </Tag>
         <Tag bg="oklch(96% 0.04 290)" color="oklch(45% 0.16 290)">
-          {enrollment.course.target_level}
+          Week {preference.current_week}
         </Tag>
         <Tag bg="oklch(96% 0.04 60)" color="oklch(45% 0.14 60)">
-          {activitiesPerDay(enrollment)} activities
+          {activitiesPerDay(preference)} activities
         </Tag>
       </div>
 
@@ -129,7 +133,7 @@ export function DailyTaskPanel({ enrollment }: DailyTaskPanelProps) {
   );
 }
 
-function PanelHeader({ enrollment }: { enrollment: EnrollmentRead }) {
+function PanelHeader({ preference }: { preference: UserCoursePreferenceRead }) {
   return (
     <div
       style={{
@@ -157,7 +161,7 @@ function PanelHeader({ enrollment }: { enrollment: EnrollmentRead }) {
             marginTop: 3,
           }}
         >
-          {enrollment.course.title} · {enrollment.course.duration_weeks}-week plan
+          {courseLengthLabel(preference.course_length)}
         </div>
       </div>
     </div>

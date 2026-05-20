@@ -18,7 +18,7 @@ from app import models  # noqa: F401 — populate Base.metadata
 from app.core.database import Base, get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
-from app.modules.curriculum.v2_models import (
+from app.modules.curriculum.models import (
     CurriculumDay,
     CurriculumWeek,
     TaskArchetype,

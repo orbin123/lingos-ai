@@ -1,15 +1,14 @@
-"""Pydantic schemas for v2 curriculum entities.
+"""Pydantic schemas for curriculum entities.
 
-These are the read/write shapes for the API layer (Phase 3) plus internal
-service-layer plumbing. They mirror the ORM models in `v2_models.py` and the
-JSON shape described in the restructure spec §16.1–16.3.
+Read/write shapes for the API layer plus internal service-layer plumbing.
+They mirror the ORM models in `models.py`.
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.modules.curriculum.v2_models import CoreActivity, ThemeType
+from app.modules.curriculum.models import CoreActivity, ThemeType
 
 
 class CurriculumDayRead(BaseModel):

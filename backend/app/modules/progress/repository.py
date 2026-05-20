@@ -49,14 +49,12 @@ class ProgressLogRepository:
         user_id: int,
         skill_id: int,
         score: float,
-        user_task_id: int | None = None,
     ) -> ProgressLog:
         """Insert one history row. Service layer handles the commit."""
         row = ProgressLog(
             user_id=user_id,
             skill_id=skill_id,
             score=score,
-            user_task_id=user_task_id,
         )
         self.db.add(row)
         self.db.flush()
@@ -154,20 +152,14 @@ class SkillPointsLogRepository:
         skill_id: int,
         points_earned: int,
         reason: str,
-        user_task_id: int | None = None,
         session_id: int | None = None,
     ) -> SkillPointsLog:
-        """Insert one log row. Service layer handles the commit.
-
-        `user_task_id` is the legacy WMA path; `session_id` is the new
-        sessions-based path. Pass whichever applies (both nullable).
-        """
+        """Insert one log row. Service layer handles the commit."""
         log = SkillPointsLog(
             user_id=user_id,
             skill_id=skill_id,
             points_earned=points_earned,
             reason=reason,
-            user_task_id=user_task_id,
             session_id=session_id,
         )
         self.db.add(log)

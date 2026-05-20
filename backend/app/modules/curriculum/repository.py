@@ -1,7 +1,7 @@
-"""Thin repositories for v2 curriculum tables.
+"""Thin repositories for curriculum tables.
 
-Keep these data-access only: no business logic, no scoring decisions. The
-session planner (Phase 3) reads through these.
+Data-access only: no business logic, no scoring decisions. The session
+planner reads through these.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.modules.curriculum.v2_models import (
+from app.modules.curriculum.models import (
     CurriculumDay,
     CurriculumWeek,
     TaskArchetype,
