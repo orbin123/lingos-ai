@@ -29,6 +29,9 @@ dist/
 # Database
 *.db
 *.sqlite3
+# Postgres dumps (may contain real user data — never commit)
+backup*.sql
+*.dump
 
 # Test Files
 backend/scratch

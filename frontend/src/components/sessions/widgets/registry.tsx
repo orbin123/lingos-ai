@@ -6,12 +6,9 @@
  * shell calls `getSessionWidget(ui_widget)` and renders the result with
  * `(taskContent, disabled, onSubmit)`.
  *
- * Phase 6 ships every archetype against `GenericResponseWidget` because
- * Phase 3 returns stub task content (`{phase: "stub", ...}`) and bespoke
- * widgets would have nothing to render. As real task content lands in
- * Phase 4, replace individual entries below with archetype-specific
- * components. The legacy `/components/task/task-widgets/*` set still
- * serves the legacy `/task/chat/*` flow and should not be touched.
+ * Every archetype currently routes to `GenericResponseWidget`. Replace
+ * individual entries with archetype-specific components as real task
+ * content arrives.
  */
 
 import { GenericResponseWidget } from "./GenericResponseWidget";

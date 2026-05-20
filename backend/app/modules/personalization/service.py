@@ -1,5 +1,4 @@
-"""PersonalizationService — orchestrates extraction + cache write +
-DailyPlan invalidation.
+"""PersonalizationService — orchestrates extraction + cache write.
 
 Triggered from:
 - profile PATCH (when personalisation fields change)
@@ -19,7 +18,6 @@ from sqlalchemy.orm import Session
 from app.ai.agents.personalization import extract_structured_personalisation
 from app.modules.auth.models import UserProfile
 from app.modules.auth.repository import UserProfileRepository
-from app.modules.curriculum.repository import DailyPlanRepository
 from app.modules.personalization.schemas import (
     StructuredPersonalisation,
     empty_personalisation,
@@ -59,13 +57,11 @@ class PersonalizationService:
     def __init__(self, db: Session) -> None:
         self.db = db
         self._profile_repo = UserProfileRepository(db)
-        self._plan_repo = DailyPlanRepository(db)
 
     async def refresh_for_user(
         self, user_id: int
     ) -> StructuredPersonalisation | None:
-        """Re-extract structured personalisation for one user and invalidate
-        their cached daily plans.
+        """Re-extract structured personalisation for one user.
 
         Returns the new payload, or None if the user has no profile.
         """
@@ -100,22 +96,6 @@ class PersonalizationService:
                 "personalization_persist_failed user_id=%s", user_id
             )
             return structured
-
-        # Cached plans were built under the old personalisation. Wipe them so
-        # the next session generates fresh, personalised plans. Lazy regen
-        # means we don't pay any LLM cost until the user actually opens
-        # their next lesson.
-        try:
-            wiped = self._plan_repo.delete_for_user(user_id=user_id)
-            if wiped:
-                logger.info(
-                    "personalization_invalidated_daily_plans user_id=%s wiped=%s",
-                    user_id, wiped,
-                )
-        except Exception:
-            logger.exception(
-                "personalization_plan_invalidation_failed user_id=%s", user_id
-            )
 
         return structured
 

@@ -13,15 +13,10 @@ from app.modules.admin.schemas import (
     AdminSummary,
     AdminUserDetail,
     AdminUserListItem,
-    FeedbackReviewItem,
-    FeedbackReviewUpdate,
     PaymentRead,
     RolePermissionsUpdate,
     SubscriptionRead,
     SubscriptionUpdate,
-    TaskTemplateCreate,
-    TaskTemplateRead,
-    TaskTemplateUpdate,
     UserBillingRead,
     UserRolesUpdate,
     UserStatusUpdate,
@@ -180,84 +175,64 @@ def update_role_permissions(
     return role
 
 
-@router.get(
-    "/task-templates",
-    response_model=list[TaskTemplateRead],
-    status_code=status.HTTP_200_OK,
+# ── Task templates (Phase 8: disabled) ─────────────────────────────
+#
+# Backed by the deleted `tasks.Task` table. The admin team will rebuild
+# against `task_archetypes` + `curriculum_days` in a follow-up. Until
+# then every endpoint returns 501.
+
+
+_TASK_TEMPLATES_DISABLED = (
+    "Task templates were backed by the legacy `tasks` table, which was "
+    "removed in the Phase 8 cutover. Admin task management will be "
+    "re-implemented against `task_archetypes` in a follow-up."
 )
+
+
+@router.get("/task-templates", status_code=status.HTTP_501_NOT_IMPLEMENTED)
 def list_task_templates(
     _current_user: User = Depends(require_permission("task_templates.read")),
-    db: Session = Depends(get_db),
-) -> list[TaskTemplateRead]:
-    return AdminService(db).list_task_templates()
+) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=_TASK_TEMPLATES_DISABLED,
+    )
 
 
-@router.post(
-    "/task-templates",
-    response_model=TaskTemplateRead,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("/task-templates", status_code=status.HTTP_501_NOT_IMPLEMENTED)
 def create_task_template(
-    payload: TaskTemplateCreate,
-    request: Request,
-    current_user: User = Depends(require_permission("task_templates.create")),
-    db: Session = Depends(get_db),
-) -> TaskTemplateRead:
-    try:
-        return AdminService(db).create_task_template(
-            payload,
-            actor=current_user,
-            ip_address=client_ip_from_request(request),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    _current_user: User = Depends(require_permission("task_templates.create")),
+) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=_TASK_TEMPLATES_DISABLED,
+    )
 
 
 @router.patch(
-    "/task-templates/{template_id}",
-    response_model=TaskTemplateRead,
-    status_code=status.HTTP_200_OK,
+    "/task-templates/{template_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED
 )
 def update_task_template(
     template_id: int,
-    payload: TaskTemplateUpdate,
-    request: Request,
-    current_user: User = Depends(require_permission("task_templates.update")),
-    db: Session = Depends(get_db),
-) -> TaskTemplateRead:
-    try:
-        template = AdminService(db).update_task_template(
-            template_id=template_id,
-            payload=payload,
-            actor=current_user,
-            ip_address=client_ip_from_request(request),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    if template is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task template not found")
-    return template
+    _current_user: User = Depends(require_permission("task_templates.update")),
+) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=_TASK_TEMPLATES_DISABLED,
+    )
 
 
 @router.delete(
-    "/task-templates/{template_id}",
-    response_model=TaskTemplateRead,
-    status_code=status.HTTP_200_OK,
+    "/task-templates/{template_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED
 )
 def archive_task_template(
     template_id: int,
-    request: Request,
-    current_user: User = Depends(require_permission("task_templates.archive")),
-    db: Session = Depends(get_db),
-) -> TaskTemplateRead:
-    template = AdminService(db).archive_task_template(
-        template_id,
-        actor=current_user,
-        ip_address=client_ip_from_request(request),
+    _current_user: User = Depends(require_permission("task_templates.archive")),
+) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=_TASK_TEMPLATES_DISABLED,
     )
-    if template is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task template not found")
-    return template
 
 
 @router.get(
@@ -370,36 +345,38 @@ def update_subscription(
     return subscription
 
 
-@router.get(
-    "/feedback-review",
-    response_model=list[FeedbackReviewItem],
-    status_code=status.HTTP_200_OK,
+# ── Feedback review (Phase 8: disabled) ────────────────────────────
+#
+# Backed by the deleted `feedbacks` review queue. The new flow's
+# `activity_feedback` rows don't yet carry a review status — that
+# surface returns when the admin team re-implements.
+
+
+_FEEDBACK_REVIEW_DISABLED = (
+    "Feedback review was backed by the legacy `feedbacks` table, which "
+    "was removed in the Phase 8 cutover. The admin review queue will "
+    "land in a follow-up against `activity_feedback`."
 )
+
+
+@router.get("/feedback-review", status_code=status.HTTP_501_NOT_IMPLEMENTED)
 def list_feedback_review(
     _current_user: User = Depends(require_permission("feedback_logs.read")),
-    db: Session = Depends(get_db),
-) -> list[FeedbackReviewItem]:
-    return AdminService(db).list_feedback_review()
+) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=_FEEDBACK_REVIEW_DISABLED,
+    )
 
 
 @router.patch(
-    "/feedback-review/{feedback_id}",
-    response_model=FeedbackReviewItem,
-    status_code=status.HTTP_200_OK,
+    "/feedback-review/{feedback_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED
 )
 def update_feedback_review(
     feedback_id: int,
-    payload: FeedbackReviewUpdate,
-    request: Request,
-    current_user: User = Depends(require_permission("feedback_quality.review")),
-    db: Session = Depends(get_db),
-) -> FeedbackReviewItem:
-    item = AdminService(db).update_feedback_review(
-        feedback_id=feedback_id,
-        payload=payload,
-        actor=current_user,
-        ip_address=client_ip_from_request(request),
+    _current_user: User = Depends(require_permission("feedback_quality.review")),
+) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail=_FEEDBACK_REVIEW_DISABLED,
     )
-    if item is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feedback not found")
-    return item

@@ -20,8 +20,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.modules.curriculum.v2_models import CurriculumDay
-from app.modules.curriculum.v2_repository import (
+from app.modules.curriculum.models import CurriculumDay
+from app.modules.curriculum.repository import (
     CurriculumDayRepository,
     TaskArchetypeRepository,
 )

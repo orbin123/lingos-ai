@@ -64,7 +64,7 @@ export default function PricingPage() {
     enabled: isAuthenticated,
   });
   useEffect(() => {
-    if (me?.enrollment) router.replace("/dashboard");
+    if (me?.preference) router.replace("/dashboard");
   }, [me, router]);
 
   const purchaseMutation = useMutation({

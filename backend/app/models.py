@@ -20,25 +20,19 @@ from app.modules.auth.models import (  # noqa: F401
     UserRole,
 )
 from app.modules.admin.models import AdminAuditLog, AIRequestLog  # noqa: F401
-from app.modules.skills.models import Skill, UserSkillScore  # noqa: F401
+from app.modules.skills.models import Skill  # noqa: F401
 from app.modules.curriculum.models import (  # noqa: F401
-    Course, UserEnrollment, EnrollmentSkillHistory, DailyPlan,
-)
-from app.modules.curriculum.v2_models import (  # noqa: F401
-    CurriculumDay, CurriculumWeek, TaskArchetype,
+    CurriculumDay,
+    CurriculumWeek,
+    TaskArchetype,
 )
 from app.modules.challenges.models import (  # noqa: F401
     Challenge,
     ChallengeAttempt,
     ChallengeLevel,
 )
-from app.modules.tasks.models import Task, TaskSkill, UserTask  # noqa: F401
-from app.modules.responses.models import (  # noqa: F401
-    UserResponse, Evaluation, Feedback,
-)
 from app.modules.progress.models import ProgressLog, SkillPoints, SkillPointsLog  # noqa: F401
 from app.modules.subscriptions.models import Payment, Purchase, Subscription  # noqa: F401
-from app.modules.learning_session.models import LearningSession  # noqa: F401
 from app.modules.sessions.models import (  # noqa: F401
     ActivityAttempt,
     ActivityEvaluation,
@@ -47,3 +41,4 @@ from app.modules.sessions.models import (  # noqa: F401
     SessionScorecard,
 )
 from app.modules.streaks.models import DailyActivity, StreakFreezeUsage  # noqa: F401
+from app.modules.preferences.models import UserCoursePreference  # noqa: F401

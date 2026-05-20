@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from app import models  # noqa: F401
 from app.core.database import Base
 from app.modules.auth.models import User
-from app.modules.curriculum.v2_models import (
+from app.modules.curriculum.models import (
     CurriculumDay,
     CurriculumWeek,
     TaskArchetype,

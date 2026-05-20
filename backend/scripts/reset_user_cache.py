@@ -1,20 +1,33 @@
 """Reset every cached lesson artifact for a single user.
 
-Use after the curriculum/personalisation refactor when a user is still
-seeing the old "What does 'mother' mean?"-style content. The migration
-wipes daily_plans for everyone, but tasks, learning sessions, responses,
-evaluations, and feedback persist per-user. This script clears all of
-that for one user so the next chat visit regenerates from scratch under
-the new objective-driven planner.
+Use when a learner is stuck on stale session state — completed sessions
+that should be retried, points that should be zeroed, a course preference
+pointing at the wrong week. This wipes the per-user session history so
+the next /sessions/start-today regenerates from scratch.
+
+Tables touched (FK-child-first delete order):
+  activity_feedback   → DELETE (children of activity_attempts)
+  activity_evaluations → DELETE (children of activity_attempts)
+  activity_attempts   → DELETE (children of daily_sessions)
+  session_scorecards  → DELETE (children of daily_sessions)
+  skill_points_logs   → DELETE (audit log entries for this user)
+  daily_sessions      → DELETE
+  progress_logs       → DELETE
+  skill_points        → UPDATE points/display_score to 0 (the row
+                        carries the user's earned baseline — we
+                        zero it out rather than drop the row so
+                        the schema invariant of one row per
+                        (user, skill) survives)
+
+With --restart-curriculum:
+  user_course_preferences → UPDATE current_week=1, current_day_in_week=1,
+                            last_completed_on=NULL
 
 Usage:
     cd backend
     python -m scripts.reset_user_cache --user-id 42
     python -m scripts.reset_user_cache --email orbinsunny@gmail.com
     python -m scripts.reset_user_cache --user-id 42 --restart-curriculum
-
-`--restart-curriculum` also resets the enrollment to Week 1 Day 1 so the
-learner gets the new W1D1 lesson immediately.
 
 The script runs inside a single transaction. Use `--dry-run` to preview.
 """
@@ -34,55 +47,110 @@ from sqlalchemy import text  # noqa: E402
 from app.core.database import SessionLocal  # noqa: E402
 
 
+# (label, delete-sql, count-sql) tuples. The count-sql mirrors the
+# delete-sql but returns a row count so dry-run can preview impact.
 # Order matters — children before parents.
-_DELETE_STATEMENTS = (
+_DELETE_OPERATIONS: tuple[tuple[str, str, str], ...] = (
     (
-        "feedback",
+        "activity_feedback",
         """
-        DELETE FROM feedback
-         WHERE evaluation_id IN (
-           SELECT e.id
-             FROM evaluations e
-             JOIN user_responses r ON r.id = e.response_id
-             JOIN user_tasks ut ON ut.id = r.user_task_id
-            WHERE ut.user_id = :user_id
+        DELETE FROM activity_feedback
+         WHERE attempt_id IN (
+           SELECT aa.id FROM activity_attempts aa
+             JOIN daily_sessions ds ON ds.id = aa.session_id
+            WHERE ds.user_id = :user_id
+         )
+        """,
+        """
+        SELECT COUNT(*) FROM activity_feedback
+         WHERE attempt_id IN (
+           SELECT aa.id FROM activity_attempts aa
+             JOIN daily_sessions ds ON ds.id = aa.session_id
+            WHERE ds.user_id = :user_id
          )
         """,
     ),
     (
-        "evaluations",
+        "activity_evaluations",
         """
-        DELETE FROM evaluations
-         WHERE response_id IN (
-           SELECT r.id
-             FROM user_responses r
-             JOIN user_tasks ut ON ut.id = r.user_task_id
-            WHERE ut.user_id = :user_id
+        DELETE FROM activity_evaluations
+         WHERE attempt_id IN (
+           SELECT aa.id FROM activity_attempts aa
+             JOIN daily_sessions ds ON ds.id = aa.session_id
+            WHERE ds.user_id = :user_id
+         )
+        """,
+        """
+        SELECT COUNT(*) FROM activity_evaluations
+         WHERE attempt_id IN (
+           SELECT aa.id FROM activity_attempts aa
+             JOIN daily_sessions ds ON ds.id = aa.session_id
+            WHERE ds.user_id = :user_id
          )
         """,
     ),
     (
-        "user_responses",
+        "activity_attempts",
         """
-        DELETE FROM user_responses
-         WHERE user_task_id IN (
-           SELECT id FROM user_tasks WHERE user_id = :user_id
+        DELETE FROM activity_attempts
+         WHERE session_id IN (
+           SELECT id FROM daily_sessions WHERE user_id = :user_id
+         )
+        """,
+        """
+        SELECT COUNT(*) FROM activity_attempts
+         WHERE session_id IN (
+           SELECT id FROM daily_sessions WHERE user_id = :user_id
          )
         """,
     ),
     (
-        "learning_sessions",
-        "DELETE FROM learning_sessions WHERE user_id = :user_id",
+        "session_scorecards",
+        """
+        DELETE FROM session_scorecards
+         WHERE session_id IN (
+           SELECT id FROM daily_sessions WHERE user_id = :user_id
+         )
+        """,
+        """
+        SELECT COUNT(*) FROM session_scorecards
+         WHERE session_id IN (
+           SELECT id FROM daily_sessions WHERE user_id = :user_id
+         )
+        """,
     ),
     (
-        "user_tasks",
-        "DELETE FROM user_tasks WHERE user_id = :user_id",
+        "skill_points_logs",
+        "DELETE FROM skill_points_logs WHERE user_id = :user_id",
+        "SELECT COUNT(*) FROM skill_points_logs WHERE user_id = :user_id",
     ),
     (
-        "daily_plans",
-        "DELETE FROM daily_plans WHERE user_id = :user_id",
+        "daily_sessions",
+        "DELETE FROM daily_sessions WHERE user_id = :user_id",
+        "SELECT COUNT(*) FROM daily_sessions WHERE user_id = :user_id",
+    ),
+    (
+        "progress_logs",
+        "DELETE FROM progress_logs WHERE user_id = :user_id",
+        "SELECT COUNT(*) FROM progress_logs WHERE user_id = :user_id",
     ),
 )
+
+
+_ZERO_SKILL_POINTS_SQL = """
+UPDATE skill_points
+   SET points = 0,
+       display_score = 0.0
+ WHERE user_id = :user_id
+"""
+
+_RESTART_CURRICULUM_SQL = """
+UPDATE user_course_preferences
+   SET current_week = 1,
+       current_day_in_week = 1,
+       last_completed_on = NULL
+ WHERE user_id = :user_id
+"""
 
 
 def _resolve_user_id(session, *, user_id: int | None, email: str | None) -> int:
@@ -119,60 +187,64 @@ def reset_user(
         print(f"Resolved user id: {resolved_id}")
 
         totals: dict[str, int] = {}
-        for label, statement in _DELETE_STATEMENTS:
+
+        for label, delete_sql, count_sql in _DELETE_OPERATIONS:
             if dry_run:
-                # Count first so the operator can preview impact.
-                count_stmt = statement.replace(
-                    "DELETE FROM ", "SELECT COUNT(*) FROM "
-                ).replace("\n        ", " ")
-                # The subquery DELETEs need to keep their WHERE shape — only
-                # the outer DELETE FROM <table> is being swapped here.
-                if "IN (" in count_stmt:
-                    # Fall back to a simpler count of the parent table.
-                    parent_table = label
-                    count_stmt = (
-                        f"SELECT COUNT(*) FROM {parent_table} "
-                        f"WHERE id IN ({statement.split('WHERE', 1)[1]})"
-                    )
                 count = session.execute(
-                    text(count_stmt), {"user_id": resolved_id}
+                    text(count_sql), {"user_id": resolved_id}
                 ).scalar_one()
                 totals[label] = int(count)
             else:
                 result = session.execute(
-                    text(statement), {"user_id": resolved_id}
+                    text(delete_sql), {"user_id": resolved_id}
                 )
                 totals[label] = int(result.rowcount or 0)
+
+        if dry_run:
+            count = session.execute(
+                text(
+                    "SELECT COUNT(*) FROM skill_points "
+                    "WHERE user_id = :user_id "
+                    "AND (points > 0 OR display_score > 0.0)"
+                ),
+                {"user_id": resolved_id},
+            ).scalar_one()
+            totals["skill_points (would zero out)"] = int(count)
+        else:
+            result = session.execute(
+                text(_ZERO_SKILL_POINTS_SQL), {"user_id": resolved_id}
+            )
+            totals["skill_points (zeroed)"] = int(result.rowcount or 0)
 
         if restart_curriculum:
             if dry_run:
                 row = session.execute(
                     text(
                         "SELECT current_week, current_day_in_week "
-                        "FROM user_enrollments WHERE user_id = :user_id"
+                        "FROM user_course_preferences "
+                        "WHERE user_id = :user_id"
                     ),
                     {"user_id": resolved_id},
                 ).first()
                 if row is not None:
-                    totals["user_enrollments (would reset)"] = 1
+                    totals["user_course_preferences (would reset)"] = 1
                     print(
-                        f"  enrollment currently at week={row[0]} day={row[1]}"
+                        f"  preference currently at "
+                        f"week={row[0]} day={row[1]}"
                     )
+                else:
+                    totals["user_course_preferences (would reset)"] = 0
             else:
                 result = session.execute(
-                    text(
-                        "UPDATE user_enrollments "
-                        "   SET current_week = 1, "
-                        "       current_day_in_week = 1, "
-                        "       last_completed_on = NULL "
-                        " WHERE user_id = :user_id"
-                    ),
+                    text(_RESTART_CURRICULUM_SQL),
                     {"user_id": resolved_id},
                 )
-                totals["user_enrollments (reset)"] = int(result.rowcount or 0)
+                totals["user_course_preferences (reset)"] = int(
+                    result.rowcount or 0
+                )
 
         if dry_run:
-            print("\n[DRY RUN] No rows changed. Counts that would be deleted:")
+            print("\n[DRY RUN] No rows changed. Counts that would be affected:")
             session.rollback()
         else:
             session.commit()
@@ -183,8 +255,8 @@ def reset_user(
 
         if not dry_run:
             print(
-                f"\nDone. Next chat session for user {resolved_id} will "
-                "regenerate under the new objective-driven planner."
+                f"\nDone. The next /sessions/start-today call for user "
+                f"{resolved_id} will start a fresh session."
             )
     finally:
         session.close()
@@ -198,7 +270,10 @@ def main() -> None:
     parser.add_argument(
         "--restart-curriculum",
         action="store_true",
-        help="Reset the user's enrollment to Week 1 Day 1.",
+        help=(
+            "Reset the user's course preference to Week 1 Day 1 "
+            "(in addition to clearing session history)."
+        ),
     )
     parser.add_argument(
         "--dry-run",

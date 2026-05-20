@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Terminal scorecard page (Phase 6).
+ * Terminal scorecard page.
  *
  * Reads the persisted scorecard for `sessionId`. Prefers the in-memory
  * snapshot from `sessionStore` (already populated by the complete mutation)
@@ -9,13 +9,11 @@
  * lands here directly (e.g. via URL).
  */
 
-import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { SessionScorecard } from "@/components/sessions/SessionScorecard";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useSessionScorecard } from "@/hooks/useSessionsFlow";
-import { isSessionsFlowEnabled } from "@/lib/sessions-api";
 import { useSessionStore } from "@/store/sessionStore";
 
 
@@ -24,12 +22,6 @@ export default function SessionScorecardPage() {
   const sessionId = params.sessionId;
   const router = useRouter();
   useRequireAuth();
-
-  useEffect(() => {
-    if (!isSessionsFlowEnabled()) {
-      router.replace("/dashboard");
-    }
-  }, [router]);
 
   const cached = useSessionStore((s) => s.scorecard);
   const cachedMatches = cached?.session_id === sessionId;

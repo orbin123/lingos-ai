@@ -15,13 +15,13 @@ from sqlalchemy.orm import sessionmaker
 # Side-effect import: registers every ORM model on Base.metadata.
 from app import models  # noqa: F401
 from app.core.database import Base
-from app.modules.curriculum.v2_models import (
+from app.modules.curriculum.models import (
     CurriculumDay,
     CurriculumWeek,
     TaskArchetype,
     ThemeType,
 )
-from app.modules.curriculum.v2_repository import (
+from app.modules.curriculum.repository import (
     CurriculumDayRepository,
     CurriculumWeekRepository,
     TaskArchetypeRepository,

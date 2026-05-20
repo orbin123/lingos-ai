@@ -23,22 +23,17 @@ from app.modules.diagnosis.schemas import (
 from app.modules.diagnosis.scoring import compute_skill_scores
 from app.modules.personalization.service import PersonalizationService
 from app.modules.progress.repository import SkillPointsRepository
-from app.modules.skills.repository import (
-    SkillRepository,
-    UserSkillScoreRepository,
-)
+from app.modules.skills.repository import SkillRepository
 
 
 class DiagnosisService:
     """Orchestrates the diagnosis flow: evaluators → scoring → DB writes → AI feedback."""
 
-    ESTIMATED_SKILLS: set[str] = {"pronunciation", "tone"}
-
     def __init__(self, db: Session) -> None:
         self.db = db
         self.profiles = UserProfileRepository(db)
         self.skills = SkillRepository(db)
-        self.scores = UserSkillScoreRepository(db)
+        self.points = SkillPointsRepository(db)
         self.rule_eval = RuleBasedEvaluator()
         self.text_eval = TextEvaluator()
         self.speech_eval = SpeechEvaluator()
@@ -52,7 +47,7 @@ class DiagnosisService:
           1. Verify user has not already completed diagnosis
           2. Run 3 evaluators on the submission
           3. Apply master scoring formula → 7 skill scores
-          4. Upsert each score into user_skill_scores
+          4. Seed `skill_points` with `round(score * 1000)` per skill
           5. Update user_profile (self-assessment fields + diagnosis_completed)
           6. Single DB commit
           7. Call AI feedback agent with scores → get human-friendly feedback
@@ -109,17 +104,12 @@ class DiagnosisService:
             speech_clarity=speech.clarity_score,
         )
 
-        # 4. Upsert each score and seed SkillPoints from diagnosis values
+        # 4. Seed SkillPoints from diagnosis values (1.0 score = 1000 points).
+        # The legacy `user_skill_scores` (WMA cache) was retired in the
+        # Phase 8 cutover — diagnosis writes only the points-based store.
         name_to_id = self.skills.name_to_id_map()
-        points_repo = SkillPointsRepository(self.db)
         for skill_name, score in skill_scores.items():
-            self.scores.upsert_score(
-                user_id=user_id,
-                skill_id=name_to_id[skill_name],
-                score=score,
-                is_estimated=skill_name in self.ESTIMATED_SKILLS,
-            )
-            points_repo.upsert_points(
+            self.points.upsert_points(
                 user_id=user_id,
                 skill_id=name_to_id[skill_name],
                 points=round(score * 1000),

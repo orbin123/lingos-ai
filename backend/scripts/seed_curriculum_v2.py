@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 from app.core.database import SessionLocal  # noqa: E402
 from app.data.courses.curriculum_v2 import load_weeks  # noqa: E402
-from app.modules.curriculum.v2_models import (  # noqa: E402
+from app.modules.curriculum.models import (  # noqa: E402
     CurriculumDay,
     CurriculumWeek,
     TaskArchetype,
