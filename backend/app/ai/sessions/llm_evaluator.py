@@ -44,6 +44,7 @@ class LLMEvaluator:
         archetype: ArchetypeSpec,
         task_content: dict,
         user_response: dict | None,
+        evaluator_overrides: dict | None = None,
     ) -> EvaluationResult:
         if user_response is None:
             return EvaluationResult(
@@ -59,6 +60,7 @@ class LLMEvaluator:
                     archetype=archetype,
                     task_content=task_content,
                     user_response=user_response,
+                    evaluator_overrides=evaluator_overrides,
                 ),
                 output_model=EvaluationOutput,
                 temperature=self.temperature,

@@ -6,6 +6,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { LayoutDashboard, MoreHorizontal, RotateCcw } from "lucide-react";
 
 import { api } from "@/lib/api";
+import {
+  isAuthoringChatEnabled,
+  learningRestartPath,
+  learningWebSocketUrl,
+} from "@/lib/authoring-chat";
 import { tasksApi } from "@/lib/tasks-api";
 import {
   extensionForMime,
@@ -38,10 +43,12 @@ interface ScorecardPayload {
   overall_score: number;
   skill_name: string;
   topic: string;
-  total: number;
-  correct_count: number;
+  total?: number;
+  correct_count?: number;
   answered_count?: number;
-  questions: Record<string, unknown>;
+  questions?: Record<string, unknown>;
+  rubric_scores?: Record<string, number>;
+  weighted_points?: Record<string, number>;
   subskill_score?: number | null;
 }
 
@@ -57,11 +64,22 @@ interface FeedbackError {
 }
 
 interface FeedbackPayload {
-  overall_message: string;
-  errors: FeedbackError[];
+  overall_message?: string;
+  errors?: FeedbackError[];
+  summary?: string;
+  did_well?: string[];
+  mistakes?: Array<{
+    issue: string;
+    user_wrote?: string | null;
+    correction?: string | null;
+    rule?: string | null;
+    sub_skills_affected?: string[];
+  }>;
   score: number;
-  overall_level: string;
-  practice_suggestion: string;
+  overall_level?: string;
+  practice_suggestion?: string;
+  next_tip?: string | null;
+  sub_skill_breakdown?: Record<string, number>;
 }
 
 /* ── Event log ───────────────────────────────────────────────────────── */
@@ -531,7 +549,12 @@ function ScoreRing({ pct }: { pct: number }) {
 }
 
 function Scorecard({ payload }: { payload: ScorecardPayload }) {
-  const pct = payload.overall_score;
+  const pct = payload.overall_score <= 10
+    ? Math.round(payload.overall_score * 10)
+    : payload.overall_score;
+  const correctCount = payload.correct_count ?? Math.round(payload.overall_score);
+  const total = payload.total ?? 10;
+  const rubricCount = Object.keys(payload.rubric_scores ?? {}).length;
   return (
     <div style={{
       borderRadius: 22, padding: 24,
@@ -548,7 +571,9 @@ function Scorecard({ payload }: { payload: ScorecardPayload }) {
           <div style={{ fontSize: 13, color: "oklch(45% 0.07 240)", marginTop: 3 }}>
             {payload.subskill_score != null
               ? `Grammar score: ${payload.subskill_score}/10`
-              : `${payload.correct_count} of ${payload.total} correct`}
+              : rubricCount > 0
+                ? `${rubricCount} rubric areas checked`
+                : `${correctCount} of ${total} correct`}
           </div>
         </div>
         <ScoreRing pct={pct} />
@@ -557,12 +582,16 @@ function Scorecard({ payload }: { payload: ScorecardPayload }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 16 }}>
         {[
           {
-            num: payload.subskill_score != null ? `${payload.subskill_score}/10` : `${payload.correct_count}`,
-            lbl: payload.subskill_score != null ? "Skill score" : "Correct",
+            num: payload.subskill_score != null
+              ? `${payload.subskill_score}/10`
+              : `${payload.overall_score}/10`,
+            lbl: payload.subskill_score != null ? "Skill score" : "Raw score",
           },
           {
-            num: payload.subskill_score != null ? `${payload.answered_count ?? payload.correct_count}/${payload.total}` : `${payload.total - payload.correct_count}`,
-            lbl: payload.subskill_score != null ? "Items done" : "To review",
+            num: payload.subskill_score != null
+              ? `${payload.answered_count ?? correctCount}/${total}`
+              : String(rubricCount || total),
+            lbl: payload.subskill_score != null ? "Items done" : "Rubrics",
           },
           { num: `${pct}%`, lbl: "Score" },
         ].map((s) => (
@@ -581,6 +610,8 @@ function Scorecard({ payload }: { payload: ScorecardPayload }) {
 
 function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
   const errors = payload.errors ?? [];
+  const mistakes = payload.mistakes ?? [];
+  const summary = payload.summary || payload.overall_message || "";
   return (
     <div style={{
       borderRadius: 22,
@@ -592,7 +623,7 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
       overflow: "hidden",
       animation: "fadeIn 0.4s ease both",
     }}>
-      {errors.length === 0 && (
+      {errors.length === 0 && mistakes.length === 0 && (
         <div style={{ padding: "20px 22px", display: "flex", gap: 14, alignItems: "center" }}>
           <div style={{
             width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
@@ -602,9 +633,83 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
             <CheckIcon />
           </div>
           <div style={{ fontSize: 13.5, color: "oklch(18% 0.06 240)", lineHeight: 1.55 }}>
-            All correct — solid run. {payload.practice_suggestion}
+            {summary || "No major issues found."} {payload.practice_suggestion || payload.next_tip || ""}
           </div>
         </div>
+      )}
+      {mistakes.length > 0 && (
+        <>
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid oklch(85% 0.025 240)" }}>
+            <div style={{ fontSize: 13.5, color: "oklch(18% 0.06 240)", lineHeight: 1.55 }}>
+              {summary}
+            </div>
+            {payload.did_well && payload.did_well.length > 0 && (
+              <div style={{ marginTop: 8, fontSize: 12.5, color: "oklch(45% 0.07 240)", lineHeight: 1.5 }}>
+                {payload.did_well.join(" ")}
+              </div>
+            )}
+          </div>
+          {mistakes.map((mistake, i) => (
+            <div key={`${mistake.issue}-${i}`} style={{
+              padding: "16px 20px",
+              borderBottom: i < mistakes.length - 1 ? "1px solid oklch(85% 0.025 240)" : "none",
+              display: "flex", gap: 14,
+            }}>
+              <div style={{
+                width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: "oklch(58% 0.2 25)",
+              }}>
+                <XIcon />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, color: "oklch(18% 0.06 240)", marginBottom: 6, lineHeight: 1.55 }}>
+                  <strong>{mistake.issue}</strong>
+                  {mistake.user_wrote && (
+                    <>
+                      {": "}
+                      <span style={{
+                        display: "inline-block", padding: "0 6px", borderRadius: 4,
+                        fontWeight: 700, margin: "0 1px",
+                        background: "oklch(92% 0.08 25)",
+                        color: "oklch(35% 0.18 25)",
+                        textDecoration: mistake.correction ? "line-through" : "none",
+                      }}>
+                        {mistake.user_wrote}
+                      </span>
+                    </>
+                  )}
+                  {mistake.correction && (
+                    <>
+                      {" -> "}
+                      <span style={{
+                        display: "inline-block", padding: "0 6px", borderRadius: 4,
+                        fontWeight: 700, margin: "0 1px",
+                        background: "oklch(92% 0.1 155)", color: "oklch(28% 0.16 155)",
+                      }}>
+                        {mistake.correction}
+                      </span>
+                    </>
+                  )}
+                </div>
+                {(mistake.rule || payload.next_tip) && (
+                  <div style={{
+                    fontSize: 13, color: "oklch(45% 0.07 240)", lineHeight: 1.55,
+                    background: "oklch(96% 0.025 245)",
+                    borderRadius: 10, padding: "10px 12px", marginTop: 4,
+                  }}>
+                    {mistake.rule && <div><strong>Rule:</strong> {mistake.rule}</div>}
+                    {payload.next_tip && i === mistakes.length - 1 && (
+                      <div style={{ marginTop: mistake.rule ? 4 : 0 }}>
+                        <strong>Next:</strong> {payload.next_tip}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </>
       )}
       {errors.map((err, i) => (
         <div key={err.question_id} style={{
@@ -979,6 +1084,7 @@ export default function ChatSessionPage() {
     "connecting" | "open" | "closed" | "error"
   >(() => {
     if (typeof window === "undefined") return "connecting";
+    if (isAuthoringChatEnabled()) return "connecting";
     return localStorage.getItem("token") ? "connecting" : "error";
   }, []);
 
@@ -1196,12 +1302,15 @@ export default function ChatSessionPage() {
   /* --- WebSocket lifecycle ---------------------------------------- */
   useEffect(() => {
     if (!sessionId) return;
+    const authoringChat = isAuthoringChatEnabled();
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    if (!token) return;
+    if (!authoringChat && !token) return;
 
     const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const wsBase = apiBase.replace(/^http/, "ws");
-    const url = `${wsBase}/ws/learning/${sessionId}?token=${encodeURIComponent(token)}`;
+    const url = learningWebSocketUrl(apiBase, sessionId, {
+      authoring: authoringChat,
+      token,
+    });
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -1304,6 +1413,7 @@ export default function ChatSessionPage() {
     setRestarting(true);
     setLoadingType("teacher_loading");
     try {
+      const restartPath = learningRestartPath(sessionId, isAuthoringChatEnabled());
       const res = await api.post<{
         session_id: string;
         topic: string;
@@ -1311,7 +1421,7 @@ export default function ChatSessionPage() {
         task_type: string;
         user_task_id?: number | null;
         message: string;
-      }>(`/api/learning/sessions/${encodeURIComponent(sessionId)}/restart`);
+      }>(restartPath);
 
       pendingSendsRef.current = [];
       wsRef.current?.close();

@@ -17,7 +17,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.data.courses.curriculum_v2.source_24w import WEEKS_24, WeekSource
-from app.data.courses.curriculum_v2.stretch import stretch_to_48w
 from app.scoring import CourseLength, get_archetype
 
 

@@ -99,6 +99,28 @@ class Settings(BaseSettings):
     HF_EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
     EMBEDDING_DIMENSION: int = 384
 
+    # Curriculum dev-mode override.
+    # "db"   — read curriculum from CurriculumWeek/CurriculumDay rows (default).
+    # "file" — read directly from `app/data/courses/curriculum_v2/source_24w.py`.
+    #          In file mode the session flow bypasses CurriculumDayRepository
+    #          and the planner; day identity is (week_number, day_index).
+    CURRICULUM_SOURCE: str = "db"
+
+    # When true, `SessionService.complete_session` skips
+    # `apply_session_scorecard` and `StreakService.record_in_same_tx`.
+    # Used during the file-driven authoring phase so we can iterate on
+    # chat-session content without touching points/streak tables.
+    STUB_PROGRESS_WRITES: bool = False
+
+    # Ephemeral chat authoring mode.
+    # Disabled by default. When enabled, the dev-only `/api/dev/learning/*`
+    # and `/dev/ws/learning/*` endpoints read `source_24w.py` directly and
+    # keep session state in memory instead of touching curriculum/session DB
+    # tables. Intended only for local curriculum authoring.
+    AUTHORING_CHAT_MODE: bool = False
+    AUTHORING_CHAT_REQUIRE_AUTH: bool = False
+    AUTHORING_CHAT_COURSE_LENGTH: str = "24w"
+
     # Find and read .env file
     model_config = SettingsConfigDict(
         env_file="../.env",

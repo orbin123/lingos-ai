@@ -48,11 +48,20 @@ class ActivityPreferences(BaseModel):
 
 
 class SessionStartRequest(BaseModel):
-    """Body for `POST /sessions/start`."""
+    """Body for `POST /sessions/start`.
 
-    day_id: str = Field(..., description="Curriculum day id, e.g. 'day_24_05_03'.")
-    course_length: str = Field(..., pattern=r"^(24w|48w)$")
-    tasks_per_day: int = Field(..., ge=2, le=4)
+    In DB mode (`settings.CURRICULUM_SOURCE == "db"`), `day_id` is required.
+    In file mode, pass `week_number` + `day_index` instead; `day_id` is
+    ignored and `course_length` defaults to "24w".
+    """
+
+    day_id: str | None = Field(
+        default=None, description="Curriculum day id, e.g. 'day_24_05_03'. Required in DB mode."
+    )
+    week_number: int | None = Field(default=None, ge=1, le=24)
+    day_index: int | None = Field(default=None, ge=0, le=6)
+    course_length: str = Field(default="24w", pattern=r"^(24w|48w)$")
+    tasks_per_day: int = Field(default=4, ge=2, le=4)
     preferences: ActivityPreferences = Field(default_factory=ActivityPreferences)
 
 

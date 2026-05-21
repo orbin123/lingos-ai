@@ -26,6 +26,7 @@ import {
   type SubmitActivityResponse,
   type NextActivityResponse,
 } from "@/lib/sessions-api";
+import { authoringStartPath, isAuthoringChatEnabled } from "@/lib/authoring-chat";
 import { useSessionStore } from "@/store/sessionStore";
 
 
@@ -203,10 +204,22 @@ export interface StartLearningSessionResponse {
   message: string;
 }
 
+export interface StartLearningSessionInput {
+  week?: number;
+  day?: number;
+}
+
 export function useStartLearningSession() {
-  return useMutation<StartLearningSessionResponse, Error, void>({
-    mutationFn: async () => {
+  return useMutation<StartLearningSessionResponse, Error, StartLearningSessionInput | void>({
+    mutationFn: async (input) => {
       const { api } = await import("@/lib/api");
+      if (isAuthoringChatEnabled()) {
+        const response = await api.post<StartLearningSessionResponse>(
+          authoringStartPath(input || undefined),
+          {},
+        );
+        return response.data;
+      }
       const response = await api.post<StartLearningSessionResponse>(
         "/api/learning/sessions/start",
         {},

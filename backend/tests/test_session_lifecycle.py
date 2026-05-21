@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker
 from app import models  # noqa: F401
 from app.core.database import Base
 from app.modules.auth.models import User
+from app.modules.curriculum import file_source
 from app.modules.curriculum.models import (
     CurriculumDay,
     CurriculumWeek,
@@ -144,6 +145,59 @@ class TestStartSession:
             "SPEAK_TIMED",
         ]
         assert [a.is_mandatory for a in session.attempts] == [True, True, False, False]
+
+    @pytest.mark.asyncio
+    async def test_authored_w1d1_uses_source_file_content_in_db_mode(
+        self, db_session,
+    ):
+        week = CurriculumWeek(
+            week_id="wk_24_01",
+            course_length="24w",
+            week_number=1,
+            theme_type=ThemeType.GRAMMAR,
+            title="Old DB Week",
+            cefr_level="A1",
+            sub_level_min=1,
+            sub_level_max=2,
+            learning_goal="Old DB goal.",
+        )
+        db_session.add(week)
+        db_session.flush()
+        db_session.add(
+            CurriculumDay(
+                day_id="day_24_01_01",
+                week_id=week.id,
+                day_number=1,
+                topic="Old DB family possessives",
+                explanation_brief="Old DB brief about family members.",
+                default_activities=["read", "write"],
+                mandatory_activities=["read"],
+                suggested_archetypes={
+                    "read": ["READ_COMP_MCQ"],
+                    "write": ["WRITE_ERROR_CORR"],
+                },
+            )
+        )
+        db_session.commit()
+
+        service = SessionService(db_session)
+        session = await service.start_session(
+            user_id=_user_id(db_session),
+            day_id="day_24_01_01",
+            course_length=CourseLength.WEEKS_24,
+            tasks_per_day=2,
+            allowed_activities={"read", "write", "listen", "speak"},
+        )
+
+        source_day = file_source.get_day_by_id("day_24_01_01")
+        assert [a.archetype_id for a in session.attempts] == list(
+            source_day.task_archetypes_used
+        )
+        assert [a.is_mandatory for a in session.attempts] == [True, True, True, True]
+        first_content = session.attempts[0].task_content
+        assert first_content["topic"] == source_day.task_specs[0]["topic_override"]
+        assert first_content["explanation_brief"] == source_day.explanation_brief
+        assert "family" not in first_content["instructions"].lower()
 
     @pytest.mark.asyncio
     async def test_blocks_second_in_progress_session(self, db_session):

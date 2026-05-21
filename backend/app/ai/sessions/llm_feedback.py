@@ -62,6 +62,8 @@ class LLMFeedbackGenerator:
         archetype: ArchetypeSpec,
         evaluation: EvaluationResult,
         user_response: dict | None,
+        task_content: dict | None = None,
+        feedback_overrides: dict | None = None,
     ) -> FeedbackResult:
         rounded = int(round(evaluation.raw_score))
         if user_response is None:
@@ -82,8 +84,9 @@ class LLMFeedbackGenerator:
                     raw_score=evaluation.raw_score,
                     rubric_scores=evaluation.rubric_scores,
                     evaluator_notes=evaluation.evaluator_notes,
-                    task_content={},  # caller passes empty since llm_evaluator already saw it
+                    task_content=task_content or {},
                     user_response=user_response,
+                    feedback_overrides=feedback_overrides,
                 ),
                 output_model=FeedbackOutput,
                 temperature=self.temperature,

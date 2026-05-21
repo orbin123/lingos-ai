@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.ai.llm.exceptions import LLMError
 from app.ai.llm.interface import ILLMClient
@@ -49,10 +49,31 @@ _WIDGET_KEY: dict[str, str] = {
 class TaskGenOutput(BaseModel):
     """LLM-side schema for one generated task."""
 
+    model_config = ConfigDict(extra="allow")
+
     topic: str
     instructions: str
-    primary_text: str
+    primary_text: str = ""
     target_words: list[str] = Field(default_factory=list)
+    task_intro: str | None = None
+    estimated_time_minutes: int | None = None
+
+    # Widget-specific fields. `extra="allow"` lets richer future widgets pass
+    # through without changing the authoring service.
+    items: list[dict] = Field(default_factory=list)
+    blanks: list[dict] = Field(default_factory=list)
+    passage: str | None = None
+    passage_title: str | None = None
+    grammar_rule_explained: str | None = None
+    audio_script: str | None = None
+    audio_url: str | None = None
+    audio_duration_seconds: int | None = None
+    inner_widget: str | None = None
+    speaking_duration_seconds: int | None = None
+    speaking_prompt: str | None = None
+    speaking_prompts: list[str] = Field(default_factory=list)
+    sample_response: str | None = None
+    sample_responses: list[str] = Field(default_factory=list)
 
 
 class LLMTaskGenerator:
@@ -73,6 +94,7 @@ class LLMTaskGenerator:
         cefr_level: str,
         sub_level: int,
         user_interests: list[str] | None = None,
+        task_spec: dict | None = None,
     ) -> GeneratedTask:
         try:
             output = await self.llm.generate_structured(
@@ -84,6 +106,7 @@ class LLMTaskGenerator:
                     cefr_level=cefr_level,
                     sub_level=sub_level,
                     user_interests=user_interests,
+                    task_spec=task_spec,
                 ),
                 output_model=TaskGenOutput,
                 temperature=self.temperature,
@@ -100,8 +123,11 @@ class LLMTaskGenerator:
                 cefr_level=cefr_level,
                 sub_level=sub_level,
                 user_interests=user_interests,
+                task_spec=task_spec,
             )
 
+        generated_payload = output.model_dump(exclude_none=True)
+        generated_payload.update(output.model_extra or {})
         content = {
             "phase": "live",
             "archetype_id": archetype.archetype_id,
@@ -109,12 +135,18 @@ class LLMTaskGenerator:
             "ui_widget": archetype.ui_widget,
             "widget": _WIDGET_KEY.get(archetype.ui_widget, archetype.ui_widget),
             "core_activity": archetype.core_activity,
-            "topic": output.topic,
             "explanation_brief": explanation_brief,
-            "instructions": output.instructions,
-            "primary_text": output.primary_text,
-            "target_words": list(output.target_words),
             "cefr_level": cefr_level,
             "sub_level": sub_level,
+            **generated_payload,
         }
+        if task_spec:
+            if task_spec.get("task_intro") and not content.get("task_intro"):
+                content["task_intro"] = task_spec["task_intro"]
+            if task_spec.get("estimated_time_minutes") and not content.get(
+                "estimated_time_minutes"
+            ):
+                content["estimated_time_minutes"] = task_spec[
+                    "estimated_time_minutes"
+                ]
         return GeneratedTask(content=content)

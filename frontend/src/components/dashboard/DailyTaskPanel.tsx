@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AxiosError } from "axios";
 
 import type { UserCoursePreferenceRead } from "@/lib/preferences-api";
@@ -56,6 +56,7 @@ function ArrowIcon() {
 
 export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const startMutation = useStartLearningSession();
 
   // GET /sessions/today-plan — preview plan or existing session, no LLM call.
@@ -64,9 +65,11 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
   const completed = plan?.status === "completed";
 
   const handleStart = useCallback(async () => {
-    const result = await startMutation.mutateAsync();
+    const week = Number(searchParams.get("week") || preference.current_week || 1);
+    const day = Number(searchParams.get("day") || preference.current_day_in_week || 1);
+    const result = await startMutation.mutateAsync({ week, day });
     router.push(`/task/chat/${result.session_id}`);
-  }, [startMutation, router]);
+  }, [preference.current_day_in_week, preference.current_week, searchParams, startMutation, router]);
 
   return (
     <div

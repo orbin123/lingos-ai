@@ -45,6 +45,8 @@ class FeedbackGenerator(Protocol):
         archetype: ArchetypeSpec,
         evaluation: EvaluationResult,
         user_response: dict | None,
+        task_content: dict | None = None,
+        feedback_overrides: dict | None = None,
     ) -> FeedbackResult: ...
 
 
@@ -62,6 +64,8 @@ class StubFeedbackGenerator:
         archetype: ArchetypeSpec,
         evaluation: EvaluationResult,
         user_response: dict | None,
+        task_content: dict | None = None,
+        feedback_overrides: dict | None = None,
     ) -> FeedbackResult:
         rounded = int(round(evaluation.raw_score))
         if user_response is None:

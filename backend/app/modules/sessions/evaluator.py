@@ -36,6 +36,7 @@ class Evaluator(Protocol):
         archetype: ArchetypeSpec,
         task_content: dict,
         user_response: dict | None,
+        evaluator_overrides: dict | None = None,
     ) -> EvaluationResult: ...
 
 
@@ -60,6 +61,7 @@ class StubEvaluator:
         archetype: ArchetypeSpec,
         task_content: dict,
         user_response: dict | None,
+        evaluator_overrides: dict | None = None,
     ) -> EvaluationResult:
         if user_response is None:
             return EvaluationResult(

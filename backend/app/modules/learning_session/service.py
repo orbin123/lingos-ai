@@ -31,6 +31,14 @@ from sqlalchemy.orm import Session
 
 from app.ai.agents.planner import PlannerAgent
 from app.ai.agents.teacher import stream_teaching_turn
+from app.core.config import settings
+from app.modules.curriculum.file_source import (
+    SCRIPTED_PLAN_KEY,
+    build_teacher_instructions as file_build_teacher_instructions,
+    get_day_by_id as file_get_day_by_id,
+    get_day as file_get_day,
+    split_scripted_plan,
+)
 from app.ai.graphs.nodes import (
     stream_answer_question,
     task_delivery_node,
@@ -53,6 +61,7 @@ from app.modules.preferences.service import PreferenceService
 from app.modules.sessions.exceptions import (
     AttemptAlreadySubmitted,
     AttemptNotFound,
+    DayNotFound,
     SessionAbandoned,
     SessionAlreadyCompleted,
     SessionAlreadyOpen,
@@ -74,23 +83,15 @@ from app.scoring import CourseLength
 logger = logging.getLogger(__name__)
 
 
-_ACKNOWLEDGEMENT_PHRASES = (
-    "yes", "yeah", "yep", "sure", "ok", "okay",
+_READY_RESPONSE_PHRASES = (
+    "ready", "yes", "yeah", "yep", "sure", "ok", "okay",
+    "let's go", "lets go", "i'm ready", "im ready", "go ahead",
+    "begin", "start",
 )
 
-_ACKNOWLEDGEMENT_PATTERNS = tuple(
+_READY_RESPONSE_PATTERNS = tuple(
     re.compile(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])")
-    for phrase in _ACKNOWLEDGEMENT_PHRASES
-)
-
-_EXPLICIT_UNDERSTANDING_PHRASES = (
-    "ready", "let's go", "lets go", "i understand", "understand", "got it",
-    "i got it", "i'm ready", "im ready", "go ahead", "begin", "start",
-)
-
-_EXPLICIT_UNDERSTANDING_PATTERNS = tuple(
-    re.compile(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])")
-    for phrase in _EXPLICIT_UNDERSTANDING_PHRASES
+    for phrase in _READY_RESPONSE_PHRASES
 )
 
 _NON_UNDERSTANDING_PHRASES = (
@@ -108,14 +109,11 @@ _NON_UNDERSTANDING_PATTERNS = tuple(
     for phrase in _NON_UNDERSTANDING_PHRASES
 )
 
-_QUESTION_START_PATTERN = re.compile(
-    r"^\s*(what|why|how|when|where|which|who|can you|could you|would you)\b"
-)
-
 _READINESS_PROMPT_PATTERNS = (
     re.compile(r"\b(do you|does this|is this|that|it)\s+(feel\s+)?(clear|make sense)\b"),
     re.compile(r"\b(are you|do you feel|feel)\s+ready\b"),
     re.compile(r"\bready\s+(for|to)\s+(practice|try|start|begin)\b"),
+    re.compile(r"\bready to try the practice task\b"),
     re.compile(r"\bif\s+(that|this|it)\s+feels\s+clear\b"),
     re.compile(r"\bif\s+you\s+(feel\s+)?(ready|clear)\b"),
     re.compile(r"\bsay\s+['\"]?(ready|yes|okay|ok)['\"]?\b"),
@@ -129,6 +127,21 @@ _FOLLOWUP_STREAM_CHUNK_TIMEOUT_S = 20.0
 
 class LearningSessionTaskUnavailable(Exception):
     """Raised when a chat session cannot be opened against the V2 daily session."""
+
+
+_DAY_ID_RE = re.compile(r"^day_(?:24|48)_(\d{2})_(\d{2})$")
+
+
+def _parse_day_id(day_id: str) -> tuple[int, int]:
+    """Parse `day_24_WW_DD` (or `day_48_WW_DD`) into `(week_number, day_number)`.
+
+    `day_number` is 1-based (matches the format `file_source` writes).
+    Callers convert to 0-based `day_index` by subtracting 1.
+    """
+    match = _DAY_ID_RE.match(day_id or "")
+    if not match:
+        raise ValueError(f"unrecognised day_id format: {day_id!r}")
+    return int(match.group(1)), int(match.group(2))
 
 
 def _last_tutor_message(messages: list[dict]) -> str:
@@ -145,16 +158,16 @@ def _tutor_asked_readiness(text: str) -> bool:
     return any(pattern.search(cleaned) for pattern in _READINESS_PROMPT_PATTERNS)
 
 
-def _looks_like_acknowledgement(text: str) -> bool:
+def _looks_like_ready_response(text: str) -> bool:
     cleaned = (text or "").strip().lower()
     if not cleaned:
         return False
-    return cleaned in _ACKNOWLEDGEMENT_PHRASES or any(
-        pattern.search(cleaned) for pattern in _ACKNOWLEDGEMENT_PATTERNS
+    return cleaned in _READY_RESPONSE_PHRASES or any(
+        pattern.search(cleaned) for pattern in _READY_RESPONSE_PATTERNS
     )
 
 
-def _looks_like_understanding(
+def _looks_like_ready_for_practice(
     text: str,
     *,
     previous_tutor_message: str = "",
@@ -164,15 +177,21 @@ def _looks_like_understanding(
         return False
     if any(pattern.search(cleaned) for pattern in _NON_UNDERSTANDING_PATTERNS):
         return False
-    if "?" in cleaned and _QUESTION_START_PATTERN.search(cleaned):
-        return False
-    if cleaned in _EXPLICIT_UNDERSTANDING_PHRASES:
-        return True
-    if any(pattern.search(cleaned) for pattern in _EXPLICIT_UNDERSTANDING_PATTERNS):
-        return True
-    if _looks_like_acknowledgement(cleaned):
-        return _tutor_asked_readiness(previous_tutor_message)
-    return False
+    return (
+        _tutor_asked_readiness(previous_tutor_message)
+        and _looks_like_ready_response(cleaned)
+    )
+
+
+def _looks_like_understanding(
+    text: str,
+    *,
+    previous_tutor_message: str = "",
+) -> bool:
+    """Backward-compatible name for the practice readiness gate."""
+    return _looks_like_ready_for_practice(
+        text, previous_tutor_message=previous_tutor_message,
+    )
 
 
 class LearningSessionService:
@@ -217,72 +236,119 @@ class LearningSessionService:
                 message="Session resumed",
             )
 
-        # Load curriculum + first archetype + run PlannerAgent for the persona.
-        day = self.curriculum_day_repo.get_by_day_id(daily.day_id)
-        if day is None:
-            raise LookupError(
-                f"CurriculumDay day_id={daily.day_id!r} not found"
-            )
-        week = day.week
-        if week is None:
-            raise LookupError(
-                f"CurriculumWeek for day_id={daily.day_id!r} not found"
-            )
-
         attempts = self.attempts_repo.list_for_session(daily.id)
         if not attempts:
             raise LearningSessionTaskUnavailable(
                 f"DailySession {daily.session_id} has no activity attempts"
             )
         first = attempts[0]
-        archetype = self.archetype_repo.get(first.archetype_id)
-        if archetype is None:
-            raise LookupError(
-                f"TaskArchetype archetype_id={first.archetype_id!r} not found"
-            )
 
-        topic_dict = v2_course_topic(day, week, archetype)
-        course_slug = f"{daily.course_length}-course"
-        learner_profile = self._profile_context(user_id)
+        file_persona: tuple[str, str, int, dict | None] | None = None
+        if settings.CURRICULUM_SOURCE == "file":
+            file_persona = self._persona_from_file(daily.day_id)
+        else:
+            try:
+                file_persona = self._persona_from_file(daily.day_id)
+            except DayNotFound:
+                file_persona = None
 
-        try:
-            plan = await PlannerAgent().generate(
-                user_id=user_id,
-                course_slug=course_slug,
-                topic_entry=topic_dict,
-                learner_profile=learner_profile,
+        if file_persona is not None:
+            topic_label, skill_name, sub_level, teacher_instructions = (
+                file_persona
             )
-        except Exception:
-            logger.exception(
-                "PlannerAgent failed for user_id=%s daily=%s; using neutral persona",
-                user_id, daily.session_id,
-            )
-            plan = {"teacher_instructions": None}
+            activity_type = self._activity_type_from_archetype(first.archetype_id)
+        else:
+            day = self.curriculum_day_repo.get_by_day_id(daily.day_id)
+            if day is None:
+                raise LookupError(
+                    f"CurriculumDay day_id={daily.day_id!r} not found"
+                )
+            week = day.week
+            if week is None:
+                raise LookupError(
+                    f"CurriculumWeek for day_id={daily.day_id!r} not found"
+                )
+            archetype = self.archetype_repo.get(first.archetype_id)
+            if archetype is None:
+                raise LookupError(
+                    f"TaskArchetype archetype_id={first.archetype_id!r} not found"
+                )
+            topic_dict = v2_course_topic(day, week, archetype)
+            course_slug = f"{daily.course_length}-course"
+            learner_profile = self._profile_context(user_id)
+            try:
+                plan = await PlannerAgent().generate(
+                    user_id=user_id,
+                    course_slug=course_slug,
+                    topic_entry=topic_dict,
+                    learner_profile=learner_profile,
+                )
+            except Exception:
+                logger.exception(
+                    "PlannerAgent failed for user_id=%s daily=%s; using neutral persona",
+                    user_id, daily.session_id,
+                )
+                plan = {"teacher_instructions": None}
+            topic_label = day.topic
+            skill_name = topic_dict["sub_skill"]
+            sub_level = topic_dict["sub_level"]
+            activity_type = archetype.core_activity
+            teacher_instructions = plan.get("teacher_instructions")
 
         session_id = uuid.uuid4().hex
         self.session_repo.create(
             session_id=session_id,
             user_id=user_id,
             daily_session_id=daily.id,
-            topic=day.topic,
-            skill_name=topic_dict["sub_skill"],
-            activity_type=archetype.core_activity,
-            task_type=archetype.core_activity,
-            user_level=topic_dict["sub_level"],
+            topic=topic_label,
+            skill_name=skill_name,
+            activity_type=activity_type,
+            task_type=activity_type,
+            user_level=sub_level,
             pre_generated_tasks=dict(first.task_content or {}),
             task_queue=self._queue_from_attempts(attempts),
-            teacher_instructions=plan.get("teacher_instructions"),
+            teacher_instructions=teacher_instructions,
         )
         self.db.commit()
 
         return StartSessionResponse(
             session_id=session_id,
             daily_session_id=daily.id,
-            topic=day.topic,
-            skill_name=topic_dict["sub_skill"],
-            task_type=archetype.core_activity,
+            topic=topic_label,
+            skill_name=skill_name,
+            task_type=activity_type,
             message="Session ready",
         )
+
+    def _persona_from_file(
+        self, day_id: str,
+    ) -> tuple[str, str, int, dict | None]:
+        """Build (topic, skill_name, sub_level, teacher_context) from source_24w.py.
+
+        File-authored days intentionally give the teacher only title,
+        description, and authored behavior. The description is stored as
+        `lesson_description`; the behavior script is stored under the
+        reserved `__scripted_plan` key for the streaming side.
+        """
+        file_day = file_get_day_by_id(day_id)
+        teacher_instructions: dict = file_build_teacher_instructions(file_day)
+        if file_day.teacher_agent_behaviour:
+            # See `SCRIPTED_PLAN_KEY` in `file_source` for the contract.
+            teacher_instructions[SCRIPTED_PLAN_KEY] = list(
+                file_day.teacher_agent_behaviour
+            )
+        return (
+            file_day.topic,
+            file_day.theme_type,
+            file_day.sub_level_min,
+            teacher_instructions,
+        )
+
+    def _activity_type_from_archetype(self, archetype_id: str) -> str:
+        """Look up `core_activity` for an archetype without hitting the DB."""
+        from app.scoring import get_archetype as scoring_get_archetype
+
+        return scoring_get_archetype(archetype_id).core_activity
 
     async def _resolve_daily_session(
         self,
@@ -308,6 +374,9 @@ class LearningSessionService:
             return daily
 
         # No id — find or create today's session for the user.
+        if settings.CURRICULUM_SOURCE == "file":
+            return await self._resolve_daily_session_from_file(user_id=user_id)
+
         pref = PreferenceService(self.db).get(user_id=user_id)
         from app.modules.curriculum.repository import CurriculumWeekRepository
 
@@ -363,6 +432,41 @@ class LearningSessionService:
                 raise
             return existing
 
+    async def _resolve_daily_session_from_file(
+        self, *, user_id: int,
+    ) -> DailySession:
+        """File-mode shortcut: skip UserCoursePreference + CurriculumDay lookups.
+
+        Defaults to week 1, day_index 0. The new sessions flow has its own
+        file-mode branch (`SessionService._start_session_from_file`) that
+        loads the day spec from `source_24w.py`.
+        """
+        file_day = file_get_day(1, 0)
+
+        existing = self.daily_repo.get_in_progress(
+            user_id=user_id, day_id=file_day.day_id,
+        )
+        if existing is not None:
+            return existing
+
+        v2_service = _make_v2_session_service(self.db)
+        try:
+            return await v2_service.start_session(
+                user_id=user_id,
+                course_length=CourseLength("24w"),
+                tasks_per_day=4,
+                allowed_activities={"read", "write", "listen", "speak"},
+                week_number=1,
+                day_index=0,
+            )
+        except SessionAlreadyOpen:
+            existing = self.daily_repo.get_in_progress(
+                user_id=user_id, day_id=file_day.day_id,
+            )
+            if existing is None:
+                raise
+            return existing
+
     @staticmethod
     def _queue_from_attempts(attempts: list[ActivityAttempt]) -> list[dict[str, Any]]:
         return [
@@ -393,28 +497,47 @@ class LearningSessionService:
             )
 
         # Refresh teacher instructions against current curriculum data so
-        # content edits in source_24w.py (after re-seeding) take effect.
+        # content edits in source_24w.py (file mode) or curriculum_days
+        # (db mode) take effect on the next teaching turn.
         try:
             daily = self.db.get(DailySession, session.daily_session_id)
             if daily is not None:
-                day = self.curriculum_day_repo.get_by_day_id(daily.day_id)
-                if day is not None and day.week is not None:
-                    task_queue = session.task_queue or []
-                    archetype_id = task_queue[0]["archetype_id"] if task_queue else None
-                    archetype = self.archetype_repo.get(archetype_id) if archetype_id else None
-                    if archetype is not None:
-                        topic_dict = v2_course_topic(day, day.week, archetype)
-                        course_slug = f"{daily.course_length}-course"
-                        plan = await PlannerAgent().generate(
-                            user_id=user_id,
-                            course_slug=course_slug,
-                            topic_entry=topic_dict,
-                            learner_profile=self._profile_context(user_id),
+                if settings.CURRICULUM_SOURCE == "file":
+                    _, _, _, teacher_instructions = self._persona_from_file(
+                        daily.day_id,
+                    )
+                    session.teacher_instructions = teacher_instructions
+                else:
+                    try:
+                        _, _, _, teacher_instructions = self._persona_from_file(
+                            daily.day_id,
                         )
-                        session.teacher_instructions = plan.get("teacher_instructions")
+                        session.teacher_instructions = teacher_instructions
+                    except DayNotFound:
+                        teacher_instructions = None
+
+                    day = self.curriculum_day_repo.get_by_day_id(daily.day_id)
+                    if (
+                        teacher_instructions is None
+                        and day is not None
+                        and day.week is not None
+                    ):
+                        task_queue = session.task_queue or []
+                        archetype_id = task_queue[0]["archetype_id"] if task_queue else None
+                        archetype = self.archetype_repo.get(archetype_id) if archetype_id else None
+                        if archetype is not None:
+                            topic_dict = v2_course_topic(day, day.week, archetype)
+                            course_slug = f"{daily.course_length}-course"
+                            plan = await PlannerAgent().generate(
+                                user_id=user_id,
+                                course_slug=course_slug,
+                                topic_entry=topic_dict,
+                                learner_profile=self._profile_context(user_id),
+                            )
+                            session.teacher_instructions = plan.get("teacher_instructions")
         except Exception:
             logger.warning(
-                "PlannerAgent re-run failed for session_id=%s; keeping existing instructions",
+                "Teacher-instructions refresh failed for session_id=%s; keeping existing instructions",
                 session_id,
             )
 
@@ -560,15 +683,15 @@ class LearningSessionService:
 
         if state.get("phase") in ("teaching", None):
             previous_tutor_message = _last_tutor_message(messages[:-1])
-            confirmed = _looks_like_understanding(
+            ready_for_practice = _looks_like_ready_for_practice(
                 text, previous_tutor_message=previous_tutor_message,
             )
             session.understanding_confirmed = (
-                session.understanding_confirmed or confirmed
+                session.understanding_confirmed or ready_for_practice
             )
             state["understanding_confirmed"] = session.understanding_confirmed
 
-            if confirmed:
+            if ready_for_practice:
                 # Pull the next pending V2 attempt and deliver it.
                 attempt = self._next_pending_attempt(session)
                 if attempt is None:
@@ -1051,9 +1174,21 @@ class LearningSessionService:
         chunks: list[str] = []
         try:
             daily_plan = state.get("daily_plan") or {}
-            teacher_instructions = (
+            raw_instructions = (
                 daily_plan.get("teacher_instructions") if daily_plan else None
             )
+            # Separate the scripted plan from the planner-style dict so
+            # the LLM prompt builder doesn't see the reserved key as a
+            # normal instruction field. Helper lives in `file_source` so
+            # the contract has one home.
+            teacher_instructions, scripted_plan = split_scripted_plan(
+                raw_instructions if isinstance(raw_instructions, dict) else None,
+            )
+            lesson_description = None
+            if isinstance(teacher_instructions, dict):
+                raw_description = teacher_instructions.pop("lesson_description", None)
+                if isinstance(raw_description, str) and raw_description.strip():
+                    lesson_description = raw_description.strip()
             teaching_chunks = stream_teaching_turn(
                 topic=state.get("topic") or "today's English topic",
                 sub_skill=state.get("skill_name") or "grammar",
@@ -1062,6 +1197,8 @@ class LearningSessionService:
                 learner_profile=state.get("learner_profile") or {},
                 conversation=list(state.get("messages", [])),
                 teacher_instructions=teacher_instructions,
+                scripted_plan=scripted_plan,
+                lesson_description=lesson_description,
             )
             async for chunk in self._timed_chunks(
                 teaching_chunks,

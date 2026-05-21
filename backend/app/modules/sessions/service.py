@@ -20,7 +20,13 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.modules.curriculum.models import CurriculumDay
+from app.core.config import settings
+from app.modules.curriculum.file_source import (
+    get_day_by_id as file_get_day_by_id,
+    get_day as file_get_day,
+    resolve_archetypes as file_resolve_archetypes,
+    task_spec_for as file_task_spec_for,
+)
 from app.modules.curriculum.repository import (
     CurriculumDayRepository,
     TaskArchetypeRepository,
@@ -51,7 +57,7 @@ from app.modules.sessions.models import (
     SessionScorecard,
     SessionStatus,
 )
-from app.modules.sessions.planner import PlannedActivity, plan_session
+from app.modules.sessions.planner import plan_session
 from app.modules.sessions.repository import (
     ActivityAttemptRepository,
     DailySessionRepository,
@@ -117,16 +123,39 @@ class SessionService:
         self,
         *,
         user_id: int,
-        day_id: str,
+        day_id: str | None = None,
         course_length: CourseLength,
         tasks_per_day: int,
         allowed_activities: set[str],
         sub_level: int | None = None,
         user_interests: list[str] | None = None,
         now: datetime | None = None,
+        week_number: int | None = None,
+        day_index: int | None = None,
     ) -> DailySession:
-        """Create a new session for `(user_id, day_id)`. Raises if one is open."""
+        """Create a new session for `(user_id, day_id)`. Raises if one is open.
+
+        In file mode (`settings.CURRICULUM_SOURCE == "file"`), pass
+        `week_number` and `day_index` instead of `day_id`. The curriculum
+        spec is read from `source_24w.py` and the deterministic
+        `plan_session()` is bypassed — archetype order comes from the file.
+        """
         now = now or datetime.now(timezone.utc)
+
+        if settings.CURRICULUM_SOURCE == "file":
+            return await self._start_session_from_file(
+                user_id=user_id,
+                week_number=week_number if week_number is not None else 1,
+                day_index=day_index if day_index is not None else 0,
+                course_length=course_length,
+                allowed_activities=allowed_activities,
+                sub_level=sub_level,
+                user_interests=user_interests,
+                now=now,
+            )
+
+        if day_id is None:
+            raise DayNotFound("day_id is required when CURRICULUM_SOURCE='db'")
 
         day = self.days_repo.get_by_day_id(day_id)
         if day is None:
@@ -137,15 +166,34 @@ class SessionService:
                 f"user {user_id} already has an in-progress session for day {day_id!r}"
             )
 
-        plan = plan_session(
-            day,
-            tasks_per_day=tasks_per_day,
-            allowed_activities=allowed_activities,
-        )
-        if not plan:
-            # `plan_session` already raises NoActivitiesPlanned in this case;
-            # belt-and-suspenders for clarity.
-            raise NoActivitiesPlanned(f"empty plan for day {day_id!r}")
+        file_day_override = None
+        try:
+            file_day_override = file_get_day_by_id(day.day_id)
+        except DayNotFound:
+            file_day_override = None
+
+        source_plan: list[tuple[int, ArchetypeSpec, dict]] | None = None
+        if file_day_override is not None:
+            source_plan = []
+            for i, spec in enumerate(file_resolve_archetypes(file_day_override)):
+                if spec.core_activity not in allowed_activities:
+                    continue
+                source_plan.append((i, spec, file_task_spec_for(file_day_override, i)))
+            if not source_plan:
+                raise NoActivitiesPlanned(
+                    f"source day {day.day_id!r}: no archetypes match "
+                    f"allowed activities {sorted(allowed_activities)}"
+                )
+        else:
+            plan = plan_session(
+                day,
+                tasks_per_day=tasks_per_day,
+                allowed_activities=allowed_activities,
+            )
+            if not plan:
+                # `plan_session` already raises NoActivitiesPlanned in this case;
+                # belt-and-suspenders for clarity.
+                raise NoActivitiesPlanned(f"empty plan for day {day_id!r}")
 
         is_first = not self.sessions_repo.has_completed_for_day(
             user_id=user_id, day_id=day_id
@@ -165,18 +213,113 @@ class SessionService:
         # Look up the parent week so the task generator can pick a content
         # depth that matches the user's CEFR + sub_level. Falls back to the
         # week's sub_level_min if no explicit sub_level is provided.
-        week = session.day_id  # placeholder; replaced below from day.week_id
         parent_week = day.week  # loaded via relationship
-        effective_sub_level = sub_level or parent_week.sub_level_min
+        if parent_week is None:
+            raise DayNotFound(f"day_id={day_id!r} has no parent curriculum week")
 
-        for activity in plan:
+        if file_day_override is not None and source_plan is not None:
+            effective_sub_level = sub_level or file_day_override.sub_level_min
+            for sequence, (_orig_index, spec, task_spec) in enumerate(
+                source_plan, start=1,
+            ):
+                await self._materialise_attempt(
+                    session=session,
+                    day_topic=file_day_override.topic,
+                    explanation_brief=file_day_override.explanation_brief,
+                    archetype_id=spec.archetype_id,
+                    sequence=sequence,
+                    is_mandatory=True,
+                    cefr_level=file_day_override.cefr_level,
+                    sub_level=effective_sub_level,
+                    user_interests=user_interests,
+                    task_spec=task_spec or None,
+                )
+        else:
+            effective_sub_level = sub_level or parent_week.sub_level_min
+            for activity in plan:
+                await self._materialise_attempt(
+                    session=session,
+                    day_topic=day.topic,
+                    explanation_brief=day.explanation_brief,
+                    archetype_id=activity.archetype_id,
+                    sequence=activity.sequence,
+                    is_mandatory=activity.is_mandatory,
+                    cefr_level=parent_week.cefr_level,
+                    sub_level=effective_sub_level,
+                    user_interests=user_interests,
+                    task_spec=None,
+                )
+
+        self.db.commit()
+        self.db.refresh(session)
+        return session
+
+    async def _start_session_from_file(
+        self,
+        *,
+        user_id: int,
+        week_number: int,
+        day_index: int,
+        course_length: CourseLength,
+        allowed_activities: set[str],
+        sub_level: int | None,
+        user_interests: list[str] | None,
+        now: datetime,
+    ) -> DailySession:
+        """File-mode start: reads `source_24w.py` directly, skips planner."""
+        day = file_get_day(week_number, day_index)
+        archetypes = file_resolve_archetypes(day)
+
+        # Honour the allow_* preferences by filtering archetypes whose
+        # core_activity ("read"/"write"/"listen"/"speak") is disabled.
+        # Authors who want a fixed 4-activity day should leave preferences
+        # all-on (the default).
+        filtered: list[tuple[int, ArchetypeSpec, dict]] = []
+        for i, spec in enumerate(archetypes):
+            if spec.core_activity not in allowed_activities:
+                continue
+            filtered.append((i, spec, file_task_spec_for(day, i)))
+        if not filtered:
+            raise NoActivitiesPlanned(
+                f"week {week_number} day {day_index}: no archetypes match "
+                f"allowed activities {sorted(allowed_activities)}"
+            )
+
+        if self.sessions_repo.get_in_progress(
+            user_id=user_id, day_id=day.day_id
+        ) is not None:
+            raise SessionAlreadyOpen(
+                f"user {user_id} already has an in-progress session for day {day.day_id!r}"
+            )
+
+        is_first = not self.sessions_repo.has_completed_for_day(
+            user_id=user_id, day_id=day.day_id
+        )
+        session = DailySession(
+            session_id=str(uuid4()),
+            user_id=user_id,
+            day_id=day.day_id,
+            course_length=course_length.value,
+            status=SessionStatus.IN_PROGRESS,
+            is_first_attempt=is_first,
+            started_at=now,
+        )
+        self.sessions_repo.add(session)
+
+        effective_sub_level = sub_level or day.sub_level_min
+
+        for sequence, (orig_index, spec, task_spec) in enumerate(filtered, start=1):
             await self._materialise_attempt(
                 session=session,
-                day=day,
-                plan=activity,
-                cefr_level=parent_week.cefr_level,
+                day_topic=day.topic,
+                explanation_brief=day.explanation_brief,
+                archetype_id=spec.archetype_id,
+                sequence=sequence,
+                is_mandatory=True,
+                cefr_level=day.cefr_level,
                 sub_level=effective_sub_level,
                 user_interests=user_interests,
+                task_spec=task_spec or None,
             )
 
         self.db.commit()
@@ -261,6 +404,7 @@ class SessionService:
             archetype=spec,
             evaluation=eval_result,
             user_response=user_response,
+            task_content=attempt.task_content,
         )
         feedback = ActivityFeedback(
             attempt_id=attempt.id,
@@ -354,6 +498,17 @@ class SessionService:
         )
         self.scorecards_repo.add(scorecard)
 
+        if settings.STUB_PROGRESS_WRITES:
+            # Authoring/dev mode: leave skill_points + streak tables untouched.
+            session.status = SessionStatus.COMPLETED
+            session.completed_at = now
+            self.db.commit()
+            self.db.refresh(scorecard)
+            return scorecard, ApplyReport(
+                applied=False, rows_written=0, rows_skipped=0,
+                reason="STUB_PROGRESS_WRITES=true",
+            )
+
         # Flush so apply_session_scorecard sees committed scorecard + session state.
         report = apply_session_scorecard(self.db, session=session, scorecard=scorecard)
         scorecard.points_applied = report.applied
@@ -404,26 +559,31 @@ class SessionService:
         self,
         *,
         session: DailySession,
-        day: CurriculumDay,
-        plan: PlannedActivity,
+        day_topic: str,
+        explanation_brief: str,
+        archetype_id: str,
+        sequence: int,
+        is_mandatory: bool,
         cefr_level: str,
         sub_level: int,
         user_interests: list[str] | None,
+        task_spec: dict | None = None,
     ) -> ActivityAttempt:
-        spec = get_archetype(plan.archetype_id)
+        spec = get_archetype(archetype_id)
         generated = await self.task_generator.generate(
             archetype=spec,
-            day_topic=day.topic,
-            explanation_brief=day.explanation_brief,
+            day_topic=day_topic,
+            explanation_brief=explanation_brief,
             cefr_level=cefr_level,
             sub_level=sub_level,
             user_interests=user_interests,
+            task_spec=task_spec,
         )
         attempt = ActivityAttempt(
             session_id=session.id,
-            archetype_id=plan.archetype_id,
-            sequence=plan.sequence,
-            is_mandatory=plan.is_mandatory,
+            archetype_id=archetype_id,
+            sequence=sequence,
+            is_mandatory=is_mandatory,
             status=AttemptStatus.PENDING,
             task_content=generated.content,
         )

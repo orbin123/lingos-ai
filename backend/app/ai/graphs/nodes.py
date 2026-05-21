@@ -23,6 +23,7 @@ from app.ai.agents.teacher import generate_teaching_turn
 from app.ai.graphs.state import LearningSessionState
 from app.ai.llm import get_default_llm_client
 from app.modules.curriculum.adapters import v2_course_topic
+from app.modules.curriculum.file_source import split_scripted_plan
 from app.modules.curriculum.repository import (
     CurriculumDayRepository,
     TaskArchetypeRepository,
@@ -110,7 +111,14 @@ async def teach_node(state: LearningSessionState) -> dict[str, Any]:
     skill_name = state.get("skill_name") or "grammar"
     learner_profile = state.get("learner_profile") or {}
     daily_plan = state.get("daily_plan") or {}
-    teacher_instructions = daily_plan.get("teacher_instructions") if daily_plan else None
+    raw_instructions = daily_plan.get("teacher_instructions") if daily_plan else None
+    teacher_instructions, scripted_plan = split_scripted_plan(
+        raw_instructions if isinstance(raw_instructions, dict) else None,
+    )
+    lesson_description = None
+    raw_description = teacher_instructions.pop("lesson_description", None)
+    if isinstance(raw_description, str) and raw_description.strip():
+        lesson_description = raw_description.strip()
 
     teaching = await generate_teaching_turn(
         topic=topic,
@@ -120,6 +128,8 @@ async def teach_node(state: LearningSessionState) -> dict[str, Any]:
         learner_profile=learner_profile,
         conversation=list(state.get("messages", [])),
         teacher_instructions=teacher_instructions,
+        scripted_plan=scripted_plan,
+        lesson_description=lesson_description,
     )
     chat_messages = teaching.messages
 
