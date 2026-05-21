@@ -19,6 +19,10 @@ from app.modules.subscriptions.routes import (
     subscription_router,
     users_router,
 )
+from app.modules.learning_session.router import (
+    rest_router as learning_rest_router,
+    ws_router as learning_ws_router,
+)
 from app.modules.preferences.routes import router as preferences_router
 from app.modules.sessions.routes import router as sessions_router
 from app.modules.streaks.routes import router as streaks_router
@@ -87,3 +91,5 @@ app.include_router(challenges_router, prefix="/api")
 app.include_router(sessions_router, prefix="/api")
 app.include_router(streaks_router, prefix="/api")
 app.include_router(preferences_router, prefix="/api")
+app.include_router(learning_rest_router, prefix="/api")
+app.include_router(learning_ws_router)

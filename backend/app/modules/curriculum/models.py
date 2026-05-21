@@ -1,16 +1,20 @@
-"""Curriculum tables — theme-week / day-topic / task-archetype.
+"""Curriculum tables — legacy enrollment models + v2 week/day/archetype.
 
-Backs the daily-sessions flow: each `CurriculumWeek` carries a theme +
-CEFR level + sub-level band; each `CurriculumDay` carries a topic +
-explanation brief + per-activity archetype suggestions; `TaskArchetype`
-mirrors the in-process `app.scoring.ARCHETYPE_REGISTRY` so admin tools
-can read it via standard queries.
+Legacy tables (`courses`, `user_enrollments`) back the enrollment-based
+session flow.  The v2 tables (`curriculum_weeks`, `curriculum_days`,
+`task_archetypes`) back the restructured daily-session planner.
 """
 
+from __future__ import annotations
+
+from datetime import date, datetime
 from enum import Enum
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
     Enum as SQLAlchemyEnum,
     ForeignKey,
     Index,
@@ -25,6 +29,106 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 from app.core.mixins import IDMixin, TimestampMixin
+
+
+# ── Legacy enrollment models ────────────────────────────────────────
+
+
+class CourseLevel(str, Enum):
+    BEGINNER = "beginner"
+    INTERMEDIATE = "intermediate"
+    ADVANCED = "advanced"
+
+
+class CourseStatus(str, Enum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class EnrollmentStatus(str, Enum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    ABANDONED = "abandoned"
+
+
+class Course(Base, IDMixin, TimestampMixin):
+    __tablename__ = "courses"
+
+    slug: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    duration_weeks: Mapped[int] = mapped_column(Integer, nullable=False)
+    target_level: Mapped[CourseLevel] = mapped_column(
+        SQLAlchemyEnum(
+            CourseLevel,
+            name="course_level_enum",
+            values_callable=lambda e: [m.value for m in e],
+            create_type=False,
+        ),
+        nullable=False,
+    )
+    status: Mapped[CourseStatus] = mapped_column(
+        SQLAlchemyEnum(
+            CourseStatus,
+            name="course_status_enum",
+            values_callable=lambda e: [m.value for m in e],
+            create_type=False,
+        ),
+        nullable=False,
+    )
+
+    enrollments: Mapped[list["UserEnrollment"]] = relationship(
+        back_populates="course",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"<Course({self.slug!r}: {self.title!r})>"
+
+
+class UserEnrollment(Base, IDMixin, TimestampMixin):
+    __tablename__ = "user_enrollments"
+    __table_args__ = (
+        CheckConstraint("tasks_per_day BETWEEN 2 AND 4", name="ck_user_enrollments_tasks_per_day_2_4"),
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    course_id: Mapped[int] = mapped_column(
+        ForeignKey("courses.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    current_week: Mapped[int] = mapped_column(Integer, nullable=False)
+    current_day_in_week: Mapped[int] = mapped_column(Integer, nullable=False)
+    tasks_per_day: Mapped[int] = mapped_column(Integer, nullable=False)
+    allow_reading: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    allow_writing: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    allow_listening: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    allow_speaking: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    current_day_started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[EnrollmentStatus] = mapped_column(
+        SQLAlchemyEnum(
+            EnrollmentStatus,
+            name="enrollment_status_enum",
+            values_callable=lambda e: [m.value for m in e],
+            create_type=False,
+        ),
+        nullable=False,
+        index=True,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    course: Mapped["Course"] = relationship(back_populates="enrollments")
+
+    def __repr__(self) -> str:
+        return f"<UserEnrollment(user={self.user_id}, course={self.course_id}, status={self.status})>"
 
 
 # Allowed `course_length` values. Kept as plain strings rather than importing

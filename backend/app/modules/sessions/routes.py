@@ -13,10 +13,14 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
+from app.modules.curriculum.exceptions import EnrollmentNotActive, NotEnrolled
+from app.modules.curriculum.models import CurriculumDay, EnrollmentStatus, UserEnrollment
 from app.modules.curriculum.repository import (
     CurriculumDayRepository,
     CurriculumWeekRepository,
+    UserEnrollmentRepository,
 )
+from app.modules.preferences.models import UserCoursePreference
 from app.modules.preferences.service import PreferenceService
 from app.modules.sessions.exceptions import (
     AttemptAlreadySubmitted,
@@ -45,10 +49,6 @@ from app.modules.sessions.schemas import (
     SubmitActivityResponse,
 )
 from app.modules.sessions.service import SessionService
-from app.modules.curriculum.exceptions import EnrollmentNotActive, NotEnrolled
-from app.modules.curriculum.models import EnrollmentStatus, UserEnrollment
-from app.modules.curriculum.repository import UserEnrollmentRepository
-from app.modules.curriculum.v2_repository import CurriculumDayRepository
 from app.modules.sessions.models import AttemptStatus, DailySession, SessionStatus
 from app.modules.sessions.planner import plan_session
 from app.modules.sessions.repository import DailySessionRepository
@@ -178,6 +178,47 @@ def _load_existing_today_session(
     )
 
 
+def _resolve_day_from_preference(
+    db: Session, user_id: int
+) -> tuple[CurriculumDay, UserCoursePreference]:
+    """Resolve today's curriculum day from UserCoursePreference (V2 path).
+
+    Returns (day, pref). Raises DayNotFound if curriculum is not seeded.
+    """
+    pref = PreferenceService(db).get(user_id=user_id)
+    week = CurriculumWeekRepository(db).get_by_number(
+        course_length=pref.course_length,
+        week_number=pref.current_week,
+    )
+    if week is None:
+        raise DayNotFound(
+            f"No curriculum week for course_length={pref.course_length!r} "
+            f"week={pref.current_week}"
+        )
+    day = CurriculumDayRepository(db).get_for_week(
+        week_pk=week.id, day_number=pref.current_day_in_week,
+    )
+    if day is None:
+        raise DayNotFound(
+            f"No curriculum day for week_id={week.week_id!r} "
+            f"day={pref.current_day_in_week}"
+        )
+    return day, pref
+
+
+def _allowed_for_pref(pref: UserCoursePreference) -> set[str]:
+    return {
+        activity
+        for activity, on in {
+            "read": pref.allow_read,
+            "write": pref.allow_write,
+            "listen": pref.allow_listen,
+            "speak": pref.allow_speak,
+        }.items()
+        if on
+    }
+
+
 @router.get(
     "/today-plan",
     response_model=DashboardTodayPlanResponse,
@@ -187,12 +228,8 @@ def today_plan(
     db: Session = Depends(get_db),
 ) -> DashboardTodayPlanResponse:
     try:
-        enrollment = _active_enrollment_for_user(db, current_user.id)
-        day_id = _day_id_for_enrollment(enrollment)
-        day = CurriculumDayRepository(db).get_by_day_id(day_id)
-        if day is None:
-            raise DayNotFound(f"day_id={day_id!r} not found in curriculum_days")
-
+        day, pref = _resolve_day_from_preference(db, current_user.id)
+        day_id = day.day_id
         existing = _load_existing_today_session(db, user_id=current_user.id, day_id=day_id)
         if existing is not None:
             return _serialize_dashboard_plan(
@@ -202,11 +239,10 @@ def today_plan(
                 activities=[_activity_from_attempt(a) for a in existing.attempts],
                 is_preview=False,
             )
-
         planned = plan_session(
             day,
-            tasks_per_day=enrollment.tasks_per_day,
-            allowed_activities=_allowed_activities_for_enrollment(enrollment),
+            tasks_per_day=pref.tasks_per_day,
+            allowed_activities=_allowed_for_pref(pref),
         )
         return _serialize_dashboard_plan(
             day_id=day_id,
@@ -215,10 +251,6 @@ def today_plan(
             activities=[_activity_from_plan(a) for a in planned],
             is_preview=True,
         )
-    except NotEnrolled as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except EnrollmentNotActive as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DayNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except NoActivitiesPlanned as exc:
@@ -234,12 +266,8 @@ async def start_or_continue_today(
     db: Session = Depends(get_db),
 ) -> DashboardStartResponse:
     try:
-        enrollment = _active_enrollment_for_user(db, current_user.id)
-        day_id = _day_id_for_enrollment(enrollment)
-        day = CurriculumDayRepository(db).get_by_day_id(day_id)
-        if day is None:
-            raise DayNotFound(f"day_id={day_id!r} not found in curriculum_days")
-
+        day, pref = _resolve_day_from_preference(db, current_user.id)
+        day_id = day.day_id
         existing = _load_existing_today_session(db, user_id=current_user.id, day_id=day_id)
         if existing is not None:
             mode = (
@@ -255,14 +283,13 @@ async def start_or_continue_today(
                 is_preview=False,
                 mode=mode,
             )
-
         service = _make_session_service(db)
         session = await service.start_session(
             user_id=current_user.id,
             day_id=day_id,
-            course_length=CourseLength(_course_length_for_enrollment(enrollment)),
-            tasks_per_day=enrollment.tasks_per_day,
-            allowed_activities=_allowed_activities_for_enrollment(enrollment),
+            course_length=CourseLength(pref.course_length),
+            tasks_per_day=pref.tasks_per_day,
+            allowed_activities=_allowed_for_pref(pref),
         )
         return _serialize_dashboard_plan(
             day_id=day_id,
@@ -272,15 +299,9 @@ async def start_or_continue_today(
             is_preview=False,
             mode="start",
         )
-    except NotEnrolled as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except EnrollmentNotActive as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except DayNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except InvalidTasksPerDay as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except NoActivitiesPlanned as exc:
+    except (InvalidTasksPerDay, NoActivitiesPlanned) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except SessionAlreadyOpen as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
