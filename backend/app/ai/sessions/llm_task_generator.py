@@ -27,6 +27,24 @@ from app.scoring import ArchetypeSpec
 
 logger = logging.getLogger(__name__)
 
+# Map archetype ui_widget values to the frontend WidgetKey enum so the
+# LangGraph task_delivery_node can dispatch to the right React component.
+_WIDGET_KEY: dict[str, str] = {
+    "FillInBlanks": "fill_in_blanks",
+    "MCQList": "mcq",
+    "ListenAndAnswer+MCQList": "listen_and_respond",
+    "ListenAndAnswer+FillInBlanks": "listen_and_respond",
+    "ListenAndAnswer+OpenTextList": "listen_and_respond",
+    "ListenAndAnswer+SpeakAndRecord": "listen_and_respond",
+    "SpeakAndRecord": "speak_and_record",
+    "Storyboard": "storyboard",
+    "StructuredEssay": "structured_essay",
+    "OpenTextList": "open_text",
+    "SentenceTransform": "open_text",
+    "ErrorCorrection": "open_text",
+    "TimedText": "timed_text",
+}
+
 
 class TaskGenOutput(BaseModel):
     """LLM-side schema for one generated task."""
@@ -89,6 +107,7 @@ class LLMTaskGenerator:
             "archetype_id": archetype.archetype_id,
             "archetype_name": archetype.name,
             "ui_widget": archetype.ui_widget,
+            "widget": _WIDGET_KEY.get(archetype.ui_widget, archetype.ui_widget),
             "core_activity": archetype.core_activity,
             "topic": output.topic,
             "explanation_brief": explanation_brief,

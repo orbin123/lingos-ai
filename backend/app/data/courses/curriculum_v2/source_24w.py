@@ -40,7 +40,12 @@ WEEKS_24: tuple[WeekSource, ...] = (
         sub_level_min=1, sub_level_max=2,
         learning_goal="Master 'to be' + possessives + simple present in the affirmative.",
         days=(
-            ("I am / You are / He is / She is", "Subject pronouns and present forms of 'to be'."),
+            (
+                "Simple Present Tense — Subject-Verb Agreement",
+                "Using simple present in affirmative sentences: I work, he/she works. "
+                "Frequency adverbs: always, usually, often, sometimes, never. "
+                "Contrast with 'to be' vs. action verbs.",
+            ),
             ("My, your, his, her, our, their", "Possessive adjectives matched to subjects."),
             ("Simple present (positive): I work, she works", "Affirmative simple present with third-person -s."),
             ("This / that / these / those + a / an / the", "Demonstratives and articles in basic sentences."),

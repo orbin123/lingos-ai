@@ -70,8 +70,8 @@ _MANDATORY_BY_THEME: dict[str, tuple[str, ...]] = {
 _CANDIDATES_BY_THEME: dict[str, dict[str, tuple[str, ...]]] = {
     "grammar": {
         "read":   ("READ_CLOZE", "READ_COMP_MCQ", "READ_ERROR_SPOT"),
-        "write":  ("WRITE_SENT_TRANS", "WRITE_ERROR_CORR", "WRITE_VOICE_CONV", "WRITE_PARA"),
-        "listen": ("LISTEN_CLOZE", "LISTEN_DICTATION"),
+        "write":  ("WRITE_OPEN_SENT", "WRITE_SENT_TRANS", "WRITE_ERROR_CORR", "WRITE_VOICE_CONV", "WRITE_PARA"),
+        "listen": ("LISTEN_MCQ", "LISTEN_CLOZE", "LISTEN_DICTATION"),
         "speak":  ("SPEAK_READ_ALOUD", "SPEAK_TIMED"),
     },
     "communication": {

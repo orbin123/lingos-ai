@@ -73,14 +73,14 @@ async def start_session(
     response_model=StartSessionResponse,
     status_code=status.HTTP_200_OK,
 )
-def restart_session(
+async def restart_session(
     session_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StartSessionResponse:
     service = LearningSessionService(db)
     try:
-        return service.restart_session(
+        return await service.restart_session(
             session_id=session_id,
             user_id=current_user.id,
         )

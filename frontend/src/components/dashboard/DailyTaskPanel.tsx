@@ -109,6 +109,7 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
       {!isLoading && !isError && plan && !completed && (
         <ActiveSessionBlock
           activities={plan.activities}
+          topic={plan.topic}
           isPreview={plan.is_preview}
           sessionStatus={plan.status}
           isStarting={startMutation.isPending}
@@ -180,8 +181,16 @@ function Tag({
   );
 }
 
+const CORE_ACTIVITY_LABEL: Record<string, string> = {
+  read: "Read",
+  write: "Write",
+  listen: "Listen",
+  speak: "Speak",
+};
+
 function ActiveSessionBlock({
   activities,
+  topic,
   isPreview,
   sessionStatus,
   isStarting,
@@ -189,6 +198,7 @@ function ActiveSessionBlock({
   onStart,
 }: {
   activities: DashboardPlanActivity[];
+  topic: string;
   isPreview: boolean;
   sessionStatus: string | null;
   isStarting: boolean;
@@ -206,6 +216,19 @@ function ActiveSessionBlock({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {topic && (
+        <div
+          style={{
+            fontSize: 12.5,
+            fontWeight: 700,
+            color: "oklch(38% 0.09 245)",
+            marginBottom: 2,
+          }}
+        >
+          {topic}
+        </div>
+      )}
+
       {!isPreview && (
         <div
           style={{
@@ -232,6 +255,7 @@ function ActiveSessionBlock({
           <ActivityRow
             key={activity.sequence}
             activity={activity}
+            coreActivityLabel={CORE_ACTIVITY_LABEL[activity.core_activity] ?? activity.core_activity}
             isActive={!isPreview && !allDone && index === activeIndex}
             isLocked={isPreview || (!allDone && index > activeIndex)}
             isComplete={activity.status === "evaluated"}
@@ -277,11 +301,13 @@ function ActiveSessionBlock({
 
 function ActivityRow({
   activity,
+  coreActivityLabel,
   isActive,
   isLocked,
   isComplete,
 }: {
   activity: DashboardPlanActivity;
+  coreActivityLabel: string;
   isActive: boolean;
   isLocked: boolean;
   isComplete: boolean;
@@ -366,7 +392,7 @@ function ActivityRow({
             alignItems: "center",
           }}
         >
-          <span>Activity {activity.sequence}</span>
+          <span>{coreActivityLabel} · Activity {activity.sequence}</span>
         </div>
       </div>
 
