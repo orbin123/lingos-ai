@@ -71,6 +71,7 @@ export function useStartOrContinueTodaySession() {
           attempts: session.activities.map((activity) => ({
             sequence: activity.sequence,
             archetype_id: activity.archetype_id,
+            archetype_name: activity.archetype_name,
             is_mandatory: activity.is_mandatory,
             status: activity.status,
           })),
@@ -178,6 +179,39 @@ export function useCompleteSession(sessionId: string | null) {
       if (sessionId) {
         queryClient.setQueryData(sessionsKeys.scorecard(sessionId), scorecard);
       }
+    },
+  });
+}
+
+
+// ── Learning (chat) session start ─────────────────────────────────
+
+/**
+ * Open a chat-driven learning session layered on the user's V2
+ * DailySession for today. The backend either resumes an existing chat
+ * envelope or creates a fresh one (and the V2 DailySession behind it).
+ *
+ * Used by the dashboard "Start session" button — the response gives the
+ * UUID the chat page opens its WebSocket against.
+ */
+export interface StartLearningSessionResponse {
+  session_id: string;
+  daily_session_id: number;
+  topic: string;
+  skill_name: string;
+  task_type: string;
+  message: string;
+}
+
+export function useStartLearningSession() {
+  return useMutation<StartLearningSessionResponse, Error, void>({
+    mutationFn: async () => {
+      const { api } = await import("@/lib/api");
+      const response = await api.post<StartLearningSessionResponse>(
+        "/api/learning/sessions/start",
+        {},
+      );
+      return response.data;
     },
   });
 }

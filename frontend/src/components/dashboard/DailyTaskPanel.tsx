@@ -1,16 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { AxiosError } from "axios";
 
 import type { UserCoursePreferenceRead } from "@/lib/preferences-api";
 import { getApiErrorMessage } from "@/lib/errors";
-import { useStartTodaySession } from "@/hooks/useSessionsFlow";
-import type {
-  AttemptSkeleton,
-  SessionStartResponse,
-} from "@/lib/sessions-api";
+import { useTodaySessionPlan, useStartLearningSession } from "@/hooks/useSessionsFlow";
+import type { DashboardPlanActivity } from "@/lib/sessions-api";
 
 interface DailyTaskPanelProps {
   preference: UserCoursePreferenceRead;
@@ -59,24 +56,17 @@ function ArrowIcon() {
 
 export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
   const router = useRouter();
-  const startToday = useStartTodaySession();
+  const startMutation = useStartLearningSession();
 
-  // Fire once per mount. The dashboard re-keys this component on
-  // (current_week, current_day_in_week), so mounting → fresh fetch is the
-  // right cadence; we don't poll.
-  const firedRef = useRef(false);
-  useEffect(() => {
-    if (firedRef.current) return;
-    firedRef.current = true;
-    startToday.mutate();
-  }, [startToday]);
+  // GET /sessions/today-plan — preview plan or existing session, no LLM call.
+  const { data: plan, isLoading, isError, error, refetch } = useTodaySessionPlan();
 
-  const session: SessionStartResponse | null = startToday.data ?? null;
-  const isLoading = startToday.isPending || (!session && !startToday.isError);
-  const error = startToday.error;
+  const completed = plan?.status === "completed";
 
-  const completed = session?.status === "completed";
-  const abandoned = session?.status === "abandoned";
+  const handleStart = useCallback(async () => {
+    const result = await startMutation.mutateAsync();
+    router.push(`/task/chat/${result.session_id}`);
+  }, [startMutation, router]);
 
   return (
     <div
@@ -107,26 +97,23 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
 
       {isLoading && <LoadingBlock />}
 
-      {error && !isLoading && (
+      {isError && !isLoading && (
         <ErrorBlock
           message={getApiErrorMessage(error as AxiosError)}
-          onRetry={() => {
-            firedRef.current = true;
-            startToday.mutate();
-          }}
+          onRetry={() => refetch()}
         />
       )}
 
-      {!isLoading && !error && session && completed && <CompletedTodayBlock />}
+      {!isLoading && !isError && plan && completed && <CompletedTodayBlock />}
 
-      {!isLoading && !error && session && abandoned && (
-        <AbandonedBlock onStartFresh={() => startToday.mutate()} />
-      )}
-
-      {!isLoading && !error && session && !completed && !abandoned && (
+      {!isLoading && !isError && plan && !completed && (
         <ActiveSessionBlock
-          session={session}
-          onStart={() => router.push(`/sessions/${session.session_id}`)}
+          activities={plan.activities}
+          isPreview={plan.is_preview}
+          sessionStatus={plan.status}
+          isStarting={startMutation.isPending}
+          startError={startMutation.error}
+          onStart={handleStart}
         />
       )}
     </div>
@@ -194,88 +181,107 @@ function Tag({
 }
 
 function ActiveSessionBlock({
-  session,
+  activities,
+  isPreview,
+  sessionStatus,
+  isStarting,
+  startError,
   onStart,
 }: {
-  session: SessionStartResponse;
+  activities: DashboardPlanActivity[];
+  isPreview: boolean;
+  sessionStatus: string | null;
+  isStarting: boolean;
+  startError: Error | null;
   onStart: () => void;
 }) {
-  const attempts = session.attempts;
-  const activeIndex = attempts.findIndex((a) => a.status !== "evaluated");
-  const allDone = attempts.length > 0 && activeIndex === -1;
-  // `allDone` can hit before the session itself flips to `completed` (the
-  // user has answered every activity but hasn't called /complete yet). In
-  // that case we still let them tap into the session shell to finalize.
+  const activeIndex = activities.findIndex((a) => a.status !== "evaluated");
+  const allDone = activities.length > 0 && activeIndex === -1;
+
+  let buttonLabel = "Start session";
+  if (!isPreview) {
+    if (allDone) buttonLabel = "Finish session";
+    else if (sessionStatus === "in_progress") buttonLabel = "Continue session";
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div
-        style={{
-          padding: "10px 12px",
-          borderRadius: 12,
-          background: "#eef6fc",
-          border: "1px solid #c9deef",
-          color: "#00599e",
-          fontSize: 12.5,
-          fontWeight: 700,
-          lineHeight: 1.45,
-        }}
-      >
-        {allDone
-          ? "All activities answered — finish the session to lock in your score."
-          : "Today's activities run in one session."}
-      </div>
+      {!isPreview && (
+        <div
+          style={{
+            padding: "10px 12px",
+            borderRadius: 12,
+            background: "#eef6fc",
+            border: "1px solid #c9deef",
+            color: "#00599e",
+            fontSize: 12.5,
+            fontWeight: 700,
+            lineHeight: 1.45,
+          }}
+        >
+          {allDone
+            ? "All activities answered — finish the session to lock in your score."
+            : "Today's activities run in one session."}
+        </div>
+      )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {attempts.map((attempt, index) => (
+        {activities.map((activity, index) => (
           <ActivityRow
-            key={attempt.sequence}
-            attempt={attempt}
-            isActive={!allDone && index === activeIndex}
-            isLocked={!allDone && index > activeIndex}
-            isComplete={attempt.status === "evaluated"}
+            key={activity.sequence}
+            activity={activity}
+            isActive={!isPreview && !allDone && index === activeIndex}
+            isLocked={isPreview || (!allDone && index > activeIndex)}
+            isComplete={activity.status === "evaluated"}
           />
         ))}
       </div>
 
+      {startError && (
+        <p style={{ margin: 0, color: "oklch(40% 0.15 15)", fontSize: 13 }}>
+          {getApiErrorMessage(startError as AxiosError)}
+        </p>
+      )}
+
       <button
         type="button"
         onClick={onStart}
+        disabled={isStarting}
         style={{
           alignSelf: "stretch",
           marginTop: 6,
           padding: "13px 18px",
           borderRadius: 14,
           border: "none",
-          background: "#0070C4",
+          background: isStarting ? "oklch(68% 0.06 240)" : "#0070C4",
           color: "white",
           fontFamily: "inherit",
           fontSize: 14,
           fontWeight: 800,
-          cursor: "pointer",
-          boxShadow: "0 6px 18px rgba(0,112,196,0.22)",
+          cursor: isStarting ? "default" : "pointer",
+          boxShadow: isStarting ? "none" : "0 6px 18px rgba(0,112,196,0.22)",
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
           gap: 6,
         }}
       >
-        {allDone ? "Finish session" : activeIndex === 0 ? "Start session" : "Continue session"}
-        <ArrowIcon />
+        {isStarting ? "Starting…" : buttonLabel}
+        {!isStarting && <ArrowIcon />}
       </button>
     </div>
   );
 }
 
 function ActivityRow({
-  attempt,
+  activity,
   isActive,
   isLocked,
   isComplete,
 }: {
-  attempt: AttemptSkeleton;
+  activity: DashboardPlanActivity;
   isActive: boolean;
   isLocked: boolean;
   isComplete: boolean;
@@ -349,7 +355,7 @@ function ActivityRow({
             whiteSpace: "nowrap",
           }}
         >
-          {attempt.archetype_name}
+          {activity.archetype_name}
         </div>
         <div
           style={{
@@ -360,23 +366,7 @@ function ActivityRow({
             alignItems: "center",
           }}
         >
-          <span>Activity {attempt.sequence}</span>
-          {attempt.is_mandatory && (
-            <span
-              style={{
-                padding: "1px 6px",
-                borderRadius: 6,
-                background: "oklch(95% 0.05 30)",
-                color: "oklch(45% 0.16 30)",
-                fontWeight: 700,
-                fontSize: 10.5,
-                textTransform: "uppercase",
-                letterSpacing: 0.4,
-              }}
-            >
-              Mandatory
-            </span>
-          )}
+          <span>Activity {activity.sequence}</span>
         </div>
       </div>
 
@@ -392,7 +382,7 @@ function ActivityRow({
           Done
         </span>
       )}
-      {isLocked && (
+      {isLocked && !isComplete && (
         <span
           style={{
             fontSize: 12.5,
@@ -468,42 +458,6 @@ function CompletedTodayBlock() {
   );
 }
 
-function AbandonedBlock({ onStartFresh }: { onStartFresh: () => void }) {
-  return (
-    <div
-      style={{
-        padding: "22px 18px 10px",
-        textAlign: "center",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 12,
-      }}
-    >
-      <p style={{ margin: 0, color: "oklch(40% 0.07 240)", fontSize: 14 }}>
-        Your previous attempt for today was abandoned.
-      </p>
-      <button
-        type="button"
-        onClick={onStartFresh}
-        style={{
-          padding: "10px 18px",
-          borderRadius: 10,
-          border: "none",
-          background: "#0070C4",
-          color: "white",
-          fontSize: 13,
-          fontWeight: 700,
-          cursor: "pointer",
-          fontFamily: "inherit",
-        }}
-      >
-        Start fresh
-      </button>
-    </div>
-  );
-}
-
 function LoadingBlock() {
   return (
     <div style={{ padding: "26px 0", textAlign: "center" }}>
@@ -520,7 +474,7 @@ function LoadingBlock() {
         }}
       />
       <p style={{ margin: 0, color: "oklch(45% 0.07 240)", fontSize: 14 }}>
-        Loading today&apos;s session...
+        Loading today&apos;s plan...
       </p>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>

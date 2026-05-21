@@ -10,9 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.curriculum.models import (
+    Course,
     CurriculumDay,
     CurriculumWeek,
     TaskArchetype,
+    UserEnrollment,
 )
 
 
@@ -92,3 +94,30 @@ class TaskArchetypeRepository:
                 )
             ).scalars()
         )
+
+
+class CourseRepository:
+    """Read `courses` rows."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def get_by_slug(self, slug: str) -> Course | None:
+        return self.db.execute(
+            select(Course).where(Course.slug == slug)
+        ).scalar_one_or_none()
+
+
+class UserEnrollmentRepository:
+    """Read/write `user_enrollments` rows."""
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def get_for_user(self, user_id: int) -> UserEnrollment | None:
+        """Return the most recent enrollment for the given user, or None."""
+        return self.db.execute(
+            select(UserEnrollment)
+            .where(UserEnrollment.user_id == user_id)
+            .order_by(UserEnrollment.id.desc())
+        ).scalar_one_or_none()

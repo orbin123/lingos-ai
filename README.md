@@ -30,9 +30,13 @@ Backend:
 
 ```bash
 cd backend
+uv sync
 uv run alembic upgrade head
+uv run uvicorn app.main:app --reload   # API at http://127.0.0.1:8000
 uv run pytest tests/test_admin_api.py
 ```
+
+From the repo root you can also run `./scripts/dev-backend.sh` (must `chmod +x` once).
 
 Frontend:
 

@@ -22,9 +22,11 @@ from app.modules.auth.models import (  # noqa: F401
 from app.modules.admin.models import AdminAuditLog, AIRequestLog  # noqa: F401
 from app.modules.skills.models import Skill  # noqa: F401
 from app.modules.curriculum.models import (  # noqa: F401
+    Course,
     CurriculumDay,
     CurriculumWeek,
     TaskArchetype,
+    UserEnrollment,
 )
 from app.modules.challenges.models import (  # noqa: F401
     Challenge,
@@ -42,3 +44,4 @@ from app.modules.sessions.models import (  # noqa: F401
 )
 from app.modules.streaks.models import DailyActivity, StreakFreezeUsage  # noqa: F401
 from app.modules.preferences.models import UserCoursePreference  # noqa: F401
+from app.modules.learning_session.models import LearningSession  # noqa: F401
