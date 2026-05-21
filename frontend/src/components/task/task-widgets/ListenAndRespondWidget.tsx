@@ -271,12 +271,14 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
       </div>
 
       <div className="tw-listen-controls">
-        <button
-          className={`tw-transcript-toggle${transcriptOpen ? " on" : ""}`}
-          onClick={toggleTranscript}
-        >
-          {I.doc} {transcriptOpen ? "Hide transcript" : "Show transcript"}
-        </button>
+        {submitted && (
+          <button
+            className={`tw-transcript-toggle${transcriptOpen ? " on" : ""}`}
+            onClick={toggleTranscript}
+          >
+            {I.doc} {transcriptOpen ? "Hide transcript" : "Show transcript"}
+          </button>
+        )}
         {!unlocked && !submitted && (
           <button className="tw-skip-task" onClick={() => setUnlocked(true)}>
             Skip to task →

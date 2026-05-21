@@ -337,8 +337,3 @@ End every session with:
   if so, do it in the same session.
 
 ---
-
-## 17. AGENTS.md
-
-A shorter Codex-style mirror of this file lives at `AGENTS.md`. Keep them
-in sync. `CLAUDE.md` is the detailed contract; `AGENTS.md` is the quick card.

@@ -113,6 +113,18 @@ _READING: tuple[ArchetypeSpec, ...] = (
 
 _WRITING: tuple[ArchetypeSpec, ...] = (
     ArchetypeSpec(
+        archetype_id="WRITE_OPEN_SENT",
+        name="Open Sentence Writing",
+        core_activity="write",
+        description="Answer 3–4 prompts by writing simple present sentences from scratch.",
+        ui_widget="open_text",
+        themes_supported=("grammar",),
+        cefr_min="A1", cefr_max="C2",
+        weight_map={"grammar": 0.65, "vocabulary": 0.20, "expression": 0.15},
+        rubric=("grammatical_accuracy", "task_completion", "vocabulary"),
+        mvp=True,
+    ),
+    ArchetypeSpec(
         archetype_id="WRITE_SENT_TRANS",
         name="Sentence Transformation",
         core_activity="write",

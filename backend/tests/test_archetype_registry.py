@@ -29,6 +29,15 @@ _KNOWN_WIDGETS = {
     "ListenAndAnswer+FillInBlanks",
     "ListenAndAnswer+OpenTextList",
     "ListenAndAnswer+SpeakAndRecord",
+    # Frontend WidgetKey values — used directly by archetypes that map 1:1
+    "open_text",
+    "fill_in_blanks",
+    "listen_and_respond",
+    "speak_and_record",
+    "mcq",
+    "timed_text",
+    "storyboard",
+    "structured_essay",
 }
 
 

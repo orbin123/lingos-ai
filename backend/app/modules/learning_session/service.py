@@ -375,17 +375,47 @@ class LearningSessionService:
             for a in attempts
         ]
 
-    def restart_session(
+    async def restart_session(
         self,
         *,
         session_id: str,
         user_id: int,
     ) -> StartSessionResponse:
-        """Restart the chat conversation without resetting V2 progress."""
+        """Restart the chat conversation without resetting V2 progress.
+
+        Re-runs the PlannerAgent so teacher_instructions reflect any
+        curriculum content changes made since the session was first created.
+        """
         session = self._load_session(session_id)
         if session.user_id != user_id:
             raise PermissionError(
                 f"User {user_id} cannot restart session {session_id}"
+            )
+
+        # Refresh teacher instructions against current curriculum data so
+        # content edits in source_24w.py (after re-seeding) take effect.
+        try:
+            daily = self.db.get(DailySession, session.daily_session_id)
+            if daily is not None:
+                day = self.curriculum_day_repo.get_by_day_id(daily.day_id)
+                if day is not None and day.week is not None:
+                    task_queue = session.task_queue or []
+                    archetype_id = task_queue[0]["archetype_id"] if task_queue else None
+                    archetype = self.archetype_repo.get(archetype_id) if archetype_id else None
+                    if archetype is not None:
+                        topic_dict = v2_course_topic(day, day.week, archetype)
+                        course_slug = f"{daily.course_length}-course"
+                        plan = await PlannerAgent().generate(
+                            user_id=user_id,
+                            course_slug=course_slug,
+                            topic_entry=topic_dict,
+                            learner_profile=self._profile_context(user_id),
+                        )
+                        session.teacher_instructions = plan.get("teacher_instructions")
+        except Exception:
+            logger.warning(
+                "PlannerAgent re-run failed for session_id=%s; keeping existing instructions",
+                session_id,
             )
 
         session.messages = []
