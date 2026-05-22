@@ -12,10 +12,10 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
-from app.ai.agents.ielts_challenge_evaluator import IELTSChallengeWritingEvaluator
-from app.ai.agents.ielts_challenge_feedback import IELTSChallengeFeedbackAgent
-from app.ai.agents.ielts_challenge_generator import IELTSChallengeGenerator
-from app.ai.agents.ielts_challenge_speaking_evaluator import (
+from app.ai.agents.ielts_challenge.ielts_challenge_evaluator import IELTSChallengeWritingEvaluator
+from app.ai.agents.ielts_challenge.ielts_challenge_feedback import IELTSChallengeFeedbackAgent
+from app.ai.agents.ielts_challenge.ielts_challenge_generator import IELTSChallengeGenerator
+from app.ai.agents.ielts_challenge.ielts_challenge_speaking_evaluator import (
     IELTSChallengeSpeakingEvaluator,
 )
 from app.ai.llm import LLMError

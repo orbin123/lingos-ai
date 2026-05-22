@@ -14,6 +14,7 @@ import { useParams, useRouter } from "next/navigation";
 import { SessionScorecard } from "@/components/sessions/SessionScorecard";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useSessionScorecard } from "@/hooks/useSessionsFlow";
+import { markScorecardViewed } from "@/lib/daily-session-entry";
 import { useSessionStore } from "@/store/sessionStore";
 
 
@@ -33,9 +34,9 @@ export default function SessionScorecardPage() {
   return (
     <main
       style={{
-        maxWidth: 720,
-        margin: "32px auto",
-        padding: "0 24px",
+        maxWidth: 1180,
+        margin: "20px auto",
+        padding: "0 clamp(18px, 3vw, 32px)",
         fontFamily: "'Plus Jakarta Sans', sans-serif",
       }}
     >
@@ -49,6 +50,7 @@ export default function SessionScorecardPage() {
         <SessionScorecard
           scorecard={scorecard}
           onDone={() => {
+            markScorecardViewed(scorecard.session_id);
             useSessionStore.getState().clear();
             router.push("/dashboard");
           }}

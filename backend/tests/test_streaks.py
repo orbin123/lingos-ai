@@ -11,9 +11,12 @@ from sqlalchemy.orm import sessionmaker
 from app import models  # noqa: F401 — populate Base.metadata
 from app.core.database import Base
 from app.modules.auth.models import User, UserProfile
+from app.modules.curriculum.models import TaskArchetype
+from app.modules.sessions.models import ActivityAttempt, DailySession
 from app.modules.streaks import service as streak_service_module
 from app.modules.streaks.models import DailyActivity, StreakFreezeUsage
 from app.modules.streaks.service import StreakService
+from scripts.seed_curriculum_v2 import seed_archetypes
 
 
 @pytest.fixture()
@@ -26,11 +29,15 @@ def db_session():
             UserProfile.__table__,
             DailyActivity.__table__,
             StreakFreezeUsage.__table__,
+            TaskArchetype.__table__,
+            DailySession.__table__,
+            ActivityAttempt.__table__,
         ],
     )
     SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     db = SessionLocal()
     try:
+        seed_archetypes(db)
         yield db
     finally:
         db.close()

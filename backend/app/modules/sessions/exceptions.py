@@ -21,6 +21,10 @@ class SessionAlreadyCompleted(SessionError):
     """409 — session is COMPLETED; further submits / completes are no-ops."""
 
 
+class SessionAdvanceBlocked(SessionError):
+    """409 — the learner cannot advance from the current day yet."""
+
+
 class SessionAbandoned(SessionError):
     """409 — session is ABANDONED; cannot be reactivated."""
 

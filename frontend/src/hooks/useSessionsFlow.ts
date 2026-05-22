@@ -34,6 +34,7 @@ import { useSessionStore } from "@/store/sessionStore";
 
 export const sessionsKeys = {
   all: ["sessions"] as const,
+  today: () => [...sessionsKeys.all, "today"] as const,
   todayPlan: () => [...sessionsKeys.all, "today-plan"] as const,
   byId: (sessionId: string) => [...sessionsKeys.all, sessionId] as const,
   nextActivity: (sessionId: string) =>
@@ -114,6 +115,21 @@ export function useStartTodaySession() {
   });
 }
 
+export function useTodaySession(options?: { enabled?: boolean }) {
+  const setSession = useSessionStore((s) => s.setSession);
+  return useQuery<SessionStartResponse>({
+    queryKey: sessionsKeys.today(),
+    queryFn: async () => {
+      const session = await sessionsApi.startToday();
+      setSession(session);
+      return session;
+    },
+    enabled: options?.enabled ?? true,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+}
+
 
 // ── Next activity ──────────────────────────────────────────────────
 
@@ -162,6 +178,7 @@ export function useSubmitActivity(sessionId: string | null) {
           queryKey: sessionsKeys.nextActivity(sessionId),
         });
       }
+      queryClient.invalidateQueries({ queryKey: ["streak", "me"] });
     },
   });
 }
@@ -180,6 +197,7 @@ export function useCompleteSession(sessionId: string | null) {
       if (sessionId) {
         queryClient.setQueryData(sessionsKeys.scorecard(sessionId), scorecard);
       }
+      queryClient.invalidateQueries({ queryKey: ["streak", "me"] });
     },
   });
 }

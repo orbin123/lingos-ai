@@ -253,6 +253,8 @@ function StreakPill() {
             boxShadow: "0 12px 40px rgba(40,80,150,0.15)",
             padding: 18,
             zIndex: 60,
+            overflow: "hidden",
+            boxSizing: "border-box",
           }}
         >
           {/* Arrow */}
@@ -347,14 +349,14 @@ function StreakPill() {
             </div>
           </div>
 
-          {/* Week grid */}
+          {/* Week grid — minmax(0,1fr) + no minHeight so aspect-ratio tiles
+              stay within the popover (minHeight was forcing 44px-wide cells). */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(7, 1fr)",
-              gap: 6,
+              gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+              gap: 4,
               marginBottom: 14,
-              minHeight: 44,
             }}
           >
             {days.length === 0 &&
@@ -363,6 +365,7 @@ function StreakPill() {
                   key={`ph-${i}`}
                   style={{
                     aspectRatio: "1",
+                    minWidth: 0,
                     borderRadius: 10,
                     background: "oklch(96% 0.015 240)",
                   }}
@@ -373,6 +376,7 @@ function StreakPill() {
                 key={i}
                 style={{
                   aspectRatio: "1",
+                  minWidth: 0,
                   borderRadius: 10,
                   display: "flex",
                   flexDirection: "column",

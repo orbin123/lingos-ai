@@ -2,12 +2,14 @@
 
 import { useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 
 import type { UserCoursePreferenceRead } from "@/lib/preferences-api";
 import { getApiErrorMessage } from "@/lib/errors";
 import { useTodaySessionPlan, useStartLearningSession } from "@/hooks/useSessionsFlow";
-import type { DashboardPlanActivity } from "@/lib/sessions-api";
+import { sessionsApi, type DashboardPlanActivity } from "@/lib/sessions-api";
+import { hasScorecardBeenViewed } from "@/lib/daily-session-entry";
 
 interface DailyTaskPanelProps {
   preference: UserCoursePreferenceRead;
@@ -57,19 +59,51 @@ function ArrowIcon() {
 export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const startMutation = useStartLearningSession();
 
   // GET /sessions/today-plan — preview plan or existing session, no LLM call.
   const { data: plan, isLoading, isError, error, refetch } = useTodaySessionPlan();
 
   const completed = plan?.status === "completed";
+  const scorecardViewed = Boolean(
+    plan?.session_id && completed && hasScorecardBeenViewed(plan.session_id),
+  );
+  const showLocked = Boolean(plan && completed && scorecardViewed);
+
+  const unlockMutation = useMutation({
+    mutationFn: sessionsApi.advanceDay,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sessions", "today-plan"] });
+      queryClient.invalidateQueries({ queryKey: ["me"] });
+    },
+  });
 
   const handleStart = useCallback(async () => {
+    const allDone = Boolean(
+      plan &&
+        !plan.is_preview &&
+        plan.session_id &&
+        plan.activities.length > 0 &&
+        plan.activities.every((activity) => activity.status === "evaluated"),
+    );
+    if (allDone && plan?.session_id) {
+      router.push(`/sessions/${plan.session_id}/scorecard`);
+      return;
+    }
+
     const week = Number(searchParams.get("week") || preference.current_week || 1);
     const day = Number(searchParams.get("day") || preference.current_day_in_week || 1);
     const result = await startMutation.mutateAsync({ week, day });
     router.push(`/task/chat/${result.session_id}`);
-  }, [preference.current_day_in_week, preference.current_week, searchParams, startMutation, router]);
+  }, [
+    plan,
+    preference.current_day_in_week,
+    preference.current_week,
+    searchParams,
+    startMutation,
+    router,
+  ]);
 
   return (
     <div
@@ -107,9 +141,17 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
         />
       )}
 
-      {!isLoading && !isError && plan && completed && <CompletedTodayBlock />}
+      {!isLoading && !isError && plan && showLocked && (
+        <LockedDayBlock
+          week={preference.current_week}
+          day={preference.current_day_in_week}
+          isUnlocking={unlockMutation.isPending}
+          error={unlockMutation.error}
+          onUnlock={() => unlockMutation.mutate()}
+        />
+      )}
 
-      {!isLoading && !isError && plan && !completed && (
+      {!isLoading && !isError && plan && !showLocked && (
         <ActiveSessionBlock
           activities={plan.activities}
           topic={plan.topic}
@@ -213,7 +255,7 @@ function ActiveSessionBlock({
 
   let buttonLabel = "Start session";
   if (!isPreview) {
-    if (allDone) buttonLabel = "Finish session";
+    if (allDone) buttonLabel = "See results";
     else if (sessionStatus === "in_progress") buttonLabel = "Continue session";
   }
 
@@ -246,7 +288,7 @@ function ActiveSessionBlock({
           }}
         >
           {allDone
-            ? "All activities answered — finish the session to lock in your score."
+            ? "All activities answered — review your scorecard when you're ready."
             : "Today's activities run in one session."}
         </div>
       )}
@@ -427,11 +469,23 @@ function ActivityRow({
   );
 }
 
-function CompletedTodayBlock() {
+function LockedDayBlock({
+  week,
+  day,
+  isUnlocking,
+  error,
+  onUnlock,
+}: {
+  week: number;
+  day: number;
+  isUnlocking: boolean;
+  error: Error | null;
+  onUnlock: () => void;
+}) {
   return (
     <div
       style={{
-        padding: "28px 18px 12px",
+        padding: "26px 18px 10px",
         textAlign: "center",
         display: "flex",
         flexDirection: "column",
@@ -447,19 +501,11 @@ function CompletedTodayBlock() {
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "oklch(55% 0.18 155)",
+          background: "oklch(20% 0.09 245)",
           color: "white",
         }}
       >
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M5 13l4 4L19 7"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <LockIcon />
       </span>
       <div>
         <h3
@@ -470,7 +516,7 @@ function CompletedTodayBlock() {
             fontWeight: 800,
           }}
         >
-          Today&apos;s session is complete
+          Day {week}.{day} complete
         </h3>
         <p
           style={{
@@ -480,9 +526,40 @@ function CompletedTodayBlock() {
             lineHeight: 1.6,
           }}
         >
-          Come back tomorrow — the next day unlocks automatically.
+          Ready for tomorrow?
         </p>
       </div>
+      {error && (
+        <p style={{ margin: 0, color: "oklch(40% 0.15 15)", fontSize: 13 }}>
+          {getApiErrorMessage(error as AxiosError)}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={onUnlock}
+        disabled={isUnlocking}
+        style={{
+          alignSelf: "stretch",
+          marginTop: 8,
+          padding: "13px 18px",
+          borderRadius: 14,
+          border: "none",
+          background: isUnlocking ? "oklch(68% 0.06 240)" : "#0070C4",
+          color: "white",
+          fontFamily: "inherit",
+          fontSize: 14,
+          fontWeight: 800,
+          cursor: isUnlocking ? "default" : "pointer",
+          boxShadow: isUnlocking ? "none" : "0 6px 18px rgba(0,112,196,0.22)",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+        }}
+      >
+        {isUnlocking ? "Unlocking..." : "Unlock next day"}
+        {!isUnlocking && <ArrowIcon />}
+      </button>
     </div>
   );
 }

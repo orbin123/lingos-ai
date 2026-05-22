@@ -258,7 +258,7 @@ export function StructuredEssayWidget({ payload, answers, setAnswers, state, onS
         <button
           className="tw-submit-btn"
           disabled={!canSubmit}
-          onClick={onSubmit}
+          onClick={() => onSubmit()}
         >
           {I.send} Submit essay
         </button>

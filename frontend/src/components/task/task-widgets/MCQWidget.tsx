@@ -156,7 +156,7 @@ export function MCQWidget({ payload, answers, setAnswers, state, onSubmit }: Pro
         <button
           className="tw-submit-btn"
           disabled={!allAnswered}
-          onClick={onSubmit}
+          onClick={() => onSubmit()}
         >
           {I.spark}{" "}
           {allAnswered ? "Submit answers" : `Answer all ${items.length} questions to submit`}

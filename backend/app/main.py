@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -26,6 +26,7 @@ from app.modules.learning_session.router import (
     ws_router as learning_ws_router,
 )
 from app.modules.preferences.routes import router as preferences_router
+from app.modules.responses.routes import router as responses_router
 from app.modules.sessions.routes import router as sessions_router
 from app.modules.streaks.routes import router as streaks_router
 
@@ -76,6 +77,22 @@ app.mount(
 )
 
 
+@app.get("/", tags=["system"])
+def root() -> dict[str, str]:
+    """Friendly landing payload so browsers hitting `/` don't see a 404."""
+    return {
+        "app": "LingosAI",
+        "status": "ok",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    return Response(status_code=204)
+
+
 @app.get("/health", tags=["system"])
 def health_check() -> dict[str, str]:
     """Liveness probe - confirms server is up."""
@@ -93,6 +110,7 @@ app.include_router(challenges_router, prefix="/api")
 app.include_router(sessions_router, prefix="/api")
 app.include_router(streaks_router, prefix="/api")
 app.include_router(preferences_router, prefix="/api")
+app.include_router(responses_router)
 app.include_router(learning_rest_router, prefix="/api")
 app.include_router(learning_dev_rest_router, prefix="/api")
 app.include_router(learning_ws_router)

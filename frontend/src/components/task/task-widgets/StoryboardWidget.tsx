@@ -402,7 +402,7 @@ export function StoryboardWidget({ payload, answers, setAnswers, state, onSubmit
         <button
           className="tw-submit-btn"
           disabled={!canSubmit}
-          onClick={onSubmit}
+          onClick={() => onSubmit()}
           style={{ marginTop: 14 }}
         >
           {I.send} Submit storyboard

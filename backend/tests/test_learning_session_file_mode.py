@@ -12,7 +12,7 @@ isolation:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -22,9 +22,11 @@ from app.modules.learning_session.service import (
     LearningSessionService,
     _parse_day_id,
     _looks_like_ready_for_practice,
+    _should_force_transition_to_practice,
+    _tutor_asked_readiness,
 )
 from app.modules.sessions.exceptions import DayNotFound
-from app.modules.sessions.models import AttemptStatus
+from app.modules.sessions.models import AttemptStatus, SessionStatus
 
 
 def test_parse_day_id_returns_week_and_day_numbers() -> None:
@@ -65,6 +67,168 @@ def test_persona_from_file_blank_day_raises() -> None:
     # W2D1 is intentionally blank in source_24w.py — file_source must refuse it.
     with pytest.raises(DayNotFound):
         persona(None, "day_24_02_01")  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_resume_auto_completes_all_evaluated_daily_session(monkeypatch) -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.attempts_repo = MagicMock()
+
+    chat = MagicMock()
+    chat.session_id = "chat-session"
+    chat.daily_session_id = 42
+    chat.user_id = 7
+    chat.task_queue = [{"status": "pending"}]
+    chat.current_task_index = 0
+    chat.phase = "feedback"
+
+    daily_open = MagicMock()
+    daily_open.id = 42
+    daily_open.session_id = "daily-session"
+    daily_open.status = SessionStatus.IN_PROGRESS
+    daily_done = MagicMock()
+    daily_done.status = SessionStatus.COMPLETED
+    service.db.get.side_effect = [daily_open, daily_done]
+
+    service.attempts_repo.list_for_session.return_value = [
+        MagicMock(status=AttemptStatus.EVALUATED),
+        MagicMock(status=AttemptStatus.EVALUATED),
+    ]
+    service._load_session = MagicMock(return_value=chat)
+    service._state_from_row = MagicMock(return_value={})
+    service._enrich_state_with_profile = MagicMock()
+
+    v2_service = MagicMock()
+    v2_service.complete_session = AsyncMock()
+    monkeypatch.setattr(
+        "app.modules.learning_session.service._make_v2_session_service",
+        MagicMock(return_value=v2_service),
+    )
+
+    messages = [
+        msg async for msg in service.resume_messages_stream("chat-session")
+    ]
+
+    v2_service.complete_session.assert_awaited_once_with(
+        session_id="daily-session",
+        user_id=7,
+    )
+    assert messages[-1].actions == ["Go to dashboard"]
+    assert "Next activity" not in (messages[-1].actions or [])
+
+
+@pytest.mark.asyncio
+async def test_initial_open_auto_completes_all_evaluated_daily_session(monkeypatch) -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.attempts_repo = MagicMock()
+
+    chat = MagicMock()
+    chat.session_id = "chat-session"
+    chat.daily_session_id = 42
+    chat.user_id = 7
+
+    daily_open = MagicMock()
+    daily_open.id = 42
+    daily_open.session_id = "daily-session"
+    daily_open.status = SessionStatus.IN_PROGRESS
+    daily_done = MagicMock()
+    daily_done.status = SessionStatus.COMPLETED
+    service.db.get.side_effect = [daily_open, daily_done]
+
+    service.attempts_repo.list_for_session.return_value = [
+        MagicMock(status=AttemptStatus.EVALUATED),
+        MagicMock(status=AttemptStatus.EVALUATED),
+    ]
+    service._load_session = MagicMock(return_value=chat)
+    service._state_from_row = MagicMock(return_value={})
+    service._enrich_state_with_profile = MagicMock()
+    service._stream_teaching_turn = MagicMock()
+
+    v2_service = MagicMock()
+    v2_service.complete_session = AsyncMock()
+    monkeypatch.setattr(
+        "app.modules.learning_session.service._make_v2_session_service",
+        MagicMock(return_value=v2_service),
+    )
+
+    messages = [
+        msg async for msg in service.initial_messages_stream("chat-session")
+    ]
+
+    v2_service.complete_session.assert_awaited_once_with(
+        session_id="daily-session",
+        user_id=7,
+    )
+    service._stream_teaching_turn.assert_not_called()
+    assert messages[-1].actions == ["Go to dashboard"]
+
+
+@pytest.mark.asyncio
+async def test_resume_keeps_next_activity_when_attempt_is_pending(monkeypatch) -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.attempts_repo = MagicMock()
+
+    chat = MagicMock()
+    chat.session_id = "chat-session"
+    chat.daily_session_id = 42
+    chat.user_id = 7
+    chat.task_queue = [{"status": "pending"}]
+    chat.current_task_index = 0
+    chat.phase = "feedback"
+
+    daily = MagicMock()
+    daily.id = 42
+    daily.status = SessionStatus.IN_PROGRESS
+    service.db.get.return_value = daily
+    service.attempts_repo.list_for_session.return_value = [
+        MagicMock(status=AttemptStatus.PENDING)
+    ]
+    service._load_session = MagicMock(return_value=chat)
+    service._state_from_row = MagicMock(return_value={})
+    service._enrich_state_with_profile = MagicMock()
+
+    make_v2 = MagicMock()
+    monkeypatch.setattr(
+        "app.modules.learning_session.service._make_v2_session_service",
+        make_v2,
+    )
+
+    messages = [
+        msg async for msg in service.resume_messages_stream("chat-session")
+    ]
+
+    make_v2.assert_not_called()
+    assert messages[-1].actions == ["Next activity", "Go to dashboard"]
+
+
+@pytest.mark.asyncio
+async def test_file_mode_resolves_completed_daily_session_without_starting_new_one(monkeypatch) -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.daily_repo = MagicMock()
+
+    completed = MagicMock()
+    completed.status = SessionStatus.COMPLETED
+    service.daily_repo.get_in_progress.return_value = None
+    service.daily_repo.get_latest_for_day.return_value = completed
+
+    make_v2 = MagicMock()
+    monkeypatch.setattr(
+        "app.modules.learning_session.service._make_v2_session_service",
+        make_v2,
+    )
+
+    resolved = await service._resolve_daily_session_from_file(user_id=7)
+
+    assert resolved is completed
+    service.daily_repo.get_latest_for_day.assert_called_once_with(
+        user_id=7,
+        day_id="day_24_01_01",
+        status=SessionStatus.COMPLETED,
+    )
+    make_v2.assert_not_called()
 
 
 # ── Full create_session flow (no DB) ───────────────────────────────
@@ -219,4 +383,119 @@ def test_ready_gate_requires_previous_readiness_prompt() -> None:
     assert not _looks_like_ready_for_practice(
         "not ready",
         previous_tutor_message=previous,
+    )
+
+
+def test_looks_like_ready_for_practice_typo() -> None:
+    """Common short-affirmative typos (yys, yse, okk, …) should pass the gate."""
+    previous = "Great. Ready to try the practice task?"
+
+    for typo in ("yys", "yse", "yeas", "yse!", "okk", "okey", "redy", "sury"):
+        assert _looks_like_ready_for_practice(
+            typo, previous_tutor_message=previous,
+        ), f"expected typo {typo!r} to be treated as an affirmative"
+
+    # Longer non-affirmative sentences must still be rejected even though they
+    # contain a near-affirmative substring. The typo branch only fires when
+    # the entire reply is a single short token.
+    assert not _looks_like_ready_for_practice(
+        "I think yys is what they meant, but please explain again.",
+        previous_tutor_message=previous,
+    )
+    assert not _looks_like_ready_for_practice(
+        "I would normally say yys here.",
+        previous_tutor_message=previous,
+    )
+
+
+def test_readiness_prompt_soft_transitions() -> None:
+    """Soft transition phrasings the teacher LLM emits must count as readiness prompts."""
+    soft_transitions = (
+        "Now, let's get started with the practice task. Good luck!",
+        "Great! Let's begin the practice task. Please follow the instructions carefully.",
+        "Time for the practice task!",
+        "Ready for the practice exercise?",
+        "Let's move on to the practice activity.",
+        "Begin the practice task whenever you're set.",
+        "Let's start with the practice task.",
+    )
+    for phrase in soft_transitions:
+        assert _tutor_asked_readiness(phrase), (
+            f"expected {phrase!r} to be recognised as a readiness prompt"
+        )
+
+    # Should not trigger on unrelated tutor messages.
+    assert not _tutor_asked_readiness(
+        "Now tell me one daily routine sentence."
+    )
+    assert not _tutor_asked_readiness(
+        "Use 'usually' in a sentence about a habit."
+    )
+
+
+def test_turn_ceiling_force_transition_after_authored_plan() -> None:
+    """After teacher exhausts the authored plan + mentions practice, plain
+    "okay" must force a transition even when the strict gate misses it.
+    """
+    scripted = [
+        "TURN 1 — Open the lesson",
+        "TURN 2 — Subject-verb agreement",
+        "TURN 3 — Frequency adverbs",
+        "TURN 4 — Wrap-up: ask 'Ready to try the practice task?'",
+    ]
+    state = {
+        "daily_plan": {
+            "teacher_instructions": {"__scripted_plan": scripted},
+        },
+    }
+    messages = [
+        {"role": "ai", "content": "Hi! Today we learn the simple present.", "type": "chat"},
+        {"role": "user", "content": "I analyze data every day.", "type": "chat"},
+        {"role": "ai", "content": "Good. Now use 'he' or 'she'.", "type": "chat"},
+        {"role": "user", "content": "He analyzes data every day.", "type": "chat"},
+        {"role": "ai", "content": "Nice. Add a frequency adverb.", "type": "chat"},
+        {"role": "user", "content": "She usually analyzes data.", "type": "chat"},
+        {"role": "ai", "content": "Are you ready to try the practice task?", "type": "chat"},
+        {"role": "user", "content": "yys", "type": "chat"},
+        # Recovery message that the strict gate does not match.
+        {
+            "role": "ai",
+            "content": "Got it — I think you meant yes. Let's begin the practice task. Good luck!",
+            "type": "chat",
+        },
+    ]
+
+    # Plain "okay" with no recognised readiness prompt should still
+    # transition via the escape valve.
+    assert _should_force_transition_to_practice(
+        user_text="okay",
+        messages=messages,
+        state=state,
+    )
+
+    # Negation must still block the escape valve.
+    assert not _should_force_transition_to_practice(
+        user_text="not yet",
+        messages=messages,
+        state=state,
+    )
+
+    # Empty conversation: cannot force.
+    assert not _should_force_transition_to_practice(
+        user_text="ok",
+        messages=[],
+        state=state,
+    )
+
+    # No prior tutor mentioned 'practice task': cannot force.
+    no_mention = [
+        {"role": "ai", "content": "Step 1 explanation.", "type": "chat"},
+        {"role": "ai", "content": "Step 2 explanation.", "type": "chat"},
+        {"role": "ai", "content": "Step 3 explanation.", "type": "chat"},
+        {"role": "ai", "content": "Step 4 explanation.", "type": "chat"},
+    ]
+    assert not _should_force_transition_to_practice(
+        user_text="okay",
+        messages=no_mention,
+        state=state,
     )

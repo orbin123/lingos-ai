@@ -7,6 +7,8 @@ deterministic Stub* agents to keep the suite offline.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 import pytest_asyncio  # noqa: F401  — ensures the asyncio plugin is loaded
 from sqlalchemy import create_engine
@@ -27,9 +29,11 @@ from app.modules.progress.models import SkillPoints, SkillPointsLog
 from app.modules.sessions.evaluator import StubEvaluator
 from app.modules.sessions.exceptions import (
     AttemptAlreadySubmitted,
+    SessionAdvanceBlocked,
     SessionAlreadyOpen,
     SessionNotFound,
 )
+from app.modules.preferences.models import UserCoursePreference
 from app.modules.sessions.feedback_generator import StubFeedbackGenerator
 from app.modules.sessions.models import (
     ActivityAttempt,
@@ -41,6 +45,8 @@ from app.modules.sessions.models import (
     SessionStatus,
 )
 from app.modules.sessions.service import SessionService
+from app.modules.sessions.task_generator import GeneratedTask
+from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.modules.skills.models import Skill
 from app.scoring import ARCHETYPE_REGISTRY, CourseLength, SUB_SKILLS
 from scripts.seed_curriculum_v2 import seed_archetypes
@@ -64,6 +70,7 @@ def db_session():
             ActivityEvaluation.__table__,
             ActivityFeedback.__table__,
             SessionScorecard.__table__,
+            UserCoursePreference.__table__,
         ],
     )
     SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -119,6 +126,54 @@ def _seed_world(db):
 
 def _user_id(db) -> int:
     return db.query(User).first().id
+
+
+def _add_curriculum_day(
+    db,
+    *,
+    week: CurriculumWeek,
+    day_number: int,
+) -> CurriculumDay:
+    day = CurriculumDay(
+        day_id=f"day_24_{week.week_number:02d}_{day_number:02d}",
+        week_id=week.id,
+        day_number=day_number,
+        topic=f"Day {day_number}",
+        explanation_brief="Practice brief.",
+        default_activities=["read", "write"],
+        mandatory_activities=["read"],
+        suggested_archetypes={
+            "read": ["READ_CLOZE"],
+            "write": ["WRITE_SENT_TRANS"],
+        },
+    )
+    db.add(day)
+    db.flush()
+    return day
+
+
+def _add_completed_daily_session(
+    db,
+    *,
+    user_id: int,
+    day_id: str,
+    status: SessionStatus = SessionStatus.COMPLETED,
+) -> DailySession:
+    session = DailySession(
+        session_id=f"session-{day_id}-{status.value}",
+        user_id=user_id,
+        day_id=day_id,
+        course_length="24w",
+        status=status,
+        is_first_attempt=True,
+        started_at=datetime.now(timezone.utc),
+        completed_at=datetime.now(timezone.utc)
+        if status is SessionStatus.COMPLETED
+        else None,
+    )
+    db.add(session)
+    db.commit()
+    return session
 
 
 # ── start ──────────────────────────────────────────────────────────
@@ -283,6 +338,20 @@ class TestSessionLifecycle:
         assert scorecard.points_applied is True
         assert sum(scorecard.points_earned.values()) > 0
 
+        # Per-activity breakdown: one entry per submitted attempt, in plan order,
+        # each with the fields the end-of-session UI consumes.
+        assert scorecard.activities is not None
+        assert len(scorecard.activities) == 4
+        sequences = [a["sequence"] for a in scorecard.activities]
+        assert sequences == [1, 2, 3, 4]
+        for entry in scorecard.activities:
+            assert entry["raw_score"] == pytest.approx(8.0)
+            assert entry["tier"] == "excellent"
+            assert entry["base_reward"] == 55
+            assert entry["archetype_id"]
+            assert entry["archetype_label"]
+            assert sum(entry["weighted_points"].values()) == pytest.approx(55.0)
+
         # Session must now be COMPLETED.
         refreshed = service.get_session(
             session_id=session.session_id, user_id=session.user_id,
@@ -344,6 +413,99 @@ class TestSessionLifecycle:
         assert refreshed.attempts[0].submitted_at is not None
 
 
+class TestAdvanceDay:
+    def _set_preference(self, db, *, user_id: int, week: int, day: int):
+        pref = UserCoursePreference(
+            user_id=user_id,
+            course_length="24w",
+            tasks_per_day=4,
+            allow_read=True,
+            allow_write=True,
+            allow_listen=True,
+            allow_speak=True,
+            current_week=week,
+            current_day_in_week=day,
+            current_day_started_at=datetime.now(timezone.utc),
+        )
+        db.add(pref)
+        db.commit()
+        return pref
+
+    def test_advance_day_after_completed_current_day(self, db_session):
+        user_id = _user_id(db_session)
+        self._set_preference(db_session, user_id=user_id, week=5, day=3)
+        _add_completed_daily_session(
+            db_session,
+            user_id=user_id,
+            day_id="day_24_05_03",
+        )
+
+        service = SessionService(db_session)
+        week, day = service.advance_day(user_id=user_id)
+
+        assert (week, day) == (5, 4)
+        pref = db_session.query(UserCoursePreference).filter_by(user_id=user_id).one()
+        assert pref.current_week == 5
+        assert pref.current_day_in_week == 4
+        assert pref.last_completed_on is not None
+
+    def test_advance_day_blocks_when_current_day_is_not_completed(self, db_session):
+        user_id = _user_id(db_session)
+        self._set_preference(db_session, user_id=user_id, week=5, day=3)
+        _add_completed_daily_session(
+            db_session,
+            user_id=user_id,
+            day_id="day_24_05_03",
+            status=SessionStatus.IN_PROGRESS,
+        )
+
+        service = SessionService(db_session)
+        with pytest.raises(SessionAdvanceBlocked):
+            service.advance_day(user_id=user_id)
+
+    def test_advance_day_rolls_day_7_into_next_week(self, db_session):
+        user_id = _user_id(db_session)
+        week5 = db_session.query(CurriculumWeek).filter_by(week_number=5).one()
+        _add_curriculum_day(db_session, week=week5, day_number=7)
+        week6 = CurriculumWeek(
+            week_id="wk_24_06",
+            course_length="24w",
+            week_number=6,
+            theme_type=ThemeType.VOCABULARY,
+            title="Next week",
+            cefr_level="A2",
+            sub_level_min=3,
+            sub_level_max=3,
+            learning_goal="More practice.",
+        )
+        db_session.add(week6)
+        db_session.commit()
+        self._set_preference(db_session, user_id=user_id, week=5, day=7)
+        _add_completed_daily_session(
+            db_session,
+            user_id=user_id,
+            day_id="day_24_05_07",
+        )
+
+        service = SessionService(db_session)
+        assert service.advance_day(user_id=user_id) == (6, 1)
+
+    def test_advance_day_blocks_at_course_end(self, db_session):
+        user_id = _user_id(db_session)
+        week5 = db_session.query(CurriculumWeek).filter_by(week_number=5).one()
+        _add_curriculum_day(db_session, week=week5, day_number=7)
+        self._set_preference(db_session, user_id=user_id, week=5, day=7)
+        _add_completed_daily_session(
+            db_session,
+            user_id=user_id,
+            day_id="day_24_05_07",
+        )
+
+        service = SessionService(db_session)
+        with pytest.raises(SessionAdvanceBlocked):
+            service.advance_day(user_id=user_id)
+
+
 # ── ownership / not found ──────────────────────────────────────────
 
 
@@ -366,3 +528,196 @@ class TestOwnership:
         )
         with pytest.raises(SessionNotFound):
             service.next_activity(session_id=session.session_id, user_id=99999)
+
+
+# ── self-healing repair for stale listening payloads ───────────────
+
+
+class TestAttemptDeliveryRepair:
+    """Older code paths could persist listening attempts with no
+    `audio_script` / `items` / `inner_widget`, which renders as the
+    "Audio could not be prepared" dead-end in the widget. The repair
+    method must rebuild a renderable payload before the route returns.
+    """
+
+    class CapturingTaskGenerator:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def generate(
+            self,
+            *,
+            archetype,
+            day_topic,
+            explanation_brief,
+            cefr_level,
+            sub_level,
+            user_interests=None,
+            task_spec=None,
+        ):
+            self.calls.append({
+                "archetype_id": archetype.archetype_id,
+                "task_spec": dict(task_spec or {}),
+            })
+            content = {
+                "phase": "test",
+                "archetype_id": archetype.archetype_id,
+                "archetype_name": archetype.name,
+                "ui_widget": archetype.ui_widget,
+                "widget": normalize_widget_key(archetype.ui_widget),
+                "core_activity": archetype.core_activity,
+                "topic": (task_spec or {}).get("topic_override") or day_topic,
+                "explanation_brief": explanation_brief,
+                "instructions": (task_spec or {}).get("instructions_override")
+                or "Complete the activity.",
+                "cefr_level": cefr_level,
+                "sub_level": sub_level,
+            }
+            if archetype.archetype_id == "SPEAK_TIMED":
+                content.update({
+                    "task_intro": "Record your routine sentences.",
+                    "speaking_duration_seconds": 45,
+                    "speaking_prompts": [
+                        "Say one routine sentence with I and a frequency adverb.",
+                        "Say one routine sentence with he and a frequency adverb.",
+                        "Say one routine sentence with she and a frequency adverb.",
+                    ],
+                    "sample_responses": [
+                        "I usually drink water in the morning.",
+                        "He often walks to school.",
+                        "She always eats breakfast at seven.",
+                    ],
+                })
+            return GeneratedTask(content=content)
+
+    @pytest.mark.asyncio
+    async def test_listening_attempt_with_empty_audio_is_repaired(
+        self, db_session,
+    ):
+        service = SessionService(
+            db_session,
+            evaluator=StubEvaluator(),
+            feedback_generator=StubFeedbackGenerator(),
+        )
+        session = await service.start_session(
+            user_id=_user_id(db_session),
+            day_id="day_24_05_03",
+            course_length=CourseLength.WEEKS_24,
+            tasks_per_day=4,
+            allowed_activities={"read", "write", "listen", "speak"},
+        )
+
+        listening = next(
+            a for a in session.attempts
+            if ARCHETYPE_REGISTRY[a.archetype_id].core_activity == "listen"
+        )
+        # Simulate a stale row written by an older code path.
+        listening.task_content = {
+            "phase": "stub",
+            "archetype_id": listening.archetype_id,
+            "topic": "Listening for daily routines",
+            "instructions": "Use short A1 routine sentences.",
+            "cefr_level": "A2",
+            "sub_level": 3,
+        }
+        db_session.commit()
+
+        repaired = await service.prepare_attempt_for_delivery(listening)
+        content = repaired.task_content
+        assert content["inner_widget"] == "mcq"
+        assert isinstance(content.get("items"), list)
+        assert len(content["items"]) >= 1
+        assert str(content.get("audio_script") or "").strip() != ""
+
+    @pytest.mark.asyncio
+    async def test_valid_attempt_content_is_returned_unchanged(self, db_session):
+        service = SessionService(
+            db_session,
+            evaluator=StubEvaluator(),
+            feedback_generator=StubFeedbackGenerator(),
+        )
+        session = await service.start_session(
+            user_id=_user_id(db_session),
+            day_id="day_24_05_03",
+            course_length=CourseLength.WEEKS_24,
+            tasks_per_day=4,
+            allowed_activities={"read", "write", "listen", "speak"},
+        )
+        listening = next(
+            a for a in session.attempts
+            if ARCHETYPE_REGISTRY[a.archetype_id].core_activity == "listen"
+        )
+        original = dict(listening.task_content)
+        repaired = await service.prepare_attempt_for_delivery(listening)
+        assert repaired.task_content == original
+
+    @pytest.mark.asyncio
+    async def test_speaking_attempt_without_prompt_is_repaired_from_source_spec(
+        self, db_session,
+    ):
+        week = CurriculumWeek(
+            week_id="wk_24_01",
+            course_length="24w",
+            week_number=1,
+            theme_type=ThemeType.GRAMMAR,
+            title="Simple Present",
+            cefr_level="A1",
+            sub_level_min=1,
+            sub_level_max=2,
+            learning_goal="Simple present routines.",
+        )
+        db_session.add(week)
+        db_session.flush()
+        db_session.add(
+            CurriculumDay(
+                day_id="day_24_01_01",
+                week_id=week.id,
+                day_number=1,
+                topic="Old DB topic",
+                explanation_brief="Old DB brief.",
+                default_activities=["read", "write", "listen", "speak"],
+                mandatory_activities=["read"],
+                suggested_archetypes={"speak": ["SPEAK_TIMED"]},
+            )
+        )
+        db_session.commit()
+
+        task_generator = self.CapturingTaskGenerator()
+        service = SessionService(
+            db_session,
+            evaluator=StubEvaluator(),
+            feedback_generator=StubFeedbackGenerator(),
+            task_generator=task_generator,
+        )
+        session = await service.start_session(
+            user_id=_user_id(db_session),
+            day_id="day_24_01_01",
+            course_length=CourseLength.WEEKS_24,
+            tasks_per_day=4,
+            allowed_activities={"read", "write", "listen", "speak"},
+        )
+        speaking = next(a for a in session.attempts if a.archetype_id == "SPEAK_TIMED")
+        speaking.task_content = {
+            "phase": "stale",
+            "archetype_id": "SPEAK_TIMED",
+            "ui_widget": "SpeakAndRecord",
+            "widget": "speak_and_record",
+            "core_activity": "speak",
+            "topic": "Old DB topic",
+            "instructions": "Prompt the learner to speak.",
+            "task_intro": "Record your response",
+            "cefr_level": "A1",
+            "sub_level": 1,
+        }
+        db_session.commit()
+
+        repaired = await service.prepare_attempt_for_delivery(speaking)
+        content = repaired.task_content
+        assert content["widget"] == "speak_and_record"
+        assert len(content["speaking_prompts"]) == 3
+        assert all(prompt.strip() for prompt in content["speaking_prompts"])
+
+        repair_call = task_generator.calls[-1]
+        assert repair_call["archetype_id"] == "SPEAK_TIMED"
+        assert repair_call["task_spec"]["topic_override"] == "Say simple present routines"
+        assert "speaking_prompts" in repair_call["task_spec"]["widget_requirements"]

@@ -120,6 +120,13 @@ class DashboardStartResponse(DashboardTodayPlanResponse):
     mode: str
 
 
+class AdvanceDayResponse(BaseModel):
+    """Response for manually unlocking the next curriculum day."""
+
+    week: int
+    day_in_week: int
+
+
 # ── Next-activity ──────────────────────────────────────────────────
 
 
@@ -192,6 +199,25 @@ class SubmitActivityResponse(BaseModel):
 # ── Complete / scorecard ───────────────────────────────────────────
 
 
+class ActivityBreakdown(BaseModel):
+    """Per-activity slice of the session scorecard.
+
+    Powers the activity tiles row in the end-of-session UI. `weighted_points`
+    is unrounded (rounding happens once per sub-skill at aggregation).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    attempt_id: int
+    sequence: int
+    archetype_id: str
+    archetype_label: str
+    raw_score: float
+    tier: str
+    base_reward: int
+    weighted_points: dict[str, float]
+
+
 class SessionScorecardRead(BaseModel):
     """Persisted scorecard returned by `complete` and `GET .../scorecard`.
 
@@ -210,3 +236,4 @@ class SessionScorecardRead(BaseModel):
     skill_labels: dict[str, str]
     completed_at: datetime
     points_applied: bool
+    activities: list[ActivityBreakdown] = Field(default_factory=list)

@@ -179,6 +179,57 @@ def get_session_by_daily_session(
     )
 
 
+@rest_router.get(
+    "/sessions/{session_id}/scorecard",
+    status_code=status.HTTP_200_OK,
+)
+async def get_scorecard_for_chat_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the V2 SessionScorecard for the DailySession backing this chat.
+
+    The chat URL carries the LearningSession id, but the scorecard endpoint
+    is keyed by the DailySession UUID. This bridges the two so the chat UI
+    can render the day-level scorecard without leaking the V2 id.
+    """
+    from app.modules.learning_session.models import LearningSession
+    from app.modules.sessions.models import DailySession
+    from app.modules.sessions.routes import _make_session_service, _serialize_scorecard
+
+    chat = (
+        db.query(LearningSession)
+        .filter(
+            LearningSession.session_id == session_id,
+            LearningSession.user_id == current_user.id,
+        )
+        .first()
+    )
+    if chat is None:
+        raise HTTPException(status_code=404, detail="chat session not found")
+
+    daily = db.get(DailySession, chat.daily_session_id)
+    if daily is None:
+        raise HTTPException(status_code=404, detail="daily session not found")
+
+    service = _make_session_service(db)
+    scorecard = service.get_scorecard(
+        session_id=daily.session_id, user_id=current_user.id,
+    )
+    if scorecard is None:
+        await LearningSessionService(db)._auto_complete_daily_if_ready(chat)
+        scorecard = service.get_scorecard(
+            session_id=daily.session_id, user_id=current_user.id,
+        )
+    if scorecard is None:
+        raise HTTPException(
+            status_code=404,
+            detail="session has no scorecard yet",
+        )
+    return _serialize_scorecard(daily.session_id, scorecard, db=db)
+
+
 # --- WebSocket --------------------------------------------------------
 
 ws_router = APIRouter()

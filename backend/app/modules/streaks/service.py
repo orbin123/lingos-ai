@@ -27,6 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import UserProfile
+from app.modules.streaks.activity_grid import count_evaluated_activities_by_local_date
 from app.modules.streaks.dates import (
     DEFAULT_TIMEZONE,
     build_last_n_days,
@@ -235,21 +236,28 @@ class StreakService:
             user_id=user_id, start=start, end=today,
         )
 
-        by_date_activity = {a.local_date: a.activity_count for a in activities}
+        by_date_session = {a.local_date for a in activities}
         frozen_dates = {f.protected_date for f in freezes}
+        by_date_activity = count_evaluated_activities_by_local_date(
+            self.db,
+            user_id=user_id,
+            tz=tz,
+            start=start,
+            end=today,
+        )
 
         grid = [
             ActivityGridCell(
                 date=d.isoformat(),
                 activity_count=by_date_activity.get(d, 0),
-                completed=d in by_date_activity,
+                completed=d in by_date_session,
                 intensity=min(by_date_activity.get(d, 0), 4),
                 frozen_protected=d in frozen_dates,
             )
             for d in window
         ]
 
-        today_complete = today in by_date_activity
+        today_complete = today in by_date_session
         streak_state = self._derive_ui_state(profile, today_complete)
         should_show_animation = (
             today_complete

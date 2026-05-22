@@ -164,6 +164,8 @@ export interface ListenAndRespondPayload extends TaskEnvelope {
   audio_script: string;
   audio_url: string | null;
   audio_duration_seconds?: number;
+  browser_tts_fallback?: boolean;
+  tts_error?: string;
   inner_widget: "mcq" | "fill_in_blanks" | "open_text" | "speak_and_record";
   items?: MCQItem[] | OpenTextItem[];
   text_to_shadow?: string;
@@ -209,7 +211,7 @@ export interface WidgetProps<P extends AnyTaskPayload = AnyTaskPayload> {
   answers: Record<string, unknown>;
   setAnswers: (next: Record<string, unknown>) => void;
   state: WidgetState;
-  onSubmit: () => void;
+  onSubmit: (answers?: Record<string, unknown>) => void;
 }
 
 export function resolveAudioUrl(url?: string | null): string | undefined {
