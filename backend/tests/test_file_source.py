@@ -57,6 +57,22 @@ def test_resolve_archetypes_matches_registry() -> None:
         assert spec.archetype_id == name
 
 
+def test_w1d1_activity_order_includes_writing_third() -> None:
+    day = file_source.get_day(1, 0)
+
+    assert list(day.task_archetypes_used) == [
+        "READ_CLOZE",
+        "LISTEN_MCQ",
+        "WRITE_OPEN_SENT",
+        "SPEAK_TIMED",
+    ]
+    writing_spec = file_source.task_spec_for(day, 2)
+    assert writing_spec["topic_override"] == (
+        "Write simple present routine sentences"
+    )
+    assert "I/he/she" in writing_spec["instructions_override"]
+
+
 def test_build_teacher_instructions_returns_minimal_lesson_context() -> None:
     day = file_source.get_day(1, 0)
     instr = file_source.build_teacher_instructions(day)

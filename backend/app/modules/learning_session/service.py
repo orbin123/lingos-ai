@@ -27,6 +27,7 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.ai.agents.planner import PlannerAgent
@@ -69,6 +70,8 @@ from app.modules.sessions.exceptions import (
 )
 from app.modules.sessions.models import (
     ActivityAttempt,
+    ActivityEvaluation,
+    ActivityFeedback,
     AttemptStatus,
     DailySession,
     SessionStatus,
@@ -78,6 +81,7 @@ from app.modules.sessions.repository import (
     DailySessionRepository,
 )
 from app.modules.sessions.service import SessionService
+from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.scoring import CourseLength
 
 logger = logging.getLogger(__name__)
@@ -93,6 +97,62 @@ _READY_RESPONSE_PATTERNS = tuple(
     re.compile(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])")
     for phrase in _READY_RESPONSE_PHRASES
 )
+
+# Short canonical affirmatives used for typo-tolerant matching. A user reply
+# of a single short token (≤6 chars, letters only) is treated as a "ready"
+# response when its edit distance to one of these words is ≤ 1, so common
+# typos like "yys", "yse", "okk", "redy" still progress the session.
+_SHORT_AFFIRMATIVES = (
+    "yes", "yeah", "yep", "ok", "okay", "sure", "ready",
+)
+
+
+def _edit_distance_le_1(a: str, b: str) -> bool:
+    """Return True if `a` and `b` differ by at most one typo.
+
+    Counts single substitution, single insertion/deletion, or one adjacent
+    transposition (Damerau-Levenshtein distance ≤ 1). Used only for very
+    short strings so we avoid the full DP table.
+    """
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:
+        diffs = [(x, y) for x, y in zip(a, b) if x != y]
+        if len(diffs) == 1:
+            return True
+        if len(diffs) == 2:
+            # Allow a single adjacent transposition (e.g. "yes" vs "yse").
+            (x1, y1), (x2, y2) = diffs
+            i1 = next(i for i, (x, y) in enumerate(zip(a, b)) if x != y)
+            i2 = next(
+                i for i in range(i1 + 1, la) if a[i] != b[i]
+            )
+            if i2 == i1 + 1 and x1 == y2 and x2 == y1:
+                return True
+        return False
+    short, long = (a, b) if la < lb else (b, a)
+    i = j = 0
+    edited = False
+    while i < len(short) and j < len(long):
+        if short[i] == long[j]:
+            i += 1
+            j += 1
+            continue
+        if edited:
+            return False
+        edited = True
+        j += 1
+    return True
+
+
+def _is_typo_of_short_affirmative(token: str) -> bool:
+    """True if `token` is within edit distance 1 of a short affirmative."""
+    if not token or len(token) > 6 or not token.isalpha():
+        return False
+    return any(_edit_distance_le_1(token, word) for word in _SHORT_AFFIRMATIVES)
 
 _NON_UNDERSTANDING_PHRASES = (
     "i don't understand", "i dont understand", "i do not understand",
@@ -117,6 +177,25 @@ _READINESS_PROMPT_PATTERNS = (
     re.compile(r"\bif\s+(that|this|it)\s+feels\s+clear\b"),
     re.compile(r"\bif\s+you\s+(feel\s+)?(ready|clear)\b"),
     re.compile(r"\bsay\s+['\"]?(ready|yes|okay|ok)['\"]?\b"),
+    # Soft-transition phrasings the teacher LLM tends to use after a typo
+    # recovery or affirmative reply — all anchored on the literal substring
+    # `practice (task|exercise|activity)` to keep false positives low.
+    re.compile(
+        r"\b(let'?s|let us)\s+"
+        r"(get\s+started|start|begin|move|jump|kick\s+off)\s+"
+        r"(with\s+)?(the\s+)?practice\s+(task|exercise|activity)\b"
+    ),
+    re.compile(
+        r"\b(let'?s|let us)\s+(get\s+started|start|begin)\s+"
+        r"with\s+(the\s+)?practice\b"
+    ),
+    re.compile(
+        r"\b(time|ready)\s+(to|for)\s+(the\s+)?practice\s+(task|exercise|activity)\b"
+    ),
+    re.compile(
+        r"\bmove(\s+on)?\s+to\s+(the\s+)?practice\s+(task|exercise|activity)\b"
+    ),
+    re.compile(r"\bbegin\s+the\s+practice\s+(task|exercise|activity)\b"),
 )
 
 _TEACHING_STREAM_FIRST_CHUNK_TIMEOUT_S = 8.0
@@ -162,9 +241,17 @@ def _looks_like_ready_response(text: str) -> bool:
     cleaned = (text or "").strip().lower()
     if not cleaned:
         return False
-    return cleaned in _READY_RESPONSE_PHRASES or any(
-        pattern.search(cleaned) for pattern in _READY_RESPONSE_PATTERNS
-    )
+    if cleaned in _READY_RESPONSE_PHRASES:
+        return True
+    if any(pattern.search(cleaned) for pattern in _READY_RESPONSE_PATTERNS):
+        return True
+    # Typo tolerance: only when the whole reply is a single short token
+    # (after stripping punctuation/whitespace). Prevents false positives
+    # inside longer sentences.
+    tokens = re.findall(r"[a-z]+", cleaned)
+    if len(tokens) == 1 and _is_typo_of_short_affirmative(tokens[0]):
+        return True
+    return False
 
 
 def _looks_like_ready_for_practice(
@@ -192,6 +279,98 @@ def _looks_like_understanding(
     return _looks_like_ready_for_practice(
         text, previous_tutor_message=previous_tutor_message,
     )
+
+
+_PRACTICE_TASK_MENTION_RE = re.compile(
+    r"\bpractice\s+(task|exercise|activity)\b", re.IGNORECASE,
+)
+
+# Default ceiling used when no authored scripted plan is available.
+_DEFAULT_TEACHING_TURN_CEILING = 4
+
+
+def _count_teacher_chat_turns(messages: list[dict]) -> int:
+    """Count teacher chat turns (role ai/assistant, type chat or unset)."""
+    count = 0
+    for message in messages:
+        if message.get("role") not in ("ai", "assistant"):
+            continue
+        msg_type = str(message.get("type") or "chat")
+        if msg_type != "chat":
+            continue
+        count += 1
+    return count
+
+
+def _any_tutor_mentioned_practice_task(messages: list[dict]) -> bool:
+    for message in messages:
+        if message.get("role") not in ("ai", "assistant"):
+            continue
+        content = str(message.get("content") or "")
+        if _PRACTICE_TASK_MENTION_RE.search(content):
+            return True
+    return False
+
+
+def _is_short_affirmative_or_short_reply(text: str) -> bool:
+    """True when `text` is a plausible affirmative reply, not a question/negation.
+
+    Used by the escape-valve to require the learner reply at least looks
+    like a "yes/ok/sure/sounds good" and is not, e.g., a long question.
+    """
+    cleaned = (text or "").strip().lower()
+    if not cleaned:
+        return False
+    if any(pattern.search(cleaned) for pattern in _NON_UNDERSTANDING_PATTERNS):
+        return False
+    if _looks_like_ready_response(cleaned):
+        return True
+    # Allow other short, non-negative replies (≤ 3 word tokens) to pass —
+    # the strict word lists miss things like "sounds good", "got it".
+    word_count = len(re.findall(r"[a-z]+", cleaned))
+    if word_count == 0 or word_count > 3:
+        return False
+    soft_positive = (
+        "got it", "sounds good", "alright", "all right", "lets do it",
+        "let's do it", "lets do this", "let's do this", "i got it",
+        "understood", "cool",
+    )
+    return any(phrase in cleaned for phrase in soft_positive)
+
+
+def _scripted_plan_length(state: dict) -> int:
+    """Return the length of the authored scripted plan, or 0 if absent."""
+    daily_plan = state.get("daily_plan") or {}
+    instructions = daily_plan.get("teacher_instructions") if daily_plan else None
+    if not isinstance(instructions, dict):
+        return 0
+    scripted = instructions.get(SCRIPTED_PLAN_KEY)
+    if isinstance(scripted, list):
+        return sum(1 for item in scripted if str(item).strip())
+    return 0
+
+
+def _should_force_transition_to_practice(
+    *,
+    user_text: str,
+    messages: list[dict],
+    state: dict,
+) -> bool:
+    """Escape valve: progress to practice when the strict gate misses it.
+
+    Triggers when:
+      - the teacher has produced at least as many turns as the authored plan
+        (or `_DEFAULT_TEACHING_TURN_CEILING` if no plan is available),
+      - any prior tutor message mentions "practice task/exercise/activity",
+      - the learner reply is a plausible affirmative and not a negation.
+    """
+    if not _is_short_affirmative_or_short_reply(user_text):
+        return False
+    if not _any_tutor_mentioned_practice_task(messages):
+        return False
+    teacher_turns = _count_teacher_chat_turns(messages)
+    plan_len = _scripted_plan_length(state) or _DEFAULT_TEACHING_TURN_CEILING
+    return teacher_turns >= plan_len
 
 
 class LearningSessionService:
@@ -398,9 +577,15 @@ class LearningSessionService:
                 f"day={pref.current_day_in_week}"
             )
 
-        # If an in-progress session exists, return it.
+        # If today's session already exists, return it. A completed session
+        # should route to its scorecard, not create a fresh chat attempt.
         existing = self.daily_repo.get_in_progress(
             user_id=user_id, day_id=day.day_id
+        )
+        if existing is not None:
+            return existing
+        existing = self.daily_repo.get_latest_for_day(
+            user_id=user_id, day_id=day.day_id, status=SessionStatus.COMPLETED
         )
         if existing is not None:
             return existing
@@ -445,6 +630,13 @@ class LearningSessionService:
 
         existing = self.daily_repo.get_in_progress(
             user_id=user_id, day_id=file_day.day_id,
+        )
+        if existing is not None:
+            return existing
+        existing = self.daily_repo.get_latest_for_day(
+            user_id=user_id,
+            day_id=file_day.day_id,
+            status=SessionStatus.COMPLETED,
         )
         if existing is not None:
             return existing
@@ -547,6 +739,38 @@ class LearningSessionService:
         session.feedback = None
         session.understanding_confirmed = False
         session.phase = "teaching"
+        session.current_task_index = 0
+        session.pre_generated_tasks = None
+
+        # Reset all activity attempts for this daily session so the full
+        # activity queue becomes available again from the beginning.
+        if daily is not None:
+            attempt_ids = list(
+                self.db.execute(
+                    select(ActivityAttempt.id).where(
+                        ActivityAttempt.session_id == daily.id
+                    )
+                ).scalars()
+            )
+            if attempt_ids:
+                self.db.execute(
+                    delete(ActivityFeedback).where(
+                        ActivityFeedback.attempt_id.in_(attempt_ids)
+                    )
+                )
+                self.db.execute(
+                    delete(ActivityEvaluation).where(
+                        ActivityEvaluation.attempt_id.in_(attempt_ids)
+                    )
+                )
+                self.db.execute(
+                    ActivityAttempt.__table__.update()
+                    .where(ActivityAttempt.id.in_(attempt_ids))
+                    .values(status=AttemptStatus.PENDING)
+                )
+            if daily.status == SessionStatus.COMPLETED:
+                daily.status = SessionStatus.IN_PROGRESS
+
         self.session_repo.save(session)
         self.db.commit()
 
@@ -568,6 +792,11 @@ class LearningSessionService:
     ) -> AsyncIterator[WSOutgoingMessage]:
         """Stream the first teaching turn when the WebSocket connects."""
         session = self._load_session(session_id)
+        daily = await self._auto_complete_daily_if_ready(session)
+        if daily is not None and daily.status is SessionStatus.COMPLETED:
+            async for msg in self._stream_completed_daily_message():
+                yield msg
+            return
         state = self._state_from_row(session)
         self._enrich_state_with_profile(state, session.user_id)
         async for msg in self._stream_teaching_turn(session, state):
@@ -584,15 +813,9 @@ class LearningSessionService:
         current = int(session.current_task_index or 0)
 
         # If the V2 DailySession is already complete, end the chat.
-        daily = self.db.get(DailySession, session.daily_session_id)
+        daily = await self._auto_complete_daily_if_ready(session)
         if daily is not None and daily.status is SessionStatus.COMPLETED:
-            message = (
-                "Today's activities are complete. Go back to the dashboard "
-                "to review the day and advance when you're ready."
-            )
-            async for msg in self._stream_chat_text(
-                message, actions=["Go to dashboard"]
-            ):
+            async for msg in self._stream_completed_daily_message():
                 yield msg
             return
 
@@ -611,18 +834,36 @@ class LearningSessionService:
             yield WSOutgoingMessage(
                 type="chat_message", role="assistant", content=message,
             )
+            # Self-heal stale snapshots: a `pre_generated_tasks` cached by
+            # an older code path may be missing listening fields entirely.
+            # Pull the live attempt, repair its content if needed, and
+            # write the result back to the chat row so the widget renders.
+            task_content_payload: dict[str, Any] = dict(
+                session.pre_generated_tasks or {}
+            )
+            attempt = self._next_pending_attempt(session)
+            if attempt is not None:
+                attempt = await self._prepare_attempt_for_delivery(attempt)
+                task_content_payload = dict(attempt.task_content or {})
+                if task_content_payload != (session.pre_generated_tasks or {}):
+                    session.pre_generated_tasks = task_content_payload
+                    self.db.commit()
+
             payload = {
-                **(session.pre_generated_tasks or {}),
+                **task_content_payload,
                 "_session": {
                     "current_task_index": current,
                     "total_tasks": total,
                     "daily_session_id": session.daily_session_id,
                 },
             }
+            widget = normalize_widget_key(
+                str(payload.get("widget") or payload.get("ui_widget") or session.task_type)
+            )
             yield WSOutgoingMessage(
                 type="ui_event",
-                widget=payload.get("widget") or payload.get("ui_widget") or session.task_type,
-                payload=payload,
+                widget=widget,
+                payload={**payload, "widget": widget},
             )
             return
 
@@ -640,6 +881,35 @@ class LearningSessionService:
                 message, actions=["Go to dashboard"],
             ):
                 yield msg
+
+    async def _auto_complete_daily_if_ready(
+        self, session: LearningSession
+    ) -> DailySession | None:
+        daily = self.db.get(DailySession, session.daily_session_id)
+        if daily is None or daily.status is not SessionStatus.IN_PROGRESS:
+            return daily
+
+        attempts = self.attempts_repo.list_for_session(daily.id)
+        if not attempts or any(
+            attempt.status is not AttemptStatus.EVALUATED for attempt in attempts
+        ):
+            return daily
+
+        try:
+            await _make_v2_session_service(self.db).complete_session(
+                session_id=daily.session_id,
+                user_id=session.user_id,
+            )
+            return self.db.get(DailySession, session.daily_session_id)
+        except (SessionNotFound, SessionAbandoned, SessionAlreadyCompleted):
+            return self.db.get(DailySession, session.daily_session_id)
+
+    def _stream_completed_daily_message(self) -> AsyncIterator[WSOutgoingMessage]:
+        message = (
+            "Today's activities are complete. Go back to the dashboard "
+            "to review the day and advance when you're ready."
+        )
+        return self._stream_chat_text(message, actions=["Go to dashboard"])
 
     async def process_message_stream(
         self, session_id: str, message: WSIncomingMessage
@@ -686,12 +956,33 @@ class LearningSessionService:
             ready_for_practice = _looks_like_ready_for_practice(
                 text, previous_tutor_message=previous_tutor_message,
             )
+            # Secondary escape valve: when the teacher has finished the
+            # authored plan and has already mentioned the practice task,
+            # any plausible affirmative reply should advance — even if the
+            # exact tutor phrasing wasn't a recognized readiness prompt
+            # (e.g. "Let's begin the practice task. Good luck!").
+            forced_transition = (
+                not ready_for_practice
+                and _should_force_transition_to_practice(
+                    user_text=text,
+                    messages=messages,
+                    state=state,
+                )
+            )
+            advance_to_practice = ready_for_practice or forced_transition
             session.understanding_confirmed = (
-                session.understanding_confirmed or ready_for_practice
+                session.understanding_confirmed or advance_to_practice
             )
             state["understanding_confirmed"] = session.understanding_confirmed
 
-            if ready_for_practice:
+            if advance_to_practice:
+                if forced_transition and not ready_for_practice:
+                    logger.info(
+                        "learning_session %s: forcing transition to practice "
+                        "after %d teacher turns (escape valve)",
+                        session.session_id,
+                        _count_teacher_chat_turns(messages),
+                    )
                 # Pull the next pending V2 attempt and deliver it.
                 attempt = self._next_pending_attempt(session)
                 if attempt is None:
@@ -699,6 +990,7 @@ class LearningSessionService:
                     async for msg in self._complete_and_announce(session, state):
                         yield msg
                     return
+                attempt = await self._prepare_attempt_for_delivery(attempt)
                 state["task_content"] = dict(attempt.task_content or {})
                 state["task_type"] = self._task_type_for_attempt(attempt)
                 state["current_sequence"] = attempt.sequence
@@ -817,8 +1109,17 @@ class LearningSessionService:
         )
 
         # Emit the feedback card.
+        feedback_widget = normalize_widget_key(
+            str(
+                (attempt.task_content or {}).get("widget")
+                or (attempt.task_content or {}).get("ui_widget")
+                or session.task_type
+                or ""
+            )
+        )
         feedback_payload = {
             **feedback_dict,
+            "widget": feedback_widget,
             "_session": scorecard_payload["_session"],
         }
         yield WSOutgoingMessage(
@@ -888,6 +1189,7 @@ class LearningSessionService:
                 async for msg in self._complete_and_announce(session, state):
                     yield msg
                 return
+            attempt = await self._prepare_attempt_for_delivery(attempt)
             state["task_content"] = dict(attempt.task_content or {})
             state["task_type"] = self._task_type_for_attempt(attempt)
             state["current_sequence"] = attempt.sequence
@@ -1070,10 +1372,34 @@ class LearningSessionService:
     ) -> ActivityAttempt | None:
         return self.attempts_repo.first_pending(session.daily_session_id)
 
+    async def _prepare_attempt_for_delivery(
+        self, attempt: ActivityAttempt,
+    ) -> ActivityAttempt:
+        """Self-heal `attempt.task_content` before relaying it to the UI.
+
+        Listening attempts persisted by an older code path can lack
+        `audio_script`, `items` and `inner_widget`, which would render as
+        "Audio could not be prepared for this listening task." in the
+        widget. Delegating to V2 SessionService keeps the regeneration
+        logic in one place (it reuses the LLMTaskGenerator + TTS pipeline).
+        """
+        try:
+            v2_service = _make_v2_session_service(self.db)
+            return await v2_service.prepare_attempt_for_delivery(attempt)
+        except Exception:
+            logger.exception(
+                "Failed to repair task_content for attempt id=%s; "
+                "delivering as-is",
+                attempt.id,
+            )
+            return attempt
+
     @staticmethod
     def _task_type_for_attempt(attempt: ActivityAttempt) -> str:
         content = attempt.task_content or {}
-        return str(content.get("ui_widget") or content.get("widget") or "")
+        return normalize_widget_key(
+            str(content.get("widget") or content.get("ui_widget") or "")
+        )
 
     def _next_actions_for_session(self, session: LearningSession) -> list[str]:
         next_attempt = self._next_pending_attempt(session)
@@ -1189,6 +1515,35 @@ class LearningSessionService:
                 raw_description = teacher_instructions.pop("lesson_description", None)
                 if isinstance(raw_description, str) and raw_description.strip():
                     lesson_description = raw_description.strip()
+            # Tell the LLM exactly where we are in the authored plan so it
+            # cannot accidentally reopen the lesson once early messages
+            # roll out of the conversation context window.
+            conversation_messages = list(state.get("messages", []))
+            teacher_turns_so_far = _count_teacher_chat_turns(conversation_messages)
+            plan_length = len(scripted_plan) if scripted_plan else 0
+            if teacher_turns_so_far > 0:
+                if plan_length:
+                    next_step = min(teacher_turns_so_far + 1, plan_length)
+                    status_hint = (
+                        f"Conversation cursor: you have already produced "
+                        f"{teacher_turns_so_far} teacher turn(s); the next "
+                        f"turn must be step {next_step} of the authored "
+                        f"plan (total {plan_length} steps). Never restart "
+                        f"the lesson from step 1. If "
+                        f"{teacher_turns_so_far} >= {plan_length}, ask "
+                        f"'Ready to try the practice task?' verbatim and stop."
+                    )
+                else:
+                    status_hint = (
+                        f"Conversation cursor: you have already produced "
+                        f"{teacher_turns_so_far} teacher turn(s). Continue "
+                        f"from where the conversation left off — never "
+                        f"restart the lesson from the beginning."
+                    )
+                if isinstance(teacher_instructions, dict):
+                    teacher_instructions["authored_plan_status"] = status_hint
+                else:
+                    teacher_instructions = {"authored_plan_status": status_hint}
             teaching_chunks = stream_teaching_turn(
                 topic=state.get("topic") or "today's English topic",
                 sub_skill=state.get("skill_name") or "grammar",

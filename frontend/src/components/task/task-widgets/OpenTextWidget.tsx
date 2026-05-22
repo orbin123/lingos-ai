@@ -179,7 +179,7 @@ export function OpenTextWidget({ payload, answers, setAnswers, state, onSubmit }
         <button
           className="tw-submit-btn"
           disabled={!allFilled}
-          onClick={onSubmit}
+          onClick={() => onSubmit()}
         >
           {I.send} Submit writing
         </button>

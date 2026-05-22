@@ -37,6 +37,7 @@ from app.modules.learning_session.schemas import (
 from app.modules.sessions.evaluator import Evaluator
 from app.modules.sessions.feedback_generator import FeedbackGenerator, FeedbackResult
 from app.modules.sessions.task_generator import TaskGenerator
+from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.scoring import CourseLength, base_reward, distribute, get_archetype
 
 logger = logging.getLogger(__name__)
@@ -470,7 +471,17 @@ class AuthoringLearningSessionService:
         yield WSOutgoingMessage(
             type="ui_event",
             widget="feedback_card",
-            payload={**feedback_dict, "_session": meta},
+            payload={
+                **feedback_dict,
+                "widget": normalize_widget_key(
+                    str(
+                        attempt.task_content.get("widget")
+                        or attempt.task_content.get("ui_widget")
+                        or spec.ui_widget
+                    )
+                ),
+                "_session": meta,
+            },
         )
 
         summary = feedback.summary or "Response evaluated."
@@ -614,7 +625,9 @@ class AuthoringLearningSessionService:
     @staticmethod
     def _widget_for_attempt(attempt: AuthoringAttempt) -> str:
         content = attempt.task_content or {}
-        return str(content.get("widget") or content.get("ui_widget") or "")
+        return normalize_widget_key(
+            str(content.get("widget") or content.get("ui_widget") or "")
+        )
 
     @staticmethod
     def _feedback_dict(feedback: FeedbackResult) -> dict[str, Any]:

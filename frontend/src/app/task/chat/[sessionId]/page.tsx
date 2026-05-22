@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { LayoutDashboard, MoreHorizontal, RotateCcw } from "lucide-react";
@@ -17,15 +17,19 @@ import {
   isVoiceRecordingSupported,
   useVoiceRecorder,
 } from "@/lib/hooks/useVoiceRecorder";
-import { markDailyChatEntered } from "@/lib/daily-session-entry";
+import { markDailyChatEntered, markScorecardViewed } from "@/lib/daily-session-entry";
 import {
   TaskChatLoadingSkeleton,
   type TaskChatLoadingType,
 } from "@/components/task/TaskChatSkeletons";
+import { AppConfirmDialog } from "@/components/ui/AppConfirmDialog";
+import { SessionScorecard as DaySessionScorecard } from "@/components/sessions/SessionScorecard";
+import { type SessionScorecardRead } from "@/lib/sessions-api";
 import {
   FillBlanksWidget,
   ListenAndRespondWidget,
   MCQWidget,
+  normalizeWidgetKey,
   OpenTextWidget,
   SpeakRecordWidget,
   StoryboardWidget,
@@ -65,6 +69,7 @@ interface FeedbackError {
 
 interface FeedbackPayload {
   overall_message?: string;
+  widget?: string;
   errors?: FeedbackError[];
   summary?: string;
   did_well?: string[];
@@ -126,8 +131,33 @@ const WIDGET_SECTION_LABEL: Record<WidgetKey, string> = {
   storyboard: "Storyboard",
 };
 
+function showsInlineActivityScore(widget: WidgetKey): boolean {
+  return widget === "fill_in_blanks" || widget === "listen_and_respond";
+}
+
+function isWritingSpeakingWidget(widget: WidgetKey): boolean {
+  return (
+    widget === "open_text" ||
+    widget === "timed_text" ||
+    widget === "structured_essay" ||
+    widget === "speak_and_record" ||
+    widget === "storyboard"
+  );
+}
+
+function isOpenEndedFeedbackWidget(widget?: string): boolean {
+  const normalized = normalizeWidgetKey(widget ?? "");
+  return (
+    normalized === "open_text" ||
+    normalized === "timed_text" ||
+    normalized === "structured_essay" ||
+    normalized === "speak_and_record" ||
+    normalized === "storyboard"
+  );
+}
+
 function isKnownWidget(widget: string): widget is WidgetKey {
-  return widget in WIDGET_COMPONENTS;
+  return normalizeWidgetKey(widget) in WIDGET_COMPONENTS;
 }
 
 function shouldShowActivitySkeletonAfterChat(content?: string) {
@@ -137,6 +167,12 @@ function shouldShowActivitySkeletonAfterChat(content?: string) {
     text.includes("here is your practice task") ||
     text.includes("continue with activity")
   );
+}
+
+function agentDebugLog(message: string, data: Record<string, unknown>, hypothesisId: string) {
+  // #region agent log
+  fetch('http://127.0.0.1:7588/ingest/7b2f1294-46b7-45e6-9e45-9caa7b81d367',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'dfa507'},body:JSON.stringify({sessionId:'dfa507',runId:'initial',hypothesisId,location:'frontend/src/app/task/chat/[sessionId]/page.tsx',message,data,timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
 }
 
 /* ── Icons ───────────────────────────────────────────────────────────── */
@@ -548,6 +584,105 @@ function ScoreRing({ pct }: { pct: number }) {
   );
 }
 
+function countTaskItems(taskPayload: AnyTaskPayload): number {
+  switch (taskPayload.widget) {
+    case "open_text":
+      return (taskPayload.items ?? []).length || 1;
+    case "structured_essay":
+      return (taskPayload.sections ?? []).length || 1;
+    case "storyboard":
+      return (taskPayload.scenes ?? []).length || 1;
+    case "speak_and_record": {
+      const p = taskPayload;
+      if (p.turns && p.turns.length > 0) return p.turns.filter((t) => t.speaker === "user").length || 1;
+      if (p.speaking_prompts && p.speaking_prompts.length > 0) return p.speaking_prompts.length;
+      if (p.speaking_items && p.speaking_items.length > 0) return p.speaking_items.length;
+      return 1;
+    }
+    case "timed_text":
+      return 1;
+    default:
+      return (taskPayload as { total?: number }).total ?? 1;
+  }
+}
+
+function countSubmittedRecordings(taskAnswers?: Record<string, unknown>): number {
+  const recordings = taskAnswers?.recordings;
+  if (!Array.isArray(recordings)) return 0;
+  return recordings.filter(
+    (row) =>
+      typeof row === "object" &&
+      row !== null &&
+      typeof (row as { transcript?: string }).transcript === "string" &&
+      (row as { transcript: string }).transcript.trim().length > 0,
+  ).length;
+}
+
+function buildScoreBannerLabel(
+  taskPayload: AnyTaskPayload | null,
+  taskAnswers?: Record<string, unknown>,
+): string {
+  if (taskPayload?.widget === "speak_and_record") {
+    const total = taskPayload ? countTaskItems(taskPayload) : 1;
+    const submitted = countSubmittedRecordings(taskAnswers);
+    if (submitted > 0) {
+      return submitted === 1
+        ? "1 recording submitted"
+        : total > 1
+          ? `${submitted} of ${total} recordings submitted`
+          : `${submitted} recordings submitted`;
+    }
+  }
+  const total = taskPayload ? countTaskItems(taskPayload) : 1;
+  return total === 1 ? "1 question attended" : `${total} out of ${total} attended`;
+}
+
+function InlineScoreBanner({
+  scorePayload,
+  taskPayload,
+  taskAnswers,
+}: {
+  scorePayload: ScorecardPayload;
+  taskPayload: AnyTaskPayload | null;
+  taskAnswers?: Record<string, unknown>;
+}) {
+  const pct = scorePayload.overall_score <= 10
+    ? Math.round(scorePayload.overall_score * 10)
+    : Math.round(scorePayload.overall_score);
+  const label = buildScoreBannerLabel(taskPayload, taskAnswers);
+  return (
+    <div
+      style={{
+        borderRadius: 14,
+        padding: "14px 18px",
+        marginBottom: 16,
+        marginTop: 4,
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+        background: "white",
+        border: "1.5px solid oklch(85% 0.025 240)",
+        boxShadow: "0 2px 10px rgba(80,110,180,0.07)",
+        animation: "fadeIn 0.4s ease both",
+      }}
+    >
+      <div className="tw-result-icon">
+        <SparkIcon />
+      </div>
+      <div className="tw-result-text">
+        <div className="tw-result-headline">{label}</div>
+        <div className="tw-result-sub">Review the feedback below.</div>
+      </div>
+      <div>
+        <div className="tw-result-score">
+          {pct}<span style={{ fontSize: 14 }}>%</span>
+        </div>
+        <div className="tw-result-score-sub">SCORE</div>
+      </div>
+    </div>
+  );
+}
+
 function Scorecard({ payload }: { payload: ScorecardPayload }) {
   const pct = payload.overall_score <= 10
     ? Math.round(payload.overall_score * 10)
@@ -612,6 +747,7 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
   const errors = payload.errors ?? [];
   const mistakes = payload.mistakes ?? [];
   const summary = payload.summary || payload.overall_message || "";
+  const openEndedFeedback = isOpenEndedFeedbackWidget(payload.widget);
   return (
     <div style={{
       borderRadius: 22,
@@ -658,14 +794,41 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
               <div style={{
                 width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
                 display: "flex", alignItems: "center", justifyContent: "center",
-                background: "oklch(58% 0.2 25)",
+                background: openEndedFeedback ? "oklch(60% 0.15 60)" : "oklch(58% 0.2 25)",
+                color: "white",
               }}>
-                <XIcon />
+                {openEndedFeedback ? <SparkIcon /> : <XIcon />}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13.5, color: "oklch(18% 0.06 240)", marginBottom: 6, lineHeight: 1.55 }}>
                   <strong>{mistake.issue}</strong>
-                  {mistake.user_wrote && (
+                  {openEndedFeedback && mistake.user_wrote && (
+                    <div style={{ marginTop: 8 }}>
+                      <strong style={{ color: "oklch(42% 0.07 240)" }}>Your version:</strong>{" "}
+                      <span style={{
+                        display: "inline-block", padding: "1px 6px", borderRadius: 4,
+                        fontWeight: 650, margin: "0 1px",
+                        background: "oklch(96% 0.018 245)",
+                        color: "oklch(35% 0.07 240)",
+                      }}>
+                        {mistake.user_wrote}
+                      </span>
+                    </div>
+                  )}
+                  {openEndedFeedback && mistake.correction && (
+                    <div style={{ marginTop: 6 }}>
+                      <strong style={{ color: "oklch(42% 0.07 240)" }}>Improved version:</strong>{" "}
+                      <span style={{
+                        display: "inline-block", padding: "1px 6px", borderRadius: 4,
+                        fontWeight: 700, margin: "0 1px",
+                        background: "oklch(92% 0.1 155)",
+                        color: "oklch(28% 0.16 155)",
+                      }}>
+                        {mistake.correction}
+                      </span>
+                    </div>
+                  )}
+                  {!openEndedFeedback && mistake.user_wrote && (
                     <>
                       {": "}
                       <span style={{
@@ -679,7 +842,7 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
                       </span>
                     </>
                   )}
-                  {mistake.correction && (
+                  {!openEndedFeedback && mistake.correction && (
                     <>
                       {" -> "}
                       <span style={{
@@ -828,6 +991,20 @@ function ProgressRing({ progress }: { progress: number }) {
   );
 }
 
+function subscribeVoiceSupport(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+  const id = window.setTimeout(onStoreChange, 0);
+  return () => window.clearTimeout(id);
+}
+
+function voiceSupportSnapshot() {
+  return isVoiceRecordingSupported();
+}
+
+function voiceSupportServerSnapshot() {
+  return false;
+}
+
 function Composer({
   value,
   onChange,
@@ -841,7 +1018,11 @@ function Composer({
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const recorder = useVoiceRecorder();
-  const [voiceSupported] = useState(() => isVoiceRecordingSupported());
+  const voiceSupported = useSyncExternalStore(
+    subscribeVoiceSupport,
+    voiceSupportSnapshot,
+    voiceSupportServerSnapshot,
+  );
   const autoStoppedRef = useRef(false);
 
   const isVoiceBusy =
@@ -1098,6 +1279,10 @@ export default function ChatSessionPage() {
     initialConnectionState === "connecting" ? "teacher_loading" : null,
   );
   const [restarting, setRestarting] = useState(false);
+  const [restartDialogOpen, setRestartDialogOpen] = useState(false);
+  const [daySessionScorecard, setDaySessionScorecard] =
+    useState<SessionScorecardRead | null>(null);
+  const [daySessionScorecardError, setDaySessionScorecardError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pendingSendsRef = useRef<WSOutgoing[]>([]);
@@ -1107,6 +1292,60 @@ export default function ChatSessionPage() {
   useEffect(() => {
     eventsRef.current = events;
   }, [events]);
+
+  useEffect(() => {
+    if (phase !== "ended") return;
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    if (daySessionScorecard !== null) return;
+
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (!cancelled) setDaySessionScorecardError(null);
+    });
+    api
+      .get<SessionScorecardRead>(`/api/learning/sessions/${sessionId}/scorecard`)
+      .then((r) => {
+        if (cancelled) return;
+        setDaySessionScorecard(r.data);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const detail =
+          (err as { response?: { data?: { detail?: string } }; message?: string })
+            ?.response?.data?.detail ||
+          (err as { message?: string })?.message ||
+          "Could not load your session scorecard.";
+        setDaySessionScorecardError(detail);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, sessionId, daySessionScorecard]);
+
+  useEffect(() => {
+    if (phase === "ended") return;
+    if (connectionState !== "closed" && connectionState !== "error") return;
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    if (daySessionScorecard !== null) return;
+
+    let cancelled = false;
+    api
+      .get<SessionScorecardRead>(`/api/learning/sessions/${sessionId}/scorecard`)
+      .then((r) => {
+        if (cancelled) return;
+        setDaySessionScorecard(r.data);
+        setPhase("ended");
+        setLoadingType(null);
+      })
+      .catch(() => {
+        // If no scorecard exists yet, keep the normal connection error UI.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionState, phase, sessionId, daySessionScorecard]);
 
   const lastTaskIdx = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i -= 1) {
@@ -1240,9 +1479,38 @@ export default function ChatSessionPage() {
       return;
     }
     if (msg.type === "ui_event") {
-      if (isKnownWidget(msg.widget)) {
+      const widget = normalizeWidgetKey(msg.widget);
+      if (isKnownWidget(widget)) {
         setLoadingType(null);
-        const payload = msg.payload as unknown as AnyTaskPayload;
+        const payload = {
+          ...msg.payload,
+          widget,
+        } as unknown as AnyTaskPayload;
+        if (widget === "listen_and_respond") {
+          const listenPayload = payload as AnyTaskPayload & {
+            audio_url?: string | null;
+            browser_tts_fallback?: boolean;
+            audio_script?: string;
+            inner_widget?: string;
+            items?: unknown[];
+            tts_error?: string;
+          };
+          agentDebugLog(
+            "Received listen_and_respond ui_event",
+            {
+              audio_url_present: Boolean(listenPayload.audio_url),
+              audio_url: listenPayload.audio_url,
+              browser_tts_fallback: listenPayload.browser_tts_fallback,
+              audio_script_len: listenPayload.audio_script?.length ?? 0,
+              inner_widget: listenPayload.inner_widget,
+              items_len: Array.isArray(listenPayload.items) ? listenPayload.items.length : null,
+              phase: (msg.payload as { phase?: string }).phase,
+              archetype_id: (msg.payload as { archetype_id?: string }).archetype_id,
+              tts_error: listenPayload.tts_error,
+            },
+            "H2,H3",
+          );
+        }
         const topicName =
           (payload as { topic_name?: string; topic?: string }).topic_name ||
           (payload as { topic_name?: string; topic?: string }).topic ||
@@ -1250,7 +1518,7 @@ export default function ChatSessionPage() {
         setSkillName((curr) => curr || topicName);
         setEvents((prev) => [
           ...prev,
-          { kind: "section", tone: "task", label: WIDGET_SECTION_LABEL[msg.widget as WidgetKey] },
+          { kind: "section", tone: "task", label: WIDGET_SECTION_LABEL[widget] },
           { kind: "task", payload, submitted: false, answers: {} },
         ]);
         setPhase("practice");
@@ -1355,7 +1623,7 @@ export default function ChatSessionPage() {
   const send = useCallback((payload: WSOutgoing) => {
     // This local loading phase mirrors WebSocket waits only; backend session phase remains authoritative.
     if (payload.type === "task_submission") {
-      setLoadingType("evaluation_loading");
+      setLoadingType("feedback_loading");
     } else if (payload.type === "follow_up_action") {
       setLoadingType(
         payload.action.trim().toLowerCase() === "next activity"
@@ -1403,12 +1671,13 @@ export default function ChatSessionPage() {
     if (label === "Next activity") setPhase("practice");
   }
 
-  async function handleRestartSession() {
+  function requestRestartSession() {
     if (!sessionId || restarting) return;
-    const confirmed = window.confirm(
-      "Restart this chat session? Your completed dashboard activities will stay completed.",
-    );
-    if (!confirmed) return;
+    setRestartDialogOpen(true);
+  }
+
+  async function confirmRestartSession() {
+    if (!sessionId || restarting) return;
 
     setRestarting(true);
     setLoadingType("teacher_loading");
@@ -1434,6 +1703,7 @@ export default function ChatSessionPage() {
       setReconnectAttempt((attempt) => attempt + 1);
       markDailyChatEntered(res.data.session_id);
       queryClient.invalidateQueries({ queryKey: ["task", "next"] });
+      setRestartDialogOpen(false);
     } catch (err: unknown) {
       const detail =
         (err as { response?: { data?: { detail?: string } }; message?: string })
@@ -1445,6 +1715,7 @@ export default function ChatSessionPage() {
         ...prev,
         { kind: "chat", role: "ai", content: detail },
       ]);
+      setRestartDialogOpen(false);
     } finally {
       setRestarting(false);
     }
@@ -1458,13 +1729,19 @@ export default function ChatSessionPage() {
     );
   }, []);
 
-  const handleSubmitTask = useCallback((eventIdx: number) => {
+  const handleSubmitTask = useCallback((
+    eventIdx: number,
+    answersOverride?: Record<string, unknown>,
+  ) => {
     const evt = eventsRef.current[eventIdx];
     if (!evt || evt.kind !== "task" || evt.submitted) return;
-    send({ type: "task_submission", answers: evt.answers });
+    const answers = answersOverride ?? evt.answers ?? {};
+    send({ type: "task_submission", answers });
     setEvents((prev) =>
       prev.map((e, i) =>
-        i === eventIdx && e.kind === "task" ? { ...e, submitted: true } : e,
+        i === eventIdx && e.kind === "task"
+          ? { ...e, submitted: true, answers }
+          : e,
       ),
     );
     setPhase("submitted");
@@ -1485,16 +1762,13 @@ export default function ChatSessionPage() {
   const hasActiveAiStream = events.some(
     (evt) => evt.kind === "chat" && evt.role === "ai" && evt.streaming,
   );
-  const hasScorecard = events.some((evt) => evt.kind === "scorecard");
   const hasFeedback = events.some((evt) => evt.kind === "feedback");
   const visibleLoadingType: TaskChatLoadingType =
     loadingType === "teacher_loading" && hasActiveAiStream
       ? null
-      : loadingType === "evaluation_loading" && hasScorecard
+      : loadingType === "feedback_loading" && hasFeedback
         ? null
-        : loadingType === "feedback_loading" && hasFeedback
-          ? null
-          : loadingType;
+        : loadingType;
 
   return (
     <>
@@ -1533,8 +1807,20 @@ export default function ChatSessionPage() {
         <Topbar
           skillLabel={skillName || "Lesson"}
           sceneLabel={sceneLabel}
-          onRestart={handleRestartSession}
+          onRestart={requestRestartSession}
           restarting={restarting}
+        />
+
+        <AppConfirmDialog
+          open={restartDialogOpen}
+          title="Restart chat session?"
+          description="Your completed dashboard activities will stay completed. This only restarts the chat teaching flow."
+          confirmLabel="Restart session"
+          loadingLabel="Restarting..."
+          isLoading={restarting}
+          tone="warning"
+          onCancel={() => setRestartDialogOpen(false)}
+          onConfirm={confirmRestartSession}
         />
 
         <main ref={stageRef} style={{
@@ -1554,12 +1840,18 @@ export default function ChatSessionPage() {
 
           {events.map((evt, i) => {
             if (evt.kind === "chat") {
+              // When the session ends, the day-level scorecard supersedes the
+              // "Go to dashboard" action that the backend ships on the wrap-up
+              // bubble — hide it so the user sees the scorecard's own CTA.
+              const filteredActions = evt.actions?.filter(
+                (action) => action !== "Go to dashboard",
+              );
               return (
                 <ChatBubble
                   key={i}
                   role={evt.role}
                   name={i === 0 && evt.role === "ai" ? "LingosAI" : undefined}
-                  actions={evt.actions}
+                  actions={filteredActions}
                   streaming={evt.streaming}
                   onAction={handleAction}
                 >
@@ -1568,6 +1860,17 @@ export default function ChatSessionPage() {
               );
             }
             if (evt.kind === "section") {
+              // Widgets that show their own inline score tile suppress this marker.
+              if (evt.tone === "score") {
+                const lastTask = events.slice(0, i).reverse().find((e) => e.kind === "task");
+                if (
+                  lastTask?.kind === "task" &&
+                  (showsInlineActivityScore(lastTask.payload.widget) ||
+                    isWritingSpeakingWidget(lastTask.payload.widget))
+                ) {
+                  return null;
+                }
+              }
               return (
                 <SectionMarker
                   key={i}
@@ -1595,11 +1898,27 @@ export default function ChatSessionPage() {
                   answers={evt.answers}
                   setAnswers={(next) => setTaskAnswers(i, next)}
                   state={evt.submitted ? "after" : "before"}
-                  onSubmit={() => handleSubmitTask(i)}
+                  onSubmit={(answers) => handleSubmitTask(i, answers)}
                 />
               );
             }
             if (evt.kind === "scorecard") {
+              const lastTask = events.slice(0, i).reverse().find((e) => e.kind === "task");
+              if (lastTask?.kind === "task") {
+                if (showsInlineActivityScore(lastTask.payload.widget)) {
+                  return null;
+                }
+                if (isWritingSpeakingWidget(lastTask.payload.widget)) {
+                  return (
+                    <InlineScoreBanner
+                      key={i}
+                      scorePayload={evt.payload}
+                      taskPayload={lastTask.payload}
+                      taskAnswers={lastTask.answers}
+                    />
+                  );
+                }
+              }
               return <Scorecard key={i} payload={evt.payload} />;
             }
             if (evt.kind === "feedback") {
@@ -1609,6 +1928,31 @@ export default function ChatSessionPage() {
           })}
 
           <TaskChatLoadingSkeleton type={visibleLoadingType} />
+
+          {phase === "ended" && (
+            <div style={{ marginTop: 24 }}>
+              {daySessionScorecard ? (
+                <DaySessionScorecard
+                  scorecard={daySessionScorecard}
+                  onDone={() => {
+                    markScorecardViewed(daySessionScorecard.session_id);
+                    router.push("/dashboard");
+                    setTimeout(() => {
+                      queryClient.invalidateQueries({ queryKey: ["sessions", "today-plan"] });
+                      queryClient.invalidateQueries({ queryKey: ["task", "next"] });
+                      queryClient.invalidateQueries({ queryKey: ["me"] });
+                    }, 0);
+                  }}
+                />
+              ) : daySessionScorecardError ? (
+                <ChatBubble role="ai">
+                  Could not load your session scorecard: {daySessionScorecardError}
+                </ChatBubble>
+              ) : (
+                <ChatBubble role="ai">Loading your session scorecard…</ChatBubble>
+              )}
+            </div>
+          )}
 
           <div style={{ height: 60 }} />
         </main>

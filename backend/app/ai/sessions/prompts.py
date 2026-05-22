@@ -14,7 +14,16 @@ from __future__ import annotations
 
 import json
 
+from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.scoring import ArchetypeSpec
+
+_OPEN_ENDED_FEEDBACK_WIDGETS = {
+    "open_text",
+    "timed_text",
+    "structured_essay",
+    "speak_and_record",
+    "storyboard",
+}
 
 
 _EVAL_SYSTEM = """\
@@ -44,6 +53,18 @@ Hard rules:
   - `did_well` lists 1–3 specific positives. Empty list is OK for poor work.
   - `mistakes` lists at most 3 items, each with the user's exact wording
     (when relevant), the issue label, the correction, and the rule.
+  - Only add a `mistakes` item when the learner's actual submitted wording
+    contains a concrete error. If the wording is already acceptable, put the
+    point in `did_well` instead.
+  - For open-ended writing/speaking tasks, there is no binary right/wrong
+    answer. Use `correction` as an improved version of the learner's wording:
+    same idea, but with spelling, grammar, word choice, and clarity improved.
+    The improved version must never introduce a new grammar error.
+  - CRITICAL: When `confirmed_wrong_answers` appears in the prompt it is the
+    ONLY authoritative source for mistakes. Generate `mistakes` entries for
+    EXACTLY those items — no more, no fewer. NEVER infer, guess, or add any
+    mistake that is not explicitly listed there, even if you believe the learner
+    made one.
   - `next_tip` is one concrete thing to try next time. May be null.
   - `sub_skill_breakdown` maps each sub-skill in the archetype's weight
     map to a score in [0, 10].
@@ -73,8 +94,22 @@ Hard rules:
     `inner_widget`, and the inner widget fields such as `items`.
   - For open_text, include `items` with item_id, prompt, sample_answer,
     and answer_hints.
-  - For speak_and_record, include speaking_duration_seconds plus either
-    speaking_prompt or speaking_prompts and a sample response/hints.
+  - For speak_and_record, REQUIRED top-level fields are:
+      * `task_intro` — short imperative line (e.g. "Record your routine
+        sentences.").
+      * `instructions` — one sentence telling the learner what to do.
+      * `speaking_prompts` — a list of 2–3 short prompts. Each must be a
+        complete instruction the learner can act on (e.g. "Say one
+        routine sentence using 'he' and a frequency adverb.").
+      * `sample_responses` — same length as `speaking_prompts`. Each is
+        a model spoken answer that satisfies the prompt.
+      * `speaking_duration_seconds` — integer, typically 30–60.
+      * `target_words` — list of 3–10 vocabulary items the learner
+        should try to use, when relevant.
+      * `grammar_rule_to_practice` — one short sentence describing the
+        rule under test.
+    Do NOT emit a bare `speaking_prompt` (singular) — always use the
+    list form so the widget renders one item per prompt.
   - Include answer keys/sample answers inside the payload so the evaluator
     can score the response from this task alone.
 """
@@ -114,6 +149,90 @@ def build_eval_user_prompt(
     return "\n".join(parts)
 
 
+def build_speak_eval_user_prompt(
+    *,
+    archetype: ArchetypeSpec,
+    task_content: dict,
+    speaking_items: list[dict],
+    evaluator_overrides: dict | None = None,
+) -> str:
+    """Structured speaking evaluation prompt with prompt/transcript alignment."""
+    parts = [
+        f"Archetype: {archetype.archetype_id} ({archetype.name})",
+        f"Core activity: {archetype.core_activity}",
+        f"Rubric criteria: {', '.join(archetype.rubric)}",
+        "",
+        "Speaking task context:",
+        json.dumps(_compact(task_content), ensure_ascii=False, indent=2),
+        "",
+        "Learner spoken responses (score each transcript against its prompt):",
+        json.dumps(speaking_items, ensure_ascii=False, indent=2),
+        "",
+        "Score the learner's spoken performance. Use grammar_rule_to_practice, "
+        "target_words, and sample_response fields when present. Return JSON for "
+        "the EvaluationOutput schema.",
+    ]
+    if evaluator_overrides:
+        parts.extend([
+            "",
+            "Author evaluator overrides:",
+            json.dumps(evaluator_overrides, ensure_ascii=False, indent=2),
+        ])
+    return "\n".join(parts)
+
+
+def compute_wrong_items(task_content: dict, user_response: dict) -> list[dict]:
+    """Deterministically find which items the learner answered incorrectly.
+
+    Compares case-insensitively, matching the frontend isCorrect() logic.
+    Only items the learner actually answered are checked — blank/missing
+    answers are excluded so unanswered items don't appear as mistakes.
+    """
+    wrong: list[dict] = []
+    for item in task_content.get("items", []):
+        item_id = item.get("item_id", "")
+        correct = str(item.get("correct_answer", "")).strip().lower()
+        user_val = str(user_response.get(item_id, "")).strip().lower()
+        if user_val and user_val != correct:
+            wrong.append({
+                "item_id": item_id,
+                "user_wrote": user_response.get(item_id),
+                "correct_answer": item.get("correct_answer"),
+                "explanation": item.get("explanation", ""),
+            })
+    return wrong
+
+
+def compute_mcq_wrong_items(task_content: dict, user_response: dict) -> list[dict]:
+    """Deterministically find wrong MCQ answers from a listen_and_respond submission.
+
+    Response format: inner_response.answers = [{item_id, selected_index}, ...]
+    Task format: items[].correct_index (0-based int), items[].options (list of str)
+    """
+    wrong: list[dict] = []
+    inner = user_response.get("inner_response") or {}
+    submitted = {
+        a["item_id"]: a.get("selected_index")
+        for a in (inner.get("answers") or [])
+        if isinstance(a, dict) and "item_id" in a
+    }
+    for item in task_content.get("items", []):
+        item_id = item.get("item_id", "")
+        correct_idx = item.get("correct_index")
+        selected_idx = submitted.get(item_id)
+        if selected_idx is None or correct_idx is None:
+            continue
+        if selected_idx != correct_idx:
+            options = item.get("options") or []
+            wrong.append({
+                "item_id": item_id,
+                "user_selected": options[selected_idx] if selected_idx < len(options) else str(selected_idx),
+                "correct_answer": options[correct_idx] if correct_idx < len(options) else str(correct_idx),
+                "explanation": item.get("explanation", ""),
+            })
+    return wrong
+
+
 def build_feedback_user_prompt(
     *,
     archetype: ArchetypeSpec,
@@ -123,9 +242,12 @@ def build_feedback_user_prompt(
     task_content: dict,
     user_response: dict | None,
     feedback_overrides: dict | None = None,
+    confirmed_mistakes: list[dict] | None = None,
 ) -> str:
+    widget_key = _widget_key(archetype.ui_widget)
     parts = [
         f"Archetype: {archetype.archetype_id} ({archetype.name})",
+        f"Widget: {widget_key}",
         f"Sub-skills to comment on: {', '.join(archetype.weight_map)}",
         "",
         f"Evaluator raw_score: {raw_score:.1f}/10",
@@ -141,6 +263,23 @@ def build_feedback_user_prompt(
         "Learner response:",
         json.dumps(user_response or {}, ensure_ascii=False, indent=2),
     ])
+    if confirmed_mistakes is not None:
+        parts.extend([
+            "",
+            "Confirmed wrong answers (ground truth — do NOT infer additional mistakes):",
+            json.dumps(confirmed_mistakes, ensure_ascii=False, indent=2),
+        ])
+    elif widget_key in _OPEN_ENDED_FEEDBACK_WIDGETS:
+        parts.extend([
+            "",
+            "Open-ended feedback mode:",
+            "- Treat the learner's answer as a scored performance on a spectrum, not as right/wrong.",
+            "- First decide which submitted answers actually contain errors; do not create one feedback item per submitted answer.",
+            "- For each `mistakes` item, set `user_wrote` to the exact learner wording or sentence being improved.",
+            "- Set `correction` to an improved version that preserves the same idea while fixing spelling, grammar, word choice, and clarity.",
+            "- If `user_wrote` is already grammatical and clear, do not include it in `mistakes`; mention it in `did_well` if useful.",
+            "- Do not invent a different answer, and do not label the learner's wording as a wrong answer.",
+        ])
     if feedback_overrides:
         parts.extend([
             "",
@@ -194,6 +333,40 @@ def build_task_gen_user_prompt(
     parts.extend([
         "",
         f"Frontend widget key to target: {widget_key}",
+    ])
+    if widget_key == "fill_in_blanks":
+        parts.extend([
+            "FillInBlanks requirements:",
+            "- Create 5–7 sentences that form a SHORT connected narrative about a routine or daily activity.",
+            "- Base the story's topic and characters on the learner's interests listed above.",
+            "  Example: learner loves football → write about a footballer's morning routine;",
+            "  learner loves movies → write about a film director's day.",
+            "  If no specific interests are given, use a relatable everyday routine.",
+            "- EVERY BlankItem MUST include `base_verb` (the bare infinitive, e.g. 'wake', 'prepare', 'eat').",
+            "- Mix subjects deliberately: include at least one each of I / he or she / a proper name / they.",
+            "- `correct_answer` is the correctly inflected simple-present form (base verb or +s/+es).",
+            "- Include exactly 2 distractors per item (wrong inflections, e.g. 'wakes'/'waking' when correct is 'wake').",
+            "- Items must read sequentially — together they tell one coherent story.",
+        ])
+    if widget_key == "listen_and_respond":
+        parts.extend([
+            "ListenAndRespond requirements:",
+            "- `audio_script` must be a natural-sounding spoken passage (60-120 words) at the target CEFR level.",
+            "- `inner_widget` must be 'mcq' unless widget_requirements specifies otherwise.",
+            "- For MCQ: `items` list with item_id (q1, q2…), prompt, options (list of 4 strings), correct_index (0-based int), explanation.",
+            "- Set `audio_url: null` — the backend synthesizes the audio from audio_script.",
+        ])
+    if archetype.archetype_id == "WRITE_OPEN_SENT":
+        parts.extend([
+            "OpenText writing requirements:",
+            "- Generate exactly 3 items.",
+            "- Item 1 asks for one affirmative routine sentence with I and a frequency adverb.",
+            "- Item 2 asks for one affirmative routine sentence with he and a frequency adverb.",
+            "- Item 3 asks for one affirmative routine sentence with she and a frequency adverb.",
+            "- Each item must include item_id, prompt, sample_answer, and answer_hints.",
+            "- Include grammar_rule_explained, common_mistakes, and target_words with frequency adverbs.",
+        ])
+    parts.extend([
         f"Generate one {archetype.core_activity} task on this topic at the "
         f"target level. Return JSON for the TaskGenOutput schema.",
     ])
@@ -210,22 +383,7 @@ def _compact(content: dict) -> dict:
 
 
 def _widget_key(ui_widget: str) -> str:
-    mapping = {
-        "FillInBlanks": "fill_in_blanks",
-        "MCQList": "mcq",
-        "ListenAndAnswer+MCQList": "listen_and_respond",
-        "ListenAndAnswer+FillInBlanks": "listen_and_respond",
-        "ListenAndAnswer+OpenTextList": "listen_and_respond",
-        "ListenAndAnswer+SpeakAndRecord": "listen_and_respond",
-        "SpeakAndRecord": "speak_and_record",
-        "Storyboard": "storyboard",
-        "StructuredEssay": "structured_essay",
-        "OpenTextList": "open_text",
-        "SentenceTransform": "open_text",
-        "ErrorCorrection": "open_text",
-        "TimedText": "timed_text",
-    }
-    return mapping.get(ui_widget, ui_widget)
+    return normalize_widget_key(ui_widget)
 
 
 # ── System-prompt accessors ────────────────────────────────────────

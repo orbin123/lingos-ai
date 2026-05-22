@@ -1,8 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TaskHeader, I } from "./shared";
 import { formatDuration, resolveAudioUrl } from "./types";
+import {
+  analyticsFromListenAnswers,
+  countCorrectListeningMCQ,
+  isPlayableListeningMCQ,
+  normalizeListenAndRespondPayload,
+  openTextFromListenAnswers,
+  selectionsFromListenAnswers,
+  type ListenAnalytics,
+  type ListenAndRespondAnswers,
+} from "./listenAndRespondNormalize";
 import type {
   ListenAndRespondPayload,
   MCQItem,
@@ -12,49 +22,106 @@ import type {
 
 type Props = WidgetProps<ListenAndRespondPayload>;
 
-interface ListenAnalytics {
-  play_count: number;
-  total_listen_seconds: number;
-  transcript_revealed: boolean;
+function nowMs(): number {
+  return Date.now();
 }
 
-interface ListenAndRespondAnswers {
-  listen_analytics?: ListenAnalytics;
-  inner_response?: {
-    widget: string;
-    answers?: Array<Record<string, unknown>>;
-  };
-  time_spent_seconds?: number;
+function agentDebugLog(message: string, data: Record<string, unknown>, hypothesisId: string) {
+  // #region agent log
+  fetch('http://127.0.0.1:7588/ingest/7b2f1294-46b7-45e6-9e45-9caa7b81d367',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'dfa507'},body:JSON.stringify({sessionId:'dfa507',runId:'initial',hypothesisId,location:'frontend/src/components/task/task-widgets/ListenAndRespondWidget.tsx',message,data,timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
 }
 
-export function ListenAndRespondWidget({ payload, answers, setAnswers, state, onSubmit }: Props) {
+export function ListenAndRespondWidget({ payload: rawPayload, answers, setAnswers, state, onSubmit }: Props) {
+  const payload = useMemo(
+    () => normalizeListenAndRespondPayload(rawPayload),
+    [rawPayload],
+  );
   const submitted = state === "after";
+  const initialAnalytics = useMemo(() => analyticsFromListenAnswers(answers), [answers]);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const startedAtRef = useRef(Date.now());
+  const startedAtRef = useRef<number | null>(null);
   const playStartedAtRef = useRef<number | null>(null);
-  const [playCount, setPlayCount] = useState(0);
-  const [totalListenSeconds, setTotalListenSeconds] = useState(0);
+  const browserTtsTimerRef = useRef<number | null>(null);
+  const browserTtsStartedAtRef = useRef<number | null>(null);
+  const [playCount, setPlayCount] = useState(initialAnalytics.play_count);
+  const [totalListenSeconds, setTotalListenSeconds] = useState(
+    initialAnalytics.total_listen_seconds,
+  );
   const [unlocked, setUnlocked] = useState(submitted);
   const [hasPlayedFull, setHasPlayedFull] = useState(submitted);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [actualDuration, setActualDuration] = useState(0);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
-  const [transcriptRevealed, setTranscriptRevealed] = useState(false);
+  const [transcriptRevealed, setTranscriptRevealed] = useState(
+    initialAnalytics.transcript_revealed,
+  );
+  const [audioLoadFailed, setAudioLoadFailed] = useState(false);
   const duration =
     actualDuration ||
-    audioRef.current?.duration ||
     payload.audio_duration_seconds ||
     0;
   const audioUrl = resolveAudioUrl(payload.audio_url);
+  const canUseBrowserTTS =
+    !audioUrl &&
+    typeof window !== "undefined" &&
+    "speechSynthesis" in window &&
+    "SpeechSynthesisUtterance" in window &&
+    !!payload.audio_script?.trim();
 
   const innerWidget = payload.inner_widget;
   const items: Array<MCQItem | OpenTextItem> = payload.items ?? [];
   const mcqItems = innerWidget === "mcq" ? (items as MCQItem[]) : [];
   const openTextItems = innerWidget === "open_text" ? (items as OpenTextItem[]) : [];
+  const playableMCQ =
+    isPlayableListeningMCQ(payload) &&
+    !audioLoadFailed &&
+    (!!audioUrl || canUseBrowserTTS);
+  const taskBlocked = !playableMCQ;
+  const blockReason = (() => {
+    if (innerWidget !== "mcq") return "This listening task is not configured as a multiple-choice activity.";
+    if (!payload.audio_url && !canUseBrowserTTS) return "Audio could not be prepared for this listening task.";
+    if (audioLoadFailed) return "Audio could not load. Please restart the activity or try again later.";
+    if (mcqItems.length === 0) return "No multiple-choice questions were provided for this listening task.";
+    return "";
+  })();
 
-  const [mcqSelections, setMcqSelections] = useState<Record<string, number>>({});
-  const [openTextValues, setOpenTextValues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    agentDebugLog(
+      "Listen widget render decision",
+      {
+        raw_audio_url: rawPayload.audio_url,
+        normalized_audio_url: payload.audio_url,
+        resolved_audio_url: audioUrl,
+        browser_tts_fallback: payload.browser_tts_fallback,
+        can_use_browser_tts: canUseBrowserTTS,
+        audio_script_len: payload.audio_script?.length ?? 0,
+        inner_widget: innerWidget,
+        items_len: mcqItems.length,
+        audio_load_failed: audioLoadFailed,
+        playable_mcq: playableMCQ,
+        task_blocked: taskBlocked,
+        block_reason: blockReason,
+        tts_error: payload.tts_error,
+      },
+      "H2,H3,H4",
+    );
+  }, [rawPayload, payload, audioUrl, canUseBrowserTTS, innerWidget, mcqItems.length, audioLoadFailed, playableMCQ, taskBlocked, blockReason]);
+
+  const [mcqSelections, setMcqSelections] = useState<Record<string, number>>(
+    () => selectionsFromListenAnswers(answers),
+  );
+  const [openTextValues, setOpenTextValues] = useState<Record<string, string>>(
+    () => openTextFromListenAnswers(answers),
+  );
+
+  const startedAt = () => {
+    if (startedAtRef.current == null) {
+      startedAtRef.current = nowMs();
+    }
+    return startedAtRef.current;
+  };
 
   const publish = (
     overrides: Partial<{
@@ -103,19 +170,86 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
         transcript_revealed: analytics.transcript_revealed,
       },
       inner_response: innerResponse,
-      time_spent_seconds: Math.round((Date.now() - startedAtRef.current) / 1000),
+      time_spent_seconds: Math.round((nowMs() - startedAt()) / 1000),
     });
   };
 
   const commitListenSeconds = () => {
     if (playStartedAtRef.current == null) return totalListenSeconds;
-    const next = totalListenSeconds + (Date.now() - playStartedAtRef.current) / 1000;
+    const next = totalListenSeconds + (nowMs() - playStartedAtRef.current) / 1000;
     playStartedAtRef.current = null;
     setTotalListenSeconds(next);
     return next;
   };
 
+  const stopBrowserTTS = () => {
+    if (browserTtsTimerRef.current != null) {
+      window.clearInterval(browserTtsTimerRef.current);
+      browserTtsTimerRef.current = null;
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    browserTtsStartedAtRef.current = null;
+    setIsPlaying(false);
+  };
+
+  const playBrowserTTS = () => {
+    if (!canUseBrowserTTS || !payload.audio_script) return;
+    window.speechSynthesis.cancel();
+    const utterance = new window.SpeechSynthesisUtterance(payload.audio_script);
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.onend = () => {
+      if (browserTtsTimerRef.current != null) {
+        window.clearInterval(browserTtsTimerRef.current);
+        browserTtsTimerRef.current = null;
+      }
+      const startedAtMs = browserTtsStartedAtRef.current ?? nowMs();
+      const listenedSeconds = Math.max(
+        duration,
+        (nowMs() - startedAtMs) / 1000,
+      );
+      browserTtsStartedAtRef.current = null;
+      setIsPlaying(false);
+      setCurrentTime(duration || listenedSeconds);
+      setTotalListenSeconds((prev) => prev + listenedSeconds);
+      setHasPlayedFull(true);
+      setUnlocked(true);
+      publish({
+        analytics: {
+          play_count: playCount + 1,
+          total_listen_seconds: Math.round(totalListenSeconds + listenedSeconds),
+          transcript_revealed: transcriptRevealed,
+        },
+      });
+    };
+    utterance.onerror = () => {
+      setAudioLoadFailed(true);
+      stopBrowserTTS();
+    };
+    browserTtsStartedAtRef.current = nowMs();
+    setCurrentTime(0);
+    setIsPlaying(true);
+    setPlayCount((count) => count + 1);
+    browserTtsTimerRef.current = window.setInterval(() => {
+      const startedAtMs = browserTtsStartedAtRef.current;
+      if (startedAtMs == null) return;
+      const elapsed = (nowMs() - startedAtMs) / 1000;
+      setCurrentTime(duration ? Math.min(duration, elapsed) : elapsed);
+    }, 250);
+    window.speechSynthesis.speak(utterance);
+  };
+
   const togglePlay = async () => {
+    if (canUseBrowserTTS) {
+      if (isPlaying) {
+        stopBrowserTTS();
+      } else {
+        playBrowserTTS();
+      }
+      return;
+    }
     const audio = audioRef.current;
     if (!audio || !audioUrl) return;
     if (isPlaying) {
@@ -140,20 +274,18 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
   };
 
   const toggleTranscript = () => {
-    setTranscriptOpen((o) => {
-      const next = !o;
-      if (next && !transcriptRevealed) {
-        setTranscriptRevealed(true);
-        publish({
-          analytics: {
-            play_count: playCount,
-            total_listen_seconds: Math.round(totalListenSeconds),
-            transcript_revealed: true,
-          },
-        });
-      }
-      return next;
-    });
+    const nextTranscriptOpen = !transcriptOpen;
+    setTranscriptOpen(nextTranscriptOpen);
+    if (nextTranscriptOpen && !transcriptRevealed) {
+      setTranscriptRevealed(true);
+      publish({
+        analytics: {
+          play_count: playCount,
+          total_listen_seconds: Math.round(totalListenSeconds),
+          transcript_revealed: true,
+        },
+      });
+    }
   };
 
   const allInnerAnswered = (() => {
@@ -169,11 +301,29 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
     return true;
   })();
 
-  const canSubmit = !submitted && unlocked && allInnerAnswered;
+  const questionsUnlocked = submitted || unlocked;
+  const canSubmit = !submitted && questionsUnlocked && allInnerAnswered;
+  const canSubmitListening = canSubmit && playableMCQ && hasPlayedFull;
+  const correctCount = innerWidget === "mcq"
+    ? countCorrectListeningMCQ(mcqItems, mcqSelections)
+    : 0;
+  const resultPct = mcqItems.length > 0
+    ? Math.round((correctCount / mcqItems.length) * 100)
+    : 0;
 
   useEffect(() => {
-    if (submitted && !unlocked) setUnlocked(true);
-  }, [submitted, unlocked]);
+    const reset = window.setTimeout(() => {
+      stopBrowserTTS();
+      setAudioLoadFailed(false);
+      setCurrentTime(0);
+      setActualDuration(0);
+      if (!submitted) {
+        setUnlocked(false);
+        setHasPlayedFull(false);
+      }
+    }, 0);
+    return () => window.clearTimeout(reset);
+  }, [audioUrl, submitted]);
 
   return (
     <div className="tw-root">
@@ -193,21 +343,37 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
           ref={audioRef}
           src={audioUrl}
           preload="metadata"
-          onLoadedMetadata={(e) => setActualDuration(e.currentTarget.duration)}
+          onLoadedMetadata={(e) => {
+            const nextDuration = e.currentTarget.duration;
+            setActualDuration(Number.isFinite(nextDuration) ? nextDuration : 0);
+          }}
+          onError={() => {
+            agentDebugLog(
+              "Audio element failed to load",
+              {
+                raw_audio_url: rawPayload.audio_url,
+                resolved_audio_url: audioUrl,
+                browser_tts_fallback: payload.browser_tts_fallback,
+                audio_script_len: payload.audio_script?.length ?? 0,
+              },
+              "H4",
+            );
+            setAudioLoadFailed(true);
+            setIsPlaying(false);
+            commitListenSeconds();
+          }}
           onPlay={() => {
             setIsPlaying(true);
-            setPlayCount((c) => {
-              const next = c + 1;
-              publish({
-                analytics: {
-                  play_count: next,
-                  total_listen_seconds: Math.round(totalListenSeconds),
-                  transcript_revealed: transcriptRevealed,
-                },
-              });
-              return next;
+            const nextPlayCount = playCount + 1;
+            setPlayCount(nextPlayCount);
+            publish({
+              analytics: {
+                play_count: nextPlayCount,
+                total_listen_seconds: Math.round(totalListenSeconds),
+                transcript_revealed: transcriptRevealed,
+              },
             });
-            playStartedAtRef.current = Date.now();
+            playStartedAtRef.current = nowMs();
           }}
           onPause={() => {
             setIsPlaying(false);
@@ -238,7 +404,7 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
         <button
           className={`tw-audio-play-btn${isPlaying ? " playing" : ""}`}
           onClick={togglePlay}
-          disabled={!audioUrl}
+          disabled={(!audioUrl && !canUseBrowserTTS) || audioLoadFailed}
           aria-label={isPlaying ? "Pause audio" : "Play audio"}
         >
           {isPlaying ? I.pause : I.play}
@@ -249,7 +415,9 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
           </div>
           <div className="tw-audio-meta">
             {payload.audio_genre ? `${payload.audio_genre} · ` : ""}
-            {duration ? `${formatDuration(duration)} total` : "loading…"} · plays: {playCount}
+            {duration
+              ? `${formatDuration(duration)} total`
+              : (audioUrl && !audioLoadFailed ? "loading…" : canUseBrowserTTS ? "browser voice" : "unavailable")} · plays: {playCount}
           </div>
         </div>
         <div className="tw-audio-wave">
@@ -279,18 +447,29 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
             {I.doc} {transcriptOpen ? "Hide transcript" : "Show transcript"}
           </button>
         )}
-        {!unlocked && !submitted && (
-          <button className="tw-skip-task" onClick={() => setUnlocked(true)}>
-            Skip to task →
-          </button>
-        )}
       </div>
 
       {transcriptOpen && payload.audio_script && (
         <div className="tw-transcript-box">{payload.audio_script}</div>
       )}
 
-      {!unlocked && !submitted && (
+      {taskBlocked && !submitted && (
+        <div
+          style={{
+            borderRadius: 12,
+            background: "oklch(96% 0.035 25)",
+            color: "oklch(42% 0.16 25)",
+            padding: "10px 12px",
+            fontSize: 13,
+            fontWeight: 750,
+            marginBottom: 16,
+          }}
+        >
+          {blockReason}
+        </div>
+      )}
+
+      {!taskBlocked && !questionsUnlocked && !submitted && (
         <div
           style={{
             borderRadius: 12,
@@ -306,9 +485,9 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
         </div>
       )}
 
-      {(unlocked || submitted) && innerWidget === "mcq" && (
+      {questionsUnlocked && innerWidget === "mcq" && (
         <div
-          className={!unlocked && !submitted ? "tw-locked-veil" : ""}
+          className={!questionsUnlocked ? "tw-locked-veil" : ""}
           style={{ position: "relative" }}
         >
           <div
@@ -369,7 +548,7 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
         </div>
       )}
 
-      {(unlocked || submitted) && innerWidget === "open_text" && (
+      {questionsUnlocked && innerWidget === "open_text" && (
         <div>
           <div
             style={{
@@ -420,7 +599,7 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
         </div>
       )}
 
-      {(unlocked || submitted) && innerWidget === "speak_and_record" && (
+      {questionsUnlocked && innerWidget === "speak_and_record" && (
         <div className="tw-card" style={{ borderStyle: "dashed" }}>
           <div className="tw-rule-label">Shadowing exercise</div>
           <div style={{ fontSize: 13, color: "var(--tw-navy)", lineHeight: 1.55, marginTop: 6 }}>
@@ -431,6 +610,28 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
               Delay: {payload.delay_seconds}s · Speed: {payload.speed ?? "natural"}
             </div>
           )}
+        </div>
+      )}
+
+      {submitted && innerWidget === "mcq" && mcqItems.length > 0 && (
+        <div
+          className={`tw-result-banner ${correctCount === mcqItems.length ? "good" : "mid"}`}
+          style={{ marginTop: 14 }}
+        >
+          <div className="tw-result-icon">{I.spark}</div>
+          <div className="tw-result-text">
+            <div className="tw-result-headline">
+              {correctCount} of {mcqItems.length} answers correct
+            </div>
+            <div className="tw-result-sub">Review the explanations above.</div>
+          </div>
+          <div>
+            <div className="tw-result-score">
+              {resultPct}
+              <span style={{ fontSize: 14, color: "var(--tw-ink-muted)" }}>%</span>
+            </div>
+            <div className="tw-result-score-sub">Score</div>
+          </div>
         </div>
       )}
 
@@ -456,8 +657,8 @@ export function ListenAndRespondWidget({ payload, answers, setAnswers, state, on
       {!submitted && (
         <button
           className="tw-submit-btn"
-          disabled={!canSubmit}
-          onClick={onSubmit}
+          disabled={!canSubmitListening}
+          onClick={() => onSubmit()}
         >
           {I.send} Submit listening answers
         </button>

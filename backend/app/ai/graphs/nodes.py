@@ -13,6 +13,8 @@ result as a conversational message.
 from __future__ import annotations
 
 import logging
+import json
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -30,8 +32,32 @@ from app.modules.curriculum.repository import (
 )
 from app.modules.sessions.models import DailySession
 from app.modules.sessions.repository import ActivityAttemptRepository
+from app.modules.sessions.task_generator import (
+    build_simple_present_fill_in_blanks_content,
+    is_simple_present_fill_in_blanks_task,
+    normalize_fill_in_blanks_payload,
+)
+from app.modules.sessions.widget_mapping import normalize_widget_key
 
 logger = logging.getLogger(__name__)
+
+
+def _agent_debug_log(message: str, data: dict[str, Any], hypothesis_id: str) -> None:
+    # region agent log
+    try:
+        with open("/Users/orbin/Documents/GitHub/ai-english-tutor/.cursor/debug-dfa507.log", "a", encoding="utf-8") as fh:
+            fh.write(json.dumps({
+                "sessionId": "dfa507",
+                "runId": "initial",
+                "hypothesisId": hypothesis_id,
+                "location": "backend/app/ai/graphs/nodes.py",
+                "message": message,
+                "data": data,
+                "timestamp": int(time.time() * 1000),
+            }, default=str) + "\n")
+    except Exception:
+        pass
+    # endregion
 
 
 async def plan_loader_node(
@@ -155,13 +181,42 @@ async def task_delivery_node(state: LearningSessionState) -> dict[str, Any]:
     The V2 ActivityAttempt already has `task_content` materialised by the
     V2 task generator. The chat layer just relays it as a UI event.
     """
-    task_content = state.get("task_content") or {}
+    task_content = dict(state.get("task_content") or {})
+    if is_simple_present_fill_in_blanks_task(task_content):
+        task_content.update(
+            build_simple_present_fill_in_blanks_content(
+                str(task_content.get("topic") or state.get("topic") or "")
+            )
+        )
     task_type = state.get("task_type") or "fill_in_blanks"
     queue = list(state.get("task_queue") or [])
     current_index = int(state.get("current_task_index") or 0)
     total = len(queue) or 1
 
-    widget = task_content.get("widget") or task_content.get("ui_widget") or task_type
+    widget = normalize_widget_key(
+        str(task_content.get("widget") or task_content.get("ui_widget") or task_type)
+    )
+    if widget == "fill_in_blanks":
+        task_content = normalize_fill_in_blanks_payload(task_content)
+    if widget == "listen_and_respond":
+        _agent_debug_log(
+            "Delivering listen_and_respond payload",
+            {
+                "session_id": state.get("session_id"),
+                "daily_session_id": state.get("daily_session_id"),
+                "current_sequence": state.get("current_sequence"),
+                "phase": task_content.get("phase"),
+                "archetype_id": task_content.get("archetype_id"),
+                "audio_url_present": bool(task_content.get("audio_url")),
+                "audio_url": task_content.get("audio_url"),
+                "browser_tts_fallback": task_content.get("browser_tts_fallback"),
+                "audio_script_len": len(str(task_content.get("audio_script") or "")),
+                "inner_widget": task_content.get("inner_widget"),
+                "items_len": len(task_content.get("items") or []),
+                "tts_error": task_content.get("tts_error"),
+            },
+            "H1,H2,H3",
+        )
 
     intro = (
         f"Great! Here is activity {current_index + 1} of {total}."
@@ -176,6 +231,7 @@ async def task_delivery_node(state: LearningSessionState) -> dict[str, Any]:
             "widget": widget,
             "payload": {
                 **task_content,
+                "widget": widget,
                 "_session": {
                     "current_task_index": current_index,
                     "total_tasks": total,

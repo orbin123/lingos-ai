@@ -21,6 +21,18 @@ export type {
   StoryboardPayload,
 } from "./types";
 export { resolveAudioUrl, formatDuration, blankId, countWords } from "./types";
+export { normalizeWidgetKey } from "./normalize";
+export {
+  areFillInBlanksAnswered,
+  normalizeFillInBlanksPayload,
+} from "./fillBlanksNormalize";
+export {
+  analyticsFromListenAnswers,
+  isPlayableListeningMCQ,
+  normalizeListenAndRespondPayload,
+  openTextFromListenAnswers,
+  selectionsFromListenAnswers,
+} from "./listenAndRespondNormalize";
 
 export { MCQWidget } from "./MCQWidget";
 export { FillBlanksWidget } from "./FillBlanksWidget";

@@ -298,6 +298,9 @@ class SessionScorecard(Base, IDMixin, CreatedAtMixin):
     dashboard_after: Mapped[dict[str, float]] = mapped_column(
         JSON().with_variant(JSONB, "postgresql"), nullable=False
     )
+    activities: Mapped[list[dict] | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True
+    )
     completed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

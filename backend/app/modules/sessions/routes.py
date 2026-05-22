@@ -30,12 +30,14 @@ from app.modules.sessions.exceptions import (
     DayNotFound,
     InvalidTasksPerDay,
     NoActivitiesPlanned,
+    SessionAdvanceBlocked,
     SessionAbandoned,
     SessionAlreadyCompleted,
     SessionAlreadyOpen,
     SessionNotFound,
 )
 from app.modules.sessions.schemas import (
+    AdvanceDayResponse,
     AttemptSkeleton,
     DashboardPlanActivity,
     DashboardStartResponse,
@@ -44,6 +46,7 @@ from app.modules.sessions.schemas import (
     FeedbackRead,
     MistakeRead,
     NextActivityResponse,
+    ActivityBreakdown,
     SessionScorecardRead,
     SessionStartRequest,
     SessionStartResponse,
@@ -56,6 +59,15 @@ from app.modules.sessions.planner import plan_session
 from app.modules.sessions.repository import DailySessionRepository
 from app.modules.skills.repository import SkillRepository
 from app.scoring import CourseLength, get_archetype
+
+
+def _get_user_interests(db: Session, user_id: int) -> list[str] | None:
+    """Return the learner's free-text interests as a single-item list, or None."""
+    from app.modules.auth.repository import UserProfileRepository
+    profile = UserProfileRepository(db).get_by_user_id(user_id)
+    if profile is None or not profile.interests:
+        return None
+    return [profile.interests.strip()]
 
 
 def _make_session_service(db: Session) -> SessionService:
@@ -259,6 +271,24 @@ def today_plan(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.post(
+    "/advance-day",
+    response_model=AdvanceDayResponse,
+)
+def advance_day(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AdvanceDayResponse:
+    try:
+        service = SessionService(db)
+        week, day_in_week = service.advance_day(user_id=current_user.id)
+        return AdvanceDayResponse(week=week, day_in_week=day_in_week)
+    except DayNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except SessionAdvanceBlocked as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 async def _start_or_continue_today_from_file(
     *, current_user: User, db: Session,
 ) -> DashboardStartResponse:
@@ -300,6 +330,7 @@ async def _start_or_continue_today_from_file(
             allowed_activities={"read", "write", "listen", "speak"},
             week_number=1,
             day_index=0,
+            user_interests=_get_user_interests(db, current_user.id),
         )
     except NoActivitiesPlanned as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -353,6 +384,7 @@ async def start_or_continue_today(
             course_length=CourseLength(pref.course_length),
             tasks_per_day=pref.tasks_per_day,
             allowed_activities=_allowed_for_pref(pref),
+            user_interests=_get_user_interests(db, current_user.id),
         )
         return _serialize_dashboard_plan(
             day_id=day_id,
@@ -497,7 +529,7 @@ async def start_today_session(
     "/{session_id}/next-activity",
     response_model=NextActivityResponse,
 )
-def next_activity(
+async def next_activity(
     session_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -505,14 +537,22 @@ def next_activity(
     try:
         service = _make_session_service(db)
         attempt = service.next_activity(session_id=session_id, user_id=current_user.id)
+        attempt = await service.prepare_attempt_for_delivery(attempt)
         spec = get_archetype(attempt.archetype_id)
+        task_content = dict(attempt.task_content or {})
+        if (
+            task_content.get("widget") == "listen_and_respond"
+            and not task_content.get("audio_url")
+            and str(task_content.get("audio_script") or "").strip()
+        ):
+            task_content.setdefault("browser_tts_fallback", True)
         return NextActivityResponse(
             sequence=attempt.sequence,
             archetype_id=attempt.archetype_id,
             is_mandatory=attempt.is_mandatory,
             status=attempt.status,
             ui_widget=spec.ui_widget,
-            task_content=attempt.task_content,
+            task_content=task_content,
         )
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -671,4 +711,7 @@ def _serialize_scorecard(
         skill_labels=skill_labels,
         completed_at=scorecard.completed_at,
         points_applied=scorecard.points_applied,
+        activities=[
+            ActivityBreakdown.model_validate(a) for a in (scorecard.activities or [])
+        ],
     )

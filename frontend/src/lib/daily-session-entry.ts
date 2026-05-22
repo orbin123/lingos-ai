@@ -1,6 +1,7 @@
 /** Tracks that the learner opened today's chat so the entry page can offer Resume. */
 
 const STORAGE_KEY = "learning:dailyChatEntered";
+const SCORECARD_VIEWED_PREFIX = "lingos:scorecard-viewed:";
 
 export function localCalendarDateString(): string {
   const d = new Date();
@@ -56,5 +57,23 @@ export function clearDailyChatEntry(): void {
     sessionStorage.removeItem(STORAGE_KEY);
   } catch {
     /* quota / private mode */
+  }
+}
+
+export function markScorecardViewed(sessionId: string): void {
+  if (typeof window === "undefined" || !sessionId) return;
+  try {
+    localStorage.setItem(`${SCORECARD_VIEWED_PREFIX}${sessionId}`, "1");
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+export function hasScorecardBeenViewed(sessionId: string): boolean {
+  if (typeof window === "undefined" || !sessionId) return false;
+  try {
+    return localStorage.getItem(`${SCORECARD_VIEWED_PREFIX}${sessionId}`) === "1";
+  } catch {
+    return false;
   }
 }

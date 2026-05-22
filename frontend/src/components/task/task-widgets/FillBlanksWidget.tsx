@@ -1,6 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef } from "react";
+import {
+  areFillInBlanksAnswered,
+  normalizeFillInBlanksPayload,
+} from "./fillBlanksNormalize";
 import { TaskHeader, I } from "./shared";
 import { blankId } from "./types";
 import type { BlankItem, FillInBlanksPayload, WidgetProps } from "./types";
@@ -12,30 +16,95 @@ function isCorrect(blank: BlankItem, value: string): boolean {
 }
 
 export function FillBlanksWidget({ payload, answers, setAnswers, state, onSubmit }: Props) {
-  const blanks: BlankItem[] = payload.items ?? payload.blanks ?? [];
-  const [startedAt] = useState(() => Date.now());
+  const normalizedPayload = normalizeFillInBlanksPayload(payload);
+  const blanks: BlankItem[] = normalizedPayload.items ?? normalizedPayload.blanks ?? [];
+  const startedAtRef = useRef<number | null>(null);
   const submitted = state === "after";
   const valueFor = (b: BlankItem) => (answers[blankId(b)] as string | undefined) ?? "";
 
-  const setValue = (b: BlankItem, next: string) => {
+  const setValue = (b: BlankItem, next: string, eventTime: number) => {
     if (submitted) return;
+    startedAtRef.current ??= eventTime;
     setAnswers({
       ...answers,
       [blankId(b)]: next,
-      time_spent_seconds: Math.round((Date.now() - startedAt) / 1000),
+      time_spent_seconds: Math.round((eventTime - startedAtRef.current) / 1000),
     });
   };
 
-  const allAnswered = blanks.every((b) => valueFor(b).trim().length > 0);
+  const allAnswered = areFillInBlanksAnswered(blanks, answers);
   const correctCount = blanks.filter((b) => isCorrect(b, valueFor(b))).length;
 
-  const passage = payload.passage ?? "";
+  const passage = normalizedPayload.passage ?? "";
   const parts = passage.split("___");
   const hasInlineBlanks = parts.length > 1 && blanks.length > 0;
 
   const renderBlankInput = (blank: BlankItem, index: number) => {
     const value = valueFor(blank);
     const correct = submitted && isCorrect(blank, value);
+
+    if (submitted) {
+      return (
+        <span
+          key={`${blankId(blank)}-${index}`}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            margin: "0 4px",
+            verticalAlign: "baseline",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span
+            aria-hidden
+            style={{
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: correct ? "var(--tw-green)" : "var(--tw-red)",
+              color: "white",
+              fontSize: 10,
+              fontWeight: 800,
+              flexShrink: 0,
+            }}
+          >
+            {correct ? "✓" : "✗"}
+          </span>
+          <span
+            style={{
+              padding: "3px 10px",
+              borderRadius: 6,
+              background: correct ? "#dcfce7" : "#fee2e2",
+              color: correct ? "#16a34a" : "#dc2626",
+              fontWeight: 700,
+              fontSize: 14,
+              textDecoration: correct ? "none" : "line-through",
+            }}
+          >
+            {value || "—"}
+          </span>
+          {!correct && (
+            <span
+              style={{
+                padding: "3px 10px",
+                borderRadius: 6,
+                background: "#dcfce7",
+                color: "#16a34a",
+                fontWeight: 700,
+                fontSize: 14,
+              }}
+            >
+              {blank.correct_answer}
+            </span>
+          )}
+        </span>
+      );
+    }
+
     return (
       <span
         key={`${blankId(blank)}-${index}`}
@@ -57,11 +126,7 @@ export function FillBlanksWidget({ payload, answers, setAnswers, state, onSubmit
             display: "inline-flex",
             alignItems: "center",
             justifyContent: "center",
-            background: submitted
-              ? correct
-                ? "var(--tw-green)"
-                : "var(--tw-red)"
-              : "var(--tw-primary)",
+            background: "var(--tw-primary)",
             color: "white",
             fontSize: 11,
             fontWeight: 800,
@@ -73,23 +138,16 @@ export function FillBlanksWidget({ payload, answers, setAnswers, state, onSubmit
         </span>
         <input
           aria-label={`Blank ${index + 1}`}
-          disabled={submitted}
           value={value}
-          onChange={(e) => setValue(blank, e.target.value)}
+          onChange={(e) => setValue(blank, e.target.value, e.timeStamp)}
           placeholder="answer"
-          className={
-            submitted
-              ? correct
-                ? "tw-blank-input ok"
-                : "tw-blank-input no"
-              : "tw-blank-input"
-          }
+          className="tw-blank-input"
           style={{
             width: "clamp(88px, 18vw, 150px)",
             textAlign: "center",
           }}
         />
-        {!submitted && blank.base_verb && (
+        {blank.base_verb && (
           <span style={{
             fontSize: 12,
             fontWeight: 600,
@@ -100,9 +158,6 @@ export function FillBlanksWidget({ payload, answers, setAnswers, state, onSubmit
             ({blank.base_verb})
           </span>
         )}
-        {submitted && !correct && (
-          <span className="tw-blank-fix">{blank.correct_answer}</span>
-        )}
       </span>
     );
   };
@@ -112,28 +167,41 @@ export function FillBlanksWidget({ payload, answers, setAnswers, state, onSubmit
       <TaskHeader
         topic="Fill in the Blanks"
         intro={{
-          title: payload.task_intro || "Complete the passage",
-          body: payload.instructions || "Fill each blank with the correct word.",
+          title: normalizedPayload.task_intro || "Complete the passage",
+          body: normalizedPayload.instructions || "Fill each blank with the correct word.",
         }}
-        sub_skill={payload.sub_skill || ""}
-        activity={payload.activity || "Fill in the Blanks"}
-        time={payload.estimated_time_minutes ?? 0}
+        sub_skill={normalizedPayload.sub_skill || ""}
+        activity={normalizedPayload.activity || "Fill in the Blanks"}
+        time={normalizedPayload.estimated_time_minutes ?? 0}
       />
 
-      {payload.grammar_rule_explained && (
+      {normalizedPayload.grammar_rule_explained && (
         <div className="tw-rule-callout">
           <div className="tw-rule-icon">{I.rule}</div>
           <div className="tw-rule-body">
             <div className="tw-rule-label">Grammar rule</div>
-            <div className="tw-rule-text">{payload.grammar_rule_explained}</div>
+            <div className="tw-rule-text">{normalizedPayload.grammar_rule_explained}</div>
+          </div>
+        </div>
+      )}
+
+      {blanks.length === 0 && (
+        <div className="tw-rule-callout" role="status">
+          <div className="tw-rule-icon">!</div>
+          <div className="tw-rule-body">
+            <div className="tw-rule-label">Activity content missing</div>
+            <div className="tw-rule-text">
+              This fill-in-blanks activity did not include any blanks. Restart the
+              session to fetch the latest authored content.
+            </div>
           </div>
         </div>
       )}
 
       {hasInlineBlanks ? (
         <div className="tw-passage">
-          {payload.passage_title && (
-            <div className="tw-passage-label">{payload.passage_title}</div>
+          {normalizedPayload.passage_title && (
+            <div className="tw-passage-label">{normalizedPayload.passage_title}</div>
           )}
           {parts.map((part, index) => (
             <span key={`part-${index}`}>
@@ -144,10 +212,10 @@ export function FillBlanksWidget({ payload, answers, setAnswers, state, onSubmit
         </div>
       ) : (
         <div className="tw-passage">
-          {payload.passage_title && (
-            <div className="tw-passage-label">{payload.passage_title}</div>
+          {normalizedPayload.passage_title && (
+            <div className="tw-passage-label">{normalizedPayload.passage_title}</div>
           )}
-          {payload.passage && <div style={{ marginBottom: 12 }}>{payload.passage}</div>}
+          {normalizedPayload.passage && <div style={{ marginBottom: 12 }}>{normalizedPayload.passage}</div>}
           {blanks.map((blank, index) => {
             const sentenceParts = blank.sentence_with_blank.split("___");
             return (
@@ -183,37 +251,29 @@ export function FillBlanksWidget({ payload, answers, setAnswers, state, onSubmit
         </div>
       )}
 
-      {submitted && (
-        <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
-          {blanks.map((b, idx) => {
-            const value = valueFor(b);
-            const correct = isCorrect(b, value);
-            return (
-              <div
-                key={blankId(b)}
-                className={correct ? "tw-fb-row good" : "tw-fb-row bad"}
-              >
-                <div className={correct ? "tw-fb-marker ok" : "tw-fb-marker no"}>
-                  {correct ? "✓" : "!"}
-                </div>
+      {submitted && blanks.some((b) => !isCorrect(b, valueFor(b))) && (
+        <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
+          {blanks
+            .map((b, idx) => ({ b, idx, value: valueFor(b) }))
+            .filter(({ b, value }) => !isCorrect(b, value))
+            .map(({ b, idx, value }) => (
+              <div key={blankId(b)} className="tw-fb-row bad">
+                <div className="tw-fb-marker no">!</div>
                 <div>
                   <div className="tw-fb-q">
                     <strong>Blank {idx + 1}:</strong>{" "}
-                    <span style={{ color: "var(--tw-ink-muted)" }}>{value || "—"}</span>
-                    {!correct && (
-                      <>
-                        {" → "}
-                        <span style={{ color: "var(--tw-green)", fontWeight: 700 }}>
-                          {b.correct_answer}
-                        </span>
-                      </>
-                    )}
+                    <span style={{ textDecoration: "line-through", color: "#dc2626" }}>
+                      {value || "—"}
+                    </span>
+                    {" → "}
+                    <span style={{ color: "var(--tw-green)", fontWeight: 700 }}>
+                      {b.correct_answer}
+                    </span>
                   </div>
                   <div className="tw-fb-explain">{b.explanation}</div>
                 </div>
               </div>
-            );
-          })}
+            ))}
         </div>
       )}
 
@@ -221,7 +281,7 @@ export function FillBlanksWidget({ payload, answers, setAnswers, state, onSubmit
         <button
           className="tw-submit-btn"
           disabled={!allAnswered}
-          onClick={onSubmit}
+          onClick={() => onSubmit()}
         >
           {I.spark} Submit all blanks
         </button>

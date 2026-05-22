@@ -8,6 +8,10 @@ import type { SpeakAndRecordPayload, SpeakRoleplayTurn, WidgetProps } from "./ty
 
 type Props = WidgetProps<SpeakAndRecordPayload>;
 
+function nowMs(): number {
+  return Date.now();
+}
+
 interface Recording {
   item_id?: string;
   turn_id?: string;
@@ -23,7 +27,10 @@ function detectMode(p: SpeakAndRecordPayload): Mode {
   if (p.turns && p.turns.length > 0) return "role";
   if (p.source_audio_url || p.source_audio_script) return "retell";
   if (p.text_to_read_aloud || p.passage) return "read";
-  if (p.speaking_prompts && p.speaking_prompts.length > 0) return "list";
+  if (
+    (p.speaking_prompts && p.speaking_prompts.length > 0) ||
+    (p.speaking_items && p.speaking_items.length > 0)
+  ) return "list";
   return "single";
 }
 
@@ -45,7 +52,36 @@ function extensionForMime(mime: string): string {
   return ".webm";
 }
 
-export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmit }: Props) {
+type SpeakItem = {
+  id: string;
+  label: string;
+  kind: "prompt" | "turn";
+  turn?: SpeakRoleplayTurn;
+  sampleResponse?: string | null;
+};
+
+function buildSubmissionPayload(
+  items: SpeakItem[],
+  next: Record<string, Recording>,
+  startedAt: number,
+): Record<string, unknown> {
+  return {
+    recordings: items
+      .map((it) => next[it.id])
+      .filter(Boolean)
+      .map((rec) => ({
+        item_id: rec.item_id,
+        turn_id: rec.turn_id,
+        audio_blob_url: rec.audio_blob_url,
+        duration_seconds: rec.duration_seconds,
+        attempt_number: rec.attempt_number,
+        transcript: rec.transcript,
+      })),
+    time_spent_seconds: Math.round((nowMs() - startedAt) / 1000),
+  };
+}
+
+export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Props) {
   const submitted = state === "after";
   const mode = detectMode(payload);
 
@@ -63,7 +99,11 @@ export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmi
         }));
     }
     if (mode === "list") {
-      const prompts = payload.speaking_prompts ?? [];
+      const prompts = (
+        payload.speaking_prompts && payload.speaking_prompts.length > 0
+          ? payload.speaking_prompts
+          : payload.speaking_items
+      ) ?? [];
       return prompts.map((p, i) => ({
         id: `prompt_${i + 1}`,
         label: p,
@@ -94,14 +134,14 @@ export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmi
     return [
       {
         id: "prompt_1",
-        label: payload.speaking_prompt || "Speak your response",
+        label: payload.speaking_prompt || "Speaking prompt is missing.",
         kind: "prompt" as const,
         sampleResponse: payload.sample_response ?? null,
       },
     ];
   })();
 
-  const startedAtRef = useRef(Date.now());
+  const startedAtRef = useRef<number | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -134,20 +174,17 @@ export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmi
   }, []);
 
   const publish = (next: Record<string, Recording>) => {
-    setAnswers({
-      recordings: items
-        .map((it) => next[it.id])
-        .filter(Boolean)
-        .map((rec) => ({
-          item_id: rec.item_id,
-          turn_id: rec.turn_id,
-          audio_blob_url: rec.audio_blob_url,
-          duration_seconds: rec.duration_seconds,
-          attempt_number: rec.attempt_number,
-          transcript: rec.transcript,
-        })),
-      time_spent_seconds: Math.round((Date.now() - startedAtRef.current) / 1000),
-    });
+    const startedAt = startedAtRef.current ?? nowMs();
+    startedAtRef.current = startedAt;
+    setAnswers(buildSubmissionPayload(items, next, startedAt));
+  };
+
+  const handleSubmit = () => {
+    const startedAt = startedAtRef.current ?? nowMs();
+    startedAtRef.current = startedAt;
+    const payload = buildSubmissionPayload(items, recordings, startedAt);
+    setAnswers(payload);
+    onSubmit(payload);
   };
 
   const stopRecording = () => {
@@ -177,7 +214,7 @@ export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmi
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       recorder.onstop = async () => {
-        const duration = Math.round((Date.now() - recordingStartedAtRef.current) / 1000);
+        const duration = Math.round((nowMs() - recordingStartedAtRef.current) / 1000);
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         setUploadingItemId(itemId);
@@ -188,6 +225,7 @@ export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmi
         try {
           const result = await tasksApi.transcribeAudio(blob, `speak-${itemId}${ext}`);
           const item = items.find((it) => it.id === itemId);
+          let nextRecordings: Record<string, Recording> | null = null;
           setRecordings((prev) => {
             const next: Record<string, Recording> = {
               ...prev,
@@ -201,16 +239,19 @@ export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmi
                 attempt_number: (prev[itemId]?.attempt_number ?? 0) + 1,
               },
             };
-            publish(next);
+            nextRecordings = next;
             return next;
           });
+          if (nextRecordings) {
+            publish(nextRecordings);
+          }
         } catch {
           setError("Transcription failed. Please record that prompt again.");
         } finally {
           setUploadingItemId(null);
         }
       };
-      recordingStartedAtRef.current = Date.now();
+      recordingStartedAtRef.current = nowMs();
       recorder.start(250);
       const cap = payload.speaking_duration_seconds || 60;
       timerRef.current = setInterval(() => {
@@ -227,7 +268,10 @@ export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmi
   };
 
   const allRecorded = items.every((it) => recordings[it.id]?.transcript?.trim());
-  const canSubmit = !submitted && allRecorded && !activeItemId && !uploadingItemId;
+  const missingSpeakingPrompt = mode === "single" && !payload.speaking_prompt?.trim();
+  const canSubmit = (
+    !submitted && !missingSpeakingPrompt && allRecorded && !activeItemId && !uploadingItemId
+  );
 
   const targetWordsHit = (() => {
     if (!payload.target_words || payload.target_words.length === 0) return [];
@@ -328,6 +372,23 @@ export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmi
         </div>
       )}
 
+      {missingSpeakingPrompt && (
+        <div
+          style={{
+            background: "oklch(96% 0.05 45)",
+            border: "1px solid oklch(84% 0.1 45)",
+            color: "oklch(35% 0.14 45)",
+            borderRadius: 12,
+            padding: "10px 12px",
+            fontSize: 13,
+            marginBottom: 14,
+            lineHeight: 1.5,
+          }}
+        >
+          This speaking activity is missing its prompt. Please refresh the activity.
+        </div>
+      )}
+
       {error && (
         <div
           style={{
@@ -372,6 +433,7 @@ export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmi
                   type="button"
                   disabled={
                     submitted ||
+                    missingSpeakingPrompt ||
                     !!uploadingItemId ||
                     (!!activeItemId && !isActive) ||
                     prepRemaining > 0
@@ -475,7 +537,7 @@ export function SpeakRecordWidget({ payload, answers, setAnswers, state, onSubmi
         <button
           className="tw-submit-btn"
           disabled={!canSubmit}
-          onClick={onSubmit}
+          onClick={handleSubmit}
         >
           {I.send} Submit recordings
         </button>

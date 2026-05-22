@@ -68,29 +68,82 @@ WEEKS_24: tuple[WeekSource, ...] = (
             DaySource(
                 title="Simple Present Tense — Subject-Verb Agreement",
                 description=(
-                    "Use simple present in affirmative sentences: I work, he/she works. "
-                    "Teach subject-verb agreement, especially third-person -s. "
-                    "Use frequency adverbs: always, usually, often, sometimes, never. "
-                    "Contrast action verbs with 'to be' so the learner does not mix "
-                    "forms like 'I am work' and 'I work'."
+                    "Learners understand that simple present describes facts, routines, "
+                    "and habits. They practise subject-verb agreement (I/you/we/they + "
+                    "base verb; he/she + verb-s) and use frequency adverbs (always, "
+                    "usually, often, sometimes, never) in original sentences."
                 ),
+
                 teacher_agent_behaviour=(
-                    "Greet the learner and say today's lesson is about tense.",
-                    "Briefly explain that tense shows when an action or state happens.",
-                    "Teach that the simple present is used for facts, routines, and habits.",
-                    "Ask the learner to give one real daily routine in a sentence.",
-                    "Use the learner's routine to teach subject-verb agreement: I/you/we/they + base verb, he/she + verb-s.",
-                    "Probe the pattern by asking the learner to change one sentence between I and he/she.",
-                    "Teach frequency adverbs like always, usually, often, sometimes, and never.",
-                    "Ask the learner for one final routine sentence using a frequency adverb and the correct verb form.",
-                    "If the learner is still confused or makes the target mistake, correct it and ask one more focused question.",
-                    "Only after the learner shows understanding, ask exactly: Ready to try the practice task?",
+                    "TURN 1 — Open: greet the learner, explain in two sentences that tense shows when something happens and that simple present is for facts, routines, and habits. Then ask for one real daily routine in a sentence. Stop here.",
+                    "TURN 2 — Subject-verb agreement: use the learner's own sentence to explain the rule (I/you/we/they + base verb; he/she + verb-s). Ask the learner to say the same routine with 'he' or 'she' as the subject. If they get it wrong, give one brief correction and ask once more, then move on. Stop here.",
+                    "TURN 3 — Frequency adverbs: introduce the words always, usually, often, sometimes, never in one sentence. Ask the learner to write any routine sentence that uses one frequency adverb and the correct verb form. If they get it wrong, give one brief correction and move on. Stop here.",
+                    "TURN 4 — Wrap-up: if the learner has shown the pattern at least once correctly across turns 2 and 3, ask exactly: Ready to try the practice task? Do not add any further explanation, review, or example.",
                 ),
                 task_archetypes_used=(
                     "READ_CLOZE",
                     "LISTEN_MCQ",
                     "WRITE_OPEN_SENT",
                     "SPEAK_TIMED",
+                ),
+                task_specs=(
+                    {
+                        "topic_override": "Simple present routines",
+                        "instructions_override": (
+                            "Write a 5–7 sentence connected passage about a "
+                            "daily routine. Base the topic and characters on "
+                            "the learner's interests. Focus on simple present "
+                            "and third-person -s. Always include base_verb "
+                            "for every blank."
+                        ),
+                    },
+                    {
+                        "topic_override": "Listening for daily routines",
+                        "instructions_override": (
+                            "Generate a short spoken passage (60-90 words) about daily routines "
+                            "using simple present and frequency adverbs. Then write 3-4 MCQ "
+                            "comprehension questions testing what was heard."
+                        ),
+                        "widget_requirements": (
+                            "Set inner_widget to 'mcq'. Generate 3-4 comprehension questions "
+                            "in `items` — each with item_id (q1, q2 …), prompt, options (4 "
+                            "choices as strings), correct_index (0-based integer), and explanation."
+                        ),
+                    },
+                    {
+                        "topic_override": "Write simple present routine sentences",
+                        "instructions_override": (
+                            "Ask for affirmative routine sentences using "
+                            "I/he/she and frequency adverbs."
+                        ),
+                    },
+                    {
+                        "topic_override": "Say simple present routines",
+                        "instructions_override": (
+                            "Tap the mic and say one short routine "
+                            "sentence for each prompt. Use the correct "
+                            "simple present verb form and one frequency "
+                            "adverb (always, usually, often, sometimes, "
+                            "never)."
+                        ),
+                        "widget_requirements": (
+                            "Populate `speaking_prompts` with exactly 3 "
+                            "items: one prompting an 'I' routine sentence, "
+                            "one a 'he' routine sentence, and one a 'she' "
+                            "routine sentence. Each prompt must explicitly "
+                            "ask the learner to use a frequency adverb. "
+                            "Populate `sample_responses` with one model "
+                            "spoken answer per prompt (same order, same "
+                            "length). Set `task_intro` to a short "
+                            "imperative like 'Record your routine "
+                            "sentences.' Include "
+                            "`target_words: [\"always\", \"usually\", "
+                            "\"often\", \"sometimes\", \"never\"]`, "
+                            "`grammar_rule_to_practice` describing the "
+                            "I/he/she base-verb-vs-(-s) rule, and "
+                            "`speaking_duration_seconds: 45`."
+                        ),
+                    },
                 ),
             ),
             DaySource(),

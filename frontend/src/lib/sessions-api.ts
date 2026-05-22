@@ -114,6 +114,17 @@ export interface SubmitActivityResponse {
   feedback: FeedbackRead;
 }
 
+export interface ActivityBreakdown {
+  attempt_id: number;
+  sequence: number;
+  archetype_id: string;
+  archetype_label: string;
+  raw_score: number;
+  tier: string;
+  base_reward: number;
+  weighted_points: Record<string, number>;
+}
+
 export interface SessionScorecardRead {
   session_id: string;
   points_earned: Record<string, number>;
@@ -122,6 +133,12 @@ export interface SessionScorecardRead {
   skill_labels: Record<string, string>;
   completed_at: string;
   points_applied: boolean;
+  activities: ActivityBreakdown[];
+}
+
+export interface AdvanceDayResponse {
+  week: number;
+  day_in_week: number;
 }
 
 // ── Endpoints ──────────────────────────────────────────────────────
@@ -168,5 +185,10 @@ export const sessionsApi = {
   getScorecard: (sessionId: string) =>
     api
       .get<SessionScorecardRead>(`/api/sessions/${sessionId}/scorecard`)
+      .then((r) => r.data),
+
+  advanceDay: () =>
+    api
+      .post<AdvanceDayResponse>("/api/sessions/advance-day")
       .then((r) => r.data),
 };

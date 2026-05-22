@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -29,8 +30,10 @@ from app.modules.curriculum.file_source import (
 )
 from app.modules.curriculum.repository import (
     CurriculumDayRepository,
+    CurriculumWeekRepository,
     TaskArchetypeRepository,
 )
+from app.modules.preferences.repository import UserCoursePreferenceRepository
 from app.modules.progress.repository import SkillPointsRepository
 from app.modules.sessions.evaluator import Evaluator, EvaluationResult, StubEvaluator
 from app.modules.sessions.exceptions import (
@@ -38,6 +41,7 @@ from app.modules.sessions.exceptions import (
     AttemptNotFound,
     DayNotFound,
     NoActivitiesPlanned,
+    SessionAdvanceBlocked,
     SessionAbandoned,
     SessionAlreadyCompleted,
     SessionAlreadyOpen,
@@ -69,6 +73,9 @@ from app.modules.sessions.scoring_writer import ApplyReport, apply_session_score
 from app.modules.sessions.task_generator import (
     StubTaskGenerator,
     TaskGenerator,
+    is_valid_listening_mcq_payload,
+    is_valid_open_text_payload,
+    is_valid_speak_and_record_payload,
 )
 from app.modules.skills.repository import SkillRepository
 from app.scoring import (
@@ -80,6 +87,7 @@ from app.scoring import (
     build_session_aggregation,
     distribute,
     get_archetype,
+    tier_for_score,
 )
 
 
@@ -113,9 +121,11 @@ class SessionService:
         self.feedback_repo = FeedbackRepository(db)
         self.scorecards_repo = ScorecardRepository(db)
         self.days_repo = CurriculumDayRepository(db)
+        self.weeks_repo = CurriculumWeekRepository(db)
         self.archetypes_repo = TaskArchetypeRepository(db)
         self.skills_repo = SkillRepository(db)
         self.points_repo = SkillPointsRepository(db)
+        self.preferences_repo = UserCoursePreferenceRepository(db)
 
     # ── start ──────────────────────────────────────────────────────
 
@@ -331,6 +341,11 @@ class SessionService:
     def next_activity(self, *, session_id: str, user_id: int) -> ActivityAttempt:
         """Return the next pending attempt + its task_content.
 
+        Synchronous fetch only. Callers that ship the payload to the UI MUST
+        also await `prepare_attempt_for_delivery(...)` to self-heal any
+        attempt that was persisted with incomplete content by an older code
+        path (e.g. listening attempts missing audio_script / items).
+
         Raises:
           SessionNotFound       — unknown session_id, or owned by another user
           SessionAlreadyCompleted — all attempts done; caller should call complete
@@ -345,6 +360,141 @@ class SessionService:
                 f"session {session_id!r}: no pending attempts; call complete instead"
             )
         return next_attempt
+
+    async def prepare_attempt_for_delivery(
+        self, attempt: ActivityAttempt
+    ) -> ActivityAttempt:
+        """Heal `task_content` if it's broken for its archetype, then return.
+
+        Keeps the UI from seeing the "Audio could not be prepared" dead-end
+        on listening attempts whose content was persisted by an older
+        StubTaskGenerator that didn't populate `audio_script` / `items` /
+        `inner_widget`. Mutates the row in-place + commits when it
+        regenerates so the eventual evaluator sees the same content the
+        widget rendered.
+
+        No-op when the existing content is already valid for its archetype.
+        """
+        spec = get_archetype(attempt.archetype_id)
+        content = dict(attempt.task_content or {})
+        if self._is_attempt_content_valid(content, spec):
+            return attempt
+
+        logger.warning(
+            "session attempt id=%s archetype=%s has invalid task_content "
+            "(phase=%s); regenerating via %s",
+            attempt.id,
+            attempt.archetype_id,
+            content.get("phase"),
+            type(self.task_generator).__name__,
+        )
+        repaired = await self._regenerate_task_content(
+            attempt=attempt, archetype=spec, prior=content,
+        )
+        attempt.task_content = repaired
+        self.db.commit()
+        self.db.refresh(attempt)
+        return attempt
+
+    @staticmethod
+    def _is_attempt_content_valid(content: dict, spec: ArchetypeSpec) -> bool:
+        if not content:
+            return False
+        if spec.core_activity == "listen":
+            if not is_valid_listening_mcq_payload(content):
+                return False
+            audio_script = str(content.get("audio_script") or "").strip()
+            audio_url = str(content.get("audio_url") or "").strip()
+            return bool(audio_url or audio_script)
+        if spec.archetype_id == "WRITE_OPEN_SENT":
+            return is_valid_open_text_payload(content, expected_items=3)
+        if spec.archetype_id == "SPEAK_TIMED" or spec.ui_widget == "SpeakAndRecord":
+            return is_valid_speak_and_record_payload(content)
+        return True
+
+    async def _regenerate_task_content(
+        self,
+        *,
+        attempt: ActivityAttempt,
+        archetype: ArchetypeSpec,
+        prior: dict,
+    ) -> dict:
+        """Best-effort regeneration that reuses any context already on the row."""
+        source_context = self._file_repair_context_for_attempt(attempt, archetype)
+        day_topic = (
+            (source_context[0].topic if source_context else "")
+            or str(prior.get("topic") or "").strip()
+            or str(prior.get("topic_name") or "").strip()
+            or archetype.name
+        )
+        explanation_brief = (
+            (source_context[0].explanation_brief if source_context else "")
+            or str(prior.get("explanation_brief") or "").strip()
+        )
+        cefr_level = (
+            (source_context[0].cefr_level if source_context else "")
+            or str(prior.get("cefr_level") or "A1").strip()
+            or "A1"
+        )
+        try:
+            sub_level = int(
+                source_context[0].sub_level_min
+                if source_context
+                else prior.get("sub_level") or 1
+            )
+        except (TypeError, ValueError):
+            sub_level = 1
+
+        task_spec: dict = (
+            dict(source_context[1])
+            if source_context and source_context[1]
+            else {"topic_override": day_topic}
+        )
+        task_spec.setdefault("topic_override", day_topic)
+        instructions = str(prior.get("instructions") or "").strip()
+        if instructions and "instructions_override" not in task_spec:
+            task_spec["instructions_override"] = instructions
+        if prior.get("task_intro") and "task_intro" not in task_spec:
+            task_spec["task_intro"] = prior["task_intro"]
+        if (
+            prior.get("estimated_time_minutes")
+            and "estimated_time_minutes" not in task_spec
+        ):
+            task_spec["estimated_time_minutes"] = prior["estimated_time_minutes"]
+
+        generated = await self.task_generator.generate(
+            archetype=archetype,
+            day_topic=day_topic,
+            explanation_brief=explanation_brief,
+            cefr_level=cefr_level,
+            sub_level=sub_level,
+            user_interests=None,
+            task_spec=task_spec,
+        )
+        return generated.content
+
+    @staticmethod
+    def _file_repair_context_for_attempt(
+        attempt: ActivityAttempt, archetype: ArchetypeSpec,
+    ) -> tuple[Any, dict] | None:
+        """Return file-authored day/spec context for stale persisted attempts."""
+        try:
+            day = file_get_day_by_id(attempt.session.day_id)
+        except DayNotFound:
+            return None
+
+        matching_indexes = [
+            index
+            for index, archetype_id in enumerate(day.task_archetypes_used)
+            if archetype_id == archetype.archetype_id
+        ]
+        if len(matching_indexes) == 1:
+            spec_index = matching_indexes[0]
+        else:
+            spec_index = attempt.sequence - 1
+
+        task_spec = file_task_spec_for(day, spec_index)
+        return day, task_spec
 
     # ── submit ─────────────────────────────────────────────────────
 
@@ -468,6 +618,7 @@ class SessionService:
         # Build ActivityScore list from every EVALUATED attempt.
         attempts = self.attempts_repo.list_for_session(session.id)
         scored: list[ActivityScore] = []
+        activities_breakdown: list[dict] = []
         for attempt in attempts:
             if attempt.status is not AttemptStatus.EVALUATED:
                 continue
@@ -479,6 +630,19 @@ class SessionService:
                 raw_score=float(attempt.evaluation.raw_score),
                 weight_map=dict(spec.weight_map),
             ))
+            raw = float(attempt.evaluation.raw_score)
+            activities_breakdown.append({
+                "attempt_id": attempt.id,
+                "sequence": attempt.sequence,
+                "archetype_id": attempt.archetype_id,
+                "archetype_label": spec.name,
+                "raw_score": raw,
+                "tier": tier_for_score(raw).value,
+                "base_reward": int(attempt.evaluation.base_reward),
+                "weighted_points": {
+                    k: float(v) for k, v in dict(attempt.evaluation.weighted_points).items()
+                },
+            })
 
         current_totals = self._current_points_for(session.user_id)
         course_length = CourseLength(session.course_length)
@@ -493,6 +657,7 @@ class SessionService:
             points_earned=dict(aggregation.points_earned),
             subskill_totals_after=dict(aggregation.subskill_totals_after or {}),
             dashboard_after=dict(aggregation.dashboard_after or {}),
+            activities=activities_breakdown,
             completed_at=now,
             points_applied=False,
         )
@@ -537,6 +702,62 @@ class SessionService:
 
     def get_session(self, *, session_id: str, user_id: int) -> DailySession:
         return self._load_owned(session_id=session_id, user_id=user_id)
+
+    # ── advance day ────────────────────────────────────────────────
+
+    def advance_day(self, *, user_id: int) -> tuple[int, int]:
+        """Move the learner's preference pointer to the next unlocked day."""
+        pref = self.preferences_repo.get_or_create_for_user(user_id)
+        week = self.weeks_repo.get_by_number(
+            course_length=pref.course_length,
+            week_number=pref.current_week,
+        )
+        if week is None:
+            raise DayNotFound(
+                f"No curriculum week for course_length={pref.course_length!r} "
+                f"week={pref.current_week}"
+            )
+
+        day = self.days_repo.get_for_week(
+            week_pk=week.id,
+            day_number=pref.current_day_in_week,
+        )
+        if day is None:
+            raise DayNotFound(
+                f"No curriculum day for week_id={week.week_id!r} "
+                f"day={pref.current_day_in_week}"
+            )
+
+        latest = self.sessions_repo.get_latest_for_day(
+            user_id=user_id,
+            day_id=day.day_id,
+        )
+        if latest is None or latest.status is not SessionStatus.COMPLETED:
+            raise SessionAdvanceBlocked(
+                "Complete today's session before unlocking the next day."
+            )
+
+        weeks = self.weeks_repo.list_for_course(pref.course_length)
+        max_week = max((w.week_number for w in weeks), default=0)
+        if max_week <= 0:
+            raise DayNotFound(
+                f"No curriculum weeks for course_length={pref.course_length!r}"
+            )
+        if pref.current_week >= max_week and pref.current_day_in_week >= 7:
+            raise SessionAdvanceBlocked("You are already at the final course day.")
+
+        now = datetime.now(timezone.utc)
+        if pref.current_day_in_week >= 7:
+            pref.current_week += 1
+            pref.current_day_in_week = 1
+        else:
+            pref.current_day_in_week += 1
+        pref.current_day_started_at = now
+        pref.last_completed_on = now.date()
+
+        self.db.commit()
+        self.db.refresh(pref)
+        return pref.current_week, pref.current_day_in_week
 
     # ── helpers ────────────────────────────────────────────────────
 

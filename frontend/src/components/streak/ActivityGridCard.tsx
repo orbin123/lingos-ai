@@ -64,7 +64,7 @@ export function ActivityGridCard() {
             marginTop: 3,
           }}
         >
-          Sessions per day{data ? ` · ${data.timezone}` : ""}
+          Activities per day{data ? ` · ${data.timezone}` : ""}
         </div>
       </div>
       <div

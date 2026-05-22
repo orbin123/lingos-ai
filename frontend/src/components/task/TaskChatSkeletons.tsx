@@ -5,7 +5,6 @@ import type React from "react";
 export type TaskChatLoadingType =
   | "teacher_loading"
   | "activity_loading"
-  | "evaluation_loading"
   | "feedback_loading"
   | "next_activity_loading"
   | null;
@@ -107,36 +106,6 @@ export function ActivityCardSkeleton() {
   );
 }
 
-export function ScorecardSkeleton() {
-  return (
-    <LoadingStatus label="Scoring your answers">
-      <div className="rounded-[22px] border border-white/90 bg-gradient-to-br from-sky-50 to-white p-6 shadow-[0_8px_32px_rgba(80,110,180,0.14)]">
-        <div className="mb-5 flex items-start justify-between gap-5">
-          <div className="min-w-0 flex-1">
-            <SkeletonBlock className="mb-3 h-6 w-2/3" rounded="rounded-lg" />
-            <SkeletonBlock className="h-4 w-44" rounded="rounded-md" />
-          </div>
-          <div className="flex h-[92px] w-[92px] shrink-0 items-center justify-center rounded-full bg-slate-100 animate-pulse">
-            <div className="h-[58px] w-[58px] rounded-full bg-white" />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2.5">
-          {[0, 1, 2].map((item) => (
-            <div
-              key={item}
-              className="rounded-xl border border-slate-200 bg-white p-3.5"
-            >
-              <SkeletonBlock className="mb-2 h-6 w-12" rounded="rounded-md" />
-              <SkeletonBlock className="h-3 w-16" rounded="rounded-md" />
-            </div>
-          ))}
-        </div>
-      </div>
-    </LoadingStatus>
-  );
-}
-
 export function FeedbackCardSkeleton() {
   return (
     <LoadingStatus label="Generating feedback">
@@ -188,7 +157,6 @@ export function TaskChatLoadingSkeleton({
 }) {
   if (type === "teacher_loading") return <ChatMessageStreamingSkeleton />;
   if (type === "activity_loading") return <ActivityCardSkeleton />;
-  if (type === "evaluation_loading") return <ScorecardSkeleton />;
   if (type === "feedback_loading") return <FeedbackCardSkeleton />;
   if (type === "next_activity_loading") return <NextActivityTransitionSkeleton />;
   return null;
