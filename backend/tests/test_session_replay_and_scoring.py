@@ -38,7 +38,7 @@ from app.scoring import (
     MAX_POINTS_PER_SUBSKILL,
     SUB_SKILLS,
 )
-from scripts.seed_curriculum_v2 import seed_archetypes
+from scripts.seed_curriculum import seed_archetypes
 
 
 @pytest.fixture()

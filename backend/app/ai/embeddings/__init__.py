@@ -1,8 +1,9 @@
 """Embeddings + vector storage for user responses (and future entities)."""
 
+from app.ai.embeddings.embedding_generator import OpenAIEmbeddingGenerator
 from app.ai.embeddings.exceptions import (
     EmbeddingError,
-    HFEmbeddingFailed,
+    PineconeQueryFailed,
     PineconeUpsertFailed,
 )
 from app.ai.embeddings.service import EmbeddingService
@@ -10,6 +11,7 @@ from app.ai.embeddings.service import EmbeddingService
 __all__ = [
     "EmbeddingError",
     "EmbeddingService",
-    "HFEmbeddingFailed",
+    "OpenAIEmbeddingGenerator",
+    "PineconeQueryFailed",
     "PineconeUpsertFailed",
 ]

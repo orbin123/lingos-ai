@@ -1,59 +1,23 @@
-"""Low-level clients for HuggingFace embeddings + Pinecone vector DB.
+"""Low-level client for Pinecone vector DB.
 
-These wrap the SDKs but do NOT know anything about business logic
-(user_responses, task_ids, etc). They speak in raw text -> floats.
+Wraps the SDK but does NOT know anything about business logic
+(user_responses, task_ids, etc). It speaks in raw vectors + metadata.
+
+Two operations:
+  - pinecone_upsert()  — store a vector
+  - pinecone_query()   — retrieve nearest neighbours by cosine similarity
 """
 
 import logging
 from functools import lru_cache
 
-import httpx
 from pinecone import Pinecone
 
-from app.ai.embeddings.exceptions import (
-    HFEmbeddingFailed,
-    PineconeUpsertFailed,
-)
+from app.ai.embeddings.exceptions import PineconeQueryFailed, PineconeUpsertFailed
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-
-# ----- HuggingFace -----
-
-_HF_URL = (
-    f"https://router.huggingface.co/hf-inference/models/"
-    f"{settings.HF_EMBEDDING_MODEL}/pipeline/feature-extraction"
-)
-
-
-async def hf_embed(text: str) -> list[float]:
-    """Get a 384-dim embedding for `text` from HuggingFace.
-
-    Raises HFEmbeddingFailed on any non-2xx response or shape mismatch.
-    """
-    headers = {"Authorization": f"Bearer {settings.HF_API_KEY}"}
-    payload = {"inputs": text}
-
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        try:
-            resp = await client.post(_HF_URL, headers=headers, json=payload)
-            resp.raise_for_status()
-        except httpx.HTTPError as e:
-            logger.warning("HF embed HTTP error: %s", e)
-            raise HFEmbeddingFailed(f"HF API call failed: {e}") from e
-
-    data = resp.json()
-    # Sentence-transformers models return: list[float] of length 384
-    if not isinstance(data, list) or len(data) != settings.EMBEDDING_DIMENSION:
-        raise HFEmbeddingFailed(
-            f"Unexpected HF response shape: type={type(data)}, "
-            f"len={len(data) if hasattr(data, '__len__') else 'n/a'}"
-        )
-    return data
-
-
-# ----- Pinecone -----
 
 @lru_cache(maxsize=1)
 def _pinecone_index():
@@ -63,7 +27,7 @@ def _pinecone_index():
 
 
 def pinecone_upsert(
-    *, vector_id: str, values: list[float], metadata: dict
+    *, vector_id: str, values: list[float], metadata: dict, namespace: str = ""
 ) -> None:
     """Upsert a single vector into the configured Pinecone index.
 
@@ -73,8 +37,49 @@ def pinecone_upsert(
         _pinecone_index().upsert(
             vectors=[
                 {"id": vector_id, "values": values, "metadata": metadata}
-            ]
+            ],
+            namespace=namespace,
         )
     except Exception as e:  # pinecone SDK throws various subclasses
         logger.warning("Pinecone upsert error: %s", e)
         raise PineconeUpsertFailed(f"Pinecone upsert failed: {e}") from e
+
+
+def pinecone_query(
+    *,
+    values: list[float],
+    top_k: int = 10,
+    filter: dict | None = None,
+    namespace: str = "",
+    include_metadata: bool = True,
+) -> list[dict]:
+    """Query Pinecone for nearest-neighbour vectors.
+
+    Returns a list of match dicts, each containing:
+      {"id": str, "score": float, "metadata": dict}
+
+    Raises PineconeQueryFailed on any SDK error.
+    """
+    try:
+        result = _pinecone_index().query(
+            vector=values,
+            top_k=top_k,
+            filter=filter or {},
+            namespace=namespace,
+            include_metadata=include_metadata,
+        )
+        return [
+            {
+                "id": m.get("id", m.id) if hasattr(m, "id") else m["id"],
+                "score": m.get("score", m.score) if hasattr(m, "score") else m["score"],
+                "metadata": (
+                    m.get("metadata", m.metadata)
+                    if hasattr(m, "metadata")
+                    else m.get("metadata", {})
+                ),
+            }
+            for m in (result.get("matches", []) if isinstance(result, dict) else result.matches)
+        ]
+    except Exception as e:
+        logger.warning("Pinecone query error: %s", e)
+        raise PineconeQueryFailed(f"Pinecone query failed: {e}") from e

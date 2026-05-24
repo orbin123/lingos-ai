@@ -11,13 +11,14 @@
  *      SKILL_ORDER so every cell renders even when earned is 0.
  */
 
+import { useState } from "react";
 import type { ActivityBreakdown, SessionScorecardRead } from "@/lib/sessions-api";
 import { getSkillLabel, SKILL_ORDER } from "@/lib/skill-labels";
-
+import { MentorNote } from "./MentorNote";
 
 interface Props {
   scorecard: SessionScorecardRead;
-  onDone?: () => void;
+  onGoToDashboard?: () => void;
 }
 
 const TIER_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
@@ -28,13 +29,13 @@ const TIER_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
   very_poor: { bg: "oklch(94% 0.06 25)",  fg: "oklch(40% 0.16 25)",  label: "Very Poor" },
 };
 
-export function SessionScorecard({ scorecard, onDone }: Props) {
+export function SessionScorecard({ scorecard, onGoToDashboard }: Props) {
   const {
     points_earned,
-    dashboard_after,
     skill_labels,
     points_applied,
     activities,
+    mentor_note,
   } = scorecard;
 
   const orderedActivities = [...(activities ?? [])].sort(
@@ -42,82 +43,124 @@ export function SessionScorecard({ scorecard, onDone }: Props) {
   );
 
   return (
-    <section
-      style={{
-        background: "white",
-        borderRadius: 16,
-        padding: "clamp(24px, 4vw, 42px)",
-        border: "1px solid oklch(88% 0.03 245)",
-        display: "flex",
-        flexDirection: "column",
-        gap: 34,
-        width: "100%",
-        boxSizing: "border-box",
-      }}
-    >
-      <header style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <h2
+    <div style={{ display: "flex", flexDirection: "column", width: "100%", animation: "fadeIn 0.4s ease both" }}>
+      <style>{`
+        .subskill-row-1 {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 10px;
+        }
+        .subskill-row-2 {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+          max-width: calc(75% - 7.5px);
+          margin: 0 auto;
+          width: 100%;
+        }
+        @media (max-width: 600px) {
+          .subskill-row-1 {
+            grid-template-columns: repeat(2, 1fr);
+          }
+          .subskill-row-2 {
+            grid-template-columns: repeat(2, 1fr);
+            max-width: 100%;
+            margin: 0;
+          }
+        }
+      `}</style>
+
+      {/* 1. Transparent Header (outside the card container to align with chat flows) */}
+      <header
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 6,
+          marginBottom: 16,
+          textAlign: "center",
+        }}
+      >
+        <div
           style={{
-            margin: 0,
-            fontSize: "clamp(30px, 4vw, 42px)",
-            lineHeight: 1.05,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 7,
+            padding: "5px 12px",
+            borderRadius: 999,
+            background: "white",
+            border: "1px solid oklch(85% 0.025 240)",
+            fontSize: 12,
             fontWeight: 800,
-            color: "oklch(17% 0.08 245)",
+            letterSpacing: "0.03em",
+            color: "oklch(40% 0.16 155)",
+            boxShadow: "0 2px 8px rgba(80,110,180,0.06)",
+            textTransform: "uppercase",
           }}
         >
-          Session complete
-        </h2>
-        <p style={{ margin: 0, fontSize: 20, color: "oklch(35% 0.09 240)" }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          <span>Session complete</span>
+        </div>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 14.5,
+            fontWeight: 500,
+            color: "oklch(35% 0.09 240)",
+          }}
+        >
           {points_applied
             ? "Points added to your dashboard."
             : "Practice run — no new points (you already completed today's session)."}
         </p>
       </header>
 
-      {orderedActivities.length > 0 && (
-        <ActivitiesRow activities={orderedActivities} />
-      )}
+      {/* 2. Main scorecard card matching chat session card styles */}
+      <section
+        style={{
+          background: "linear-gradient(135deg, oklch(95% 0.05 240) 0%, white 70%)",
+          borderRadius: 22,
+          padding: "20px 24px",
+          border: "1.5px solid rgba(255,255,255,0.92)",
+          boxShadow: "0 8px 32px rgba(80,110,180,0.14)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 20,
+          width: "100%",
+          boxSizing: "border-box",
+        }}
+      >
+        {orderedActivities.length > 0 && (
+          <ActivitiesRow activities={orderedActivities} />
+        )}
 
-      <SubSkillGrid
-        pointsEarned={points_earned}
-        skillLabels={skill_labels}
-      />
+        <SubSkillGrid
+          pointsEarned={points_earned}
+          skillLabels={skill_labels}
+        />
+      </section>
 
-      {onDone && (
-        <button
-          type="button"
-          onClick={onDone}
-          style={{
-            alignSelf: "flex-start",
-            background: "oklch(52% 0.18 240)",
-            color: "white",
-            fontWeight: 700,
-            padding: "16px 34px",
-            borderRadius: 8,
-            border: "none",
-            cursor: "pointer",
-            fontSize: 21,
-            minHeight: 64,
-          }}
-        >
-          Back to dashboard
-        </button>
-      )}
-    </section>
+      {/* 3. Mentor Note (RAG-powered coaching paragraph) */}
+      <div style={{ marginTop: 16 }}>
+        <MentorNote note={mentor_note} />
+      </div>
+    </div>
   );
 }
-
 
 function ActivitiesRow({ activities }: { activities: ActivityBreakdown[] }) {
   return (
     <div>
       <div
         style={{
-          fontSize: 12,
+          fontSize: 11.5,
+          fontWeight: 700,
           textTransform: "uppercase",
-          letterSpacing: 0,
-          color: "oklch(40% 0.07 240)",
-          marginBottom: 18,
+          letterSpacing: "0.04em",
+          color: "oklch(45% 0.07 240)",
+          marginBottom: 10,
         }}
       >
         Activity scores
@@ -125,8 +168,8 @@ function ActivitiesRow({ activities }: { activities: ActivityBreakdown[] }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
-          gap: 18,
+          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+          gap: 12,
         }}
         className="scorecard-activities"
       >
@@ -137,72 +180,7 @@ function ActivitiesRow({ activities }: { activities: ActivityBreakdown[] }) {
             label: a.tier,
           };
           return (
-            <div
-              key={a.attempt_id}
-              style={{
-                border: "1px solid oklch(92% 0.02 240)",
-                borderRadius: 10,
-                padding: "24px 18px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 16,
-                alignItems: "center",
-                justifyContent: "center",
-                textAlign: "center",
-                background: "oklch(99% 0.005 240)",
-                minHeight: 224,
-                boxSizing: "border-box",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 18,
-                  fontWeight: 700,
-                  color: "oklch(40% 0.07 240)",
-                  minHeight: 46,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  lineHeight: 1.15,
-                  overflowWrap: "anywhere",
-                  wordBreak: "normal",
-                }}
-                title={a.archetype_id}
-              >
-                {a.archetype_label}
-              </div>
-              <div
-                style={{
-                  fontSize: 34,
-                  fontWeight: 800,
-                  color: "oklch(25% 0.07 240)",
-                  lineHeight: 1,
-                }}
-              >
-                {a.raw_score.toFixed(1)}
-                <span style={{ fontSize: 22, fontWeight: 600, color: "oklch(50% 0.04 240)" }}>
-                  {" / 10"}
-                </span>
-              </div>
-              <div
-                style={{
-                  display: "inline-block",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: 0,
-                  padding: "7px 13px",
-                  borderRadius: 999,
-                  background: tier.bg,
-                  color: tier.fg,
-                }}
-              >
-                {tier.label}
-              </div>
-              <div style={{ fontSize: 18, color: "oklch(40% 0.07 240)" }}>
-                +{a.base_reward} pts
-              </div>
-            </div>
+            <ActivityCard key={a.attempt_id} activity={a} tier={tier} />
           );
         })}
       </div>
@@ -210,6 +188,93 @@ function ActivitiesRow({ activities }: { activities: ActivityBreakdown[] }) {
   );
 }
 
+function ActivityCard({
+  activity,
+  tier,
+}: {
+  activity: ActivityBreakdown;
+  tier: { bg: string; fg: string; label: string };
+}) {
+  const [hovered, setHovered] = useState(false);
+
+  // Map archetype_id to core activity label: "Read", "Listen", "Write", "Speak"
+  const cleanId = activity.archetype_id.toUpperCase();
+  let displayLabel = activity.archetype_label;
+  if (cleanId.startsWith("READ_")) displayLabel = "Read";
+  else if (cleanId.startsWith("WRITE_")) displayLabel = "Write";
+  else if (cleanId.startsWith("LISTEN_")) displayLabel = "Listen";
+  else if (cleanId.startsWith("SPEAK_")) displayLabel = "Speak";
+
+  return (
+    <div
+      style={{
+        border: "1px solid oklch(90% 0.03 240)",
+        borderRadius: 12,
+        padding: "12px 10px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        background: hovered ? "oklch(98% 0.01 240)" : "oklch(99% 0.005 240)",
+        boxSizing: "border-box",
+        boxShadow: hovered ? "0 4px 12px rgba(80,110,180,0.06)" : "0 2px 6px rgba(80,110,180,0.02)",
+        transform: hovered ? "translateY(-1px)" : "translateY(0)",
+        transition: "all 0.2s ease-in-out",
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 700,
+          color: "oklch(35% 0.07 240)",
+          minHeight: 20,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          lineHeight: 1.15,
+        }}
+        title={activity.archetype_label}
+      >
+        {displayLabel}
+      </div>
+      <div
+        style={{
+          fontSize: 22,
+          fontWeight: 800,
+          color: "oklch(20% 0.08 245)",
+          lineHeight: 1,
+        }}
+      >
+        {activity.raw_score.toFixed(1)}
+        <span style={{ fontSize: 14, fontWeight: 600, color: "oklch(50% 0.04 240)" }}>
+          {"/10"}
+        </span>
+      </div>
+      <div
+        style={{
+          display: "inline-block",
+          fontSize: 10.5,
+          fontWeight: 800,
+          textTransform: "uppercase",
+          letterSpacing: "0.02em",
+          padding: "3px 9px",
+          borderRadius: 999,
+          background: tier.bg,
+          color: tier.fg,
+        }}
+      >
+        {tier.label}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "oklch(40% 0.07 240)" }}>
+        +{activity.base_reward} pts
+      </div>
+    </div>
+  );
+}
 
 interface GridProps {
   pointsEarned: Record<string, number>;
@@ -217,82 +282,126 @@ interface GridProps {
 }
 
 function SubSkillGrid({ pointsEarned, skillLabels }: GridProps) {
+  const row1 = SKILL_ORDER.slice(0, 4);
+  const row2 = SKILL_ORDER.slice(4, 7);
+
   return (
     <div>
       <div
         style={{
-          fontSize: 12,
+          fontSize: 11.5,
+          fontWeight: 700,
           textTransform: "uppercase",
-          letterSpacing: 0,
-          color: "oklch(40% 0.07 240)",
-          marginBottom: 18,
+          letterSpacing: "0.04em",
+          color: "oklch(45% 0.07 240)",
+          marginBottom: 10,
         }}
       >
         Sub-skill points earned
       </div>
+      
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* Row 1: 4 columns */}
+        <div className="subskill-row-1">
+          {row1.map((skill) => {
+            const earned = pointsEarned[skill] ?? 0;
+            return (
+              <SubSkillCell
+                key={skill}
+                skill={skill}
+                earned={earned}
+                skillLabels={skillLabels}
+              />
+            );
+          })}
+        </div>
+
+        {/* Row 2: 3 columns, centered */}
+        <div className="subskill-row-2">
+          {row2.map((skill) => {
+            const earned = pointsEarned[skill] ?? 0;
+            return (
+              <SubSkillCell
+                key={skill}
+                skill={skill}
+                earned={earned}
+                skillLabels={skillLabels}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SubSkillCell({
+  skill,
+  earned,
+  skillLabels,
+}: {
+  skill: string;
+  earned: number;
+  skillLabels: Record<string, string>;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const hit = earned > 0;
+  return (
+    <div
+      role="cell"
+      style={{
+        border: "1px solid oklch(90% 0.03 240)",
+        borderRadius: 12,
+        padding: "10px 6px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        background: hit
+          ? hovered
+            ? "oklch(96% 0.04 155)"
+            : "oklch(97% 0.03 155)"
+          : hovered
+            ? "oklch(98% 0.01 240)"
+            : "oklch(99% 0.005 240)",
+        minWidth: 0,
+        boxSizing: "border-box",
+        boxShadow: hovered ? "0 4px 10px rgba(80,110,180,0.04)" : "0 2px 6px rgba(80,110,180,0.01)",
+        transform: hovered ? "translateY(-1px)" : "translateY(0)",
+        transition: "all 0.2s ease-in-out",
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
       <div
-        role="table"
-        aria-label="Sub-skill scoreboard"
-        className="scorecard-subskill-grid"
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-          gap: 16,
+          fontSize: 10,
+          fontWeight: 800,
+          color: "oklch(45% 0.07 240)",
+          textTransform: "uppercase",
+          letterSpacing: "0.02em",
+          lineHeight: 1.2,
+          minHeight: 28,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          overflowWrap: "break-word",
+          wordBreak: "keep-all",
         }}
       >
-        {SKILL_ORDER.map((skill) => {
-          const earned = pointsEarned[skill] ?? 0;
-          const hit = earned > 0;
-          return (
-            <div
-              key={skill}
-              role="cell"
-              style={{
-                border: "1px solid oklch(92% 0.02 240)",
-                borderRadius: 10,
-                padding: "22px 14px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 22,
-                alignItems: "center",
-                justifyContent: "center",
-                textAlign: "center",
-                background: hit ? "oklch(98% 0.02 155)" : "oklch(99% 0.005 240)",
-                minWidth: 0,
-                minHeight: 132,
-                boxSizing: "border-box",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 15,
-                  fontWeight: 700,
-                  color: "oklch(40% 0.07 240)",
-                  textTransform: "uppercase",
-                  letterSpacing: 0,
-                  lineHeight: 1.15,
-                  minHeight: 38,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  overflowWrap: "anywhere",
-                }}
-              >
-                {getSkillLabel(skill, skillLabels)}
-              </div>
-              <div
-                style={{
-                  fontSize: 34,
-                  fontWeight: 800,
-                  color: hit ? "oklch(35% 0.18 155)" : "oklch(60% 0.03 240)",
-                  lineHeight: 1,
-                }}
-              >
-                {hit ? `+${earned}` : "0"}
-              </div>
-            </div>
-          );
-        })}
+        {getSkillLabel(skill, skillLabels)}
+      </div>
+      <div
+        style={{
+          fontSize: 20,
+          fontWeight: 800,
+          color: hit ? "oklch(35% 0.18 155)" : "oklch(60% 0.03 240)",
+          lineHeight: 1,
+        }}
+      >
+        {hit ? `+${earned}` : "0"}
       </div>
     </div>
   );

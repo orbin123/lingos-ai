@@ -45,3 +45,4 @@ from app.modules.sessions.models import (  # noqa: F401
 from app.modules.streaks.models import DailyActivity, StreakFreezeUsage  # noqa: F401
 from app.modules.preferences.models import UserCoursePreference  # noqa: F401
 from app.modules.learning_session.models import LearningSession  # noqa: F401
+from app.modules.feedback_memory.models import FeedbackMemoryLog  # noqa: F401

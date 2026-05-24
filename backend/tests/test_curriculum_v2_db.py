@@ -27,7 +27,7 @@ from app.modules.curriculum.repository import (
     TaskArchetypeRepository,
 )
 from app.scoring import ARCHETYPE_REGISTRY, CourseLength
-from scripts.seed_curriculum_v2 import (
+from scripts.seed_curriculum import (
     seed_all,
     seed_archetypes,
     seed_course,

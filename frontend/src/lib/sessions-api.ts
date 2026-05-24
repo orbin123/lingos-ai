@@ -134,6 +134,7 @@ export interface SessionScorecardRead {
   completed_at: string;
   points_applied: boolean;
   activities: ActivityBreakdown[];
+  mentor_note?: string | null;
 }
 
 export interface AdvanceDayResponse {

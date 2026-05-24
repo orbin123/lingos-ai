@@ -307,6 +307,9 @@ class SessionScorecard(Base, IDMixin, CreatedAtMixin):
     points_applied: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False
     )
+    mentor_note: Mapped[str | None] = mapped_column(
+        Text, nullable=True,
+    )
 
     session: Mapped[DailySession] = relationship(back_populates="scorecard")
 

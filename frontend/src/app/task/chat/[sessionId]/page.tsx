@@ -6,11 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { LayoutDashboard, MoreHorizontal, RotateCcw } from "lucide-react";
 
 import { api } from "@/lib/api";
-import {
-  isAuthoringChatEnabled,
-  learningRestartPath,
-  learningWebSocketUrl,
-} from "@/lib/authoring-chat";
+
 import { tasksApi } from "@/lib/tasks-api";
 import {
   extensionForMime,
@@ -1265,7 +1261,6 @@ export default function ChatSessionPage() {
     "connecting" | "open" | "closed" | "error"
   >(() => {
     if (typeof window === "undefined") return "connecting";
-    if (isAuthoringChatEnabled()) return "connecting";
     return localStorage.getItem("token") ? "connecting" : "error";
   }, []);
 
@@ -1303,10 +1298,11 @@ export default function ChatSessionPage() {
       if (!cancelled) setDaySessionScorecardError(null);
     });
     api
-      .get<SessionScorecardRead>(`/api/learning/sessions/${sessionId}/scorecard`)
+      .get<SessionScorecardRead>(`/api/sessions/${sessionId}/scorecard`)
       .then((r) => {
         if (cancelled) return;
         setDaySessionScorecard(r.data);
+        markScorecardViewed(r.data.session_id);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -1331,15 +1327,31 @@ export default function ChatSessionPage() {
 
     let cancelled = false;
     api
-      .get<SessionScorecardRead>(`/api/learning/sessions/${sessionId}/scorecard`)
+      .get<SessionScorecardRead>(`/api/sessions/${sessionId}/scorecard`)
       .then((r) => {
         if (cancelled) return;
         setDaySessionScorecard(r.data);
+        markScorecardViewed(r.data.session_id);
         setPhase("ended");
         setLoadingType(null);
       })
-      .catch(() => {
-        // If no scorecard exists yet, keep the normal connection error UI.
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        // Only surface the error if the session genuinely has no scorecard yet
+        // (i.e. it is still in-progress). For completed sessions the scorecard
+        // fetch should always succeed with the corrected URL above.
+        const status = (err as { response?: { status?: number } })?.response?.status;
+        if (status && status !== 404) {
+          const detail =
+            (err as { response?: { data?: { detail?: string } }; message?: string })
+              ?.response?.data?.detail ||
+            (err as { message?: string })?.message ||
+            "Could not load your session scorecard.";
+          setDaySessionScorecardError(detail);
+          setPhase("ended");
+          setLoadingType(null);
+        }
+        // 404 = session not yet complete; keep the "connection closed" UI.
       });
 
     return () => {
@@ -1570,15 +1582,12 @@ export default function ChatSessionPage() {
   /* --- WebSocket lifecycle ---------------------------------------- */
   useEffect(() => {
     if (!sessionId) return;
-    const authoringChat = isAuthoringChatEnabled();
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    if (!authoringChat && !token) return;
+    if (!token) return;
 
     const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const url = learningWebSocketUrl(apiBase, sessionId, {
-      authoring: authoringChat,
-      token,
-    });
+    const wsBase = apiBase.replace(/^http/, "ws");
+    const url = `${wsBase}/ws/learning/${sessionId}?token=${encodeURIComponent(token || "")}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -1682,7 +1691,7 @@ export default function ChatSessionPage() {
     setRestarting(true);
     setLoadingType("teacher_loading");
     try {
-      const restartPath = learningRestartPath(sessionId, isAuthoringChatEnabled());
+      const restartPath = `/api/learning/sessions/${encodeURIComponent(sessionId)}/restart`;
       const res = await api.post<{
         session_id: string;
         topic: string;
@@ -1830,28 +1839,14 @@ export default function ChatSessionPage() {
         }}>
           <SectionMarker kind="intro" icon={<SparkIcon />}>Intro</SectionMarker>
 
-          {connectionState !== "open" && events.length === 0 && !visibleLoadingType && (
-            <ChatBubble role="ai" name="LingosAI">
-              {connectionState === "connecting" && "Connecting to your session…"}
-              {connectionState === "closed" && "Connection closed. Refresh to reconnect."}
-              {connectionState === "error" && "Could not reach the session. Make sure you're signed in."}
-            </ChatBubble>
-          )}
-
           {events.map((evt, i) => {
             if (evt.kind === "chat") {
-              // When the session ends, the day-level scorecard supersedes the
-              // "Go to dashboard" action that the backend ships on the wrap-up
-              // bubble — hide it so the user sees the scorecard's own CTA.
-              const filteredActions = evt.actions?.filter(
-                (action) => action !== "Go to dashboard",
-              );
               return (
                 <ChatBubble
                   key={i}
                   role={evt.role}
                   name={i === 0 && evt.role === "ai" ? "LingosAI" : undefined}
-                  actions={filteredActions}
+                  actions={evt.actions}
                   streaming={evt.streaming}
                   onAction={handleAction}
                 >
@@ -1929,19 +1924,25 @@ export default function ChatSessionPage() {
 
           <TaskChatLoadingSkeleton type={visibleLoadingType} />
 
+          {connectionState !== "open" && phase !== "ended" && !visibleLoadingType && (
+            <div style={{ marginTop: 16 }}>
+              <ChatBubble role="ai" name={events.length === 0 ? "LingosAI" : undefined}>
+                {connectionState === "connecting" && "Connecting to your session…"}
+                {connectionState === "closed" && "Connection closed. Refresh to reconnect."}
+                {connectionState === "error" && "Could not reach the session. Make sure you're signed in."}
+              </ChatBubble>
+            </div>
+          )}
+
           {phase === "ended" && (
             <div style={{ marginTop: 24 }}>
               {daySessionScorecard ? (
                 <DaySessionScorecard
                   scorecard={daySessionScorecard}
-                  onDone={() => {
-                    markScorecardViewed(daySessionScorecard.session_id);
+                  onGoToDashboard={() => {
+                    queryClient.invalidateQueries({ queryKey: ["sessions", "today-plan"] });
+                    queryClient.invalidateQueries({ queryKey: ["me"] });
                     router.push("/dashboard");
-                    setTimeout(() => {
-                      queryClient.invalidateQueries({ queryKey: ["sessions", "today-plan"] });
-                      queryClient.invalidateQueries({ queryKey: ["task", "next"] });
-                      queryClient.invalidateQueries({ queryKey: ["me"] });
-                    }, 0);
                   }}
                 />
               ) : daySessionScorecardError ? (

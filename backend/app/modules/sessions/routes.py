@@ -10,9 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.database import get_db
-from app.modules.curriculum.file_source import get_day as file_get_day
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.curriculum.exceptions import EnrollmentNotActive, NotEnrolled
@@ -78,14 +76,33 @@ def _make_session_service(db: Session) -> SessionService:
     still be patched in tests via dependency injection on the service.
     """
     from app.ai.sessions import build_default_agents
+    from app.ai.sessions.factory import build_rag_services
+    from app.modules.feedback_memory.rag_service import FeedbackRAGService
 
     evaluator, feedback_generator, task_generator = build_default_agents()
-    return SessionService(
+    service = SessionService(
         db,
         evaluator=evaluator,
         feedback_generator=feedback_generator,
         task_generator=task_generator,
     )
+
+    # Wire RAG services for mentor note generation.
+    try:
+        embedding_gen, mentor_gen = build_rag_services()
+        service._rag_service = FeedbackRAGService(
+            db, embedding_generator=embedding_gen,
+        )
+        service._mentor_generator = mentor_gen
+    except Exception:
+        # RAG is optional — if Pinecone/OpenAI embeddings aren't configured,
+        # the service runs without mentor notes.
+        import logging
+        logging.getLogger(__name__).warning(
+            "RAG services unavailable — mentor notes disabled", exc_info=True,
+        )
+
+    return service
 
 
 logger = logging.getLogger(__name__)
@@ -289,64 +306,6 @@ def advance_day(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-async def _start_or_continue_today_from_file(
-    *, current_user: User, db: Session,
-) -> DashboardStartResponse:
-    """File-mode equivalent of start-or-continue today.
-
-    Defaults to (week=1, day_index=0). Once you author more days, extend
-    this to track a user's progress pointer in a lightweight way (e.g. via
-    UserCoursePreference.current_week / current_day_in_week).
-    """
-    try:
-        file_day = file_get_day(1, 0)
-    except DayNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    existing = _load_existing_today_session(
-        db, user_id=current_user.id, day_id=file_day.day_id,
-    )
-    if existing is not None:
-        mode = (
-            "continue"
-            if existing.status is SessionStatus.IN_PROGRESS
-            else "completed"
-        )
-        return _serialize_dashboard_plan(
-            day_id=file_day.day_id,
-            topic=file_day.topic,
-            session=existing,
-            activities=[_activity_from_attempt(a) for a in existing.attempts],
-            is_preview=False,
-            mode=mode,
-        )
-
-    service = _make_session_service(db)
-    try:
-        session = await service.start_session(
-            user_id=current_user.id,
-            course_length=CourseLength("24w"),
-            tasks_per_day=4,
-            allowed_activities={"read", "write", "listen", "speak"},
-            week_number=1,
-            day_index=0,
-            user_interests=_get_user_interests(db, current_user.id),
-        )
-    except NoActivitiesPlanned as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except SessionAlreadyOpen as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-
-    return _serialize_dashboard_plan(
-        day_id=file_day.day_id,
-        topic=file_day.topic,
-        session=session,
-        activities=[_activity_from_attempt(a) for a in session.attempts],
-        is_preview=False,
-        mode="start",
-    )
-
-
 @router.post(
     "/today/start-or-continue",
     response_model=DashboardStartResponse,
@@ -355,10 +314,6 @@ async def start_or_continue_today(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DashboardStartResponse:
-    if settings.CURRICULUM_SOURCE == "file":
-        return await _start_or_continue_today_from_file(
-            current_user=current_user, db=db,
-        )
     try:
         day, pref = _resolve_day_from_preference(db, current_user.id)
         day_id = day.day_id
@@ -714,4 +669,5 @@ def _serialize_scorecard(
         activities=[
             ActivityBreakdown.model_validate(a) for a in (scorecard.activities or [])
         ],
+        mentor_note=scorecard.mentor_note,
     )

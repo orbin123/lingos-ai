@@ -10,8 +10,8 @@ import re
 
 import pytest
 
-from app.data.courses.curriculum_v2 import load_weeks
-from app.data.courses.curriculum_v2.loader import (
+from app.data.courses.curriculum import load_weeks
+from app.data.courses.curriculum.loader import (
     DayRecord,
     WeekRecord,
     _CANDIDATES_BY_THEME,
@@ -74,31 +74,24 @@ def test_24w_cefr_steps_one_band_per_cycle():
         )
 
 
-def test_48w_each_pair_shares_theme():
+def test_48w_theme_rotation_follows_4_week_cycle():
+    """source_48w.py rotates themes the same way as 24w: grammar → communication → vocabulary → confidence."""
     weeks = load_weeks(CourseLength.WEEKS_48)
-    for i in range(0, 48, 2):
-        assert weeks[i].theme_type == weeks[i + 1].theme_type, (
-            f"48w pair w{i+1}/w{i+2} themes differ: "
-            f"{weeks[i].theme_type} vs {weeks[i+1].theme_type}"
+    for idx, week in enumerate(weeks):
+        expected = _THEME_CYCLE[idx % 4]
+        assert week.theme_type == expected, (
+            f"week {week.week_number} should be {expected}, got {week.theme_type}"
         )
 
 
-def test_48w_pair_shares_day_topics():
+def test_48w_placeholder_days_have_empty_topic():
+    """source_48w.py is a placeholder — all day topics should be empty strings."""
     weeks = load_weeks(CourseLength.WEEKS_48)
-    for i in range(0, 48, 2):
-        intro_topics = [d.topic for d in weeks[i].days]
-        extend_topics = [d.topic for d in weeks[i + 1].days]
-        assert intro_topics == extend_topics, (
-            f"48w pair w{i+1}/w{i+2} day topics diverge"
-        )
-
-
-def test_48w_intro_and_extend_have_distinct_titles():
-    weeks = load_weeks(CourseLength.WEEKS_48)
-    for i in range(0, 48, 2):
-        assert weeks[i].title != weeks[i + 1].title, (
-            f"48w pair w{i+1}/w{i+2} titles identical: {weeks[i].title!r}"
-        )
+    for week in weeks:
+        for day in week.days:
+            assert day.topic == "", (
+                f"{day.day_id} has non-empty topic: {day.topic!r}"
+            )
 
 
 # ── ID format and uniqueness ───────────────────────────────────────

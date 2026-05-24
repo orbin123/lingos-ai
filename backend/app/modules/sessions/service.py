@@ -14,6 +14,7 @@ implementations without touching this file.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -21,10 +22,8 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.modules.curriculum.file_source import (
     get_day_by_id as file_get_day_by_id,
-    get_day as file_get_day,
     resolve_archetypes as file_resolve_archetypes,
     task_spec_for as file_task_spec_for,
 )
@@ -127,6 +126,11 @@ class SessionService:
         self.points_repo = SkillPointsRepository(db)
         self.preferences_repo = UserCoursePreferenceRepository(db)
 
+        # RAG memory service — optional. When absent (tests, early phases),
+        # activity memory storage and mentor note generation are skipped.
+        self._rag_service: Any | None = None
+        self._mentor_generator: Any | None = None
+
     # ── start ──────────────────────────────────────────────────────
 
     async def start_session(
@@ -145,27 +149,13 @@ class SessionService:
     ) -> DailySession:
         """Create a new session for `(user_id, day_id)`. Raises if one is open.
 
-        In file mode (`settings.CURRICULUM_SOURCE == "file"`), pass
-        `week_number` and `day_index` instead of `day_id`. The curriculum
-        spec is read from `source_24w.py` and the deterministic
-        `plan_session()` is bypassed — archetype order comes from the file.
+        If the day is file-authored in ``source_24w.py``, the archetype order
+        and task specs come from the file instead of the planner.
         """
         now = now or datetime.now(timezone.utc)
 
-        if settings.CURRICULUM_SOURCE == "file":
-            return await self._start_session_from_file(
-                user_id=user_id,
-                week_number=week_number if week_number is not None else 1,
-                day_index=day_index if day_index is not None else 0,
-                course_length=course_length,
-                allowed_activities=allowed_activities,
-                sub_level=sub_level,
-                user_interests=user_interests,
-                now=now,
-            )
-
         if day_id is None:
-            raise DayNotFound("day_id is required when CURRICULUM_SOURCE='db'")
+            raise DayNotFound("day_id is required")
 
         day = self.days_repo.get_by_day_id(day_id)
         if day is None:
@@ -259,78 +249,6 @@ class SessionService:
                     user_interests=user_interests,
                     task_spec=None,
                 )
-
-        self.db.commit()
-        self.db.refresh(session)
-        return session
-
-    async def _start_session_from_file(
-        self,
-        *,
-        user_id: int,
-        week_number: int,
-        day_index: int,
-        course_length: CourseLength,
-        allowed_activities: set[str],
-        sub_level: int | None,
-        user_interests: list[str] | None,
-        now: datetime,
-    ) -> DailySession:
-        """File-mode start: reads `source_24w.py` directly, skips planner."""
-        day = file_get_day(week_number, day_index)
-        archetypes = file_resolve_archetypes(day)
-
-        # Honour the allow_* preferences by filtering archetypes whose
-        # core_activity ("read"/"write"/"listen"/"speak") is disabled.
-        # Authors who want a fixed 4-activity day should leave preferences
-        # all-on (the default).
-        filtered: list[tuple[int, ArchetypeSpec, dict]] = []
-        for i, spec in enumerate(archetypes):
-            if spec.core_activity not in allowed_activities:
-                continue
-            filtered.append((i, spec, file_task_spec_for(day, i)))
-        if not filtered:
-            raise NoActivitiesPlanned(
-                f"week {week_number} day {day_index}: no archetypes match "
-                f"allowed activities {sorted(allowed_activities)}"
-            )
-
-        if self.sessions_repo.get_in_progress(
-            user_id=user_id, day_id=day.day_id
-        ) is not None:
-            raise SessionAlreadyOpen(
-                f"user {user_id} already has an in-progress session for day {day.day_id!r}"
-            )
-
-        is_first = not self.sessions_repo.has_completed_for_day(
-            user_id=user_id, day_id=day.day_id
-        )
-        session = DailySession(
-            session_id=str(uuid4()),
-            user_id=user_id,
-            day_id=day.day_id,
-            course_length=course_length.value,
-            status=SessionStatus.IN_PROGRESS,
-            is_first_attempt=is_first,
-            started_at=now,
-        )
-        self.sessions_repo.add(session)
-
-        effective_sub_level = sub_level or day.sub_level_min
-
-        for sequence, (orig_index, spec, task_spec) in enumerate(filtered, start=1):
-            await self._materialise_attempt(
-                session=session,
-                day_topic=day.topic,
-                explanation_brief=day.explanation_brief,
-                archetype_id=spec.archetype_id,
-                sequence=sequence,
-                is_mandatory=True,
-                cefr_level=day.cefr_level,
-                sub_level=effective_sub_level,
-                user_interests=user_interests,
-                task_spec=task_spec or None,
-            )
 
         self.db.commit()
         self.db.refresh(session)
@@ -529,11 +447,15 @@ class SessionService:
         attempt.submitted_at = now
         attempt.status = AttemptStatus.SUBMITTED
 
+        # Lookup file-authored overrides for evaluator and feedback.
+        file_overrides = self._file_overrides_for_day(session.day_id)
+
         # Run the evaluator.
         eval_result: EvaluationResult = await self.evaluator.evaluate(
             archetype=spec,
             task_content=attempt.task_content,
             user_response=user_response,
+            evaluator_overrides=file_overrides.get("evaluator") or None,
         )
         course_length = CourseLength(session.course_length)
         reward = base_reward(eval_result.raw_score, course_length)
@@ -555,6 +477,7 @@ class SessionService:
             evaluation=eval_result,
             user_response=user_response,
             task_content=attempt.task_content,
+            feedback_overrides=file_overrides.get("feedback") or None,
         )
         feedback = ActivityFeedback(
             attempt_id=attempt.id,
@@ -581,6 +504,22 @@ class SessionService:
         self.db.refresh(attempt)
         self.db.refresh(evaluation)
         self.db.refresh(feedback)
+
+        # Fire-and-forget: store activity feedback in RAG memory.
+        # Failures are logged, never block the user.
+        if self._rag_service is not None:
+            asyncio.create_task(
+                self._store_activity_memory_safe(
+                    user_id=session.user_id,
+                    session_id=session.id,
+                    attempt_id=attempt.id,
+                    archetype_id=attempt.archetype_id,
+                    day_id=session.day_id,
+                    feedback=feedback,
+                    spec=spec,
+                )
+            )
+
         return attempt, evaluation, feedback
 
     # ── complete ───────────────────────────────────────────────────
@@ -663,20 +602,16 @@ class SessionService:
         )
         self.scorecards_repo.add(scorecard)
 
-        if settings.STUB_PROGRESS_WRITES:
-            # Authoring/dev mode: leave skill_points + streak tables untouched.
-            session.status = SessionStatus.COMPLETED
-            session.completed_at = now
-            self.db.commit()
-            self.db.refresh(scorecard)
-            return scorecard, ApplyReport(
-                applied=False, rows_written=0, rows_skipped=0,
-                reason="STUB_PROGRESS_WRITES=true",
-            )
-
         # Flush so apply_session_scorecard sees committed scorecard + session state.
         report = apply_session_scorecard(self.db, session=session, scorecard=scorecard)
         scorecard.points_applied = report.applied
+
+        # Generate mentor note via RAG (additive, never blocks).
+        mentor_note = await self._generate_mentor_note_safe(
+            session=session,
+            activities_breakdown=activities_breakdown,
+        )
+        scorecard.mentor_note = mentor_note
 
         session.status = SessionStatus.COMPLETED
         session.completed_at = now
@@ -692,6 +627,20 @@ class SessionService:
 
         self.db.commit()
         self.db.refresh(scorecard)
+
+        # Fire-and-forget: store session summary in RAG memory.
+        if self._rag_service is not None and mentor_note:
+            asyncio.create_task(
+                self._store_session_memory_safe(
+                    user_id=session.user_id,
+                    session_id=session.id,
+                    day_id=session.day_id,
+                    activities_summary=activities_breakdown,
+                    points_earned=dict(aggregation.points_earned),
+                    mentor_note=mentor_note,
+                )
+            )
+
         return scorecard, report
 
     # ── read ───────────────────────────────────────────────────────
@@ -821,3 +770,136 @@ class SessionService:
             if name in out:
                 out[name] = int(row.points)
         return out
+
+    @staticmethod
+    def _file_overrides_for_day(day_id: str) -> dict[str, dict]:
+        """Return evaluator/feedback overrides from the file-authored day, if any.
+
+        Returns ``{"evaluator": {...}, "feedback": {...}}`` when the day is
+        file-authored in ``source_24w.py`` and has non-empty override dicts.
+        Returns ``{}`` for non-authored days or when ``file_source`` raises.
+        """
+        try:
+            file_day = file_get_day_by_id(day_id)
+        except DayNotFound:
+            return {}
+        result: dict[str, dict] = {}
+        if file_day.evaluator_overrides:
+            result["evaluator"] = dict(file_day.evaluator_overrides)
+        if file_day.feedback_overrides:
+            result["feedback"] = dict(file_day.feedback_overrides)
+        return result
+
+    # ── RAG helpers (fire-and-forget) ──────────────────────────────
+
+    async def _store_activity_memory_safe(
+        self,
+        *,
+        user_id: int,
+        session_id: int,
+        attempt_id: int,
+        archetype_id: str,
+        day_id: str,
+        feedback: Any,
+        spec: Any,
+    ) -> None:
+        """Store activity feedback in RAG memory. Never raises."""
+        try:
+            if self._rag_service is None:
+                return
+            await self._rag_service.store_activity_feedback(
+                user_id=user_id,
+                session_id=session_id,
+                attempt_id=attempt_id,
+                archetype_id=archetype_id,
+                archetype_name=spec.name,
+                day_id=day_id,
+                score=feedback.score,
+                mistakes=list(feedback.mistakes or []),
+                did_well=list(feedback.did_well or []),
+                next_tip=feedback.next_tip,
+                summary=feedback.summary,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to store activity memory for attempt=%d",
+                attempt_id, exc_info=True,
+            )
+
+    async def _store_session_memory_safe(
+        self,
+        *,
+        user_id: int,
+        session_id: int,
+        day_id: str,
+        activities_summary: list[dict],
+        points_earned: dict[str, int],
+        mentor_note: str,
+    ) -> None:
+        """Store session summary in RAG memory. Never raises."""
+        try:
+            if self._rag_service is None:
+                return
+            await self._rag_service.store_session_summary(
+                user_id=user_id,
+                session_id=session_id,
+                day_id=day_id,
+                activities_summary=activities_summary,
+                points_earned=points_earned,
+                mentor_note=mentor_note,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to store session memory for session=%d",
+                session_id, exc_info=True,
+            )
+
+    async def _generate_mentor_note_safe(
+        self,
+        *,
+        session: DailySession,
+        activities_breakdown: list[dict],
+    ) -> str | None:
+        """Retrieve RAG context and generate mentor note. Never raises.
+
+        Returns None on any failure — scorecard is still returned.
+        """
+        if self._rag_service is None or self._mentor_generator is None:
+            return None
+
+        try:
+            # Collect today's mistakes from all attempts
+            attempts = self.attempts_repo.list_for_session(session.id)
+            today_mistakes: list[dict] = []
+            for attempt in attempts:
+                if attempt.feedback is not None:
+                    today_mistakes.extend(attempt.feedback.mistakes or [])
+
+            # Retrieve RAG context
+            rag_context = await self._rag_service.retrieve_context_for_feedback(
+                user_id=session.user_id,
+                current_mistakes=today_mistakes,
+                current_day_id=session.day_id,
+            )
+
+            # Collect points earned from activities_breakdown
+            points_earned: dict[str, int] = {}
+            for act in activities_breakdown:
+                for skill, pts in act.get("weighted_points", {}).items():
+                    points_earned[skill] = points_earned.get(skill, 0) + int(pts)
+
+            # Generate mentor note
+            mentor_note = await self._mentor_generator.generate(
+                today_activities=activities_breakdown,
+                today_mistakes=today_mistakes,
+                rag_context=rag_context,
+                points_earned=points_earned,
+            )
+            return mentor_note
+
+        except Exception:
+            logger.warning(
+                "Mentor note generation failed for session=%s",
+                session.session_id, exc_info=True,
+            )
+            return None

@@ -20,8 +20,6 @@ from app.modules.subscriptions.routes import (
     users_router,
 )
 from app.modules.learning_session.router import (
-    dev_rest_router as learning_dev_rest_router,
-    dev_ws_router as learning_dev_ws_router,
     rest_router as learning_rest_router,
     ws_router as learning_ws_router,
 )
@@ -112,6 +110,4 @@ app.include_router(streaks_router, prefix="/api")
 app.include_router(preferences_router, prefix="/api")
 app.include_router(responses_router)
 app.include_router(learning_rest_router, prefix="/api")
-app.include_router(learning_dev_rest_router, prefix="/api")
 app.include_router(learning_ws_router)
-app.include_router(learning_dev_ws_router)

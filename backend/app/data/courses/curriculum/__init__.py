@@ -10,6 +10,6 @@ hydrated structure (week_id, day_id, mandatory_activities,
 suggested_archetypes) that the seeder writes to the database.
 """
 
-from app.data.courses.curriculum_v2.loader import load_weeks
+from app.data.courses.curriculum.loader import load_weeks
 
 __all__ = ["load_weeks"]

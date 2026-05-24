@@ -9,7 +9,6 @@ import type { UserCoursePreferenceRead } from "@/lib/preferences-api";
 import { getApiErrorMessage } from "@/lib/errors";
 import { useTodaySessionPlan, useStartLearningSession } from "@/hooks/useSessionsFlow";
 import { sessionsApi, type DashboardPlanActivity } from "@/lib/sessions-api";
-import { hasScorecardBeenViewed } from "@/lib/daily-session-entry";
 
 interface DailyTaskPanelProps {
   preference: UserCoursePreferenceRead;
@@ -66,10 +65,9 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
   const { data: plan, isLoading, isError, error, refetch } = useTodaySessionPlan();
 
   const completed = plan?.status === "completed";
-  const scorecardViewed = Boolean(
-    plan?.session_id && completed && hasScorecardBeenViewed(plan.session_id),
-  );
-  const showLocked = Boolean(plan && completed && scorecardViewed);
+
+  // Day 7 of any week → next advance crosses into the next week.
+  const isLastDayOfWeek = preference.current_day_in_week >= 7;
 
   const unlockMutation = useMutation({
     mutationFn: sessionsApi.advanceDay,
@@ -80,30 +78,23 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
   });
 
   const handleStart = useCallback(async () => {
-    const allDone = Boolean(
-      plan &&
-        !plan.is_preview &&
-        plan.session_id &&
-        plan.activities.length > 0 &&
-        plan.activities.every((activity) => activity.status === "evaluated"),
-    );
-    if (allDone && plan?.session_id) {
-      router.push(`/sessions/${plan.session_id}/scorecard`);
-      return;
-    }
-
     const week = Number(searchParams.get("week") || preference.current_week || 1);
     const day = Number(searchParams.get("day") || preference.current_day_in_week || 1);
     const result = await startMutation.mutateAsync({ week, day });
     router.push(`/task/chat/${result.session_id}`);
   }, [
-    plan,
     preference.current_day_in_week,
     preference.current_week,
     searchParams,
     startMutation,
     router,
   ]);
+
+  const handleViewResults = useCallback(() => {
+    if (plan?.session_id) {
+      router.push(`/task/chat/${plan.session_id}`);
+    }
+  }, [plan?.session_id, router]);
 
   return (
     <div
@@ -141,17 +132,21 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
         />
       )}
 
-      {!isLoading && !isError && plan && showLocked && (
-        <LockedDayBlock
+      {/* Completed state: always show both "View results" and "Advance" */}
+      {!isLoading && !isError && plan && completed && (
+        <CompletedDayBlock
           week={preference.current_week}
           day={preference.current_day_in_week}
+          isLastDayOfWeek={isLastDayOfWeek}
+          sessionId={plan.session_id}
           isUnlocking={unlockMutation.isPending}
           error={unlockMutation.error}
-          onUnlock={() => unlockMutation.mutate()}
+          onViewResults={handleViewResults}
+          onAdvance={() => unlockMutation.mutate()}
         />
       )}
 
-      {!isLoading && !isError && plan && !showLocked && (
+      {!isLoading && !isError && plan && !completed && (
         <ActiveSessionBlock
           activities={plan.activities}
           topic={plan.topic}
@@ -165,6 +160,7 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
     </div>
   );
 }
+
 
 function PanelHeader({ preference }: { preference: UserCoursePreferenceRead }) {
   return (
@@ -469,97 +465,144 @@ function ActivityRow({
   );
 }
 
-function LockedDayBlock({
+function CompletedDayBlock({
   week,
   day,
+  isLastDayOfWeek,
+  sessionId,
   isUnlocking,
   error,
-  onUnlock,
+  onViewResults,
+  onAdvance,
 }: {
   week: number;
   day: number;
+  isLastDayOfWeek: boolean;
+  sessionId: string | null;
   isUnlocking: boolean;
   error: Error | null;
-  onUnlock: () => void;
+  onViewResults: () => void;
+  onAdvance: () => void;
 }) {
+  const advanceLabel = isLastDayOfWeek ? "Advance to next week" : "Advance to next day";
+
   return (
     <div
       style={{
-        padding: "26px 18px 10px",
-        textAlign: "center",
+        padding: "22px 4px 6px",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: 12,
+        gap: 14,
       }}
     >
-      <span
+      {/* Completion badge */}
+      <div
         style={{
-          width: 54,
-          height: 54,
-          borderRadius: "50%",
           display: "inline-flex",
           alignItems: "center",
-          justifyContent: "center",
-          background: "oklch(20% 0.09 245)",
-          color: "white",
+          gap: 7,
+          padding: "6px 14px",
+          borderRadius: 999,
+          background: "oklch(94% 0.06 155)",
+          border: "1px solid oklch(80% 0.1 155)",
+          fontSize: 12.5,
+          fontWeight: 800,
+          color: "oklch(32% 0.16 155)",
+          letterSpacing: "0.01em",
         }}
       >
-        <LockIcon />
-      </span>
-      <div>
-        <h3
-          style={{
-            margin: "0 0 6px",
-            color: "oklch(20% 0.09 245)",
-            fontSize: 18,
-            fontWeight: 800,
-          }}
-        >
-          Day {week}.{day} complete
-        </h3>
-        <p
-          style={{
-            margin: 0,
-            color: "oklch(45% 0.07 240)",
-            fontSize: 14,
-            lineHeight: 1.6,
-          }}
-        >
-          Ready for tomorrow?
-        </p>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+          <path d="M3.5 8.5l3 3L12.5 5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Day {week}.{day} complete
       </div>
+
+      <p
+        style={{
+          margin: 0,
+          color: "oklch(45% 0.07 240)",
+          fontSize: 13.5,
+          lineHeight: 1.6,
+          textAlign: "center",
+        }}
+      >
+        Great work! Review your results or move on when you&apos;re ready.
+      </p>
+
       {error && (
         <p style={{ margin: 0, color: "oklch(40% 0.15 15)", fontSize: 13 }}>
           {getApiErrorMessage(error as AxiosError)}
         </p>
       )}
-      <button
-        type="button"
-        onClick={onUnlock}
-        disabled={isUnlocking}
-        style={{
-          alignSelf: "stretch",
-          marginTop: 8,
-          padding: "13px 18px",
-          borderRadius: 14,
-          border: "none",
-          background: isUnlocking ? "oklch(68% 0.06 240)" : "#0070C4",
-          color: "white",
-          fontFamily: "inherit",
-          fontSize: 14,
-          fontWeight: 800,
-          cursor: isUnlocking ? "default" : "pointer",
-          boxShadow: isUnlocking ? "none" : "0 6px 18px rgba(0,112,196,0.22)",
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 6,
-        }}
-      >
-        {isUnlocking ? "Unlocking..." : "Unlock next day"}
-        {!isUnlocking && <ArrowIcon />}
-      </button>
+
+      {/* Two-button row */}
+      <div style={{ display: "flex", gap: 10, width: "100%" }}>
+        {/* View results — secondary/outline */}
+        <button
+          type="button"
+          onClick={onViewResults}
+          disabled={!sessionId}
+          style={{
+            flex: 1,
+            padding: "12px 14px",
+            borderRadius: 14,
+            border: "1.5px solid oklch(78% 0.04 240)",
+            background: "white",
+            color: "oklch(25% 0.09 245)",
+            fontFamily: "inherit",
+            fontSize: 13.5,
+            fontWeight: 700,
+            cursor: sessionId ? "pointer" : "default",
+            opacity: sessionId ? 1 : 0.45,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            boxShadow: "0 2px 8px rgba(80,110,180,0.06)",
+            transition: "box-shadow 0.15s, background 0.15s",
+          }}
+          onMouseEnter={(e) => {
+            if (sessionId) (e.currentTarget as HTMLButtonElement).style.background = "oklch(97% 0.02 240)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background = "white";
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M8 3C4.5 3 1.5 8 1.5 8S4.5 13 8 13s6.5-5 6.5-5S11.5 3 8 3Z" stroke="currentColor" strokeWidth="1.5" />
+            <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+          View results
+        </button>
+
+        {/* Advance — primary */}
+        <button
+          type="button"
+          onClick={onAdvance}
+          disabled={isUnlocking}
+          style={{
+            flex: 1,
+            padding: "12px 14px",
+            borderRadius: 14,
+            border: "none",
+            background: isUnlocking ? "oklch(68% 0.06 240)" : "#0070C4",
+            color: "white",
+            fontFamily: "inherit",
+            fontSize: 13.5,
+            fontWeight: 800,
+            cursor: isUnlocking ? "default" : "pointer",
+            boxShadow: isUnlocking ? "none" : "0 6px 18px rgba(0,112,196,0.22)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+          }}
+        >
+          {isUnlocking ? "Advancing..." : advanceLabel}
+          {!isUnlocking && <ArrowIcon />}
+        </button>
+      </div>
     </div>
   );
 }

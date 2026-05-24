@@ -4,6 +4,8 @@ Routes call `build_default_agents()` and pass the trio to `SessionService`.
 The LLM client is instantiated once per request (cheap — it's a wrapper
 around the langchain_openai object). Tests bypass this entirely and inject
 the Stub* agents.
+
+`build_rag_services()` returns the RAG + mentor-note pair for production.
 """
 
 from __future__ import annotations
@@ -33,3 +35,21 @@ def build_default_agents(
         LLMFeedbackGenerator(client),
         LLMTaskGenerator(client),
     )
+
+
+def build_rag_services(
+    *,
+    llm: ILLMClient | None = None,
+):
+    """Return (FeedbackRAGService_class, MentorNoteGenerator) for production.
+
+    The RAG service needs a DB session at construction time, so we return
+    the class + a pre-built mentor generator. The route wires the DB in.
+    """
+    from app.ai.embeddings.embedding_generator import OpenAIEmbeddingGenerator
+    from app.modules.feedback_memory.mentor_note_generator import MentorNoteGenerator
+
+    client = llm or OpenAILLMClient()
+    embedding_gen = OpenAIEmbeddingGenerator()
+    mentor_gen = MentorNoteGenerator(client)
+    return embedding_gen, mentor_gen

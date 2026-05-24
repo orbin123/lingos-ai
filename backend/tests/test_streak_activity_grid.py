@@ -15,7 +15,7 @@ from app.modules.sessions.models import ActivityAttempt, AttemptStatus, DailySes
 from app.modules.streaks.activity_grid import count_evaluated_activities_by_local_date
 from app.modules.streaks.models import DailyActivity, StreakFreezeUsage
 from app.modules.streaks.service import StreakService
-from scripts.seed_curriculum_v2 import seed_archetypes
+from scripts.seed_curriculum import seed_archetypes
 from app.modules.curriculum.models import TaskArchetype
 
 

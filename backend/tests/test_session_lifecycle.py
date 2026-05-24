@@ -49,7 +49,7 @@ from app.modules.sessions.task_generator import GeneratedTask
 from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.modules.skills.models import Skill
 from app.scoring import ARCHETYPE_REGISTRY, CourseLength, SUB_SKILLS
-from scripts.seed_curriculum_v2 import seed_archetypes
+from scripts.seed_curriculum import seed_archetypes
 
 
 @pytest.fixture()

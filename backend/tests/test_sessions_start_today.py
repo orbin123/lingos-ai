@@ -38,7 +38,7 @@ from app.modules.sessions.routes import router as sessions_router
 from app.modules.sessions.service import SessionService
 from app.modules.skills.models import Skill
 from app.scoring import SUB_SKILLS
-from scripts.seed_curriculum_v2 import seed_archetypes
+from scripts.seed_curriculum import seed_archetypes
 
 
 @pytest.fixture()

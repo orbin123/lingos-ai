@@ -1,11 +1,12 @@
-"""Read curriculum days directly from `source_24w.py` (no DB).
+"""Read curriculum days directly from ``source_24w.py``.
 
-Active when `settings.CURRICULUM_SOURCE == "file"`. Lets us iterate on
-chat-session content by editing the source file without running Alembic or
-re-seeding the curriculum tables.
+Provides the bridge between the authored dataclasses in ``source_24w.py``
+and the session services.  When a day is file-authored (non-blank), its
+archetype order, task specs, teacher instructions, and eval/feedback
+overrides take precedence over the DB-seeded curriculum.
 
-Day identity in file mode is `(week_number, day_index)` where `day_index`
-is 0..6 — the tuple position inside `WeekSource.days`.
+Day identity is ``(week_number, day_index)`` where ``day_index``
+is 0..6 — the tuple position inside ``WeekSource.days``.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-from app.data.courses.curriculum_v2.source_24w import (
+from app.data.courses.curriculum.source_24w import (
     WEEKS_24,
     DaySource,
     WeekSource,

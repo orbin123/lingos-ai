@@ -1,15 +1,15 @@
-"""Idempotent seeder for v2 curriculum + archetype tables.
+"""Idempotent seeder for curriculum + archetype tables.
 
 Usage:
-    uv run python -m scripts.seed_curriculum_v2
+    uv run python -m scripts.seed_curriculum
 
 Source of truth:
-  - Curriculum: `app.data.courses.curriculum_v2.load_weeks(...)`
+  - Curriculum: `app.data.courses.curriculum.load_weeks(...)`
   - Archetypes: `app.scoring.ARCHETYPE_REGISTRY`
 
 Safe to re-run. Existing rows are updated in place; missing rows are
 inserted. Rows that exist in the DB but not in the source are left alone
-(use a separate `wipe_curriculum_v2` script if you want a hard reset).
+(use a separate `wipe_curriculum` script if you want a hard reset).
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import logging
 import sys
 from pathlib import Path
 
-# Allow `uv run python scripts/seed_curriculum_v2.py` from anywhere.
+# Allow `uv run python scripts/seed_curriculum.py` from anywhere.
 _BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
@@ -26,7 +26,7 @@ if str(_BACKEND_ROOT) not in sys.path:
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.core.database import SessionLocal  # noqa: E402
-from app.data.courses.curriculum_v2 import load_weeks  # noqa: E402
+from app.data.courses.curriculum import load_weeks  # noqa: E402
 from app.modules.curriculum.models import (  # noqa: E402
     CurriculumDay,
     CurriculumWeek,

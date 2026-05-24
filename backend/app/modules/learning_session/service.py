@@ -32,12 +32,10 @@ from sqlalchemy.orm import Session
 
 from app.ai.agents.planner import PlannerAgent
 from app.ai.agents.teacher import stream_teaching_turn
-from app.core.config import settings
 from app.modules.curriculum.file_source import (
     SCRIPTED_PLAN_KEY,
     build_teacher_instructions as file_build_teacher_instructions,
     get_day_by_id as file_get_day_by_id,
-    get_day as file_get_day,
     split_scripted_plan,
 )
 from app.ai.graphs.nodes import (
@@ -406,6 +404,11 @@ class LearningSessionService:
         # Resume an existing chat envelope if one exists for this DailySession.
         existing = self.session_repo.get_by_daily_session_id(daily.id)
         if existing is not None:
+            # Auto-refresh stale teacher persona for file-authored days.
+            # Sessions created before the file-override was wired may lack
+            # the scripted plan. Silently update from source so the next
+            # teaching turn uses the authored behaviour.
+            self._maybe_refresh_teacher_instructions(existing, daily.day_id)
             return StartSessionResponse(
                 session_id=existing.session_id,
                 daily_session_id=daily.id,
@@ -423,13 +426,10 @@ class LearningSessionService:
         first = attempts[0]
 
         file_persona: tuple[str, str, int, dict | None] | None = None
-        if settings.CURRICULUM_SOURCE == "file":
+        try:
             file_persona = self._persona_from_file(daily.day_id)
-        else:
-            try:
-                file_persona = self._persona_from_file(daily.day_id)
-            except DayNotFound:
-                file_persona = None
+        except DayNotFound:
+            file_persona = None
 
         if file_persona is not None:
             topic_label, skill_name, sub_level, teacher_instructions = (
@@ -523,6 +523,35 @@ class LearningSessionService:
             teacher_instructions,
         )
 
+    def _maybe_refresh_teacher_instructions(
+        self,
+        session: LearningSession,
+        day_id: str,
+    ) -> None:
+        """Refresh teacher_instructions from source if stale.
+
+        A session is considered stale when its ``teacher_instructions``
+        dict is missing the ``SCRIPTED_PLAN_KEY`` but the file-authored
+        source for that day *does* provide an authored behaviour script.
+        In that case, silently overwrite so the next teaching turn
+        streams the authored plan instead of the old planner persona.
+        """
+        current = session.teacher_instructions
+        if isinstance(current, dict) and SCRIPTED_PLAN_KEY in current:
+            return  # already has scripted plan — nothing to refresh
+
+        try:
+            _, _, _, fresh_instructions = self._persona_from_file(day_id)
+        except DayNotFound:
+            return  # not a file-authored day — leave as-is
+
+        if not fresh_instructions or SCRIPTED_PLAN_KEY not in fresh_instructions:
+            return  # file source doesn't have a scripted plan either
+
+        session.teacher_instructions = fresh_instructions
+        self.session_repo.save(session)
+        self.db.commit()
+
     def _activity_type_from_archetype(self, archetype_id: str) -> str:
         """Look up `core_activity` for an archetype without hitting the DB."""
         from app.scoring import get_archetype as scoring_get_archetype
@@ -553,9 +582,6 @@ class LearningSessionService:
             return daily
 
         # No id — find or create today's session for the user.
-        if settings.CURRICULUM_SOURCE == "file":
-            return await self._resolve_daily_session_from_file(user_id=user_id)
-
         pref = PreferenceService(self.db).get(user_id=user_id)
         from app.modules.curriculum.repository import CurriculumWeekRepository
 
@@ -617,48 +643,6 @@ class LearningSessionService:
                 raise
             return existing
 
-    async def _resolve_daily_session_from_file(
-        self, *, user_id: int,
-    ) -> DailySession:
-        """File-mode shortcut: skip UserCoursePreference + CurriculumDay lookups.
-
-        Defaults to week 1, day_index 0. The new sessions flow has its own
-        file-mode branch (`SessionService._start_session_from_file`) that
-        loads the day spec from `source_24w.py`.
-        """
-        file_day = file_get_day(1, 0)
-
-        existing = self.daily_repo.get_in_progress(
-            user_id=user_id, day_id=file_day.day_id,
-        )
-        if existing is not None:
-            return existing
-        existing = self.daily_repo.get_latest_for_day(
-            user_id=user_id,
-            day_id=file_day.day_id,
-            status=SessionStatus.COMPLETED,
-        )
-        if existing is not None:
-            return existing
-
-        v2_service = _make_v2_session_service(self.db)
-        try:
-            return await v2_service.start_session(
-                user_id=user_id,
-                course_length=CourseLength("24w"),
-                tasks_per_day=4,
-                allowed_activities={"read", "write", "listen", "speak"},
-                week_number=1,
-                day_index=0,
-            )
-        except SessionAlreadyOpen:
-            existing = self.daily_repo.get_in_progress(
-                user_id=user_id, day_id=file_day.day_id,
-            )
-            if existing is None:
-                raise
-            return existing
-
     @staticmethod
     def _queue_from_attempts(attempts: list[ActivityAttempt]) -> list[dict[str, Any]]:
         return [
@@ -689,44 +673,40 @@ class LearningSessionService:
             )
 
         # Refresh teacher instructions against current curriculum data so
-        # content edits in source_24w.py (file mode) or curriculum_days
-        # (db mode) take effect on the next teaching turn.
+        # content edits in source_24w.py or curriculum_days take effect on
+        # the next teaching turn.  Try file persona first, fall back to
+        # DB-driven planner.
         try:
             daily = self.db.get(DailySession, session.daily_session_id)
             if daily is not None:
-                if settings.CURRICULUM_SOURCE == "file":
+                teacher_instructions = None
+                try:
                     _, _, _, teacher_instructions = self._persona_from_file(
                         daily.day_id,
                     )
                     session.teacher_instructions = teacher_instructions
-                else:
-                    try:
-                        _, _, _, teacher_instructions = self._persona_from_file(
-                            daily.day_id,
-                        )
-                        session.teacher_instructions = teacher_instructions
-                    except DayNotFound:
-                        teacher_instructions = None
+                except DayNotFound:
+                    teacher_instructions = None
 
-                    day = self.curriculum_day_repo.get_by_day_id(daily.day_id)
-                    if (
-                        teacher_instructions is None
-                        and day is not None
-                        and day.week is not None
-                    ):
-                        task_queue = session.task_queue or []
-                        archetype_id = task_queue[0]["archetype_id"] if task_queue else None
-                        archetype = self.archetype_repo.get(archetype_id) if archetype_id else None
-                        if archetype is not None:
-                            topic_dict = v2_course_topic(day, day.week, archetype)
-                            course_slug = f"{daily.course_length}-course"
-                            plan = await PlannerAgent().generate(
-                                user_id=user_id,
-                                course_slug=course_slug,
-                                topic_entry=topic_dict,
-                                learner_profile=self._profile_context(user_id),
-                            )
-                            session.teacher_instructions = plan.get("teacher_instructions")
+                day = self.curriculum_day_repo.get_by_day_id(daily.day_id)
+                if (
+                    teacher_instructions is None
+                    and day is not None
+                    and day.week is not None
+                ):
+                    task_queue = session.task_queue or []
+                    archetype_id = task_queue[0]["archetype_id"] if task_queue else None
+                    archetype = self.archetype_repo.get(archetype_id) if archetype_id else None
+                    if archetype is not None:
+                        topic_dict = v2_course_topic(day, day.week, archetype)
+                        course_slug = f"{daily.course_length}-course"
+                        plan = await PlannerAgent().generate(
+                            user_id=user_id,
+                            course_slug=course_slug,
+                            topic_entry=topic_dict,
+                            learner_profile=self._profile_context(user_id),
+                        )
+                        session.teacher_instructions = plan.get("teacher_instructions")
         except Exception:
             logger.warning(
                 "Teacher-instructions refresh failed for session_id=%s; keeping existing instructions",

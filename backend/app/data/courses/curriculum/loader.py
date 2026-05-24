@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.data.courses.curriculum_v2.source_24w import WEEKS_24, WeekSource
-from app.data.courses.stretch import stretch_to_48w
+from app.data.courses.curriculum.source_24w import WEEKS_24, WeekSource
+from app.data.courses.curriculum.source_48w import WEEKS_48
 from app.scoring import CourseLength, get_archetype
 
 
@@ -170,4 +170,4 @@ def load_weeks(course_length: CourseLength) -> tuple[WeekRecord, ...]:
     """Return all hydrated WeekRecord rows for `course_length`."""
     if course_length is CourseLength.WEEKS_24:
         return tuple(_hydrate(w, course_length) for w in WEEKS_24)
-    return tuple(_hydrate(w, course_length) for w in stretch_to_48w(WEEKS_24))
+    return tuple(_hydrate(w, course_length) for w in WEEKS_48)

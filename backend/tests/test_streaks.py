@@ -16,7 +16,7 @@ from app.modules.sessions.models import ActivityAttempt, DailySession
 from app.modules.streaks import service as streak_service_module
 from app.modules.streaks.models import DailyActivity, StreakFreezeUsage
 from app.modules.streaks.service import StreakService
-from scripts.seed_curriculum_v2 import seed_archetypes
+from scripts.seed_curriculum import seed_archetypes
 
 
 @pytest.fixture()

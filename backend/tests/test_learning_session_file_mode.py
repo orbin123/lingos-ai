@@ -16,8 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.core.config import settings
-from app.data.courses.curriculum_v2.source_24w import WEEKS_24
+from app.data.courses.curriculum.source_24w import WEEKS_24
 from app.modules.learning_session.service import (
     LearningSessionService,
     _parse_day_id,
@@ -204,34 +203,7 @@ async def test_resume_keeps_next_activity_when_attempt_is_pending(monkeypatch) -
     assert messages[-1].actions == ["Next activity", "Go to dashboard"]
 
 
-@pytest.mark.asyncio
-async def test_file_mode_resolves_completed_daily_session_without_starting_new_one(monkeypatch) -> None:
-    service = LearningSessionService.__new__(LearningSessionService)
-    service.daily_repo = MagicMock()
-
-    completed = MagicMock()
-    completed.status = SessionStatus.COMPLETED
-    service.daily_repo.get_in_progress.return_value = None
-    service.daily_repo.get_latest_for_day.return_value = completed
-
-    make_v2 = MagicMock()
-    monkeypatch.setattr(
-        "app.modules.learning_session.service._make_v2_session_service",
-        make_v2,
-    )
-
-    resolved = await service._resolve_daily_session_from_file(user_id=7)
-
-    assert resolved is completed
-    service.daily_repo.get_latest_for_day.assert_called_once_with(
-        user_id=7,
-        day_id="day_24_01_01",
-        status=SessionStatus.COMPLETED,
-    )
-    make_v2.assert_not_called()
-
-
-# ── Full create_session flow (no DB) ───────────────────────────────
+# ── Full create_session flow (no DB) ───────────────────────────────────────
 
 
 def _fake_attempt(*, archetype_id: str, sequence: int) -> MagicMock:
@@ -253,16 +225,15 @@ def _fake_attempt(*, archetype_id: str, sequence: int) -> MagicMock:
 async def test_create_session_file_mode_skips_planner_and_persists_script(
     monkeypatch,
 ) -> None:
-    """End-to-end coverage of `create_session` in file mode.
+    """End-to-end coverage of ``create_session`` when a file-authored day exists.
 
     Uses mocks instead of a real DB so we can verify two things without
     spinning up Postgres:
-      1. `PlannerAgent.generate` is never awaited.
-      2. The `session_repo.create` call receives a teacher_instructions
-         dict that carries `__scripted_plan` matching W1D1's authored
-         `teacher_agent_behaviour`.
+      1. ``PlannerAgent.generate`` is never awaited.
+      2. The ``session_repo.create`` call receives teacher_instructions
+         that carry ``__scripted_plan`` matching W1D1's authored
+         ``teacher_agent_behaviour``.
     """
-    monkeypatch.setattr(settings, "CURRICULUM_SOURCE", "file")
 
     async def _explode(*args, **kwargs):
         raise AssertionError("PlannerAgent.generate must not be called in file mode")
@@ -323,7 +294,6 @@ async def test_create_session_file_mode_skips_planner_and_persists_script(
 async def test_create_session_db_mode_uses_source_persona_for_authored_w1d1(
     monkeypatch,
 ) -> None:
-    monkeypatch.setattr(settings, "CURRICULUM_SOURCE", "db")
 
     async def _explode(*args, **kwargs):
         raise AssertionError("PlannerAgent.generate must not run for sourced W1D1")

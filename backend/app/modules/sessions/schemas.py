@@ -50,9 +50,9 @@ class ActivityPreferences(BaseModel):
 class SessionStartRequest(BaseModel):
     """Body for `POST /sessions/start`.
 
-    In DB mode (`settings.CURRICULUM_SOURCE == "db"`), `day_id` is required.
-    In file mode, pass `week_number` + `day_index` instead; `day_id` is
-    ignored and `course_length` defaults to "24w".
+    `day_id` is required and identifies the curriculum day to start.
+    For file-authored days, the archetype order and task specs are read
+    from ``source_24w.py`` automatically.
     """
 
     day_id: str | None = Field(
@@ -237,3 +237,4 @@ class SessionScorecardRead(BaseModel):
     completed_at: datetime
     points_applied: bool
     activities: list[ActivityBreakdown] = Field(default_factory=list)
+    mentor_note: str | None = None

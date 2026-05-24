@@ -10,7 +10,7 @@ import pytest
 
 from app.modules.curriculum import file_source
 from app.modules.sessions.exceptions import DayNotFound
-from app.data.courses.curriculum_v2.source_24w import DaySource, WeekSource
+from app.data.courses.curriculum.source_24w import DaySource, WeekSource
 
 
 def test_get_day_returns_populated_w1_d1() -> None:

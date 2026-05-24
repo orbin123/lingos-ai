@@ -76,7 +76,7 @@ export default function SessionShellPage() {
 
   function handleComplete() {
     complete.mutate(undefined, {
-      onSuccess: () => router.push(`/sessions/${sessionId}/scorecard`),
+      onSuccess: () => router.push(`/task/chat/${sessionId}`),
     });
   }
 
