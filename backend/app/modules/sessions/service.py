@@ -533,8 +533,11 @@ class SessionService:
     ) -> tuple[SessionScorecard, ApplyReport]:
         """Aggregate evaluations, persist scorecard, apply points (if first attempt).
 
-        Idempotent: calling `complete` twice returns the existing scorecard
-        with an `ApplyReport(applied=False, reason='already complete')`.
+        Semi-idempotent: calling `complete` twice on an already-COMPLETED session
+        returns the existing scorecard — UNLESS the current attempt evaluations
+        differ from the stored scorecard activities (e.g. after a session restart
+        where scores were re-evaluated). In that case the stale scorecard is
+        deleted and rebuilt so the scorecard always reflects the latest scores.
         """
         now = now or datetime.now(timezone.utc)
         session = self._load_owned(session_id=session_id, user_id=user_id)
@@ -542,17 +545,52 @@ class SessionService:
         if session.status is SessionStatus.ABANDONED:
             raise SessionAbandoned(f"session {session_id!r} was abandoned")
 
+        # Track whether a prior scorecard had already applied points.
+        # Set to True in the COMPLETED rebuild path to prevent double-counting.
+        old_points_applied: bool = False
+
         if session.status is SessionStatus.COMPLETED:
-            # Idempotent: hand back what's already stored.
             existing = self.scorecards_repo.get_for_session(session.id)
             if existing is None:
                 raise RuntimeError(
                     f"session {session_id!r} is COMPLETED but has no scorecard"
                 )
-            return existing, ApplyReport(
-                applied=False, rows_written=0, rows_skipped=0,
-                reason="session already completed",
+
+            # Check whether any attempt evaluation score has changed since the
+            # scorecard was built (happens when session is restarted and the
+            # learner re-submits activities with better scores).
+            current_attempts = self.attempts_repo.list_for_session(session.id)
+            stored_scores: dict[int, float] = {
+                a["attempt_id"]: float(a["raw_score"])
+                for a in (existing.activities or [])
+                if isinstance(a, dict)
+            }
+            scores_changed = False
+            for att in current_attempts:
+                if att.status is not AttemptStatus.EVALUATED or att.evaluation is None:
+                    continue
+                current_raw = float(att.evaluation.raw_score)
+                stored_raw = stored_scores.get(att.id)
+                if stored_raw is None or abs(current_raw - stored_raw) > 0.05:
+                    scores_changed = True
+                    break
+
+            if not scores_changed:
+                return existing, ApplyReport(
+                    applied=False, rows_written=0, rows_skipped=0,
+                    reason="session already completed",
+                )
+
+            # Scores changed — delete stale scorecard and rebuild below.
+            logger.info(
+                "complete_session: scorecard for session %r has stale scores, rebuilding",
+                session_id,
             )
+            old_points_applied = existing.points_applied
+            self.db.delete(existing)
+            self.db.flush()
+            # Re-open the session so it can be completed again.
+            session.status = SessionStatus.IN_PROGRESS
 
         # Build ActivityScore list from every EVALUATED attempt.
         attempts = self.attempts_repo.list_for_session(session.id)
@@ -603,8 +641,18 @@ class SessionService:
         self.scorecards_repo.add(scorecard)
 
         # Flush so apply_session_scorecard sees committed scorecard + session state.
-        report = apply_session_scorecard(self.db, session=session, scorecard=scorecard)
-        scorecard.points_applied = report.applied
+        # If we are rebuilding a scorecard that already had its points applied
+        # (e.g. after a session restart where scores improved), skip re-applying
+        # to avoid double-counting points in SkillPoints.
+        if old_points_applied:
+            report = ApplyReport(
+                applied=False, rows_written=0, rows_skipped=0,
+                reason="rebuilt scorecard — points already applied from first completion",
+            )
+            scorecard.points_applied = True  # preserve applied status
+        else:
+            report = apply_session_scorecard(self.db, session=session, scorecard=scorecard)
+            scorecard.points_applied = report.applied
 
         # Generate mentor note via RAG (additive, never blocks).
         mentor_note = await self._generate_mentor_note_safe(

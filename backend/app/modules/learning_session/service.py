@@ -21,6 +21,7 @@ The flow:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import uuid
@@ -1102,40 +1103,76 @@ class LearningSessionService:
             "sub_skill_breakdown": dict(feedback.sub_skill_breakdown or {}),
         }
 
-        # Emit the scorecard widget.
-        scorecard_payload = {
-            "overall_score": feedback.score,
-            "skill_name": session.skill_name,
-            "topic": session.topic,
-            "rubric_scores": evaluation_dict["rubric_scores"],
-            "weighted_points": evaluation_dict["weighted_points"],
-            "_session": {
-                "current_task_index": int(state.get("current_task_index") or 0),
-                "total_tasks": len(session.task_queue or []) or 1,
-                "sequence": int(sequence),
-            },
-        }
-        yield WSOutgoingMessage(
-            type="ui_event", widget="scorecard", payload=scorecard_payload,
-        )
+        # Check if this is a pronunciation (read-aloud) submission.
+        pronunciation_data = None
+        if evaluation.evaluator_notes:
+            try:
+                parsed_notes = json.loads(evaluation.evaluator_notes)
+                if (
+                    isinstance(parsed_notes, dict)
+                    and parsed_notes.get("task_type") == "speak_read_aloud"
+                    and isinstance(parsed_notes.get("pronunciation"), dict)
+                ):
+                    pronunciation_data = parsed_notes["pronunciation"]
+            except (json.JSONDecodeError, TypeError):
+                pass
 
-        # Emit the feedback card.
-        feedback_widget = normalize_widget_key(
-            str(
-                (attempt.task_content or {}).get("widget")
-                or (attempt.task_content or {}).get("ui_widget")
-                or session.task_type
+        session_meta = {
+            "current_task_index": int(state.get("current_task_index") or 0),
+            "total_tasks": len(session.task_queue or []) or 1,
+            "sequence": int(sequence),
+        }
+
+        if pronunciation_data is not None:
+            # ── Read-aloud: emit a dedicated pronunciation_result widget ──
+            task_content = attempt.task_content or {}
+            reference_text = (
+                task_content.get("text_to_read_aloud")
+                or task_content.get("passage")
                 or ""
             )
-        )
-        feedback_payload = {
-            **feedback_dict,
-            "widget": feedback_widget,
-            "_session": scorecard_payload["_session"],
-        }
-        yield WSOutgoingMessage(
-            type="ui_event", widget="feedback_card", payload=feedback_payload,
-        )
+            pronunciation_payload = {
+                "pronunciation": pronunciation_data,
+                "raw_score": float(evaluation.raw_score),
+                "reference_text": reference_text,
+                "feedback": feedback_dict,
+                "_session": session_meta,
+            }
+            yield WSOutgoingMessage(
+                type="ui_event",
+                widget="pronunciation_result",
+                payload=pronunciation_payload,
+            )
+        else:
+            # ── Normal path: emit generic scorecard + feedback_card ──
+            scorecard_payload = {
+                "overall_score": feedback.score,
+                "skill_name": session.skill_name,
+                "topic": session.topic,
+                "rubric_scores": evaluation_dict["rubric_scores"],
+                "weighted_points": evaluation_dict["weighted_points"],
+                "_session": session_meta,
+            }
+            yield WSOutgoingMessage(
+                type="ui_event", widget="scorecard", payload=scorecard_payload,
+            )
+
+            feedback_widget = normalize_widget_key(
+                str(
+                    (attempt.task_content or {}).get("widget")
+                    or (attempt.task_content or {}).get("ui_widget")
+                    or session.task_type
+                    or ""
+                )
+            )
+            feedback_payload = {
+                **feedback_dict,
+                "widget": feedback_widget,
+                "_session": session_meta,
+            }
+            yield WSOutgoingMessage(
+                type="ui_event", widget="feedback_card", payload=feedback_payload,
+            )
 
         # Stream the conversational feedback summary as a chat message.
         summary_text = feedback.summary or "Good effort."
@@ -1149,8 +1186,9 @@ class LearningSessionService:
         session.feedback = feedback_dict
         session.phase = "feedback"
         messages = list(session.messages or [])
-        messages.append({"role": "ai", "content": "[scorecard delivered]", "type": "ui_event"})
-        messages.append({"role": "ai", "content": "[feedback card delivered]", "type": "ui_event"})
+        messages.append({"role": "ai", "content": "[pronunciation result delivered]" if pronunciation_data else "[scorecard delivered]", "type": "ui_event"})
+        if pronunciation_data is None:
+            messages.append({"role": "ai", "content": "[feedback card delivered]", "type": "ui_event"})
         messages.append({"role": "ai", "content": summary_text, "type": "chat"})
         session.messages = messages
         self.session_repo.save(session)

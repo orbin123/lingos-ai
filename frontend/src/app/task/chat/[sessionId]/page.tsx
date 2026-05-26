@@ -20,7 +20,7 @@ import {
 } from "@/components/task/TaskChatSkeletons";
 import { AppConfirmDialog } from "@/components/ui/AppConfirmDialog";
 import { SessionScorecard as DaySessionScorecard } from "@/components/sessions/SessionScorecard";
-import { type SessionScorecardRead } from "@/lib/sessions-api";
+import { type SessionScorecardRead, type PronunciationResult } from "@/lib/sessions-api";
 import {
   FillBlanksWidget,
   ErrorSpottingWidget,
@@ -85,13 +85,28 @@ interface FeedbackPayload {
   sub_skill_breakdown?: Record<string, number>;
 }
 
+/* ── Pronunciation result payload ─────────────────────────────────────── */
+interface PronunciationResultPayload {
+  pronunciation: PronunciationResult;
+  raw_score: number;
+  reference_text: string;
+  feedback: {
+    score: number;
+    summary?: string;
+    did_well?: string[];
+    mistakes?: Array<{ issue: string; rule?: string | null }>;
+    next_tip?: string | null;
+  };
+}
+
 /* ── Event log ───────────────────────────────────────────────────────── */
 type ChatEvent =
   | { kind: "chat"; role: "ai" | "you"; content: string; actions?: string[]; streamId?: string; streaming?: boolean }
   | { kind: "section"; tone: "intro" | "task" | "score" | "feedback"; label: string }
   | { kind: "task"; payload: AnyTaskPayload; submitted: boolean; answers: Record<string, unknown> }
   | { kind: "scorecard"; payload: ScorecardPayload }
-  | { kind: "feedback"; payload: FeedbackPayload };
+  | { kind: "feedback"; payload: FeedbackPayload }
+  | { kind: "pronunciation"; payload: PronunciationResultPayload };
 
 type WSIncoming =
   | { type: "chat_message"; role?: string; content?: string; actions?: string[] }
@@ -967,6 +982,256 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
   );
 }
 
+function ChatPronunciationCard({ payload }: { payload: PronunciationResultPayload }) {
+  const { pronunciation: p, raw_score, reference_text, feedback } = payload;
+
+  function scoreColor(score: number) {
+    if (score >= 80) return "oklch(48% 0.18 155)";
+    if (score >= 60) return "oklch(60% 0.13 80)";
+    return "oklch(50% 0.15 25)";
+  }
+  function scoreBg(score: number) {
+    if (score >= 80) return "oklch(96% 0.02 155)";
+    if (score >= 60) return "oklch(98% 0.01 80)";
+    return "oklch(98% 0.01 25)";
+  }
+
+  const pct = raw_score <= 10 ? Math.round(raw_score * 10) : Math.round(raw_score);
+  const overallBg =
+    pct >= 80 ? "oklch(48% 0.18 155)" :
+    pct >= 60 ? "oklch(52% 0.18 240)" :
+    pct >= 40 ? "oklch(60% 0.13 80)" :
+               "oklch(58% 0.2 15)";
+
+  const scores = [
+    { label: "Accuracy", score: p.accuracy_score, desc: "Phoneme precision" },
+    { label: "Fluency", score: p.fluency_score, desc: "Pacing \u0026 pauses" },
+    { label: "Completeness", score: p.completeness_score, desc: "Words spoken" },
+    ...(p.prosody_score != null && p.prosody_score > 0
+      ? [{ label: "Prosody", score: p.prosody_score, desc: "Stress \u0026 rhythm" }]
+      : []),
+  ];
+
+  return (
+    <div
+      style={{
+        borderRadius: 22,
+        background: "rgba(255,255,255,0.92)",
+        backdropFilter: "blur(18px)",
+        WebkitBackdropFilter: "blur(18px)",
+        border: "1.5px solid rgba(255,255,255,0.92)",
+        boxShadow: "0 8px 32px rgba(80,110,180,0.13)",
+        overflow: "hidden",
+        animation: "fadeIn 0.4s ease both",
+        marginBottom: 16,
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          padding: "20px 22px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          borderBottom: "1px solid oklch(92% 0.01 245)",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 17, fontWeight: 800, color: "oklch(20% 0.09 245)", letterSpacing: "-0.01em" }}>
+            Pronunciation Assessment
+          </div>
+          <div style={{ fontSize: 13, color: "oklch(45% 0.07 240)", marginTop: 3 }}>
+            {feedback.summary || "Here is your detailed pronunciation feedback."}
+          </div>
+        </div>
+        <div
+          style={{
+            background: overallBg,
+            color: "white",
+            borderRadius: 10,
+            padding: "10px 16px",
+            fontWeight: 800,
+            fontSize: 20,
+            minWidth: 72,
+            textAlign: "center",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.08)",
+            lineHeight: 1,
+          }}
+        >
+          {pct}<span style={{ fontSize: 13, opacity: 0.85 }}>%</span>
+        </div>
+      </div>
+
+      {/* Score breakdown bars */}
+      <div style={{ padding: "16px 22px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
+        {scores.map((s) => (
+          <div
+            key={s.label}
+            style={{
+              background: scoreBg(s.score),
+              border: "1px solid oklch(93% 0.01 245)",
+              padding: "12px 14px",
+              borderRadius: 12,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "oklch(20% 0.09 245)" }}>{s.label}</span>
+              <span style={{ fontSize: 14, fontWeight: 800, color: scoreColor(s.score) }}>{s.score.toFixed(0)}%</span>
+            </div>
+            <div style={{ width: "100%", height: 6, background: "oklch(93% 0.01 245)", borderRadius: 999, overflow: "hidden" }}>
+              <div style={{ width: `${s.score}%`, height: "100%", background: scoreColor(s.score), borderRadius: 999, transition: "width 1s ease" }} />
+            </div>
+            <div style={{ fontSize: 11, color: "oklch(45% 0.07 240)", marginTop: 5 }}>{s.desc}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Word-level breakdown */}
+      <div style={{ padding: "4px 22px 16px" }}>
+        <div style={{ fontSize: 11.5, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, color: "oklch(50% 0.05 240)", marginBottom: 8 }}>
+          How you read it
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "8px 5px",
+            lineHeight: 1.8,
+            fontSize: 15,
+            padding: "14px 16px",
+            background: "oklch(99% 0.01 245)",
+            border: "1px solid oklch(93% 0.01 245)",
+            borderRadius: 12,
+          }}
+        >
+          {p.words.map((w, i) => {
+            let color = "oklch(48% 0.18 155)";
+            let bg = "transparent";
+            let textDecoration = "none";
+            let fontWeight = 500;
+
+            if (w.error_type === "omission") {
+              color = "oklch(60% 0.1 20)";
+              textDecoration = "line-through";
+              fontWeight = 400;
+            } else if (w.error_type === "insertion") {
+              color = "oklch(50% 0.15 45)";
+              bg = "oklch(96% 0.05 45)";
+              fontWeight = 700;
+            } else if (w.error_type === "mispronunciation") {
+              color = "oklch(50% 0.15 25)";
+              bg = "oklch(96% 0.05 25)";
+              fontWeight = 700;
+            } else if (w.accuracy_score < 80) {
+              color = "oklch(60% 0.13 80)";
+              fontWeight = 600;
+            }
+
+            return (
+              <span
+                key={i}
+                title={`Accuracy: ${w.accuracy_score}%${w.error_type && w.error_type !== "none" ? ` (${w.error_type})` : ""}`}
+                style={{
+                  color,
+                  backgroundColor: bg,
+                  textDecoration,
+                  fontWeight,
+                  padding: bg !== "transparent" ? "2px 6px" : "0 2px",
+                  borderRadius: 4,
+                  cursor: "help",
+                }}
+              >
+                {w.word}
+              </span>
+            );
+          })}
+        </div>
+
+        {/* Legend */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 16px", fontSize: 11.5, color: "oklch(45% 0.07 240)", marginTop: 8, paddingLeft: 2 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: "oklch(48% 0.18 155)" }} />
+            <span>Good (\u226580%)</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: "oklch(60% 0.13 80)" }} />
+            <span>Needs work</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 9, height: 9, borderRadius: "50%", background: "oklch(50% 0.15 25)" }} />
+            <span>Mispronounced</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ textDecoration: "line-through", color: "oklch(60% 0.1 20)", fontWeight: 700, fontSize: 12 }}>Aa</span>
+            <span>Omitted</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Reference passage */}
+      {reference_text && (
+        <div style={{ padding: "0 22px 16px" }}>
+          <div style={{ fontSize: 11.5, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, color: "oklch(50% 0.05 240)", marginBottom: 8 }}>
+            Model passage
+          </div>
+          <div
+            style={{
+              padding: "14px 16px",
+              background: "oklch(96% 0.02 245)",
+              borderRadius: 12,
+              fontSize: 14,
+              lineHeight: 1.65,
+              color: "oklch(20% 0.09 245)",
+              borderLeft: "4px solid oklch(62% 0.16 240)",
+            }}
+          >
+            {reference_text}
+          </div>
+        </div>
+      )}
+
+      {/* Coaching tips from LLM feedback */}
+      {(feedback.did_well?.length || feedback.mistakes?.length || feedback.next_tip) && (
+        <div style={{ padding: "0 22px 20px", display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid oklch(92% 0.01 245)", paddingTop: 16 }}>
+          <div style={{ fontSize: 11.5, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, color: "oklch(50% 0.05 240)", marginBottom: 2 }}>
+            Coach&apos;s tips
+          </div>
+
+          {feedback.did_well && feedback.did_well.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: "oklch(48% 0.18 155)", marginBottom: 4 }}>What you did well</div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6, color: "oklch(20% 0.09 245)" }}>
+                {feedback.did_well.map((item, idx) => (
+                  <li key={idx} style={{ marginBottom: 2 }}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {feedback.mistakes && feedback.mistakes.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: "oklch(50% 0.15 25)", marginBottom: 4 }}>Areas to improve</div>
+              {feedback.mistakes.map((m, idx) => (
+                <div key={idx} style={{ background: "oklch(98% 0.01 25)", padding: "8px 12px", borderRadius: 8, borderLeft: "3px solid oklch(65% 0.15 25)", marginBottom: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "oklch(20% 0.09 245)" }}>{m.issue}</div>
+                  {m.rule && <div style={{ fontSize: 12, color: "oklch(45% 0.07 240)", marginTop: 2 }}>{m.rule}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {feedback.next_tip && (
+            <div style={{ background: "oklch(96% 0.03 245)", padding: "10px 14px", borderRadius: 8, fontSize: 13 }}>
+              <span style={{ fontWeight: 700, color: "oklch(52% 0.18 240)" }}>Next tip: </span>
+              <span style={{ color: "oklch(20% 0.09 245)" }}>{feedback.next_tip}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const MAX_RECORD_MS = 60_000;
 
 function StopGlyph() {
@@ -1346,7 +1611,7 @@ export default function ChatSessionPage() {
       if (!cancelled) setDaySessionScorecardError(null);
     });
     api
-      .get<SessionScorecardRead>(`/api/sessions/${sessionId}/scorecard`)
+      .get<SessionScorecardRead>(`/api/learning/sessions/${sessionId}/scorecard`)
       .then((r) => {
         if (cancelled) return;
         setDaySessionScorecard(r.data);
@@ -1375,7 +1640,7 @@ export default function ChatSessionPage() {
 
     let cancelled = false;
     api
-      .get<SessionScorecardRead>(`/api/sessions/${sessionId}/scorecard`)
+      .get<SessionScorecardRead>(`/api/learning/sessions/${sessionId}/scorecard`)
       .then((r) => {
         if (cancelled) return;
         setDaySessionScorecard(r.data);
@@ -1582,6 +1847,17 @@ export default function ChatSessionPage() {
           { kind: "task", payload, submitted: false, answers: {} },
         ]);
         setPhase("practice");
+        return;
+      }
+      if (msg.widget === "pronunciation_result") {
+        setLoadingType(null);
+        const payload = msg.payload as unknown as PronunciationResultPayload;
+        setEvents((prev) => [
+          ...prev,
+          { kind: "section", tone: "score", label: "Pronunciation assessment" },
+          { kind: "pronunciation", payload },
+        ]);
+        setPhase("submitted");
         return;
       }
       if (msg.widget === "scorecard") {
@@ -1819,7 +2095,7 @@ export default function ChatSessionPage() {
   const hasActiveAiStream = events.some(
     (evt) => evt.kind === "chat" && evt.role === "ai" && evt.streaming,
   );
-  const hasFeedback = events.some((evt) => evt.kind === "feedback");
+  const hasFeedback = events.some((evt) => evt.kind === "feedback" || evt.kind === "pronunciation");
   const visibleLoadingType: TaskChatLoadingType =
     loadingType === "teacher_loading" && hasActiveAiStream
       ? null
@@ -1966,6 +2242,9 @@ export default function ChatSessionPage() {
             }
             if (evt.kind === "feedback") {
               return <FeedbackCard key={i} payload={evt.payload} />;
+            }
+            if (evt.kind === "pronunciation") {
+              return <ChatPronunciationCard key={i} payload={evt.payload} />;
             }
             return null;
           })}

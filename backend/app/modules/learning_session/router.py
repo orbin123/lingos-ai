@@ -194,14 +194,40 @@ async def get_scorecard_for_chat_session(
         raise HTTPException(status_code=404, detail="daily session not found")
 
     service = _make_session_service(db)
+
+    # Guard: only try to complete (or rebuild) when all attempts are evaluated
+    # OR when the session is already COMPLETED (for stale-scorecard rebuild).
+    # Avoids creating a partial scorecard for an in-progress session.
+    from app.modules.sessions.models import AttemptStatus as _AttemptStatus
+    from app.modules.sessions.models import SessionStatus as _SessionStatus
+    from app.modules.sessions.repository import ActivityAttemptRepository as _AttRepo
+    _all_evaluated = False
+    if daily.status == _SessionStatus.COMPLETED:
+        _all_evaluated = True
+    else:
+        _attempts = _AttRepo(db).list_for_session(daily.id)
+        _all_evaluated = bool(_attempts) and all(
+            a.status is _AttemptStatus.EVALUATED for a in _attempts
+        )
+
+    if _all_evaluated:
+        try:
+            # complete_session is now semi-idempotent: it detects when activity
+            # scores have changed since the stored scorecard was built and
+            # rebuilds the scorecard automatically.  This handles the common
+            # case where the first attempt had a 0.0 speak score (e.g. transient
+            # Azure API failure) and the learner re-ran the session to get a
+            # real pronunciation score.
+            await service.complete_session(
+                session_id=daily.session_id, user_id=current_user.id,
+            )
+        except Exception:  # noqa: BLE001
+            # Unexpected error — fall through and return whatever scorecard exists.
+            pass
+
     scorecard = service.get_scorecard(
         session_id=daily.session_id, user_id=current_user.id,
     )
-    if scorecard is None:
-        await LearningSessionService(db)._auto_complete_daily_if_ready(chat)
-        scorecard = service.get_scorecard(
-            session_id=daily.session_id, user_id=current_user.id,
-        )
     if scorecard is None:
         raise HTTPException(
             status_code=404,

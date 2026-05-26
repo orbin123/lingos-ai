@@ -321,12 +321,36 @@ class LLMEvaluator:
                     rubric_scores=rubric_scores,
                     evaluator_notes=notes,
                 )
+        elif archetype.archetype_id == "SPEAK_READ_ALOUD":
+            # Read-aloud tasks should always include pronunciation data from the
+            # Azure Assessment API.  If it is missing (e.g. API timeout on the
+            # frontend, or the learner re-submitted without re-recording), log a
+            # warning and fall through to the transcript-based LLM path rather
+            # than returning 0.0 — a hard zero would corrupt the session
+            # scorecard the first time and then be frozen by the idempotency
+            # guard.
+            logger.warning(
+                "SPEAK_READ_ALOUD submission is missing 'pronunciation' key; "
+                "falling through to transcript-based evaluator. "
+                "archetype=%s",
+                archetype.archetype_id,
+            )
 
         if not has_any_transcript(user_response):
+            # For read-aloud tasks use a neutral fallback instead of 0.0 so
+            # that a transient Azure failure on the frontend does not permanently
+            # corrupt the scorecard (which would be frozen by the idempotency
+            # guard in complete_session).
+            fallback_score = 5.0 if archetype.archetype_id == "SPEAK_READ_ALOUD" else 0.0
+            fallback_notes = (
+                "Pronunciation API score unavailable; neutral fallback applied."
+                if archetype.archetype_id == "SPEAK_READ_ALOUD"
+                else "No speech transcript was submitted."
+            )
             return EvaluationResult(
-                raw_score=0.0,
-                rubric_scores={r: 0.0 for r in archetype.rubric},
-                evaluator_notes="No speech transcript was submitted.",
+                raw_score=fallback_score,
+                rubric_scores={r: fallback_score for r in archetype.rubric},
+                evaluator_notes=fallback_notes,
             )
 
         speaking_items = build_speaking_eval_items(

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { tasksApi } from "@/lib/tasks-api";
 import { sessionsApi, type PronunciationResult } from "@/lib/sessions-api";
+import { blobToWav } from "@/lib/audio-utils";
 import type { SessionWidgetProps } from "./types";
 import { TaskHeader, I } from "../../task/task-widgets/shared";
 import { formatDuration, resolveAudioUrl } from "../../task/task-widgets/types";
@@ -227,7 +228,8 @@ export function SessionSpeakRecordWidget({ taskContent, disabled, onSubmit }: Se
 
           if (mode === "read") {
             const refText = payload.text_to_read_aloud || payload.passage || "Empty";
-            const pronunResult = await sessionsApi.scorePronunciation(blob, refText);
+            const wavBlob = await blobToWav(blob);
+            const pronunResult = await sessionsApi.scorePronunciation(wavBlob, refText);
             setPronunciation(pronunResult);
             transcript = pronunResult.words.map(w => w.word).join(" ");
             audioUrl = ""; // No URL needed for simple read aloud pronunciation score

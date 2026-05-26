@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { tasksApi } from "@/lib/tasks-api";
+import { sessionsApi, type PronunciationResult } from "@/lib/sessions-api";
+import { blobToWav } from "@/lib/audio-utils";
 import { TaskHeader, I } from "./shared";
 import { formatDuration, resolveAudioUrl } from "./types";
 import type { SpeakAndRecordPayload, SpeakRoleplayTurn, WidgetProps } from "./types";
@@ -64,6 +66,7 @@ function buildSubmissionPayload(
   items: SpeakItem[],
   next: Record<string, Recording>,
   startedAt: number,
+  pronunciation?: PronunciationResult | null,
 ): Record<string, unknown> {
   return {
     recordings: items
@@ -78,6 +81,7 @@ function buildSubmissionPayload(
         transcript: rec.transcript,
       })),
     time_spent_seconds: Math.round((nowMs() - startedAt) / 1000),
+    ...(pronunciation ? { pronunciation } : {}),
   };
 }
 
@@ -149,6 +153,7 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
   const recordingStartedAtRef = useRef<number>(0);
 
   const [recordings, setRecordings] = useState<Record<string, Recording>>({});
+  const [pronunciation, setPronunciation] = useState<PronunciationResult | null>(null);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -173,18 +178,20 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
     };
   }, []);
 
-  const publish = (next: Record<string, Recording>) => {
+  const publishRef = useRef<PronunciationResult | null>(null);
+  const publish = (next: Record<string, Recording>, pronun?: PronunciationResult | null) => {
     const startedAt = startedAtRef.current ?? nowMs();
     startedAtRef.current = startedAt;
-    setAnswers(buildSubmissionPayload(items, next, startedAt));
+    if (pronun !== undefined) publishRef.current = pronun;
+    setAnswers(buildSubmissionPayload(items, next, startedAt, publishRef.current));
   };
 
   const handleSubmit = () => {
     const startedAt = startedAtRef.current ?? nowMs();
     startedAtRef.current = startedAt;
-    const payload = buildSubmissionPayload(items, recordings, startedAt);
-    setAnswers(payload);
-    onSubmit(payload);
+    const finalPayload = buildSubmissionPayload(items, recordings, startedAt, pronunciation);
+    setAnswers(finalPayload);
+    onSubmit(finalPayload);
   };
 
   const stopRecording = () => {
@@ -223,8 +230,26 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
         const blob = new Blob(chunksRef.current, { type: usedMime });
         const ext = extensionForMime(usedMime);
         try {
-          const result = await tasksApi.transcribeAudio(blob, `speak-${itemId}${ext}`);
           const item = items.find((it) => it.id === itemId);
+
+          let transcript = "";
+          let audioUrl = "";
+          let pronunResult: PronunciationResult | null = null;
+
+          if (mode === "read") {
+            // Read-aloud: convert to WAV (Azure rejects WebM) then call pronunciation assessment
+            const refText = payload.text_to_read_aloud || payload.passage || "Empty";
+            const wavBlob = await blobToWav(blob);
+            pronunResult = await sessionsApi.scorePronunciation(wavBlob, refText);
+            setPronunciation(pronunResult);
+            transcript = pronunResult.words.map(w => w.word).join(" ");
+          } else {
+            // All other modes: Whisper transcription
+            const result = await tasksApi.transcribeAudio(blob, `speak-${itemId}${ext}`);
+            transcript = result.transcript;
+            audioUrl = result.audio_url;
+          }
+
           let nextRecordings: Record<string, Recording> | null = null;
           setRecordings((prev) => {
             const next: Record<string, Recording> = {
@@ -233,8 +258,8 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
                 ...(item?.kind === "turn"
                   ? { turn_id: itemId }
                   : { item_id: itemId }),
-                audio_blob_url: result.audio_url,
-                transcript: result.transcript,
+                audio_blob_url: audioUrl,
+                transcript: transcript,
                 duration_seconds: duration,
                 attempt_number: (prev[itemId]?.attempt_number ?? 0) + 1,
               },
@@ -243,10 +268,14 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
             return next;
           });
           if (nextRecordings) {
-            publish(nextRecordings);
+            publish(nextRecordings, pronunResult);
           }
         } catch {
-          setError("Transcription failed. Please record that prompt again.");
+          setError(
+            mode === "read"
+              ? "Pronunciation scoring failed. Please record again."
+              : "Transcription failed. Please record that prompt again.",
+          );
         } finally {
           setUploadingItemId(null);
         }
@@ -505,7 +534,7 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
                     {isActive
                       ? `Recording ${formatDuration(elapsed)} / ${formatDuration(cap)}`
                       : isUploading
-                      ? "Transcribing…"
+                      ? (mode === "read" ? "Scoring pronunciation…" : "Transcribing…")
                       : rec
                       ? `Recorded ${rec.duration_seconds}s · attempt ${attemptsUsed}/3`
                       : prepRemaining > 0
