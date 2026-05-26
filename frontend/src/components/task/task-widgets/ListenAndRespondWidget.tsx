@@ -5,8 +5,10 @@ import { TaskHeader, I } from "./shared";
 import { formatDuration, resolveAudioUrl } from "./types";
 import {
   analyticsFromListenAnswers,
+  blanksFromListenAnswers,
+  countCorrectListeningBlanks,
   countCorrectListeningMCQ,
-  isPlayableListeningMCQ,
+  isPlayableListeningTask,
   normalizeListenAndRespondPayload,
   openTextFromListenAnswers,
   selectionsFromListenAnswers,
@@ -14,6 +16,7 @@ import {
   type ListenAndRespondAnswers,
 } from "./listenAndRespondNormalize";
 import type {
+  BlankItem,
   ListenAndRespondPayload,
   MCQItem,
   OpenTextItem,
@@ -24,6 +27,14 @@ type Props = WidgetProps<ListenAndRespondPayload>;
 
 function nowMs(): number {
   return Date.now();
+}
+
+function blankKey(blank: BlankItem): string {
+  return blank.item_id || blank.blank_id || blank.sentence_with_blank;
+}
+
+function isBlankCorrect(blank: BlankItem, value: string): boolean {
+  return value.trim().toLowerCase() === blank.correct_answer.trim().toLowerCase();
 }
 
 function agentDebugLog(message: string, data: Record<string, unknown>, hypothesisId: string) {
@@ -71,19 +82,23 @@ export function ListenAndRespondWidget({ payload: rawPayload, answers, setAnswer
     !!payload.audio_script?.trim();
 
   const innerWidget = payload.inner_widget;
-  const items: Array<MCQItem | OpenTextItem> = payload.items ?? [];
+  const items: Array<MCQItem | OpenTextItem | BlankItem> = payload.items ?? [];
+  const blankItems = innerWidget === "fill_in_blanks"
+    ? ((payload.items ?? payload.blanks ?? []) as BlankItem[])
+    : [];
   const mcqItems = innerWidget === "mcq" ? (items as MCQItem[]) : [];
   const openTextItems = innerWidget === "open_text" ? (items as OpenTextItem[]) : [];
-  const playableMCQ =
-    isPlayableListeningMCQ(payload) &&
+  const playableTask =
+    isPlayableListeningTask(payload) &&
     !audioLoadFailed &&
     (!!audioUrl || canUseBrowserTTS);
-  const taskBlocked = !playableMCQ;
+  const taskBlocked = !playableTask;
   const blockReason = (() => {
-    if (innerWidget !== "mcq") return "This listening task is not configured as a multiple-choice activity.";
     if (!payload.audio_url && !canUseBrowserTTS) return "Audio could not be prepared for this listening task.";
     if (audioLoadFailed) return "Audio could not load. Please restart the activity or try again later.";
-    if (mcqItems.length === 0) return "No multiple-choice questions were provided for this listening task.";
+    if (innerWidget === "mcq" && mcqItems.length === 0) return "No multiple-choice questions were provided for this listening task.";
+    if (innerWidget === "fill_in_blanks" && blankItems.length === 0) return "No blanks were provided for this listening task.";
+    if (innerWidget !== "mcq" && innerWidget !== "fill_in_blanks" && innerWidget !== "open_text" && innerWidget !== "speak_and_record") return "This listening task is not configured correctly.";
     return "";
   })();
 
@@ -99,21 +114,25 @@ export function ListenAndRespondWidget({ payload: rawPayload, answers, setAnswer
         audio_script_len: payload.audio_script?.length ?? 0,
         inner_widget: innerWidget,
         items_len: mcqItems.length,
+        blanks_len: blankItems.length,
         audio_load_failed: audioLoadFailed,
-        playable_mcq: playableMCQ,
+        playable_task: playableTask,
         task_blocked: taskBlocked,
         block_reason: blockReason,
         tts_error: payload.tts_error,
       },
       "H2,H3,H4",
     );
-  }, [rawPayload, payload, audioUrl, canUseBrowserTTS, innerWidget, mcqItems.length, audioLoadFailed, playableMCQ, taskBlocked, blockReason]);
+  }, [rawPayload, payload, audioUrl, canUseBrowserTTS, innerWidget, mcqItems.length, blankItems.length, audioLoadFailed, playableTask, taskBlocked, blockReason]);
 
   const [mcqSelections, setMcqSelections] = useState<Record<string, number>>(
     () => selectionsFromListenAnswers(answers),
   );
   const [openTextValues, setOpenTextValues] = useState<Record<string, string>>(
     () => openTextFromListenAnswers(answers),
+  );
+  const [blankValues, setBlankValues] = useState<Record<string, string>>(
+    () => blanksFromListenAnswers(answers),
   );
 
   const startedAt = () => {
@@ -127,11 +146,13 @@ export function ListenAndRespondWidget({ payload: rawPayload, answers, setAnswer
     overrides: Partial<{
       mcq: Record<string, number>;
       openText: Record<string, string>;
+      blanks: Record<string, string>;
       analytics: ListenAnalytics;
     }> = {},
   ) => {
     const mcq = overrides.mcq ?? mcqSelections;
     const ot = overrides.openText ?? openTextValues;
+    const blankMap = overrides.blanks ?? blankValues;
     const analytics: ListenAnalytics = overrides.analytics ?? {
       play_count: playCount,
       total_listen_seconds: Math.round(totalListenSeconds),
@@ -157,6 +178,16 @@ export function ListenAndRespondWidget({ payload: rawPayload, answers, setAnswer
           .map((it) => ({
             item_id: it.item_id,
             user_answer: ot[it.item_id],
+          })),
+      };
+    } else if (innerWidget === "fill_in_blanks") {
+      innerResponse = {
+        widget: "fill_in_blanks",
+        answers: blankItems
+          .filter((it) => (blankMap[blankKey(it)] ?? "").trim().length > 0)
+          .map((it) => ({
+            item_id: blankKey(it),
+            user_answer: blankMap[blankKey(it)],
           })),
       };
     } else {
@@ -273,6 +304,14 @@ export function ListenAndRespondWidget({ payload: rawPayload, answers, setAnswer
     publish({ openText: next });
   };
 
+  const setBlankValue = (blank: BlankItem, value: string) => {
+    if (submitted) return;
+    const key = blankKey(blank);
+    const next = { ...blankValues, [key]: value };
+    setBlankValues(next);
+    publish({ blanks: next });
+  };
+
   const toggleTranscript = () => {
     const nextTranscriptOpen = !transcriptOpen;
     setTranscriptOpen(nextTranscriptOpen);
@@ -298,17 +337,26 @@ export function ListenAndRespondWidget({ payload: rawPayload, answers, setAnswer
         openTextItems.every((it) => (openTextValues[it.item_id] ?? "").trim().length >= 5)
       );
     }
+    if (innerWidget === "fill_in_blanks") {
+      return (
+        blankItems.length > 0 &&
+        blankItems.every((it) => (blankValues[blankKey(it)] ?? "").trim().length > 0)
+      );
+    }
     return true;
   })();
 
   const questionsUnlocked = submitted || unlocked;
   const canSubmit = !submitted && questionsUnlocked && allInnerAnswered;
-  const canSubmitListening = canSubmit && playableMCQ && hasPlayedFull;
+  const canSubmitListening = canSubmit && playableTask && hasPlayedFull;
   const correctCount = innerWidget === "mcq"
     ? countCorrectListeningMCQ(mcqItems, mcqSelections)
+    : innerWidget === "fill_in_blanks"
+      ? countCorrectListeningBlanks(blankItems, blankValues)
     : 0;
-  const resultPct = mcqItems.length > 0
-    ? Math.round((correctCount / mcqItems.length) * 100)
+  const resultTotal = innerWidget === "fill_in_blanks" ? blankItems.length : mcqItems.length;
+  const resultPct = resultTotal > 0
+    ? Math.round((correctCount / resultTotal) * 100)
     : 0;
 
   useEffect(() => {
@@ -599,6 +647,126 @@ export function ListenAndRespondWidget({ payload: rawPayload, answers, setAnswer
         </div>
       )}
 
+      {questionsUnlocked && innerWidget === "fill_in_blanks" && (
+        <div>
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              color: "var(--tw-ink-muted)",
+              marginBottom: 8,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            {I.ear} Inner task · Fill in the blanks ({blankItems.length} blanks)
+          </div>
+          <div className="tw-passage">
+            {payload.passage_title && (
+              <div className="tw-passage-label">{payload.passage_title}</div>
+            )}
+            {payload.passage && payload.passage.includes("___") ? (
+              payload.passage.split("___").map((part, index) => {
+                const blank = blankItems[index];
+                const value = blank ? blankValues[blankKey(blank)] ?? "" : "";
+                const correct = blank ? isBlankCorrect(blank, value) : false;
+                return (
+                  <span key={`listen-blank-part-${index}`}>
+                    {part}
+                    {blank && (
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          margin: "0 4px",
+                          verticalAlign: "baseline",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {!submitted ? (
+                          <input
+                            aria-label={`Blank ${index + 1}`}
+                            value={value}
+                            onChange={(e) => setBlankValue(blank, e.target.value)}
+                            placeholder="answer"
+                            className="tw-blank-input"
+                            style={{
+                              width: "clamp(88px, 18vw, 150px)",
+                              textAlign: "center",
+                            }}
+                          />
+                        ) : (
+                          <>
+                            <span
+                              style={{
+                                padding: "3px 10px",
+                                borderRadius: 6,
+                                background: correct ? "#dcfce7" : "#fee2e2",
+                                color: correct ? "#16a34a" : "#dc2626",
+                                fontWeight: 700,
+                                fontSize: 14,
+                                textDecoration: correct ? "none" : "line-through",
+                              }}
+                            >
+                              {value || "—"}
+                            </span>
+                            {!correct && (
+                              <span
+                                style={{
+                                  padding: "3px 10px",
+                                  borderRadius: 6,
+                                  background: "#dcfce7",
+                                  color: "#16a34a",
+                                  fontWeight: 700,
+                                  fontSize: 14,
+                                }}
+                              >
+                                {blank.correct_answer}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </span>
+                );
+              })
+            ) : (
+              blankItems.map((blank, index) => {
+                const value = blankValues[blankKey(blank)] ?? "";
+                const sentenceParts = blank.sentence_with_blank.split("___");
+                return (
+                  <div key={blankKey(blank)} style={{ marginBottom: 8 }}>
+                    <span style={{ fontWeight: 700, marginRight: 6, color: "var(--tw-primary)" }}>
+                      {index + 1}.
+                    </span>
+                    {sentenceParts[0]}
+                    <input
+                      aria-label={`Blank ${index + 1}`}
+                      value={value}
+                      onChange={(e) => setBlankValue(blank, e.target.value)}
+                      disabled={submitted}
+                      placeholder="answer"
+                      className="tw-blank-input"
+                      style={{
+                        width: "clamp(88px, 18vw, 150px)",
+                        textAlign: "center",
+                        margin: "0 4px",
+                      }}
+                    />
+                    {sentenceParts[1] ?? ""}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
       {questionsUnlocked && innerWidget === "speak_and_record" && (
         <div className="tw-card" style={{ borderStyle: "dashed" }}>
           <div className="tw-rule-label">Shadowing exercise</div>
@@ -613,15 +781,15 @@ export function ListenAndRespondWidget({ payload: rawPayload, answers, setAnswer
         </div>
       )}
 
-      {submitted && innerWidget === "mcq" && mcqItems.length > 0 && (
+      {submitted && (innerWidget === "mcq" || innerWidget === "fill_in_blanks") && resultTotal > 0 && (
         <div
-          className={`tw-result-banner ${correctCount === mcqItems.length ? "good" : "mid"}`}
+          className={`tw-result-banner ${correctCount === resultTotal ? "good" : "mid"}`}
           style={{ marginTop: 14 }}
         >
           <div className="tw-result-icon">{I.spark}</div>
           <div className="tw-result-text">
             <div className="tw-result-headline">
-              {correctCount} of {mcqItems.length} answers correct
+              {correctCount} of {resultTotal} answers correct
             </div>
             <div className="tw-result-sub">Review the explanations above.</div>
           </div>

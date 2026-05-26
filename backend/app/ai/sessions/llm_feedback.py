@@ -17,6 +17,8 @@ from app.ai.llm.exceptions import LLMError
 from app.ai.llm.interface import ILLMClient
 from app.ai.sessions.prompts import (
     build_feedback_user_prompt,
+    compute_error_spotting_wrong_items,
+    compute_listen_cloze_wrong_items,
     compute_mcq_wrong_items,
     compute_wrong_items,
     feedback_system_prompt,
@@ -36,7 +38,7 @@ logger = logging.getLogger(__name__)
 # per-item correct_answer string fields — the LLM must not re-derive which
 # items were wrong. MCQ and others use different fields (correct_index) so
 # they are not included here.
-_DETERMINISTIC_WIDGET_KEYS = {"fill_in_blanks"}
+_DETERMINISTIC_WIDGET_KEYS = {"fill_in_blanks", "error_spotting"}
 _MCQ_INNER_WIDGET_KEYS = {"listen_and_respond"}
 _OPEN_ENDED_WIDGET_KEYS = {
     "open_text",
@@ -44,6 +46,7 @@ _OPEN_ENDED_WIDGET_KEYS = {
     "structured_essay",
     "speak_and_record",
     "storyboard",
+    "error_correction",
 }
 _FREQUENCY_ADVERBS = {
     "always",
@@ -104,10 +107,21 @@ class LLMFeedbackGenerator:
 
         widget_key = normalize_widget_key(archetype.ui_widget)
         confirmed_mistakes: list[dict] | None = None
-        if widget_key in _DETERMINISTIC_WIDGET_KEYS and task_content and user_response:
+        if widget_key == "error_spotting" and task_content and user_response:
+            confirmed_mistakes = compute_error_spotting_wrong_items(
+                task_content,
+                user_response,
+            )
+        elif widget_key in _DETERMINISTIC_WIDGET_KEYS and task_content and user_response:
             confirmed_mistakes = compute_wrong_items(task_content, user_response)
         elif widget_key in _MCQ_INNER_WIDGET_KEYS and task_content and user_response:
-            confirmed_mistakes = compute_mcq_wrong_items(task_content, user_response)
+            if task_content.get("inner_widget") == "fill_in_blanks":
+                confirmed_mistakes = compute_listen_cloze_wrong_items(
+                    task_content,
+                    user_response,
+                )
+            else:
+                confirmed_mistakes = compute_mcq_wrong_items(task_content, user_response)
 
         try:
             output = await self.llm.generate_structured(
@@ -144,7 +158,9 @@ class LLMFeedbackGenerator:
 
         breakdown = {skill: int(output.score) for skill in archetype.weight_map}
         mistakes = output.mistakes
-        if widget_key in _OPEN_ENDED_WIDGET_KEYS:
+        if widget_key == "error_spotting" and confirmed_mistakes is not None:
+            mistakes = _normalize_error_spotting_mistakes(confirmed_mistakes)
+        elif widget_key in _OPEN_ENDED_WIDGET_KEYS:
             mistakes = _filter_open_ended_mistakes(mistakes)
 
         # Cap mistakes per spec rule ("max 3 per activity"). Defensive in
@@ -167,6 +183,42 @@ class LLMFeedbackGenerator:
             next_tip=output.next_tip,
             sub_skill_breakdown=breakdown,
         )
+
+
+def _normalize_error_spotting_mistakes(
+    confirmed_mistakes: list[dict],
+) -> list[MistakeOutSchema]:
+    """Turn token-level error spotting misses into learner-facing feedback."""
+    mistakes: list[MistakeOutSchema] = []
+    for item in confirmed_mistakes:
+        error_type = str(item.get("error_type") or "")
+        user_wrote = str(item.get("user_wrote") or item.get("incorrect_phrase") or "").strip()
+        correction = str(item.get("correct_answer") or "").strip()
+        rule = str(item.get("rule") or item.get("explanation") or "").strip()
+
+        if error_type == "false_positive":
+            token = user_wrote or str(item.get("item_id") or "This word")
+            mistakes.append(
+                MistakeOutSchema(
+                    issue=f'"{token}" was not an error.',
+                    user_wrote=token,
+                    correction="Do not flag this word",
+                    rule=rule or "Only flag words that contain an actual grammar mistake.",
+                )
+            )
+            continue
+
+        if not user_wrote or not correction:
+            continue
+        mistakes.append(
+            MistakeOutSchema(
+                issue=f'"{user_wrote}" should be "{correction}".',
+                user_wrote=user_wrote,
+                correction=correction,
+                rule=rule,
+            )
+        )
+    return mistakes
 
 
 def _filter_open_ended_mistakes(

@@ -10,10 +10,9 @@ from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import sessionmaker
 
 from app import models  # noqa: F401
-from app.core.config import settings
 from app.core.database import Base, get_db
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import User
+from app.modules.auth.models import User, UserProfile
 from app.modules.curriculum.models import (
     Course,
     CourseLevel,
@@ -27,6 +26,7 @@ from app.modules.curriculum.v2_models import (
     TaskArchetype,
     ThemeType,
 )
+from app.modules.preferences.models import UserCoursePreference
 from app.modules.sessions import routes as sessions_routes
 from app.modules.sessions.models import (
     ActivityAttempt,
@@ -41,8 +41,6 @@ from scripts.seed_curriculum import seed_archetypes
 
 @pytest.fixture()
 def dashboard_client(monkeypatch):
-    monkeypatch.setattr(settings, "use_new_session_flow", True)
-
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
@@ -52,11 +50,13 @@ def dashboard_client(monkeypatch):
         engine,
         tables=[
             User.__table__,
+            UserProfile.__table__,
             Course.__table__,
             UserEnrollment.__table__,
             CurriculumWeek.__table__,
             CurriculumDay.__table__,
             TaskArchetype.__table__,
+            UserCoursePreference.__table__,
             DailySession.__table__,
             ActivityAttempt.__table__,
             SessionScorecard.__table__,
@@ -118,6 +118,20 @@ def _seed_world(db):
             started_at=datetime.now(timezone.utc),
         )
     )
+    db.add(
+        UserCoursePreference(
+            user_id=user.id,
+            course_length="24w",
+            tasks_per_day=3,
+            allow_read=True,
+            allow_write=True,
+            allow_listen=True,
+            allow_speak=True,
+            current_week=5,
+            current_day_in_week=3,
+            current_day_started_at=datetime.now(timezone.utc),
+        )
+    )
     seed_archetypes(db)
     week = CurriculumWeek(
         week_id="wk_24_05",
@@ -169,6 +183,162 @@ def test_today_plan_previews_without_creating_session(dashboard_client):
         "LISTEN_CLOZE",
     ]
     assert db.query(DailySession).count() == 0
+
+
+def test_today_plan_uses_file_source_archetypes_when_day_is_authored(dashboard_client):
+    client, db, user = dashboard_client
+    pref = db.query(UserCoursePreference).filter(UserCoursePreference.user_id == user.id).one()
+    pref.current_week = 1
+    pref.current_day_in_week = 2
+    week = CurriculumWeek(
+        week_id="wk_24_01",
+        course_length="24w",
+        week_number=1,
+        theme_type=ThemeType.GRAMMAR,
+        title="Foundation grammar",
+        cefr_level="A1",
+        sub_level_min=1,
+        sub_level_max=2,
+        learning_goal="Use basic tense patterns.",
+    )
+    db.add(week)
+    db.flush()
+    db.add(
+        CurriculumDay(
+            day_id="day_24_01_02",
+            week_id=week.id,
+            day_number=2,
+            topic="DB fallback topic",
+            explanation_brief="DB fallback brief",
+            default_activities=["read", "write", "listen", "speak"],
+            mandatory_activities=["read", "write"],
+            suggested_archetypes={
+                "read": ["READ_CLOZE"],
+                "write": ["WRITE_OPEN_SENT"],
+                "listen": ["LISTEN_MCQ"],
+                "speak": ["SPEAK_TIMED"],
+            },
+        )
+    )
+    db.commit()
+
+    resp = client.get("/api/sessions/today-plan")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [a["archetype_id"] for a in body["activities"]] == [
+        "READ_ERROR_SPOT",
+        "LISTEN_CLOZE",
+        "WRITE_ERROR_CORR",
+        "SPEAK_READ_ALOUD",
+    ]
+    assert [a["archetype_name"] for a in body["activities"]] == [
+        "Error Spotting",
+        "Cloze Listening",
+        "Error Correction",
+        "Read Aloud",
+    ]
+    assert db.query(DailySession).count() == 0
+
+
+def test_today_plan_repairs_stale_unstarted_file_session(dashboard_client):
+    client, db, user = dashboard_client
+    pref = db.query(UserCoursePreference).filter(UserCoursePreference.user_id == user.id).one()
+    pref.current_week = 1
+    pref.current_day_in_week = 2
+    week = CurriculumWeek(
+        week_id="wk_24_01",
+        course_length="24w",
+        week_number=1,
+        theme_type=ThemeType.GRAMMAR,
+        title="Foundation grammar",
+        cefr_level="A1",
+        sub_level_min=1,
+        sub_level_max=2,
+        learning_goal="Use basic tense patterns.",
+    )
+    db.add(week)
+    db.flush()
+    db.add(
+        CurriculumDay(
+            day_id="day_24_01_02",
+            week_id=week.id,
+            day_number=2,
+            topic="DB fallback topic",
+            explanation_brief="DB fallback brief",
+            default_activities=["read", "write", "listen", "speak"],
+            mandatory_activities=["read", "write"],
+            suggested_archetypes={
+                "read": ["READ_CLOZE"],
+                "write": ["WRITE_OPEN_SENT"],
+                "listen": ["LISTEN_MCQ"],
+                "speak": ["SPEAK_TIMED"],
+            },
+        )
+    )
+    stale = DailySession(
+        session_id="stale-day-1-2",
+        user_id=user.id,
+        day_id="day_24_01_02",
+        course_length="24w",
+        status=SessionStatus.IN_PROGRESS,
+        is_first_attempt=True,
+        started_at=datetime.now(timezone.utc),
+    )
+    db.add(stale)
+    db.flush()
+    db.add_all(
+        [
+            ActivityAttempt(
+                session_id=stale.id,
+                sequence=1,
+                archetype_id="READ_CLOZE",
+                is_mandatory=True,
+                status=AttemptStatus.PENDING,
+                task_content={},
+            ),
+            ActivityAttempt(
+                session_id=stale.id,
+                sequence=2,
+                archetype_id="WRITE_OPEN_SENT",
+                is_mandatory=True,
+                status=AttemptStatus.PENDING,
+                task_content={},
+            ),
+            ActivityAttempt(
+                session_id=stale.id,
+                sequence=3,
+                archetype_id="LISTEN_MCQ",
+                is_mandatory=True,
+                status=AttemptStatus.PENDING,
+                task_content={},
+            ),
+            ActivityAttempt(
+                session_id=stale.id,
+                sequence=4,
+                archetype_id="SPEAK_READ_ALOUD",
+                is_mandatory=True,
+                status=AttemptStatus.PENDING,
+                task_content={},
+            ),
+        ]
+    )
+    db.commit()
+
+    resp = client.get("/api/sessions/today-plan")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["session_id"] is None
+    assert body["is_preview"] is True
+    assert [a["archetype_name"] for a in body["activities"]] == [
+        "Error Spotting",
+        "Cloze Listening",
+        "Error Correction",
+        "Read Aloud",
+    ]
+    db.refresh(stale)
+    assert stale.status is SessionStatus.ABANDONED
 
 
 def test_today_plan_returns_existing_in_progress_session(dashboard_client):

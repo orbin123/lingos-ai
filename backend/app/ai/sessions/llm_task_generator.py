@@ -14,8 +14,9 @@ from __future__ import annotations
 import json
 import logging
 import time
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.ai.llm.exceptions import LLMError
 from app.ai.llm.interface import ILLMClient
@@ -27,15 +28,23 @@ from app.modules.sessions.task_generator import (
     GeneratedTask,
     StubTaskGenerator,
     authored_fill_in_blanks_content,
+    authored_listen_and_respond_content,
     build_simple_present_open_text_content,
     build_simple_present_speak_and_record_content,
+    build_past_error_spotting_content,
+    build_past_listening_cloze_content,
+    build_past_error_correction_content,
+    is_valid_error_spotting_payload,
+    is_valid_listening_payload,
     is_valid_open_text_payload,
-    is_valid_listening_mcq_payload,
     is_valid_speak_and_record_payload,
+    is_valid_error_correction_payload,
+    normalize_error_spotting_payload,
     normalize_fill_in_blanks_payload,
     normalize_listen_and_respond_payload,
     normalize_open_text_payload,
     normalize_speak_and_record_payload,
+    normalize_error_correction_payload,
 )
 from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.scoring import ArchetypeSpec
@@ -93,6 +102,87 @@ class TaskGenOutput(BaseModel):
     sample_responses: list[str] = Field(default_factory=list)
 
 
+class ErrorCorrectionItem(BaseModel):
+    item_id: str
+    incorrect_sentence: str
+    sample_answer: str
+    watch_hints: list[str] = Field(default_factory=list)
+
+
+class ErrorCorrectionTask(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    topic: str
+    instructions: str
+    task_intro: str
+    estimated_time_minutes: int | None = None
+    items: list[ErrorCorrectionItem] = Field(min_length=3, max_length=3)
+
+
+ErrorSpottingType = Literal[
+    "irregular_past",
+    "missing_past_auxiliary",
+    "passive_helper_missing",
+    "time_marker_mismatch",
+    "object_or_complement_mismatch",
+    "past_participle_form",
+    "regular_past_ending",
+]
+
+
+class ErrorSpottingToken(BaseModel):
+    token_id: str
+    text: str
+    is_error: bool = False
+
+
+class ErrorSpottingError(BaseModel):
+    token_id: str
+    incorrect_phrase: str
+    correction: str
+    error_type: ErrorSpottingType
+    rule: str
+    explanation: str
+
+
+class ErrorSpottingSentence(BaseModel):
+    sentence_id: str
+    tokens: list[ErrorSpottingToken] = Field(min_length=1)
+    error: ErrorSpottingError
+
+    @model_validator(mode="after")
+    def validate_single_error_token(self) -> "ErrorSpottingSentence":
+        error_tokens = [token.token_id for token in self.tokens if token.is_error]
+        if len(error_tokens) != 1:
+            raise ValueError("each sentence must mark exactly one error token")
+        if self.error.token_id not in error_tokens:
+            raise ValueError("error.token_id must match the marked error token")
+        return self
+
+
+class ErrorSpottingTask(BaseModel):
+    """Strict LLM-side schema for word-level error spotting."""
+
+    model_config = ConfigDict(extra="allow")
+
+    topic: str
+    instructions: str
+    task_intro: str
+    primary_text: str = ""
+    estimated_time_minutes: int | None = None
+    passage_sentences: list[ErrorSpottingSentence] = Field(min_length=5, max_length=5)
+    total_errors: int = 5
+
+    @model_validator(mode="after")
+    def validate_five_diverse_errors(self) -> "ErrorSpottingTask":
+        if self.total_errors != 5:
+            raise ValueError("total_errors must be exactly 5")
+        categories = {sentence.error.error_type for sentence in self.passage_sentences}
+        if len(categories) < 4:
+            raise ValueError("use at least four distinct past-tense error categories")
+        return self
+
+
 class LLMTaskGenerator:
     """Production `TaskGenerator` — invokes the LLM, validates output, falls
     back to the stub on failure."""
@@ -136,11 +226,40 @@ class LLMTaskGenerator:
                 }
             )
 
-        output_model: type[BaseModel] = (
-            FillInBlanksTask
-            if archetype.ui_widget == "FillInBlanks"
-            else TaskGenOutput
+        authored_listening_payload = (
+            authored_listen_and_respond_content(spec_dict)
+            if self._is_listening_task(archetype)
+            else None
         )
+        if authored_listening_payload is not None:
+            content = {
+                "phase": "authored",
+                "archetype_id": archetype.archetype_id,
+                "archetype_name": archetype.name,
+                "ui_widget": archetype.ui_widget,
+                "widget": normalize_widget_key(archetype.ui_widget),
+                "core_activity": archetype.core_activity,
+                "topic": spec_dict.get("topic_override") or day_topic,
+                "explanation_brief": explanation_brief,
+                "cefr_level": cefr_level,
+                "sub_level": sub_level,
+                **authored_listening_payload,
+            }
+            content = normalize_listen_and_respond_payload(content)
+            content = await self._attach_required_audio(
+                content=content,
+                archetype=archetype,
+            )
+            return GeneratedTask(content=content)
+
+        if self._is_error_spotting_task(archetype):
+            output_model: type[BaseModel] = ErrorSpottingTask
+        elif archetype.ui_widget == "ErrorCorrection":
+            output_model = ErrorCorrectionTask
+        elif archetype.ui_widget == "FillInBlanks":
+            output_model = FillInBlanksTask
+        else:
+            output_model = TaskGenOutput
         try:
             output = await self.llm.generate_structured(
                 system_prompt=task_gen_system_prompt(),
@@ -163,6 +282,16 @@ class LLMTaskGenerator:
                     generated_payload
                 ).model_dump(exclude_none=True)
                 generated_payload = normalize_fill_in_blanks_payload(generated_payload)
+            if archetype.ui_widget == "ErrorCorrection":
+                generated_payload = ErrorCorrectionTask.model_validate(
+                    generated_payload
+                ).model_dump(exclude_none=True)
+                generated_payload = normalize_error_correction_payload(generated_payload)
+            if self._is_error_spotting_task(archetype):
+                generated_payload = ErrorSpottingTask.model_validate(
+                    generated_payload
+                ).model_dump(exclude_none=True)
+                generated_payload = normalize_error_spotting_payload(generated_payload)
         except (LLMError, ValidationError, ValueError) as exc:
             logger.warning(
                 "LLM task generator failed for archetype=%s: %s — using stub content",
@@ -257,9 +386,41 @@ class LLMTaskGenerator:
                     len(content.get("speaking_prompts") or []),
                     (content.get("task_intro") or "")[:60],
                 )
+        if archetype.ui_widget == "ErrorCorrection":
+            content = normalize_error_correction_payload(content)
+            if not is_valid_error_correction_payload(content, expected_items=3):
+                logger.warning(
+                    "Invalid error-correction payload for archetype=%s — using stub content",
+                    archetype.archetype_id,
+                )
+                content = await self._fallback_content(
+                    archetype=archetype,
+                    day_topic=day_topic,
+                    explanation_brief=explanation_brief,
+                    cefr_level=cefr_level,
+                    sub_level=sub_level,
+                    user_interests=user_interests,
+                    task_spec=task_spec,
+                )
+        elif self._is_error_spotting_task(archetype):
+            content = normalize_error_spotting_payload(content)
+            if not is_valid_error_spotting_payload(content):
+                logger.warning(
+                    "Invalid error-spotting payload for archetype=%s — using stub content",
+                    archetype.archetype_id,
+                )
+                content = await self._fallback_content(
+                    archetype=archetype,
+                    day_topic=day_topic,
+                    explanation_brief=explanation_brief,
+                    cefr_level=cefr_level,
+                    sub_level=sub_level,
+                    user_interests=user_interests,
+                    task_spec=task_spec,
+                )
         elif self._is_listening_task(archetype):
             content = normalize_listen_and_respond_payload(content)
-            if not is_valid_listening_mcq_payload(content):
+            if not is_valid_listening_payload(content):
                 logger.warning(
                     "Invalid listening payload for archetype=%s — using stub content",
                     archetype.archetype_id,
@@ -325,12 +486,38 @@ class LLMTaskGenerator:
                     )
                 )
                 content = normalize_speak_and_record_payload(content)
+        if self._is_error_spotting_task(archetype):
+            content = normalize_error_spotting_payload(content)
+            if not is_valid_error_spotting_payload(content):
+                content.update(
+                    build_past_error_spotting_content(
+                        str(content.get("topic") or day_topic)
+                    )
+                )
+                content = normalize_error_spotting_payload(content)
+        if archetype.ui_widget == "ErrorCorrection":
+            content = normalize_error_correction_payload(content)
+            if not is_valid_error_correction_payload(content):
+                content.update(
+                    build_past_error_correction_content(
+                        str(content.get("topic") or day_topic)
+                    )
+                )
+                content = normalize_error_correction_payload(content)
         if self._is_listening_task(archetype):
             content = normalize_listen_and_respond_payload(content)
-            if not is_valid_listening_mcq_payload(content):
-                raise ValueError(
-                    f"Fallback listening payload is invalid for {archetype.archetype_id}"
-                )
+            if not is_valid_listening_payload(content):
+                if archetype.archetype_id == "LISTEN_CLOZE":
+                    content.update(
+                        build_past_listening_cloze_content(
+                            str(content.get("topic") or day_topic)
+                        )
+                    )
+                    content = normalize_listen_and_respond_payload(content)
+                if not is_valid_listening_payload(content):
+                    raise ValueError(
+                        f"Fallback listening payload is invalid for {archetype.archetype_id}"
+                    )
             content = await self._attach_required_audio(
                 content=content,
                 archetype=archetype,
@@ -430,10 +617,7 @@ class LLMTaskGenerator:
 
     @staticmethod
     def _is_listening_task(archetype: ArchetypeSpec) -> bool:
-        return (
-            archetype.archetype_id == "LISTEN_MCQ"
-            or archetype.ui_widget == "ListenAndAnswer+MCQList"
-        )
+        return archetype.core_activity == "listen"
 
     @staticmethod
     def _is_open_text_writing_task(archetype: ArchetypeSpec) -> bool:
@@ -444,4 +628,11 @@ class LLMTaskGenerator:
         return (
             archetype.archetype_id == "SPEAK_TIMED"
             or archetype.ui_widget == "SpeakAndRecord"
+        )
+
+    @staticmethod
+    def _is_error_spotting_task(archetype: ArchetypeSpec) -> bool:
+        return (
+            archetype.archetype_id == "READ_ERROR_SPOT"
+            or archetype.ui_widget == "ErrorSpotting"
         )

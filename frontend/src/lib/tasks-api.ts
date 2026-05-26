@@ -131,8 +131,26 @@ export interface ErrorItem {
 
 export interface ErrorSpottingTaskContent extends GeneratedTaskBase {
   instructions: string;
-  sentences: ErrorItem[];
-  total_with_errors: number;
+  passage_sentences?: Array<{
+    sentence_id: string;
+    tokens: Array<{
+      token_id: string;
+      text: string;
+      is_error: boolean;
+    }>;
+    error: {
+      token_id: string;
+      incorrect_phrase: string;
+      correction: string;
+      error_type: string;
+      rule: string;
+      explanation: string;
+    };
+  }>;
+  total_errors?: number;
+  // Legacy generated-task shape, kept for old task history.
+  sentences?: ErrorItem[];
+  total_with_errors?: number;
 }
 
 // ── Template 3: Sentence Transformation ─────────────────────────

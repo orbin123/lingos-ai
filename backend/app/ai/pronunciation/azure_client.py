@@ -358,6 +358,9 @@ class AzurePronunciationClient:
             completeness_score=round(
                 float(getattr(assessment, "completeness_score", 0.0) or 0.0), 2
             ),
+            prosody_score=round(
+                float(getattr(assessment, "prosody_score", 0.0) or 0.0), 2
+            ),
             words=words,
         )
 

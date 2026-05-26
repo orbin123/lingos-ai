@@ -61,6 +61,20 @@ def test_persona_from_file_returns_w1d1_and_stashes_scripted_plan() -> None:
     assert "sub_skill_context" not in instr
 
 
+def test_persona_from_file_returns_w1d2_and_stashes_scripted_plan() -> None:
+    persona = LearningSessionService._persona_from_file
+    topic, skill_name, sub_level, instr = persona(None, "day_24_01_02")  # type: ignore[arg-type]
+
+    w1d2 = WEEKS_24[0].days[1]
+    assert topic == w1d2.title
+    assert skill_name == "grammar"
+    assert sub_level == WEEKS_24[0].sub_level_min
+    assert isinstance(instr, dict)
+    assert instr["__scripted_plan"] == list(w1d2.teacher_agent_behaviour)
+    assert instr["lesson_description"] == w1d2.description
+    assert "Simple Past Tense" in topic
+
+
 def test_persona_from_file_blank_day_raises() -> None:
     persona = LearningSessionService._persona_from_file
     # W2D1 is intentionally blank in source_24w.py — file_source must refuse it.
@@ -335,6 +349,190 @@ async def test_create_session_db_mode_uses_source_persona_for_authored_w1d1(
         w1d1.teacher_agent_behaviour
     )
     assert "subject-verb" in kwargs["teacher_instructions"]["lesson_description"]
+
+
+@pytest.mark.asyncio
+async def test_create_session_file_mode_uses_source_persona_for_authored_w1d2(
+    monkeypatch,
+) -> None:
+
+    async def _explode(*args, **kwargs):
+        raise AssertionError("PlannerAgent.generate must not run for sourced W1D2")
+
+    monkeypatch.setattr(
+        "app.modules.learning_session.service.PlannerAgent.generate", _explode,
+    )
+
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+    service.daily_repo = MagicMock()
+    service.attempts_repo = MagicMock()
+    service.curriculum_day_repo = MagicMock()
+    service.archetype_repo = MagicMock()
+    service.profile_repo = MagicMock()
+
+    daily = MagicMock()
+    daily.id = 43
+    daily.session_id = "ds-uuid-w1d2"
+    daily.day_id = "day_24_01_02"
+
+    async def _resolve(*, user_id, daily_session_id):  # noqa: ARG001
+        return daily
+    service._resolve_daily_session = _resolve  # type: ignore[method-assign]
+
+    service.session_repo.get_by_daily_session_id.return_value = None
+    service.attempts_repo.list_for_session.return_value = [
+        _fake_attempt(archetype_id="READ_ERROR_SPOT", sequence=1),
+    ]
+
+    await service.create_session(user_id=7, daily_session_id=None)
+
+    kwargs = service.session_repo.create.call_args.kwargs
+    w1d2 = WEEKS_24[0].days[1]
+    assert kwargs["topic"] == w1d2.title
+    assert kwargs["skill_name"] == "grammar"
+    assert kwargs["teacher_instructions"]["__scripted_plan"] == list(
+        w1d2.teacher_agent_behaviour
+    )
+    assert "completed actions" in kwargs["teacher_instructions"]["lesson_description"]
+
+
+def test_resume_refreshes_stale_w1d2_chat_persona() -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+
+    session = MagicMock()
+    session.topic = "Simple Present Tense"
+    session.skill_name = "grammar"
+    session.user_level = 1
+    session.teacher_instructions = {"lesson_description": "Old day 1 content"}
+
+    refreshed = service._maybe_refresh_file_persona(
+        session,
+        "day_24_01_02",
+    )
+
+    w1d2 = WEEKS_24[0].days[1]
+    assert refreshed is True
+    assert session.topic == w1d2.title
+    assert session.skill_name == "grammar"
+    assert session.user_level == WEEKS_24[0].sub_level_min
+    assert session.teacher_instructions["__scripted_plan"] == list(
+        w1d2.teacher_agent_behaviour
+    )
+    assert session.teacher_instructions["lesson_description"] == w1d2.description
+    service.session_repo.save.assert_called_once_with(session)
+    service.db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_create_session_resume_refreshes_existing_w1d2_chat_persona() -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+    service.daily_repo = MagicMock()
+    service.attempts_repo = MagicMock()
+
+    daily = MagicMock()
+    daily.id = 43
+    daily.day_id = "day_24_01_02"
+
+    existing = MagicMock()
+    existing.session_id = "chat-w1d2"
+    existing.topic = "Simple Present Tense"
+    existing.skill_name = "grammar"
+    existing.user_level = 1
+    existing.task_type = "read"
+    existing.teacher_instructions = {"lesson_description": "Old day 1 content"}
+
+    async def _resolve(*, user_id, daily_session_id):  # noqa: ARG001
+        return daily
+    service._resolve_daily_session = _resolve  # type: ignore[method-assign]
+    service.session_repo.get_by_daily_session_id.return_value = existing
+
+    response = await service.create_session(user_id=7, daily_session_id=None)
+
+    w1d2 = WEEKS_24[0].days[1]
+    assert response.message == "Session resumed"
+    assert response.topic == w1d2.title
+    assert existing.teacher_instructions["__scripted_plan"] == list(
+        w1d2.teacher_agent_behaviour
+    )
+    service.session_repo.save.assert_called_once_with(existing)
+    service.db.commit.assert_called_once()
+
+
+def test_restart_refreshes_w1d2_chat_persona_without_immediate_commit() -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+
+    session = MagicMock()
+    session.topic = "Old DB topic"
+    session.skill_name = "old"
+    session.user_level = 9
+    session.teacher_instructions = {"lesson_description": "Old DB brief"}
+
+    refreshed = service._maybe_refresh_file_persona(
+        session,
+        "day_24_01_02",
+        commit=False,
+    )
+
+    w1d2 = WEEKS_24[0].days[1]
+    assert refreshed is True
+    assert session.topic == w1d2.title
+    assert session.teacher_instructions["__scripted_plan"] == list(
+        w1d2.teacher_agent_behaviour
+    )
+    service.session_repo.save.assert_called_once_with(session)
+    service.db.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_restart_session_refreshes_w1d2_chat_persona() -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+    service.curriculum_day_repo = MagicMock()
+    service.archetype_repo = MagicMock()
+    service.profile_repo = MagicMock()
+
+    session = MagicMock()
+    session.session_id = "chat-w1d2"
+    session.daily_session_id = 43
+    session.user_id = 7
+    session.topic = "Old DB topic"
+    session.skill_name = "old"
+    session.user_level = 9
+    session.task_type = "read"
+    session.task_queue = []
+    session.teacher_instructions = {"lesson_description": "Old DB brief"}
+
+    daily = MagicMock()
+    daily.id = 43
+    daily.day_id = "day_24_01_02"
+    daily.status = SessionStatus.IN_PROGRESS
+
+    service._load_session = MagicMock(return_value=session)
+    service.db.get.return_value = daily
+    service.db.execute.return_value.scalars.return_value = []
+    service.curriculum_day_repo.get_by_day_id.return_value = None
+
+    response = await service.restart_session(session_id="chat-w1d2", user_id=7)
+
+    w1d2 = WEEKS_24[0].days[1]
+    assert response.message == "Session restarted"
+    assert response.topic == w1d2.title
+    assert response.skill_name == "grammar"
+    assert session.topic == w1d2.title
+    assert session.teacher_instructions["__scripted_plan"] == list(
+        w1d2.teacher_agent_behaviour
+    )
+    assert service.session_repo.save.call_count == 2
+    service.db.commit.assert_called_once()
 
 
 def test_ready_gate_requires_previous_readiness_prompt() -> None:

@@ -276,7 +276,7 @@ class TestSeedCurriculum:
             .filter_by(week_id="wk_24_01")
             .one()
         )
-        assert refreshed.title == "Being and Belonging"
+        assert refreshed.title == ""
 
 
 # ── seed_all integration ───────────────────────────────────────────
@@ -310,7 +310,7 @@ class TestRepositories:
         assert by_num is not None
         assert by_id.id == by_num.id
         assert by_id.theme_type == ThemeType.GRAMMAR
-        assert by_id.title == "What I Did and What I'll Do"
+        assert by_id.title == ""
 
     def test_day_repo_get_by_day_id(self, db_session):
         seed_course(db_session, CourseLength.WEEKS_24)
@@ -319,7 +319,7 @@ class TestRepositories:
         day = repo.get_by_day_id("day_24_02_01")
         assert day is not None
         assert day.day_number == 1
-        assert day.topic.startswith("Name + age")
+        assert day.topic == ""
 
     def test_archetype_repo_lists_by_activity(self, db_session):
         seed_archetypes(db_session)

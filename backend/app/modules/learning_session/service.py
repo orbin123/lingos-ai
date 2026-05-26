@@ -36,6 +36,7 @@ from app.modules.curriculum.file_source import (
     SCRIPTED_PLAN_KEY,
     build_teacher_instructions as file_build_teacher_instructions,
     get_day_by_id as file_get_day_by_id,
+    resolve_archetypes as file_resolve_archetypes,
     split_scripted_plan,
 )
 from app.ai.graphs.nodes import (
@@ -404,11 +405,10 @@ class LearningSessionService:
         # Resume an existing chat envelope if one exists for this DailySession.
         existing = self.session_repo.get_by_daily_session_id(daily.id)
         if existing is not None:
-            # Auto-refresh stale teacher persona for file-authored days.
-            # Sessions created before the file-override was wired may lack
-            # the scripted plan. Silently update from source so the next
-            # teaching turn uses the authored behaviour.
-            self._maybe_refresh_teacher_instructions(existing, daily.day_id)
+            # Auto-refresh the whole chat persona for file-authored days.
+            # Existing envelopes may have been created before the source
+            # day was authored, or before file-mode carried the full persona.
+            self._maybe_refresh_file_persona(existing, daily.day_id)
             return StartSessionResponse(
                 session_id=existing.session_id,
                 daily_session_id=daily.id,
@@ -523,34 +523,35 @@ class LearningSessionService:
             teacher_instructions,
         )
 
-    def _maybe_refresh_teacher_instructions(
+    def _maybe_refresh_file_persona(
         self,
         session: LearningSession,
         day_id: str,
-    ) -> None:
-        """Refresh teacher_instructions from source if stale.
+        *,
+        commit: bool = True,
+    ) -> bool:
+        """Refresh chat persona fields from source for file-authored days.
 
-        A session is considered stale when its ``teacher_instructions``
-        dict is missing the ``SCRIPTED_PLAN_KEY`` but the file-authored
-        source for that day *does* provide an authored behaviour script.
-        In that case, silently overwrite so the next teaching turn
-        streams the authored plan instead of the old planner persona.
+        The chat layer stores a runtime copy of the day title/theme/sub-level
+        plus teacher instructions. Refreshing all four fields keeps resumed
+        sessions aligned with the authored ``DaySource`` without changing
+        the daily-session-owned activity queue or task content.
         """
-        current = session.teacher_instructions
-        if isinstance(current, dict) and SCRIPTED_PLAN_KEY in current:
-            return  # already has scripted plan — nothing to refresh
-
         try:
-            _, _, _, fresh_instructions = self._persona_from_file(day_id)
+            topic, skill_name, user_level, teacher_instructions = (
+                self._persona_from_file(day_id)
+            )
         except DayNotFound:
-            return  # not a file-authored day — leave as-is
+            return False  # not a file-authored day — leave as-is
 
-        if not fresh_instructions or SCRIPTED_PLAN_KEY not in fresh_instructions:
-            return  # file source doesn't have a scripted plan either
-
-        session.teacher_instructions = fresh_instructions
+        session.topic = topic
+        session.skill_name = skill_name
+        session.user_level = user_level
+        session.teacher_instructions = teacher_instructions
         self.session_repo.save(session)
-        self.db.commit()
+        if commit:
+            self.db.commit()
+        return True
 
     def _activity_type_from_archetype(self, archetype_id: str) -> str:
         """Look up `core_activity` for an archetype without hitting the DB."""
@@ -603,20 +604,6 @@ class LearningSessionService:
                 f"day={pref.current_day_in_week}"
             )
 
-        # If today's session already exists, return it. A completed session
-        # should route to its scorecard, not create a fresh chat attempt.
-        existing = self.daily_repo.get_in_progress(
-            user_id=user_id, day_id=day.day_id
-        )
-        if existing is not None:
-            return existing
-        existing = self.daily_repo.get_latest_for_day(
-            user_id=user_id, day_id=day.day_id, status=SessionStatus.COMPLETED
-        )
-        if existing is not None:
-            return existing
-
-        # Otherwise start a fresh V2 session for today.
         allowed = {
             a for a, on in {
                 "read": pref.allow_read,
@@ -625,6 +612,25 @@ class LearningSessionService:
                 "speak": pref.allow_speak,
             }.items() if on
         }
+
+        # If today's session already exists, return it. A completed session
+        # should route to its scorecard, not create a fresh chat attempt.
+        existing = self.daily_repo.get_in_progress(
+            user_id=user_id, day_id=day.day_id
+        )
+        if existing is not None:
+            if not self._abandon_stale_file_session_if_unstarted(
+                existing,
+                allowed_activities=allowed,
+            ):
+                return existing
+        existing = self.daily_repo.get_latest_for_day(
+            user_id=user_id, day_id=day.day_id, status=SessionStatus.COMPLETED
+        )
+        if existing is not None:
+            return existing
+
+        # Otherwise start a fresh V2 session for today.
         v2_service = _make_v2_session_service(self.db)
         try:
             return await v2_service.start_session(
@@ -642,6 +648,32 @@ class LearningSessionService:
             if existing is None:
                 raise
             return existing
+
+    def _abandon_stale_file_session_if_unstarted(
+        self,
+        daily: DailySession,
+        *,
+        allowed_activities: set[str],
+    ) -> bool:
+        try:
+            file_day = file_get_day_by_id(daily.day_id)
+        except DayNotFound:
+            return False
+        expected = [
+            spec.archetype_id
+            for spec in file_resolve_archetypes(file_day)
+            if spec.core_activity in allowed_activities
+        ]
+        attempts = self.attempts_repo.list_for_session(daily.id)
+        if any(a.status is not AttemptStatus.PENDING for a in attempts):
+            return False
+        current = [a.archetype_id for a in attempts]
+        if current == expected:
+            return False
+        daily.status = SessionStatus.ABANDONED
+        self.db.add(daily)
+        self.db.commit()
+        return True
 
     @staticmethod
     def _queue_from_attempts(attempts: list[ActivityAttempt]) -> list[dict[str, Any]]:
@@ -680,13 +712,12 @@ class LearningSessionService:
             daily = self.db.get(DailySession, session.daily_session_id)
             if daily is not None:
                 teacher_instructions = None
-                try:
-                    _, _, _, teacher_instructions = self._persona_from_file(
-                        daily.day_id,
-                    )
-                    session.teacher_instructions = teacher_instructions
-                except DayNotFound:
-                    teacher_instructions = None
+                if self._maybe_refresh_file_persona(
+                    session,
+                    daily.day_id,
+                    commit=False,
+                ):
+                    teacher_instructions = session.teacher_instructions
 
                 day = self.curriculum_day_repo.get_by_day_id(daily.day_id)
                 if (

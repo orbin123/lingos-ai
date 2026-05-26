@@ -389,6 +389,12 @@ def _fallback_text(
     )
 
     if not conversation or ai_turns == 0:
+        if scripted_plan:
+            return (
+                f"Hi! Today our lesson is {topic}. Let's start with the "
+                "first step from today's lesson. Tell me one short answer "
+                "connected to this topic."
+            )
         return (
             f"Hi! Today our lesson is about tense: {topic}. Tense tells us "
             "when an action or state happens. The simple present is for facts, "
@@ -397,10 +403,23 @@ def _fallback_text(
         )
 
     if any(phrase in last_user for phrase in ("don't understand", "dont understand", "confused", "not clear")):
+        if scripted_plan:
+            return (
+                f"No problem. We are still on {topic}. I will keep it simple: "
+                "try one short answer for the current lesson step."
+            )
         return (
             "No problem. Simple present is for things that happen again and "
             "again. Say one short sentence about your day, like 'I study at "
             "night' or 'I work in the morning.'"
+        )
+
+    if scripted_plan:
+        if ai_turns >= len(scripted_plan):
+            return "Ready to try the practice task?"
+        return (
+            "Good. Let's continue with the next step from today's lesson. "
+            f"Give one short answer about {topic}."
         )
 
     if " am " in f" {last_user} " and any(
@@ -424,13 +443,6 @@ def _fallback_text(
             "Nice. Now add a frequency adverb: always, usually, often, "
             "sometimes, or never. Write one routine sentence with a frequency "
             "adverb and the correct verb form."
-        )
-
-    if scripted_plan:
-        return (
-            "That shows the pattern: simple present for routines, base verb "
-            "with I/you/we/they, and verb-s with he/she. "
-            "Ready to try the practice task?"
         )
 
     return (

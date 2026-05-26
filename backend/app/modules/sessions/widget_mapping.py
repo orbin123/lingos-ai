@@ -14,8 +14,9 @@ WIDGET_KEY: dict[str, str] = {
     "Storyboard": "storyboard",
     "StructuredEssay": "structured_essay",
     "OpenTextList": "open_text",
+    "ErrorSpotting": "error_spotting",
     "SentenceTransform": "open_text",
-    "ErrorCorrection": "open_text",
+    "ErrorCorrection": "error_correction",
     "TimedText": "timed_text",
 }
 

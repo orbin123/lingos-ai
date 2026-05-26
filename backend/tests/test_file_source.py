@@ -1,7 +1,7 @@
 """Smoke tests for `app.modules.curriculum.file_source`.
 
-Confirms the in-process accessor over `source_24w.py` returns the
-populated Week 1 / Day 1 record and refuses to serve blank days.
+Confirms the in-process accessor over `source_24w.py` returns populated
+Week 1 source days and refuses to serve blank days.
 """
 
 from __future__ import annotations
@@ -35,8 +35,38 @@ def test_get_day_by_id_returns_populated_w1_d1() -> None:
     assert day.topic.startswith("Simple Present Tense")
 
 
+def test_get_day_by_id_returns_populated_w1_d2() -> None:
+    day = file_source.get_day_by_id("day_24_01_02")
+
+    assert day.week_number == 1
+    assert day.day_number == 2
+    assert day.day_id == "day_24_01_02"
+    assert day.topic.startswith("Simple Past Tense")
+    assert "completed actions" in day.explanation_brief
+    assert list(day.task_archetypes_used) == [
+        "READ_ERROR_SPOT",
+        "LISTEN_CLOZE",
+        "WRITE_ERROR_CORR",
+        "SPEAK_READ_ALOUD",
+    ]
+    assert len(day.teacher_agent_behaviour) == 4
+    assert len(day.task_specs) == len(day.task_archetypes_used)
+    read_spec = file_source.task_spec_for(day, 0)
+    assert "exactly 5" in read_spec["instructions_override"]
+    assert "one grammatical error" in read_spec["instructions_override"]
+    assert "error_spotting" in read_spec["widget_requirements"]
+    assert "passive_helper_missing" in read_spec["widget_requirements"]
+
+    speak_spec = file_source.task_spec_for(day, 3)
+    assert "Read past simple passage aloud" in speak_spec["topic_override"]
+    assert "connected simple past narrative passage" in speak_spec["instructions_override"]
+    assert "50-60 words" in speak_spec["instructions_override"]
+    assert "text_to_read_aloud" in speak_spec["widget_requirements"]
+    assert "single connected past tense passage" in speak_spec["widget_requirements"]
+
+
 def test_get_day_blank_entry_raises() -> None:
-    # Every day except (1, 0) is blank in source_24w.py at time of writing.
+    # Week 2 is still blank in source_24w.py at time of writing.
     with pytest.raises(DayNotFound):
         file_source.get_day(2, 0)
 

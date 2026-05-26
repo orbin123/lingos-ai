@@ -17,6 +17,10 @@ export type {
   SpeakRoleplayTurn,
   SpeakAndRecordPayload,
   ListenAndRespondPayload,
+  ErrorSpottingPayload,
+  ErrorSpottingSentence,
+  ErrorSpottingToken,
+  ErrorSpottingError,
   StoryboardScene,
   StoryboardPayload,
 } from "./types";
@@ -41,4 +45,7 @@ export { TimedTextWidget } from "./TimedTextWidget";
 export { StructuredEssayWidget } from "./StructuredEssayWidget";
 export { SpeakRecordWidget } from "./SpeakRecordWidget";
 export { ListenAndRespondWidget } from "./ListenAndRespondWidget";
+export { ErrorSpottingWidget } from "./ErrorSpottingWidget";
 export { StoryboardWidget } from "./StoryboardWidget";
+export { ErrorCorrectionWidget } from "./ErrorCorrectionWidget";
+

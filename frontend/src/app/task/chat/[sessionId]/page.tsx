@@ -23,6 +23,8 @@ import { SessionScorecard as DaySessionScorecard } from "@/components/sessions/S
 import { type SessionScorecardRead } from "@/lib/sessions-api";
 import {
   FillBlanksWidget,
+  ErrorSpottingWidget,
+  ErrorCorrectionWidget,
   ListenAndRespondWidget,
   MCQWidget,
   normalizeWidgetKey,
@@ -113,7 +115,9 @@ const WIDGET_COMPONENTS: Record<WidgetKey, React.ComponentType<WidgetProps>> = {
   structured_essay: StructuredEssayWidget as React.ComponentType<WidgetProps>,
   speak_and_record: SpeakRecordWidget as React.ComponentType<WidgetProps>,
   listen_and_respond: ListenAndRespondWidget as React.ComponentType<WidgetProps>,
+  error_spotting: ErrorSpottingWidget as React.ComponentType<WidgetProps>,
   storyboard: StoryboardWidget as React.ComponentType<WidgetProps>,
+  error_correction: ErrorCorrectionWidget as React.ComponentType<WidgetProps>,
 };
 
 const WIDGET_SECTION_LABEL: Record<WidgetKey, string> = {
@@ -124,11 +128,17 @@ const WIDGET_SECTION_LABEL: Record<WidgetKey, string> = {
   structured_essay: "Essay",
   speak_and_record: "Speaking task",
   listen_and_respond: "Listening task",
+  error_spotting: "Error spotting",
   storyboard: "Storyboard",
+  error_correction: "Error correction",
 };
 
 function showsInlineActivityScore(widget: WidgetKey): boolean {
-  return widget === "fill_in_blanks" || widget === "listen_and_respond";
+  return (
+    widget === "fill_in_blanks" ||
+    widget === "listen_and_respond" ||
+    widget === "error_spotting"
+  );
 }
 
 function isWritingSpeakingWidget(widget: WidgetKey): boolean {
@@ -137,7 +147,8 @@ function isWritingSpeakingWidget(widget: WidgetKey): boolean {
     widget === "timed_text" ||
     widget === "structured_essay" ||
     widget === "speak_and_record" ||
-    widget === "storyboard"
+    widget === "storyboard" ||
+    widget === "error_correction"
   );
 }
 
@@ -148,7 +159,8 @@ function isOpenEndedFeedbackWidget(widget?: string): boolean {
     normalized === "timed_text" ||
     normalized === "structured_essay" ||
     normalized === "speak_and_record" ||
-    normalized === "storyboard"
+    normalized === "storyboard" ||
+    normalized === "error_correction"
   );
 }
 
@@ -744,6 +756,7 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
   const mistakes = payload.mistakes ?? [];
   const summary = payload.summary || payload.overall_message || "";
   const openEndedFeedback = isOpenEndedFeedbackWidget(payload.widget);
+  const errorSpottingFeedback = normalizeWidgetKey(payload.widget ?? "") === "error_spotting";
   return (
     <div style={{
       borderRadius: 22,
@@ -781,7 +794,10 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
               </div>
             )}
           </div>
-          {mistakes.map((mistake, i) => (
+          {mistakes.map((mistake, i) => {
+            const falsePositive =
+              errorSpottingFeedback && mistake.correction === "Do not flag this word";
+            return (
             <div key={`${mistake.issue}-${i}`} style={{
               padding: "16px 20px",
               borderBottom: i < mistakes.length - 1 ? "1px solid oklch(85% 0.025 240)" : "none",
@@ -797,8 +813,39 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13.5, color: "oklch(18% 0.06 240)", marginBottom: 6, lineHeight: 1.55 }}>
-                  <strong>{mistake.issue}</strong>
-                  {openEndedFeedback && mistake.user_wrote && (
+                  {errorSpottingFeedback ? (
+                    falsePositive ? (
+                      <strong>{mistake.issue}</strong>
+                    ) : (
+                      <>
+                        {mistake.user_wrote && (
+                          <span style={{
+                            display: "inline-block", padding: "0 6px", borderRadius: 4,
+                            fontWeight: 700, margin: "0 1px",
+                            background: "oklch(92% 0.08 25)",
+                            color: "oklch(35% 0.18 25)",
+                            textDecoration: "line-through",
+                          }}>
+                            {mistake.user_wrote}
+                          </span>
+                        )}
+                        {mistake.user_wrote && mistake.correction && " -> "}
+                        {mistake.correction && (
+                          <span style={{
+                            display: "inline-block", padding: "0 6px", borderRadius: 4,
+                            fontWeight: 700, margin: "0 1px",
+                            background: "oklch(92% 0.1 155)",
+                            color: "oklch(28% 0.16 155)",
+                          }}>
+                            {mistake.correction}
+                          </span>
+                        )}
+                      </>
+                    )
+                  ) : (
+                    <strong>{mistake.issue}</strong>
+                  )}
+                  {!errorSpottingFeedback && openEndedFeedback && mistake.user_wrote && (
                     <div style={{ marginTop: 8 }}>
                       <strong style={{ color: "oklch(42% 0.07 240)" }}>Your version:</strong>{" "}
                       <span style={{
@@ -811,7 +858,7 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
                       </span>
                     </div>
                   )}
-                  {openEndedFeedback && mistake.correction && (
+                  {!errorSpottingFeedback && openEndedFeedback && mistake.correction && (
                     <div style={{ marginTop: 6 }}>
                       <strong style={{ color: "oklch(42% 0.07 240)" }}>Improved version:</strong>{" "}
                       <span style={{
@@ -824,7 +871,7 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
                       </span>
                     </div>
                   )}
-                  {!openEndedFeedback && mistake.user_wrote && (
+                  {!errorSpottingFeedback && !openEndedFeedback && mistake.user_wrote && (
                     <>
                       {": "}
                       <span style={{
@@ -838,7 +885,7 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
                       </span>
                     </>
                   )}
-                  {!openEndedFeedback && mistake.correction && (
+                  {!errorSpottingFeedback && !openEndedFeedback && mistake.correction && (
                     <>
                       {" -> "}
                       <span style={{
@@ -867,7 +914,8 @@ function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </>
       )}
       {errors.map((err, i) => (

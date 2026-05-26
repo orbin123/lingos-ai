@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { tasksApi } from "@/lib/tasks-api";
-import { TaskHeader, I } from "./shared";
-import { formatDuration, resolveAudioUrl } from "./types";
-import type { SpeakAndRecordPayload, SpeakRoleplayTurn, WidgetProps } from "./types";
-
-type Props = WidgetProps<SpeakAndRecordPayload>;
+import { sessionsApi, type PronunciationResult } from "@/lib/sessions-api";
+import type { SessionWidgetProps } from "./types";
+import { TaskHeader, I } from "../../task/task-widgets/shared";
+import { formatDuration, resolveAudioUrl } from "../../task/task-widgets/types";
+import type { SpeakAndRecordPayload, SpeakRoleplayTurn } from "../../task/task-widgets/types";
 
 function nowMs(): number {
   return Date.now();
@@ -64,6 +64,7 @@ function buildSubmissionPayload(
   items: SpeakItem[],
   next: Record<string, Recording>,
   startedAt: number,
+  pronunciation?: PronunciationResult | null
 ): Record<string, unknown> {
   return {
     recordings: items
@@ -78,11 +79,13 @@ function buildSubmissionPayload(
         transcript: rec.transcript,
       })),
     time_spent_seconds: Math.round((nowMs() - startedAt) / 1000),
+    ...(pronunciation ? { pronunciation } : {}),
   };
 }
 
-export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Props) {
-  const submitted = state === "after";
+export function SessionSpeakRecordWidget({ taskContent, disabled, onSubmit }: SessionWidgetProps) {
+  const payload = taskContent as unknown as SpeakAndRecordPayload;
+  const submitted = disabled;
   const mode = detectMode(payload);
 
   // Items: a unified list of "things to record".
@@ -149,6 +152,7 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
   const recordingStartedAtRef = useRef<number>(0);
 
   const [recordings, setRecordings] = useState<Record<string, Recording>>({});
+  const [pronunciation, setPronunciation] = useState<PronunciationResult | null>(null);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [uploadingItemId, setUploadingItemId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -173,18 +177,11 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
     };
   }, []);
 
-  const publish = (next: Record<string, Recording>) => {
-    const startedAt = startedAtRef.current ?? nowMs();
-    startedAtRef.current = startedAt;
-    setAnswers(buildSubmissionPayload(items, next, startedAt));
-  };
-
   const handleSubmit = () => {
     const startedAt = startedAtRef.current ?? nowMs();
     startedAtRef.current = startedAt;
-    const payload = buildSubmissionPayload(items, recordings, startedAt);
-    setAnswers(payload);
-    onSubmit(payload);
+    const finalPayload = buildSubmissionPayload(items, recordings, startedAt, pronunciation);
+    onSubmit(finalPayload);
   };
 
   const stopRecording = () => {
@@ -223,28 +220,35 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
         const blob = new Blob(chunksRef.current, { type: usedMime });
         const ext = extensionForMime(usedMime);
         try {
-          const result = await tasksApi.transcribeAudio(blob, `speak-${itemId}${ext}`);
           const item = items.find((it) => it.id === itemId);
-          let nextRecordings: Record<string, Recording> | null = null;
-          setRecordings((prev) => {
-            const next: Record<string, Recording> = {
-              ...prev,
-              [itemId]: {
-                ...(item?.kind === "turn"
-                  ? { turn_id: itemId }
-                  : { item_id: itemId }),
-                audio_blob_url: result.audio_url,
-                transcript: result.transcript,
-                duration_seconds: duration,
-                attempt_number: (prev[itemId]?.attempt_number ?? 0) + 1,
-              },
-            };
-            nextRecordings = next;
-            return next;
-          });
-          if (nextRecordings) {
-            publish(nextRecordings);
+          
+          let transcript = "";
+          let audioUrl = "";
+
+          if (mode === "read") {
+            const refText = payload.text_to_read_aloud || payload.passage || "Empty";
+            const pronunResult = await sessionsApi.scorePronunciation(blob, refText);
+            setPronunciation(pronunResult);
+            transcript = pronunResult.words.map(w => w.word).join(" ");
+            audioUrl = ""; // No URL needed for simple read aloud pronunciation score
+          } else {
+            const result = await tasksApi.transcribeAudio(blob, `speak-${itemId}${ext}`);
+            transcript = result.transcript;
+            audioUrl = result.audio_url;
           }
+          
+          setRecordings((prev) => ({
+            ...prev,
+            [itemId]: {
+              ...(item?.kind === "turn"
+                ? { turn_id: itemId }
+                : { item_id: itemId }),
+              audio_blob_url: audioUrl,
+              transcript: transcript,
+              duration_seconds: duration,
+              attempt_number: (prev[itemId]?.attempt_number ?? 0) + 1,
+            },
+          }));
         } catch {
           setError("Transcription failed. Please record that prompt again.");
         } finally {
@@ -290,10 +294,10 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
   return (
     <div className="tw-root">
       <TaskHeader
-        topic="Speaking Task"
+        topic={payload.topic_override || payload.topic || "Speaking Task"}
         intro={{
           title: payload.task_intro || "Record your response",
-          body: payload.instructions || "Tap the mic and speak naturally.",
+          body: payload.instructions_override || payload.instructions || "Tap the mic and speak naturally.",
         }}
         sub_skill={payload.sub_skill || ""}
         activity={payload.activity || "Speak & Record"}
@@ -505,7 +509,7 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
                     {isActive
                       ? `Recording ${formatDuration(elapsed)} / ${formatDuration(cap)}`
                       : isUploading
-                      ? "Transcribing…"
+                      ? "Processing audio…"
                       : rec
                       ? `Recorded ${rec.duration_seconds}s · attempt ${attemptsUsed}/3`
                       : prepRemaining > 0
@@ -554,7 +558,7 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
                       : item.label}
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
                   <button
                     type="button"
                     disabled={
@@ -575,7 +579,7 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
                     {isActive
                       ? `Recording ${formatDuration(elapsed)} / ${formatDuration(cap)}`
                       : isUploading
-                      ? "Transcribing…"
+                      ? "Processing audio…"
                       : rec
                       ? `Recorded ${rec.duration_seconds}s · attempt ${attemptsUsed}/3`
                       : prepRemaining > 0
@@ -637,7 +641,7 @@ export function SpeakRecordWidget({ payload, setAnswers, state, onSubmit }: Prop
           <div className="tw-hints-label">Key points expected</div>
           <div className="tw-hints-list">
             {payload.key_points_expected.map((p, i) => (
-              <div className="tw-hint-item" key={i}>
+               <div className="tw-hint-item" key={i}>
                 <span className="tw-hint-dot" />
                 {p}
               </div>

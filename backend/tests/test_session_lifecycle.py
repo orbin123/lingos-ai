@@ -624,7 +624,12 @@ class TestAttemptDeliveryRepair:
 
         repaired = await service.prepare_attempt_for_delivery(listening)
         content = repaired.task_content
-        assert content["inner_widget"] == "mcq"
+        expected_inner = (
+            "fill_in_blanks"
+            if listening.archetype_id == "LISTEN_CLOZE"
+            else "mcq"
+        )
+        assert content["inner_widget"] == expected_inner
         assert isinstance(content.get("items"), list)
         assert len(content["items"]) >= 1
         assert str(content.get("audio_script") or "").strip() != ""

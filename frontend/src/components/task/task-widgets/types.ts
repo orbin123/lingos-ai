@@ -8,7 +8,9 @@ export type WidgetKey =
   | "structured_essay"
   | "speak_and_record"
   | "listen_and_respond"
-  | "storyboard";
+  | "error_spotting"
+  | "storyboard"
+  | "error_correction";
 
 export interface TaskEnvelope {
   task_intro?: string;
@@ -20,6 +22,9 @@ export interface TaskEnvelope {
   sub_level?: number;
   activity?: string;
   instructions?: string;
+  topic?: string;
+  topic_override?: string;
+  instructions_override?: string;
 }
 
 export interface MCQItem {
@@ -82,6 +87,18 @@ export interface OpenTextPayload extends TaskEnvelope {
   source_audio_script?: string | null;
   source_audio_url?: string | null;
   target_register?: string;
+}
+
+export interface ErrorCorrectionItem {
+  item_id: string;
+  incorrect_sentence: string;
+  sample_answer: string;
+  watch_hints: string[];
+}
+
+export interface ErrorCorrectionPayload extends TaskEnvelope {
+  widget: "error_correction";
+  items: ErrorCorrectionItem[];
 }
 
 export interface TimedTextPayload extends TaskEnvelope {
@@ -167,7 +184,11 @@ export interface ListenAndRespondPayload extends TaskEnvelope {
   browser_tts_fallback?: boolean;
   tts_error?: string;
   inner_widget: "mcq" | "fill_in_blanks" | "open_text" | "speak_and_record";
-  items?: MCQItem[] | OpenTextItem[];
+  items?: MCQItem[] | OpenTextItem[] | BlankItem[];
+  blanks?: BlankItem[];
+  passage_title?: string;
+  passage?: string | null;
+  total_blanks?: number;
   text_to_shadow?: string;
   speed?: "slow" | "natural" | "fast";
   delay_seconds?: number;
@@ -177,6 +198,34 @@ export interface ListenAndRespondPayload extends TaskEnvelope {
   audio_genre?: string;
   voice_style_hint?: string;
   structure_to_identify?: string;
+}
+
+export interface ErrorSpottingToken {
+  token_id: string;
+  text: string;
+  is_error: boolean;
+}
+
+export interface ErrorSpottingError {
+  token_id: string;
+  incorrect_phrase: string;
+  correction: string;
+  error_type: string;
+  rule: string;
+  explanation: string;
+}
+
+export interface ErrorSpottingSentence {
+  sentence_id: string;
+  tokens: ErrorSpottingToken[];
+  error: ErrorSpottingError;
+}
+
+export interface ErrorSpottingPayload extends TaskEnvelope {
+  widget: "error_spotting";
+  passage_sentences: ErrorSpottingSentence[];
+  total_errors: number;
+  topic?: string;
 }
 
 export interface StoryboardScene {
@@ -204,7 +253,9 @@ export type AnyTaskPayload =
   | StructuredEssayPayload
   | SpeakAndRecordPayload
   | ListenAndRespondPayload
-  | StoryboardPayload;
+  | ErrorSpottingPayload
+  | StoryboardPayload
+  | ErrorCorrectionPayload;
 
 export interface WidgetProps<P extends AnyTaskPayload = AnyTaskPayload> {
   payload: P;

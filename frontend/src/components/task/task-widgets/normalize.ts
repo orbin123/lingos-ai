@@ -11,8 +11,9 @@ const WIDGET_ALIASES: Record<string, WidgetKey> = {
   Storyboard: "storyboard",
   StructuredEssay: "structured_essay",
   OpenTextList: "open_text",
+  ErrorSpotting: "error_spotting",
   SentenceTransform: "open_text",
-  ErrorCorrection: "open_text",
+  ErrorCorrection: "error_correction",
   TimedText: "timed_text",
 };
 

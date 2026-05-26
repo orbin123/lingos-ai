@@ -16,6 +16,7 @@ import { createElement, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { ActivityFeedbackCard } from "@/components/sessions/ActivityFeedbackCard";
+import { PronunciationFeedbackCard } from "@/components/sessions/PronunciationFeedbackCard";
 import { SessionActivityNav } from "@/components/sessions/SessionActivityNav";
 import { getSessionWidget } from "@/components/sessions/widgets/registry";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
@@ -171,10 +172,19 @@ export default function SessionShellPage() {
       {submitError && <p style={errorStyle}>{submitError}</p>}
 
       {lastFeedback && (
-        <ActivityFeedbackCard
-          feedback={lastFeedback.feedback}
-          onContinue={handleContinue}
-        />
+        nextActivityQuery.data?.ui_widget === "SpeakAndRecord" ? (
+          <PronunciationFeedbackCard
+            feedback={lastFeedback.feedback}
+            evaluation={lastFeedback.evaluation}
+            taskContent={nextActivityQuery.data?.task_content}
+            onContinue={handleContinue}
+          />
+        ) : (
+          <ActivityFeedbackCard
+            feedback={lastFeedback.feedback}
+            onContinue={handleContinue}
+          />
+        )
       )}
     </main>
   );

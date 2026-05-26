@@ -1016,6 +1016,12 @@ class EvaluationService:
               (got the verdict right, missed the category)
             - Any other mismatch (false positive / false negative) → 0.0
         """
+        if task_content.get("passage_sentences") is not None:
+            return self._evaluate_word_error_spotting(
+                task_content=task_content,
+                user_answers=user_answers,
+            )
+
         sentences: list[dict] = task_content.get("sentences", [])
         if not sentences:
             raise ValueError(
@@ -1115,6 +1121,67 @@ class EvaluationService:
             "correct_count": correct_count,
             "percentage": percentage,
             "questions": per_question,
+        }
+
+    @staticmethod
+    def _evaluate_word_error_spotting(
+        *,
+        task_content: dict,
+        user_answers: dict,
+    ) -> dict:
+        sentences = task_content.get("passage_sentences") or []
+        selected_ids = {
+            str(token_id)
+            for token_id in (user_answers.get("selected_token_ids") or [])
+        }
+        correct_errors: list[dict] = []
+        token_lookup: dict[str, dict] = {}
+        for sentence in sentences:
+            if not isinstance(sentence, dict):
+                continue
+            for token in sentence.get("tokens") or []:
+                if isinstance(token, dict) and token.get("token_id"):
+                    token_lookup[str(token["token_id"])] = {
+                        **token,
+                        "sentence_id": sentence.get("sentence_id"),
+                    }
+            error = sentence.get("error")
+            if isinstance(error, dict) and error.get("token_id"):
+                correct_errors.append({
+                    **error,
+                    "sentence_id": sentence.get("sentence_id"),
+                })
+
+        correct_ids = {str(error["token_id"]) for error in correct_errors}
+        found_ids = sorted(selected_ids & correct_ids)
+        false_positive_ids = sorted(selected_ids - correct_ids)
+        missed_errors = [
+            error
+            for error in correct_errors
+            if str(error["token_id"]) not in selected_ids
+        ]
+        total_errors = int(task_content.get("total_errors") or len(correct_ids) or 0)
+        correct_count = len(found_ids)
+        percentage = (
+            round((correct_count / total_errors) * 100, 2)
+            if total_errors
+            else 0.0
+        )
+        return {
+            "task_type": "error_spotting",
+            "total": total_errors,
+            "total_errors": total_errors,
+            "correct_count": correct_count,
+            "percentage": percentage,
+            "found_token_ids": found_ids,
+            "missed_errors": missed_errors,
+            "false_positive_token_ids": false_positive_ids,
+            "false_positive_tokens": [
+                token_lookup[token_id]
+                for token_id in false_positive_ids
+                if token_id in token_lookup
+            ],
+            "selected_token_ids": sorted(selected_ids),
         }
 
     # ------------------------------------------------------------------

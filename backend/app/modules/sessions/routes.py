@@ -7,13 +7,23 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
+from app.ai.pronunciation import (
+    PronunciationError,
+    PronunciationResult,
+    PronunciationValidationError,
+    get_default_pronunciation_service,
+)
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.curriculum.exceptions import EnrollmentNotActive, NotEnrolled
+from app.modules.curriculum.file_source import (
+    get_day_by_id as file_get_day_by_id,
+    resolve_archetypes as file_resolve_archetypes,
+)
 from app.modules.curriculum.models import CurriculumDay, EnrollmentStatus, UserEnrollment
 from app.modules.curriculum.repository import (
     CurriculumDayRepository,
@@ -173,6 +183,48 @@ def _activity_from_plan(plan) -> DashboardPlanActivity:
     )
 
 
+def _preview_activities_for_day(
+    day: CurriculumDay,
+    *,
+    tasks_per_day: int,
+    allowed_activities: set[str],
+) -> list[DashboardPlanActivity]:
+    try:
+        file_day = file_get_day_by_id(day.day_id)
+    except DayNotFound:
+        file_day = None
+
+    if file_day is not None:
+        activities: list[DashboardPlanActivity] = []
+        for spec in file_resolve_archetypes(file_day):
+            if spec.core_activity not in allowed_activities:
+                continue
+            activities.append(
+                DashboardPlanActivity(
+                    sequence=len(activities) + 1,
+                    archetype_id=spec.archetype_id,
+                    archetype_name=spec.name,
+                    core_activity=spec.core_activity,
+                    ui_widget=spec.ui_widget,
+                    is_mandatory=True,
+                    status=AttemptStatus.PENDING,
+                )
+            )
+        if not activities:
+            raise NoActivitiesPlanned(
+                f"source day {day.day_id!r}: no archetypes match "
+                f"allowed activities {sorted(allowed_activities)}"
+            )
+        return activities
+
+    planned = plan_session(
+        day,
+        tasks_per_day=tasks_per_day,
+        allowed_activities=allowed_activities,
+    )
+    return [_activity_from_plan(a) for a in planned]
+
+
 def _serialize_dashboard_plan(
     *,
     day_id: str,
@@ -207,6 +259,48 @@ def _load_existing_today_session(
     return sessions_repo.get_latest_for_day(
         user_id=user_id, day_id=day_id, status=SessionStatus.COMPLETED
     )
+
+
+def _expected_file_archetype_ids(
+    day_id: str,
+    *,
+    allowed_activities: set[str],
+) -> list[str] | None:
+    try:
+        file_day = file_get_day_by_id(day_id)
+    except DayNotFound:
+        return None
+    return [
+        spec.archetype_id
+        for spec in file_resolve_archetypes(file_day)
+        if spec.core_activity in allowed_activities
+    ]
+
+
+def _abandon_stale_file_session_if_unstarted(
+    db: Session,
+    session: DailySession | None,
+    *,
+    allowed_activities: set[str],
+) -> bool:
+    if session is None or session.status is not SessionStatus.IN_PROGRESS:
+        return False
+    expected = _expected_file_archetype_ids(
+        session.day_id,
+        allowed_activities=allowed_activities,
+    )
+    if expected is None:
+        return False
+    attempts = list(session.attempts or [])
+    if any(a.status is not AttemptStatus.PENDING for a in attempts):
+        return False
+    current = [a.archetype_id for a in attempts]
+    if current == expected:
+        return False
+    session.status = SessionStatus.ABANDONED
+    db.add(session)
+    db.commit()
+    return True
 
 
 def _resolve_day_from_preference(
@@ -261,7 +355,14 @@ def today_plan(
     try:
         day, pref = _resolve_day_from_preference(db, current_user.id)
         day_id = day.day_id
+        allowed = _allowed_for_pref(pref)
         existing = _load_existing_today_session(db, user_id=current_user.id, day_id=day_id)
+        if _abandon_stale_file_session_if_unstarted(
+            db,
+            existing,
+            allowed_activities=allowed,
+        ):
+            existing = None
         if existing is not None:
             return _serialize_dashboard_plan(
                 day_id=day_id,
@@ -270,16 +371,15 @@ def today_plan(
                 activities=[_activity_from_attempt(a) for a in existing.attempts],
                 is_preview=False,
             )
-        planned = plan_session(
-            day,
-            tasks_per_day=pref.tasks_per_day,
-            allowed_activities=_allowed_for_pref(pref),
-        )
         return _serialize_dashboard_plan(
             day_id=day_id,
             topic=day.topic,
             session=None,
-            activities=[_activity_from_plan(a) for a in planned],
+            activities=_preview_activities_for_day(
+                day,
+                tasks_per_day=pref.tasks_per_day,
+                allowed_activities=allowed,
+            ),
             is_preview=True,
         )
     except DayNotFound as exc:
@@ -622,6 +722,40 @@ def get_scorecard(
         return _serialize_scorecard(session_id, scorecard, db=db)
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+# ── POST /sessions/pronunciation-score ─────────────────────────────
+
+
+@router.post(
+    "/pronunciation-score",
+    response_model=PronunciationResult,
+)
+async def score_pronunciation(
+    audio: UploadFile = File(
+        ...,
+        description="Audio clip to score.",
+    ),
+    reference_text: str = Form(..., min_length=1),
+    language: str = Form(default="en-US"),
+    current_user: User = Depends(get_current_user),
+) -> PronunciationResult:
+    audio_bytes = await audio.read()
+    filename = audio.filename or "recording.wav"
+
+    service = get_default_pronunciation_service()
+    try:
+        result = await service.score(
+            audio_bytes=audio_bytes,
+            filename=filename,
+            reference_text=reference_text,
+            language=language,
+        )
+    except PronunciationValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PronunciationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return result
 
 
 # ── Serializers ────────────────────────────────────────────────────

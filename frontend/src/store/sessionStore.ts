@@ -11,6 +11,7 @@
 import { create } from "zustand";
 import type {
   FeedbackRead,
+  EvaluationRead,
   SessionScorecardRead,
   SessionStartResponse,
 } from "@/lib/sessions-api";
@@ -19,6 +20,7 @@ interface ActivityFeedbackSnapshot {
   sequence: number;
   archetype_id: string;
   feedback: FeedbackRead;
+  evaluation: EvaluationRead;
 }
 
 interface SessionState {

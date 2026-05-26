@@ -72,7 +72,7 @@ from app.modules.sessions.scoring_writer import ApplyReport, apply_session_score
 from app.modules.sessions.task_generator import (
     StubTaskGenerator,
     TaskGenerator,
-    is_valid_listening_mcq_payload,
+    is_valid_listening_payload,
     is_valid_open_text_payload,
     is_valid_speak_and_record_payload,
 )
@@ -319,7 +319,7 @@ class SessionService:
         if not content:
             return False
         if spec.core_activity == "listen":
-            if not is_valid_listening_mcq_payload(content):
+            if not is_valid_listening_payload(content):
                 return False
             audio_script = str(content.get("audio_script") or "").strip()
             audio_url = str(content.get("audio_url") or "").strip()

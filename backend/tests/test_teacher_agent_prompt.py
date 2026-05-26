@@ -168,11 +168,34 @@ async def test_teaching_turn_falls_back_when_llm_fails(monkeypatch) -> None:
         learner_profile={},
         conversation=[],
         lesson_description="Teach routines.",
-        scripted_plan=["Greet the learner."],
     )
 
     assert "Today our lesson is about tense" in result.messages[0]
     assert "Tell me one real daily routine" in result.messages[0]
+
+
+@pytest.mark.asyncio
+async def test_scripted_teaching_turn_fallback_uses_current_lesson(
+    monkeypatch,
+) -> None:
+    fake = FakeTextLLM(fail=True)
+    monkeypatch.setattr(teacher, "get_default_llm_client", lambda: fake)
+
+    result = await generate_teaching_turn(
+        topic="Simple Past Tense — Regular and Irregular Verbs",
+        sub_skill="grammar",
+        task_type="read",
+        user_level=1,
+        learner_profile={},
+        conversation=[],
+        lesson_description="Teach completed actions.",
+        scripted_plan=["Open: ask for one thing the learner did yesterday."],
+    )
+
+    message = result.messages[0]
+    assert "Simple Past Tense" in message
+    assert "simple present" not in message.lower()
+    assert "routine" not in message.lower()
 
 
 # --- Guardrail tests: single-turn contract -----------------------------------

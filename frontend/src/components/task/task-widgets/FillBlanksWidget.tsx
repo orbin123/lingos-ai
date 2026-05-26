@@ -239,7 +239,7 @@ export function FillBlanksWidget({ payload, answers, setAnswers, state, onSubmit
             <div className="tw-result-headline">
               {correctCount} of {blanks.length} blanks correct
             </div>
-            <div className="tw-result-sub">Review the explanations below.</div>
+            <div className="tw-result-sub">Review the correct answers above.</div>
           </div>
           <div>
             <div className="tw-result-score">
@@ -248,32 +248,6 @@ export function FillBlanksWidget({ payload, answers, setAnswers, state, onSubmit
             </div>
             <div className="tw-result-score-sub">Score</div>
           </div>
-        </div>
-      )}
-
-      {submitted && blanks.some((b) => !isCorrect(b, valueFor(b))) && (
-        <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
-          {blanks
-            .map((b, idx) => ({ b, idx, value: valueFor(b) }))
-            .filter(({ b, value }) => !isCorrect(b, value))
-            .map(({ b, idx, value }) => (
-              <div key={blankId(b)} className="tw-fb-row bad">
-                <div className="tw-fb-marker no">!</div>
-                <div>
-                  <div className="tw-fb-q">
-                    <strong>Blank {idx + 1}:</strong>{" "}
-                    <span style={{ textDecoration: "line-through", color: "#dc2626" }}>
-                      {value || "—"}
-                    </span>
-                    {" → "}
-                    <span style={{ color: "var(--tw-green)", fontWeight: 700 }}>
-                      {b.correct_answer}
-                    </span>
-                  </div>
-                  <div className="tw-fb-explain">{b.explanation}</div>
-                </div>
-              </div>
-            ))}
         </div>
       )}
 

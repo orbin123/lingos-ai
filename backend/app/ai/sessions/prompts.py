@@ -94,6 +94,12 @@ Hard rules:
     `inner_widget`, and the inner widget fields such as `items`.
   - For open_text, include `items` with item_id, prompt, sample_answer,
     and answer_hints.
+  - For error_correction, include `items` with item_id, incorrect_sentence,
+    sample_answer, and watch_hints.
+  - For error_spotting, include `passage_sentences`: exactly 5 sentence
+    objects. Each sentence must include tokenized `tokens` and exactly one
+    `error` object whose token_id points at the single token where the
+    learner should tap. Set `total_errors: 5`.
   - For speak_and_record, REQUIRED top-level fields are:
       * `task_intro` — short imperative line (e.g. "Record your routine
         sentences.").
@@ -233,6 +239,81 @@ def compute_mcq_wrong_items(task_content: dict, user_response: dict) -> list[dic
     return wrong
 
 
+def compute_listen_cloze_wrong_items(task_content: dict, user_response: dict) -> list[dict]:
+    """Find wrong fill-in-blank answers inside a listen_and_respond submission."""
+    wrong: list[dict] = []
+    inner = user_response.get("inner_response") or {}
+    submitted = {
+        str(a.get("item_id") or a.get("blank_id") or ""): a.get("user_answer")
+        for a in (inner.get("answers") or [])
+        if isinstance(a, dict) and (a.get("item_id") or a.get("blank_id"))
+    }
+    for item in task_content.get("items", []) or task_content.get("blanks", []):
+        item_id = str(item.get("item_id") or item.get("blank_id") or "")
+        correct = str(item.get("correct_answer", "")).strip().lower()
+        user_val_raw = submitted.get(item_id)
+        user_val = str(user_val_raw or "").strip().lower()
+        if user_val and user_val != correct:
+            wrong.append({
+                "item_id": item_id,
+                "user_wrote": user_val_raw,
+                "correct_answer": item.get("correct_answer"),
+                "explanation": item.get("explanation", ""),
+                "rule": item.get("grammar_rule", ""),
+            })
+    return wrong
+
+
+def compute_error_spotting_wrong_items(task_content: dict, user_response: dict) -> list[dict]:
+    """Find missed and falsely selected word-level error-spotting items."""
+    selected_ids = {
+        str(token_id)
+        for token_id in (user_response.get("selected_token_ids") or [])
+    }
+    correct_errors: list[dict] = []
+    token_lookup: dict[str, dict] = {}
+    for sentence in task_content.get("passage_sentences") or []:
+        if not isinstance(sentence, dict):
+            continue
+        for token in sentence.get("tokens") or []:
+            if isinstance(token, dict) and token.get("token_id"):
+                token_lookup[str(token["token_id"])] = {
+                    **token,
+                    "sentence_id": sentence.get("sentence_id"),
+                }
+        error = sentence.get("error")
+        if isinstance(error, dict) and error.get("token_id"):
+            correct_errors.append({
+                **error,
+                "sentence_id": sentence.get("sentence_id"),
+            })
+
+    wrong: list[dict] = []
+    for error in correct_errors:
+        if str(error["token_id"]) not in selected_ids:
+            incorrect_phrase = error.get("incorrect_phrase") or error.get("token_id")
+            wrong.append({
+                "item_id": error.get("token_id"),
+                "user_wrote": incorrect_phrase,
+                "correct_answer": error.get("correction"),
+                "explanation": error.get("explanation") or error.get("rule") or "",
+                "error_type": "missed_error",
+                "incorrect_phrase": incorrect_phrase,
+                "rule": error.get("rule") or "",
+            })
+    correct_ids = {str(error["token_id"]) for error in correct_errors}
+    for token_id in sorted(selected_ids - correct_ids):
+        token = token_lookup.get(token_id) or {}
+        wrong.append({
+            "item_id": token_id,
+            "user_wrote": token.get("text") or token_id,
+            "correct_answer": "Do not flag this word",
+            "explanation": "This selected word was not one of the passage errors.",
+            "error_type": "false_positive",
+        })
+    return wrong
+
+
 def build_feedback_user_prompt(
     *,
     archetype: ArchetypeSpec,
@@ -354,6 +435,7 @@ def build_task_gen_user_prompt(
             "- `audio_script` must be a natural-sounding spoken passage (60-120 words) at the target CEFR level.",
             "- `inner_widget` must be 'mcq' unless widget_requirements specifies otherwise.",
             "- For MCQ: `items` list with item_id (q1, q2…), prompt, options (list of 4 strings), correct_index (0-based int), explanation.",
+            "- For fill_in_blanks: include a `passage` with ___ markers and `items` with item_id, sentence_with_blank, base_verb, correct_answer, grammar_rule, and explanation.",
             "- Set `audio_url: null` — the backend synthesizes the audio from audio_script.",
         ])
     if archetype.archetype_id == "WRITE_OPEN_SENT":
@@ -365,6 +447,37 @@ def build_task_gen_user_prompt(
             "- Item 3 asks for one affirmative routine sentence with she and a frequency adverb.",
             "- Each item must include item_id, prompt, sample_answer, and answer_hints.",
             "- Include grammar_rule_explained, common_mistakes, and target_words with frequency adverbs.",
+        ])
+    if archetype.archetype_id == "WRITE_ERROR_CORR" or archetype.ui_widget == "ErrorCorrection":
+        parts.extend([
+            "ErrorCorrection writing requirements:",
+            "- Generate exactly 3 items.",
+            "- Each item MUST contain item_id, incorrect_sentence, sample_answer, and watch_hints (a list of 1-4 short error labels like 'tense', 'agreement', 'infinitive form', 'double negatives').",
+            "- Focus on the day's grammar topic (simple past tense regular/irregular verbs).",
+            "- Set `task_intro` to a short imperative like 'Correct past tense mistakes.'",
+        ])
+    if archetype.archetype_id == "READ_ERROR_SPOT":
+        parts.extend([
+            "ErrorSpotting requirements:",
+            "- Generate exactly 5 passage_sentences.",
+            "- Each sentence must contain exactly 1 grammatical error token, so total_errors is exactly 5.",
+            "- Tokenize every sentence into words/chunks with stable token_id values like s1_t1, s1_t2.",
+            "- Mark only the clickable incorrect word/token with is_error: true; all other tokens use is_error: false.",
+            "- Each sentence must include error.token_id, incorrect_phrase, correction, error_type, rule, and explanation.",
+            "- Use at least four different error_type values from: irregular_past, missing_past_auxiliary, passive_helper_missing, time_marker_mismatch, object_or_complement_mismatch, past_participle_form, regular_past_ending.",
+            "- Keep all mistakes connected to simple past meaning, but do not make them all regular verb + -ed errors.",
+            "- Include diverse mistakes such as irregular past forms, did + base verb, passive helper missing, past time marker mismatch, and object/complement mismatch.",
+        ])
+    if archetype.archetype_id == "SPEAK_READ_ALOUD":
+        parts.extend([
+            "ReadAloud speaking requirements:",
+            "- Generate a single connected narrative passage of 50-60 words in simple past tense (focusing on regular -ed verbs and irregular verbs).",
+            "- Do NOT generate separate sentences or multiple items.",
+            "- Populate `text_to_read_aloud` with this connected passage.",
+            "- Set `task_intro` to 'Read the passage above out loud.'",
+            "- Set `instructions` to 'Read the connected passage aloud clearly.'",
+            "- Set `speaking_duration_seconds` to 45.",
+            "- Do NOT generate `speaking_prompts` or multiple items - only use `text_to_read_aloud` for the passage.",
         ])
     parts.extend([
         f"Generate one {archetype.core_activity} task on this topic at the "

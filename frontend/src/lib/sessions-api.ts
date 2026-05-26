@@ -142,6 +142,23 @@ export interface AdvanceDayResponse {
   day_in_week: number;
 }
 
+export interface PronunciationResult {
+  overall_score: number;
+  accuracy_score: number;
+  fluency_score: number;
+  completeness_score: number;
+  prosody_score?: number;
+  words: {
+    word: string;
+    accuracy_score: number;
+    error_type: string;
+    phonemes: {
+      phoneme: string;
+      accuracy_score: number;
+    }[];
+  }[];
+}
+
 // ── Endpoints ──────────────────────────────────────────────────────
 
 export const sessionsApi = {
@@ -192,4 +209,16 @@ export const sessionsApi = {
     api
       .post<AdvanceDayResponse>("/api/sessions/advance-day")
       .then((r) => r.data),
+
+  scorePronunciation: (audio: Blob, referenceText: string, language: string = "en-US") => {
+    const formData = new FormData();
+    formData.append("audio", audio, "recording.wav");
+    formData.append("reference_text", referenceText);
+    formData.append("language", language);
+    return api
+      .post<PronunciationResult>("/api/sessions/pronunciation-score", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+      .then((r) => r.data);
+  },
 };

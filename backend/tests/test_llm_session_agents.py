@@ -17,7 +17,12 @@ from pydantic import BaseModel, ValidationError
 from app.ai.llm.exceptions import LLMError, LLMProviderError
 from app.ai.sessions.llm_evaluator import EvaluationOutput, LLMEvaluator
 from app.ai.sessions.llm_feedback import FeedbackOutput, LLMFeedbackGenerator, MistakeOutSchema
-from app.ai.sessions.llm_task_generator import LLMTaskGenerator, TaskGenOutput
+from app.ai.sessions.llm_task_generator import (
+    ErrorSpottingTask,
+    ErrorCorrectionTask,
+    LLMTaskGenerator,
+    TaskGenOutput,
+)
 from app.scoring import ARCHETYPE_REGISTRY, get_archetype
 from app.tasks.schemas import FillInBlanksTask
 
@@ -78,6 +83,101 @@ class FakeTTSService:
             "audio_url": "/audio/fake-listening.mp3",
             "duration_seconds": 12.4,
         }
+
+
+def _error_spotting_content() -> dict:
+    return {
+        "topic": "Spot past tense errors",
+        "instructions": "Tap each word in the passage that contains a grammatical error.",
+        "task_intro": "Tap each word that has a grammatical error.",
+        "passage_sentences": [
+            {
+                "sentence_id": "s1",
+                "tokens": [
+                    {"token_id": "s1_t1", "text": "Yesterday", "is_error": False},
+                    {"token_id": "s1_t2", "text": "I", "is_error": False},
+                    {"token_id": "s1_t3", "text": "goed", "is_error": True},
+                ],
+                "error": {
+                    "token_id": "s1_t3",
+                    "incorrect_phrase": "goed",
+                    "correction": "went",
+                    "error_type": "irregular_past",
+                    "rule": "Use went as the past form of go.",
+                    "explanation": "Go is irregular in the past.",
+                },
+            },
+            {
+                "sentence_id": "s2",
+                "tokens": [
+                    {"token_id": "s2_t1", "text": "She", "is_error": False},
+                    {"token_id": "s2_t2", "text": "did", "is_error": False},
+                    {"token_id": "s2_t3", "text": "finished", "is_error": True},
+                ],
+                "error": {
+                    "token_id": "s2_t3",
+                    "incorrect_phrase": "finished",
+                    "correction": "finish",
+                    "error_type": "missing_past_auxiliary",
+                    "rule": "After did, use the base verb.",
+                    "explanation": "Did already carries the past tense.",
+                },
+            },
+            {
+                "sentence_id": "s3",
+                "tokens": [
+                    {"token_id": "s3_t1", "text": "The", "is_error": False},
+                    {"token_id": "s3_t2", "text": "manager", "is_error": False},
+                    {"token_id": "s3_t3", "text": "was", "is_error": False},
+                    {"token_id": "s3_t4", "text": "hire", "is_error": True},
+                ],
+                "error": {
+                    "token_id": "s3_t4",
+                    "incorrect_phrase": "hire",
+                    "correction": "hired",
+                    "error_type": "passive_helper_missing",
+                    "rule": "Use was/were + past participle in passive voice.",
+                    "explanation": "The passive form needs the past participle.",
+                },
+            },
+            {
+                "sentence_id": "s4",
+                "tokens": [
+                    {"token_id": "s4_t1", "text": "Last", "is_error": False},
+                    {"token_id": "s4_t2", "text": "week", "is_error": False},
+                    {"token_id": "s4_t3", "text": "we", "is_error": False},
+                    {"token_id": "s4_t4", "text": "visit", "is_error": True},
+                ],
+                "error": {
+                    "token_id": "s4_t4",
+                    "incorrect_phrase": "visit",
+                    "correction": "visited",
+                    "error_type": "time_marker_mismatch",
+                    "rule": "Use a past verb with a past time marker.",
+                    "explanation": "Last week points to finished time.",
+                },
+            },
+            {
+                "sentence_id": "s5",
+                "tokens": [
+                    {"token_id": "s5_t1", "text": "They", "is_error": False},
+                    {"token_id": "s5_t2", "text": "had", "is_error": False},
+                    {"token_id": "s5_t3", "text": "good", "is_error": False},
+                    {"token_id": "s5_t4", "text": "advices", "is_error": True},
+                    {"token_id": "s5_t5", "text": "yesterday.", "is_error": False},
+                ],
+                "error": {
+                    "token_id": "s5_t4",
+                    "incorrect_phrase": "advices",
+                    "correction": "advice",
+                    "error_type": "object_or_complement_mismatch",
+                    "rule": "Advice is uncountable.",
+                    "explanation": "Use advice, not advices.",
+                },
+            },
+        ],
+        "total_errors": 5,
+    }
 
 
 # ── LLMEvaluator ───────────────────────────────────────────────────
@@ -178,6 +278,50 @@ class TestLLMEvaluator:
         assert all(value == 3.3 for value in result.rubric_scores.values())
         assert "1/3 correct" in (result.evaluator_notes or "")
         assert "1 missing" in (result.evaluator_notes or "")
+
+    @pytest.mark.asyncio
+    async def test_error_spotting_scores_selected_error_tokens(self):
+        spec = get_archetype("READ_ERROR_SPOT")
+        fake = FakeLLMClient([])
+        agent = LLMEvaluator(fake)
+
+        result = await agent.evaluate(
+            archetype=spec,
+            task_content=_error_spotting_content(),
+            user_response={
+                "selected_token_ids": [
+                    "s1_t3",
+                    "s2_t3",
+                    "s3_t4",
+                    "s4_t4",
+                    "s5_t4",
+                ],
+            },
+        )
+
+        assert result.raw_score == 10.0
+        assert all(value == 10.0 for value in result.rubric_scores.values())
+        assert '"correct_count": 5' in (result.evaluator_notes or "")
+        assert fake.calls == []
+
+    @pytest.mark.asyncio
+    async def test_error_spotting_tracks_missed_and_false_positive_tokens(self):
+        spec = get_archetype("READ_ERROR_SPOT")
+        fake = FakeLLMClient([])
+        agent = LLMEvaluator(fake)
+
+        result = await agent.evaluate(
+            archetype=spec,
+            task_content=_error_spotting_content(),
+            user_response={"selected_token_ids": ["s1_t3", "s2_t1"]},
+        )
+
+        assert result.raw_score == 2.0
+        notes = result.evaluator_notes or ""
+        assert '"found_token_ids": ["s1_t3"]' in notes
+        assert '"false_positive_token_ids": ["s2_t1"]' in notes
+        assert '"total_errors": 5' in notes
+        assert fake.calls == []
         assert fake.calls == []
 
     @pytest.mark.asyncio
@@ -321,7 +465,11 @@ class TestLLMFeedbackGenerator:
             score=4,
             summary="Several issues.",
             mistakes=[
-                MistakeOutSchema(issue=f"issue {i}")
+                MistakeOutSchema(
+                    issue=f"issue {i}",
+                    user_wrote=f"bad wording {i}",
+                    correction=f"better wording {i}",
+                )
                 for i in range(5)
             ],
             sub_skill_breakdown={skill: 4 for skill in spec.weight_map},
@@ -386,6 +534,53 @@ class TestLLMFeedbackGenerator:
         assert fb.mistakes[0].issue == "Spelling"
 
     @pytest.mark.asyncio
+    async def test_error_spotting_feedback_uses_learner_friendly_mistakes(self):
+        spec = get_archetype("READ_ERROR_SPOT")
+        canned = FeedbackOutput(
+            score=4,
+            summary="You found some errors, but missed two key corrections.",
+            mistakes=[
+                MistakeOutSchema(
+                    issue="missing_past_auxiliary",
+                    user_wrote="not selected",
+                    correction="finish",
+                    rule="After did, use the base verb.",
+                ),
+                MistakeOutSchema(
+                    issue="object_or_complement_mismatch",
+                    user_wrote="not selected",
+                    correction="advice",
+                    rule="Advice is uncountable.",
+                ),
+            ],
+            next_tip="Check whether each flagged word is truly wrong.",
+            sub_skill_breakdown={skill: 4 for skill in spec.weight_map},
+        )
+        fake = FakeLLMClient([canned])
+        agent = LLMFeedbackGenerator(fake)
+
+        fb = await agent.generate(
+            archetype=spec,
+            evaluation=self._eval(),
+            user_response={
+                "selected_token_ids": ["s1_t3", "s2_t1", "s3_t4", "s4_t4"],
+            },
+            task_content=_error_spotting_content(),
+        )
+
+        assert [m.user_wrote for m in fb.mistakes] == ["finished", "advices", "She"]
+        assert [m.correction for m in fb.mistakes] == [
+            "finish",
+            "advice",
+            "Do not flag this word",
+        ]
+        assert fb.mistakes[0].issue == '"finished" should be "finish".'
+        assert fb.mistakes[1].issue == '"advices" should be "advice".'
+        assert fb.mistakes[2].issue == '"She" was not an error.'
+        assert "missing_past_auxiliary" not in {m.issue for m in fb.mistakes}
+        assert "object_or_complement_mismatch" not in {m.issue for m in fb.mistakes}
+
+    @pytest.mark.asyncio
     async def test_no_response_short_circuits(self):
         spec = get_archetype("READ_COMP_MCQ")
         fake = FakeLLMClient([])
@@ -448,6 +643,29 @@ class TestFillInBlanksSchema:
                     }
                 ],
             )
+
+
+class TestErrorSpottingSchema:
+    def test_accepts_word_level_error_spotting_payload(self):
+        task = ErrorSpottingTask.model_validate(_error_spotting_content())
+
+        assert task.total_errors == 5
+        assert len(task.passage_sentences) == 5
+
+    def test_rejects_less_than_five_sentences(self):
+        payload = _error_spotting_content()
+        payload["passage_sentences"] = payload["passage_sentences"][:4]
+
+        with pytest.raises(ValidationError):
+            ErrorSpottingTask.model_validate(payload)
+
+    def test_rejects_low_diversity_error_types(self):
+        payload = _error_spotting_content()
+        for sentence in payload["passage_sentences"]:
+            sentence["error"]["error_type"] = "regular_past_ending"
+
+        with pytest.raises(ValidationError):
+            ErrorSpottingTask.model_validate(payload)
 
 
 class TestLLMTaskGenerator:
@@ -534,6 +752,49 @@ class TestLLMTaskGenerator:
         assert generated.content["widget"] == "fill_in_blanks"
         assert generated.content["ui_widget"] == "FillInBlanks"
         assert generated.content["items"][0]["correct_answer"] == "walks"
+
+    @pytest.mark.asyncio
+    async def test_error_spotting_uses_strict_widget_schema(self):
+        spec = get_archetype("READ_ERROR_SPOT")
+        canned = ErrorSpottingTask.model_validate(_error_spotting_content())
+        fake = FakeLLMClient([canned])
+        agent = LLMTaskGenerator(fake)
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic="Spot past tense errors",
+            explanation_brief="Past tense error spotting.",
+            cefr_level="A1",
+            sub_level=1,
+        )
+
+        assert fake.calls[0]["output_model"] is ErrorSpottingTask
+        content = generated.content
+        assert content["phase"] == "live"
+        assert content["widget"] == "error_spotting"
+        assert content["ui_widget"] == "ErrorSpotting"
+        assert content["total_errors"] == 5
+        assert len(content["passage_sentences"]) == 5
+
+    @pytest.mark.asyncio
+    async def test_error_spotting_failure_falls_back_to_valid_payload(self):
+        spec = get_archetype("READ_ERROR_SPOT")
+        fake = FakeLLMClient([LLMError("provider down")])
+        agent = LLMTaskGenerator(fake)
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic="Spot past tense errors",
+            explanation_brief="Past tense error spotting.",
+            cefr_level="A1",
+            sub_level=1,
+        )
+
+        content = generated.content
+        assert content["phase"] == "stub"
+        assert content["widget"] == "error_spotting"
+        assert content["total_errors"] == 5
+        assert len(content["passage_sentences"]) == 5
 
     @pytest.mark.asyncio
     async def test_w1d1_simple_present_fill_in_blanks_calls_llm(self):
@@ -704,6 +965,80 @@ class TestLLMTaskGenerator:
             "routine_she",
         ]
         assert "always" in content["target_words"]
+
+    @pytest.mark.asyncio
+    async def test_write_error_correction_preserves_valid_items(self):
+        spec = get_archetype("WRITE_ERROR_CORR")
+        canned = ErrorCorrectionTask(
+            topic="Correct past tense mistakes",
+            instructions="Rewrite each incorrect sentence so it is grammatically correct and natural.",
+            task_intro="Correct past tense mistakes.",
+            items=[
+                {
+                    "item_id": "ec_1",
+                    "incorrect_sentence": "He don't have no time.",
+                    "sample_answer": "He didn't have any time.",
+                    "watch_hints": ["tense", "double negatives"],
+                },
+                {
+                    "item_id": "ec_2",
+                    "incorrect_sentence": "She goed home.",
+                    "sample_answer": "She went home.",
+                    "watch_hints": ["irregular past"],
+                },
+                {
+                    "item_id": "ec_3",
+                    "incorrect_sentence": "We didn't walked.",
+                    "sample_answer": "We didn't walk.",
+                    "watch_hints": ["did + base verb"],
+                }
+            ],
+        )
+        fake = FakeLLMClient([canned])
+        agent = LLMTaskGenerator(fake)
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic="Simple past",
+            explanation_brief="Past tense error correction.",
+            cefr_level="A1",
+            sub_level=1,
+        )
+
+        content = generated.content
+        assert content["phase"] == "live"
+        assert content["widget"] == "error_correction"
+        assert content["ui_widget"] == "ErrorCorrection"
+        assert len(content["items"]) == 3
+        assert content["items"][0]["incorrect_sentence"] == "He don't have no time."
+        assert content["items"][0]["watch_hints"] == ["tense", "double negatives"]
+
+    @pytest.mark.asyncio
+    async def test_write_error_correction_malformed_output_falls_back_to_stubs(self):
+        spec = get_archetype("WRITE_ERROR_CORR")
+        fake = FakeLLMClient([
+            TaskGenOutput(
+                topic="Correct past tense mistakes",
+                instructions="Rewrite sentences.",
+                items=[],
+            )
+        ])
+        agent = LLMTaskGenerator(fake)
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic="Simple past",
+            explanation_brief="Past tense error correction.",
+            cefr_level="A1",
+            sub_level=1,
+        )
+
+        content = generated.content
+        assert content["phase"] == "stub"
+        assert content["widget"] == "error_correction"
+        assert len(content["items"]) == 3
+        assert content["items"][0]["incorrect_sentence"] == "He don't have no time to attending the meeting yesterday."
+
 
     @pytest.mark.asyncio
     async def test_speak_timed_preserves_valid_speak_payload(self):
@@ -895,6 +1230,136 @@ class TestLLMTaskGenerator:
         assert content["tts_error"] == "Could not synthesize listening audio for LISTEN_MCQ"
         assert content["audio_duration_seconds"] > 0
 
+    @pytest.mark.asyncio
+    async def test_listen_cloze_synthesizes_audio_and_keeps_blank_items(self, monkeypatch):
+        from app.ai import tts as tts_module
+
+        spec = get_archetype("LISTEN_CLOZE")
+        fake_tts = FakeTTSService()
+        monkeypatch.setattr(tts_module, "get_default_tts_service", lambda: fake_tts)
+        fake = FakeLLMClient([
+            TaskGenOutput(
+                topic="Listen and fill past verb forms",
+                instructions="Listen and complete the notes.",
+                audio_script="Priya got up early and had an interview.",
+                inner_widget="fill_in_blanks",
+                passage="Priya ___ up early and ___ an interview.",
+                items=[
+                    {
+                        "item_id": "b1",
+                        "sentence_with_blank": "Priya ___ up early.",
+                        "base_verb": "get",
+                        "correct_answer": "got",
+                        "grammar_rule": "Use got as the past form of get.",
+                        "explanation": "Get becomes got in the past.",
+                    },
+                    {
+                        "item_id": "b2",
+                        "sentence_with_blank": "She ___ an interview.",
+                        "base_verb": "have",
+                        "correct_answer": "had",
+                        "grammar_rule": "Use had as the past form of have.",
+                        "explanation": "Have becomes had in the past.",
+                    },
+                ],
+            )
+        ])
+        agent = LLMTaskGenerator(fake)
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic="Simple past",
+            explanation_brief="Regular and irregular past verbs.",
+            cefr_level="A1",
+            sub_level=1,
+        )
+
+        content = generated.content
+        assert content["widget"] == "listen_and_respond"
+        assert content["inner_widget"] == "fill_in_blanks"
+        assert content["audio_url"] == "/audio/fake-listening.mp3"
+        assert content["items"][0]["correct_answer"] == "got"
+        assert fake_tts.calls[0]["text"] == "Priya got up early and had an interview."
+
+    @pytest.mark.asyncio
+    async def test_authored_listen_cloze_payload_bypasses_llm_and_synthesizes(self, monkeypatch):
+        from app.ai import tts as tts_module
+
+        spec = get_archetype("LISTEN_CLOZE")
+        fake_tts = FakeTTSService()
+        monkeypatch.setattr(tts_module, "get_default_tts_service", lambda: fake_tts)
+        fake = FakeLLMClient([])
+        agent = LLMTaskGenerator(fake)
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic="Simple past",
+            explanation_brief="Regular and irregular past verbs.",
+            cefr_level="A1",
+            sub_level=1,
+            task_spec={
+                "listen_and_respond": {
+                    "instructions": "Listen and fill the blanks.",
+                    "audio_script": "She prepared her answers and felt confident.",
+                    "inner_widget": "fill_in_blanks",
+                    "passage": "She ___ her answers and ___ confident.",
+                    "items": [
+                        {
+                            "item_id": "b1",
+                            "sentence_with_blank": "She ___ her answers.",
+                            "correct_answer": "prepared",
+                            "explanation": "Prepare becomes prepared.",
+                        },
+                        {
+                            "item_id": "b2",
+                            "sentence_with_blank": "She ___ confident.",
+                            "correct_answer": "felt",
+                            "explanation": "Feel becomes felt.",
+                        },
+                    ],
+                }
+            },
+        )
+
+        content = generated.content
+        assert content["phase"] == "authored"
+        assert content["inner_widget"] == "fill_in_blanks"
+        assert content["audio_url"] == "/audio/fake-listening.mp3"
+        assert fake.calls == []
+
+    @pytest.mark.asyncio
+    async def test_listen_cloze_evaluator_scores_inner_blank_answers(self):
+        spec = get_archetype("LISTEN_CLOZE")
+        agent = LLMEvaluator(FakeLLMClient([]))
+
+        result = await agent.evaluate(
+            archetype=spec,
+            task_content={
+                "widget": "listen_and_respond",
+                "inner_widget": "fill_in_blanks",
+                "items": [
+                    {"item_id": "b1", "correct_answer": "got"},
+                    {"item_id": "b2", "correct_answer": "had"},
+                    {"item_id": "b3", "correct_answer": "prepared"},
+                    {"item_id": "b4", "correct_answer": "felt"},
+                ],
+            },
+            user_response={
+                "inner_response": {
+                    "widget": "fill_in_blanks",
+                    "answers": [
+                        {"item_id": "b1", "user_answer": "got"},
+                        {"item_id": "b2", "user_answer": "has"},
+                        {"item_id": "b3", "user_answer": " prepared "},
+                    ],
+                }
+            },
+        )
+
+        assert result.raw_score == 5.0
+        assert all(score == 5.0 for score in result.rubric_scores.values())
+        assert '"missing": 1' in (result.evaluator_notes or "")
+
 
 # ── compute_wrong_items + confirmed_mistakes pipeline ─────────────
 
@@ -941,6 +1406,30 @@ class TestComputeWrongItems:
         user_response = {"b1": "brush", "b2": "", "b3": "walks", "b4": "drink"}
         wrong = compute_wrong_items(self._task(), user_response)
         assert not any(w["item_id"] == "b2" for w in wrong)
+
+    def test_listen_cloze_wrong_answers_use_inner_response(self):
+        from app.ai.sessions.prompts import compute_listen_cloze_wrong_items
+
+        task_content = {
+            "items": [
+                {"item_id": "b1", "correct_answer": "got", "explanation": "get -> got"},
+                {"item_id": "b2", "correct_answer": "had", "explanation": "have -> had"},
+            ]
+        }
+        user_response = {
+            "inner_response": {
+                "widget": "fill_in_blanks",
+                "answers": [
+                    {"item_id": "b1", "user_answer": "got"},
+                    {"item_id": "b2", "user_answer": "haved"},
+                ],
+            }
+        }
+
+        wrong = compute_listen_cloze_wrong_items(task_content, user_response)
+        assert len(wrong) == 1
+        assert wrong[0]["item_id"] == "b2"
+        assert wrong[0]["correct_answer"] == "had"
 
 
 class TestFeedbackConfirmedMistakes:
@@ -1021,6 +1510,41 @@ class TestFeedbackConfirmedMistakes:
         assert "Open-ended feedback mode" in prompt
         assert "improved version" in prompt
         assert "preserves the same idea" in prompt
+
+    @pytest.mark.asyncio
+    async def test_listen_cloze_injects_confirmed_wrong_answers_in_prompt(self):
+        spec = get_archetype("LISTEN_CLOZE")
+        fake = FakeLLMClient([self._canned_feedback(spec)])
+        agent = LLMFeedbackGenerator(fake)
+
+        await agent.generate(
+            archetype=spec,
+            evaluation=self._eval(),
+            user_response={
+                "inner_response": {
+                    "widget": "fill_in_blanks",
+                    "answers": [
+                        {"item_id": "b1", "user_answer": "got"},
+                        {"item_id": "b2", "user_answer": "haved"},
+                    ],
+                }
+            },
+            task_content={
+                "widget": "listen_and_respond",
+                "inner_widget": "fill_in_blanks",
+                "items": [
+                    {"item_id": "b1", "correct_answer": "got", "explanation": "get -> got"},
+                    {"item_id": "b2", "correct_answer": "had", "explanation": "have -> had"},
+                ],
+            },
+        )
+
+        confirmed_section = fake.calls[0]["user_prompt"].lower().split(
+            "confirmed wrong answers",
+            1,
+        )[1]
+        assert '"b2"' in confirmed_section
+        assert '"b1"' not in confirmed_section
 
 
 # ── Registry sanity (Phase 4: every archetype must be invokable) ───

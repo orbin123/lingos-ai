@@ -12,6 +12,7 @@
  */
 
 import { GenericResponseWidget } from "./GenericResponseWidget";
+import { SessionSpeakRecordWidget } from "./SessionSpeakRecordWidget";
 import type { SessionWidgetComponent } from "./types";
 
 
@@ -34,7 +35,7 @@ const REGISTRY: Record<string, SessionWidgetComponent> = {
   TimedWriting: GenericResponseWidget,
 
   // Speaking
-  SpeakAndRecord: GenericResponseWidget,
+  SpeakAndRecord: SessionSpeakRecordWidget,
   Storyboard: GenericResponseWidget,
 
   // Listening (composite "outer+inner" strings — backend ships them as one)

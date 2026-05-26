@@ -168,6 +168,7 @@ export function useSubmitActivity(sessionId: string | null) {
         sequence: variables.sequence,
         archetype_id: variables.archetype_id,
         feedback: data.feedback,
+        evaluation: data.evaluation,
       });
     },
     onSettled: () => {

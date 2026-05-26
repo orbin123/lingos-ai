@@ -52,6 +52,7 @@ class PronunciationResult(TypedDict):
     accuracy_score: float          # how close to native phonemes
     fluency_score: float           # pacing, pauses, run-on
     completeness_score: float      # did they say all expected words?
+    prosody_score: float           # intonation, rhythm, word stress
     words: list[WordScore]
 
 
