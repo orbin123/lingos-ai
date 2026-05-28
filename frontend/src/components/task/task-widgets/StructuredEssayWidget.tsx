@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { TaskHeader, I } from "./shared";
 import { countWords } from "./types";
 import type { EssaySection, StructuredEssayPayload, WidgetProps } from "./types";
@@ -40,7 +40,10 @@ function sectionTitle(s: EssaySection): string {
 export function StructuredEssayWidget({ payload, answers, setAnswers, state, onSubmit }: Props) {
   const submitted = state === "after";
   const sections = payload.sections ?? [];
-  const startedAtRef = useRef(Date.now());
+  const startedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (startedAtRef.current === null) startedAtRef.current = Date.now();
+  }, []);
   const initialMap = sectionsFromAnswers(answers);
   const [texts, setTexts] = useState<Record<string, string>>(initialMap);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -57,7 +60,7 @@ export function StructuredEssayWidget({ payload, answers, setAnswers, state, onS
     setAnswers({
       sections: rows,
       total_word_count: rows.reduce((a, r) => a + r.word_count, 0),
-      time_spent_seconds: Math.round((Date.now() - startedAtRef.current) / 1000),
+      time_spent_seconds: Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000),
     });
   };
 

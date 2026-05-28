@@ -2,19 +2,14 @@
 
 import { FilePenLine, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { SentenceTransformTask } from "../source";
-import {
-  ResultBanner,
-  RuleCallout,
-  StatusDot,
-  TaskWidgetFrame,
-} from "./TaskWidgetFrame";
+import type { WriteParaphraseTask } from "../source";
+import { ResultBanner, RuleCallout, StatusDot, TaskWidgetFrame } from "./TaskWidgetFrame";
 
-export function SentenceTransformTaskWidget({
+export function WriteParaphraseTaskWidget({
   task,
   previewState,
 }: {
-  task: SentenceTransformTask;
+  task: WriteParaphraseTask;
   previewState: SessionPreviewState;
 }) {
   const isDefault = previewState === "default";
@@ -23,12 +18,12 @@ export function SentenceTransformTaskWidget({
 
   return (
     <TaskWidgetFrame task={task} icon={<FilePenLine size={18} strokeWidth={2.5} />}>
-      <RuleCallout label="Writing focus">{task.grammarRule}</RuleCallout>
+      <RuleCallout label="Paraphrase focus">{task.grammarRule}</RuleCallout>
       {!isDefault && (
         <ResultBanner
           total={task.items.length}
           correct={correctCount}
-          label={`${correctCount} of ${task.items.length} sentences transformed`}
+          label={`${correctCount} of ${task.items.length} rewrites accepted`}
         />
       )}
 
@@ -56,21 +51,21 @@ export function SentenceTransformTaskWidget({
                   fontWeight: 800,
                   letterSpacing: "0.06em",
                   textTransform: "uppercase",
-                  color: "var(--tw-primary)",
+                  color: "oklch(52% 0.18 240)",
                   marginBottom: 8,
                 }}
               >
-                Rewrite this
+                Original message
               </div>
               <div
                 style={{
-                  fontSize: 16,
+                  fontSize: 15.5,
                   fontWeight: 700,
                   color: "var(--tw-navy)",
                   lineHeight: 1.5,
                 }}
               >
-                &ldquo;{item.sourceSentence}&rdquo;
+                &ldquo;{item.incorrectSentence}&rdquo;
               </div>
             </div>
 
@@ -80,15 +75,14 @@ export function SentenceTransformTaskWidget({
                   className="tw-write-area"
                   style={{
                     color: "oklch(55% 0.07 240)",
-                    minHeight: 82,
+                    minHeight: 60,
                     pointerEvents: "none",
                   }}
                 >
-                  Rewrite the sentence here...
+                  Type your rewrite here...
                 </div>
                 <div className="tw-write-helper">
-                  <span>Watch: {item.watchHints.join(", ")}.</span>
-                  <span className="tw-count short">0 words - need more</span>
+                  <span>Use: {item.watchHints.join(", ")}.</span>
                 </div>
               </>
             ) : (
@@ -96,14 +90,14 @@ export function SentenceTransformTaskWidget({
                 <div className="tw-compare-card">
                   <div className="tw-compare-label">
                     <StatusDot ok={Boolean(answer?.isCorrect)} />
-                    Your sentence
+                    Your rewrite
                   </div>
                   <div className="tw-compare-body">{answer?.text}</div>
                 </div>
                 <div className="tw-compare-card sample">
                   <div className="tw-compare-label">
                     <Sparkles size={12} />
-                    Model sentence
+                    Suggested rewrite
                   </div>
                   <div className="tw-compare-body">{item.sampleAnswer}</div>
                 </div>

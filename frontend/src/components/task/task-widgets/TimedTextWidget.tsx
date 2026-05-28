@@ -14,10 +14,15 @@ export function TimedTextWidget({ payload, answers, setAnswers, state, onSubmit 
   const minWords = payload.minimum_word_count || 0;
   const noEditing = !!payload.no_editing_allowed;
 
-  const startedAtRef = useRef(Date.now());
+  const startedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (startedAtRef.current === null) startedAtRef.current = Date.now();
+  }, []);
   const firstTypeAtRef = useRef<number | null>(null);
   const submittedRef = useRef(submitted);
-  submittedRef.current = submitted;
+  useEffect(() => {
+    submittedRef.current = submitted;
+  }, [submitted]);
 
   const [text, setText] = useState<string>((answers.user_answer as string) ?? "");
   const [elapsed, setElapsed] = useState(0);
@@ -35,6 +40,17 @@ export function TimedTextWidget({ payload, answers, setAnswers, state, onSubmit 
     return () => clearInterval(interval);
   }, [submitted]);
 
+  const publish = (nextText: string, completedNormally: boolean) => {
+    const wc = countWords(nextText);
+    setAnswers({
+      user_answer: nextText,
+      word_count: wc,
+      time_spent_seconds: Math.min(totalSec, Math.round((Date.now() - (startedAtRef.current ?? Date.now())) / 1000)),
+      hit_target_word_count: wc >= targetWords,
+      completed_normally: completedNormally,
+    });
+  };
+
   // Auto-submit when timer hits 0
   useEffect(() => {
     if (submitted || autoSubmittedRef.current) return;
@@ -43,17 +59,6 @@ export function TimedTextWidget({ payload, answers, setAnswers, state, onSubmit 
     publish(text, true);
     onSubmit();
   }, [elapsed, totalSec, submitted, text, onSubmit]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const publish = (nextText: string, completedNormally: boolean) => {
-    const wc = countWords(nextText);
-    setAnswers({
-      user_answer: nextText,
-      word_count: wc,
-      time_spent_seconds: Math.min(totalSec, Math.round((Date.now() - startedAtRef.current) / 1000)),
-      hit_target_word_count: wc >= targetWords,
-      completed_normally: completedNormally,
-    });
-  };
 
   const handleChange = (next: string) => {
     if (submitted) return;
