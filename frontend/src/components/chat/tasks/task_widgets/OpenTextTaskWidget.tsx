@@ -2,24 +2,35 @@
 
 import { FileText, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { OpenTextTask } from "../source";
+import type { LiveTaskController, OpenTextTask } from "../source";
 import {
+  liveStringRecord,
   ResultBanner,
   RuleCallout,
   StatusDot,
+  SubmitButton,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
 export function OpenTextTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: OpenTextTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
-  const isDefault = previewState === "default";
-  const answers = isDefault ? [] : task.answers[previewState];
-  const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;
+  const interactive = Boolean(live) && !live!.submitted;
+  // In live mode per-item correctness comes from the LLM evaluator (shown in the
+  // feedback card), so the widget renders the learner's text vs the sample
+  // without its own pass/fail marks.
+  const liveAnswers = live ? liveStringRecord(live.answers) : null;
+  const previewAnswers = !live && previewState !== "default" ? task.answers[previewState] : null;
+
+  const setAnswer = (itemId: string, value: string) => {
+    live?.setAnswers({ ...live.answers, [itemId]: value });
+  };
 
   return (
     <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
@@ -31,30 +42,49 @@ export function OpenTextTaskWidget({
           </span>
         ))}
       </div>
-      {!isDefault && (
+      {previewAnswers && (
         <ResultBanner
           total={task.items.length}
-          correct={correctCount}
-          label={`${correctCount} of ${task.items.length} sentences accepted`}
+          correct={previewAnswers.filter((answer) => answer.isCorrect).length}
+          label={`${previewAnswers.filter((answer) => answer.isCorrect).length} of ${task.items.length} sentences accepted`}
         />
       )}
       {task.items.map((item, index) => {
-        const answer = answers.find((row) => row.itemId === item.itemId);
+        const previewAnswer = previewAnswers?.find((row) => row.itemId === item.itemId);
+        const liveText = liveAnswers?.[item.itemId] ?? "";
         return (
           <div className="tw-card" key={item.itemId}>
             <div className="tw-q-number-row">
               <div className="tw-q-number-badge">{index + 1}</div>
               <div className="tw-q-stem">{item.prompt}</div>
             </div>
-            {isDefault ? (
+            {interactive ? (
+              <textarea
+                className="tw-write-area"
+                value={liveText}
+                onChange={(event) => setAnswer(item.itemId, event.target.value)}
+                placeholder="Write your answer here..."
+                style={{ minHeight: 92 }}
+              />
+            ) : live ? (
+              <div className="tw-compare-grid">
+                <div className="tw-compare-card">
+                  <div className="tw-compare-label">Your answer</div>
+                  <div className="tw-compare-body">{liveText}</div>
+                </div>
+                <div className="tw-compare-card sample">
+                  <div className="tw-compare-label">
+                    <Sparkles size={12} />
+                    Sample answer
+                  </div>
+                  <div className="tw-compare-body">{item.sampleAnswer}</div>
+                </div>
+              </div>
+            ) : previewState === "default" ? (
               <>
                 <div
                   className="tw-write-area"
-                  style={{
-                    color: "oklch(55% 0.07 240)",
-                    minHeight: 92,
-                    pointerEvents: "none",
-                  }}
+                  style={{ color: "oklch(55% 0.07 240)", minHeight: 92, pointerEvents: "none" }}
                 >
                   Write your answer here...
                 </div>
@@ -67,10 +97,10 @@ export function OpenTextTaskWidget({
               <div className="tw-compare-grid">
                 <div className="tw-compare-card">
                   <div className="tw-compare-label">
-                    <StatusDot ok={Boolean(answer?.isCorrect)} />
+                    <StatusDot ok={Boolean(previewAnswer?.isCorrect)} />
                     Your answer
                   </div>
-                  <div className="tw-compare-body">{answer?.text}</div>
+                  <div className="tw-compare-body">{previewAnswer?.text}</div>
                 </div>
                 <div className="tw-compare-card sample">
                   <div className="tw-compare-label">
@@ -95,6 +125,7 @@ export function OpenTextTaskWidget({
           </div>
         );
       })}
+      {interactive && <SubmitButton onClick={() => live!.onSubmit(live!.answers)} />}
     </TaskWidgetFrame>
   );
 }

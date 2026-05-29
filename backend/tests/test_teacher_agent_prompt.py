@@ -8,6 +8,7 @@ from app.ai.agents import teacher
 from app.ai.agents.teacher import (
     TeachingOutput,
     _build_user_prompt,
+    _system_prompt,
     generate_teaching_turn,
     stream_teaching_turn,
     validate_teaching_message,
@@ -109,6 +110,26 @@ def test_teacher_prompt_includes_learner_profile() -> None:
     assert "I work every day." in prompt
 
 
+def test_system_prompt_advances_after_correct_frequency_adverb_sentence() -> None:
+    prompt = _system_prompt()
+    one_line_prompt = " ".join(prompt.split())
+
+    assert "frequency-adverb steps" in prompt
+    assert (
+        "always, usually, often, sometimes, and never all count as successful"
+        in one_line_prompt
+    )
+    assert "do not ask the learner to try another adverb" in prompt
+    assert 'Ask only "Ready to try the practice task?"' in one_line_prompt
+
+
+def test_system_prompt_keeps_positive_feedback_specific() -> None:
+    prompt = _system_prompt()
+
+    assert "quote the useful learner phrase" in prompt
+    assert "do not add celebration filler" in prompt.lower()
+
+
 @pytest.mark.asyncio
 async def test_generate_teaching_turn_returns_llm_text(monkeypatch) -> None:
     fake = FakeTextLLM(text="Use simple present for routines.")
@@ -203,6 +224,17 @@ async def test_scripted_teaching_turn_fallback_uses_current_lesson(
 
 def test_validate_clean_message_returns_no_violations() -> None:
     assert validate_teaching_message("Nice work. Can you change it to he?") == []
+
+
+def test_validate_flags_empty_praise_without_specific_learner_phrase() -> None:
+    msg = "Great! Can you try a sentence with sometimes?"
+    violations = validate_teaching_message(msg)
+    assert "empty_praise" in violations
+
+
+def test_validate_allows_specific_positive_feedback() -> None:
+    msg = "You used 'always assists' correctly. Ready to try the practice task?"
+    assert validate_teaching_message(msg) == []
 
 
 def test_validate_flags_multiple_questions() -> None:
@@ -344,6 +376,7 @@ async def test_repair_falls_back_when_retry_also_fails(monkeypatch) -> None:
 async def test_streaming_repairs_multi_question_turn(monkeypatch) -> None:
     # Streaming chunks bundle two questions; final yield must be one question.
     fake = FakeTextLLM(
+        text="You used 'analyze'. Can you say it with he?",
         chunks=[
             "Great! ",
             "Can you say it with he? ",

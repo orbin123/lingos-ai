@@ -1,8 +1,30 @@
 "use client";
 
-import { Check, Sparkles, X } from "lucide-react";
+import { Check, Play, Send, Sparkles, X } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SessionTask } from "../source";
+
+/** Shared submit button for live interactive task widgets (M4). */
+export function SubmitButton({
+  onClick,
+  disabled,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      className="tw-submit-btn"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <Send size={15} />
+      Submit answers
+    </button>
+  );
+}
 
 export function TaskWidgetFrame({
   task,
@@ -165,8 +187,269 @@ export function StatusDot({ ok }: { ok: boolean }) {
   );
 }
 
+export function ListeningAudioCard({
+  title,
+  script,
+  audioUrl,
+  durationSeconds,
+  completed,
+  hint,
+  onComplete,
+}: {
+  title: string;
+  script: string;
+  audioUrl?: string | null;
+  durationSeconds?: number;
+  completed: boolean;
+  hint?: string;
+  onComplete: () => void;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [duration, setDuration] = useState(durationSeconds || 0);
+  const [fallbackUnavailable, setFallbackUnavailable] = useState(false);
+  const resolvedAudioUrl = resolveAudioUrl(audioUrl);
+
+  useEffect(() => {
+    setDuration(durationSeconds || 0);
+    setElapsed(0);
+    setPlaying(false);
+    setFallbackUnavailable(false);
+  }, [audioUrl, script, durationSeconds]);
+
+  useEffect(() => {
+    if (completed) {
+      setPlaying(false);
+      setElapsed(duration || durationSeconds || 0);
+    }
+  }, [completed, duration, durationSeconds]);
+
+  const finishPlayback = () => {
+    setPlaying(false);
+    setFallbackUnavailable(false);
+    setElapsed(duration || durationSeconds || 0);
+    onComplete();
+  };
+
+  const playWithSpeech = () => {
+    if (!script || typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setFallbackUnavailable(true);
+      return false;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(script);
+    utterance.rate = 0.9;
+    utterance.onend = finishPlayback;
+    utterance.onerror = () => {
+      setPlaying(false);
+      setFallbackUnavailable(true);
+    };
+    setPlaying(true);
+    try {
+      window.speechSynthesis.speak(utterance);
+      return true;
+    } catch {
+      setPlaying(false);
+      setFallbackUnavailable(true);
+      return false;
+    }
+  };
+
+  const playOnce = () => {
+    if (completed || playing) return;
+    setFallbackUnavailable(false);
+    if (resolvedAudioUrl && audioRef.current) {
+      audioRef.current.currentTime = 0;
+      setPlaying(true);
+      void audioRef.current.play().catch(() => {
+        setPlaying(false);
+        playWithSpeech();
+      });
+      return;
+    }
+    playWithSpeech();
+  };
+
+  const durationLabel = formatClock(duration || durationSeconds || 0);
+  const elapsedLabel = formatClock(Math.min(elapsed, duration || elapsed || 0));
+  const progress = duration > 0 ? Math.min(1, elapsed / duration) : completed ? 1 : 0;
+  const bars = [16, 24, 30, 21, 34, 38, 26, 18, 28, 32, 30, 22, 35, 37, 25, 19, 29, 36, 31, 23];
+
+  return (
+    <div
+      className="tw-card"
+      style={{
+        background: "#fff4e5",
+        border: "1.5px solid #fdc283",
+        borderRadius: 16,
+        padding: "12px 14px",
+        marginBottom: 10,
+      }}
+    >
+      {resolvedAudioUrl && (
+        <audio
+          ref={audioRef}
+          preload="metadata"
+          src={resolvedAudioUrl}
+          onLoadedMetadata={(event) => {
+            const nextDuration = event.currentTarget.duration;
+            if (Number.isFinite(nextDuration)) setDuration(Math.round(nextDuration));
+          }}
+          onTimeUpdate={(event) => setElapsed(event.currentTarget.currentTime)}
+          onEnded={finishPlayback}
+        />
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <button
+          type="button"
+          onClick={playOnce}
+          title={completed ? "Audio already played" : "Play audio"}
+          aria-label={completed ? "Audio already played" : "Play audio"}
+          disabled={completed || playing}
+          style={{
+            ...roundIconButton,
+            width: 48,
+            height: 48,
+            background: completed ? "#d9a46f" : "#f59e0b",
+            boxShadow: "0 5px 14px rgba(245,158,11,0.24)",
+            cursor: completed || playing ? "not-allowed" : "pointer",
+            opacity: completed ? 0.75 : 1,
+          }}
+        >
+          <Play size={19} fill="currentColor" />
+        </button>
+
+        <div style={{ minWidth: 0, flex: "1 1 auto" }}>
+          <div style={{ fontSize: 15.5, lineHeight: 1.2, fontWeight: 850, color: "var(--tw-navy)" }}>
+            {title || "Listening audio"}
+          </div>
+          <div style={{ marginTop: 3, fontSize: 12.5, color: "#235273" }}>
+            Native speed · {durationLabel} total
+          </div>
+          {!completed && hint && (
+            <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.25, color: "#7a5a2c" }}>
+              {hint}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "0 0 auto" }}>
+          <div
+            aria-hidden
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 2.5,
+              height: 38,
+              width: "clamp(96px, 18vw, 220px)",
+            }}
+          >
+            {bars.map((height, index) => {
+              const filled = index / Math.max(1, bars.length - 1) <= progress;
+              return (
+                <span
+                  key={index}
+                  style={{
+                    width: 3,
+                    height,
+                    borderRadius: 999,
+                    background: filled || playing ? "#f59e0b" : "#d7a981",
+                    opacity: filled || playing ? 1 : 0.75,
+                  }}
+                />
+              );
+            })}
+          </div>
+          <div style={{ minWidth: 36, textAlign: "right", fontSize: 13.5, lineHeight: 1.15, fontWeight: 800, color: "#235273" }}>
+            {elapsedLabel}
+            <br />
+            <span>{durationLabel}</span>
+          </div>
+        </div>
+      </div>
+      {fallbackUnavailable && !completed && (
+        <div
+          style={{
+            marginTop: 12,
+            borderRadius: 12,
+            border: "1px solid #f1b45d",
+            background: "#fffaf0",
+            padding: "10px 12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+          }}
+        >
+          <div style={{ fontSize: 12.5, lineHeight: 1.45, color: "#6f4a11", fontWeight: 700 }}>
+            Audio playback is unavailable in this browser right now.
+          </div>
+          <button
+            type="button"
+            onClick={finishPlayback}
+            style={{
+              border: "none",
+              borderRadius: 999,
+              background: "#f59e0b",
+              color: "white",
+              fontSize: 12,
+              fontWeight: 850,
+              padding: "8px 12px",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            Continue
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function resolveAudioUrl(audioUrl?: string | null): string | null {
+  if (!audioUrl) return null;
+  if (/^(https?:|blob:|data:)/i.test(audioUrl)) return audioUrl;
+  if (audioUrl.startsWith("/")) {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    return `${apiBase.replace(/\/$/, "")}${audioUrl}`;
+  }
+  return audioUrl;
+}
+
+function formatClock(seconds: number): string {
+  const total = Math.max(0, Math.round(seconds || 0));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
 export function normalizeAnswer(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
+}
+
+/** Coerce a live answers map to string values (fill-in / text widgets). */
+export function liveStringRecord(
+  answers: Record<string, unknown>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(answers)) {
+    out[key] = value == null ? "" : String(value);
+  }
+  return out;
+}
+
+/** Coerce a live answers map to numeric values (MCQ option indices). */
+export function liveNumberRecord(
+  answers: Record<string, unknown>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(answers)) {
+    const num = Number(value);
+    if (Number.isFinite(num)) out[key] = num;
+  }
+  return out;
 }
 
 export const roundIconButton: CSSProperties = {

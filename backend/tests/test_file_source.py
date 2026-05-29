@@ -75,9 +75,9 @@ def test_get_day_by_id_returns_populated_w1_d2() -> None:
 
 
 def test_get_day_blank_entry_raises() -> None:
-    # Week 2 is still blank in source_24w.py at time of writing.
+    # Cycle 1 (weeks 1-4) is fully authored; week 5 is still blank.
     with pytest.raises(DayNotFound):
-        file_source.get_day(2, 0)
+        file_source.get_day(5, 0)
 
 
 def test_get_day_out_of_range_raises() -> None:

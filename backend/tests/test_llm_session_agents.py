@@ -17,6 +17,7 @@ from pydantic import BaseModel, ValidationError
 from app.ai.llm.exceptions import LLMError, LLMProviderError
 from app.ai.sessions.llm_evaluator import EvaluationOutput, LLMEvaluator
 from app.ai.sessions.llm_feedback import FeedbackOutput, LLMFeedbackGenerator, MistakeOutSchema
+from app.ai.sessions.prompts import compute_mcq_wrong_items
 from app.ai.sessions.llm_task_generator import (
     ErrorSpottingTask,
     ErrorCorrectionTask,
@@ -278,6 +279,51 @@ class TestLLMEvaluator:
         assert all(value == 3.3 for value in result.rubric_scores.values())
         assert "1/3 correct" in (result.evaluator_notes or "")
         assert "1 missing" in (result.evaluator_notes or "")
+
+    @pytest.mark.asyncio
+    async def test_listen_mcq_scores_flat_live_answer_map_without_llm_call(self):
+        spec = get_archetype("LISTEN_MCQ")
+        fake = FakeLLMClient([])
+        agent = LLMEvaluator(fake)
+
+        result = await agent.evaluate(
+            archetype=spec,
+            task_content={
+                "items": [
+                    {"item_id": "q1", "options": ["A", "B"], "correct_index": 1},
+                    {"item_id": "q2", "options": ["A", "B"], "correct_index": 0},
+                ]
+            },
+            user_response={"q1": 1, "q2": 0},
+        )
+
+        assert result.raw_score == 10.0
+        assert all(value == 10.0 for value in result.rubric_scores.values())
+        assert fake.calls == []
+
+    def test_listen_mcq_feedback_accepts_flat_live_answer_map(self):
+        wrong = compute_mcq_wrong_items(
+            {
+                "items": [
+                    {
+                        "item_id": "q1",
+                        "options": ["Morning", "Evening"],
+                        "correct_index": 1,
+                        "explanation": "The speaker says evening.",
+                    }
+                ]
+            },
+            {"q1": 0},
+        )
+
+        assert wrong == [
+            {
+                "item_id": "q1",
+                "user_selected": "Morning",
+                "correct_answer": "Evening",
+                "explanation": "The speaker says evening.",
+            }
+        ]
 
     @pytest.mark.asyncio
     async def test_error_spotting_scores_selected_error_tokens(self):

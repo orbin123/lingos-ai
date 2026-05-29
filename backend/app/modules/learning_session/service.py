@@ -86,12 +86,43 @@ from app.modules.sessions.repository import (
     ActivityAttemptRepository,
     DailySessionRepository,
 )
+from app.modules.sessions.contracts import (
+    ContractValidationError,
+    contract_widgets,
+    project_evaluation,
+    project_feedback,
+    project_task_payload,
+)
+from app.modules.sessions.evaluator import EvaluationResult
+from app.modules.sessions.feedback_generator import FeedbackResult, MistakeOut
 from app.modules.sessions.service import SessionService
 from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.modules.skills.repository import SkillRepository
 from app.scoring import CourseLength
 
 logger = logging.getLogger(__name__)
+
+# Archetypes promoted to the strict schema-boundary path. Output for these is
+# validated against its contract and stamped with the rich widget keys before
+# delivery; everything else stays on the legacy normalize path. On a validation
+# failure the legacy content is delivered unchanged, so promoting an archetype
+# can only add enforcement, never break delivery.
+#
+# M3 covers the authored W1 families that route through the standard
+# task/evaluation/feedback flow. SPEAK_TIMED also uses that standard flow (only
+# the read-aloud archetypes take the dedicated pronunciation path), so it is
+# promoted here for the W1D1 interactive-widget convergence (M4).
+CONTRACT_ENABLED_ARCHETYPES: frozenset[str] = frozenset(
+    {
+        "READ_CLOZE",
+        "LISTEN_CLOZE",
+        "LISTEN_MCQ",
+        "READ_ERROR_SPOT",
+        "WRITE_OPEN_SENT",
+        "WRITE_ERROR_CORR",
+        "SPEAK_TIMED",
+    }
+)
 
 
 _READY_RESPONSE_PHRASES = (
@@ -1222,6 +1253,59 @@ class LearningSessionService:
             "sub_skill_breakdown": dict(feedback.sub_skill_breakdown or {}),
         }
 
+        # Schema boundary: for contract-enabled archetypes, validate the
+        # evaluation/feedback against their strict contracts and merge the
+        # validated shape into the wire payloads. Bad output is logged and the
+        # legacy dicts are emitted as-is rather than reaching a widget malformed.
+        if attempt.archetype_id in CONTRACT_ENABLED_ARCHETYPES:
+            try:
+                evaluation_dict.update(
+                    project_evaluation(
+                        attempt.archetype_id,
+                        activity_id=str(attempt.id),
+                        evaluation=EvaluationResult(
+                            raw_score=float(evaluation.raw_score),
+                            rubric_scores=dict(evaluation.rubric_scores or {}),
+                            evaluator_notes=evaluation.evaluator_notes,
+                        ),
+                        sub_skill_breakdown=dict(feedback.sub_skill_breakdown or {}),
+                    )
+                )
+                feedback_dict.update(
+                    project_feedback(
+                        attempt.archetype_id,
+                        activity_id=str(attempt.id),
+                        feedback=FeedbackResult(
+                            score=int(feedback.score),
+                            summary=feedback.summary or "",
+                            did_well=tuple(feedback.did_well or ()),
+                            mistakes=tuple(
+                                MistakeOut(
+                                    issue=str(m.get("issue") or ""),
+                                    user_wrote=m.get("user_wrote"),
+                                    correction=m.get("correction"),
+                                    rule=m.get("rule"),
+                                    sub_skills_affected=tuple(
+                                        m.get("sub_skills_affected") or ()
+                                    ),
+                                )
+                                for m in (feedback.mistakes or [])
+                                if isinstance(m, dict)
+                            ),
+                            next_tip=feedback.next_tip,
+                            sub_skill_breakdown=dict(
+                                feedback.sub_skill_breakdown or {}
+                            ),
+                        ),
+                    )
+                )
+            except ContractValidationError as exc:
+                logger.warning(
+                    "Contract projection failed for eval/feedback attempt id=%s "
+                    "archetype=%s: %s — emitting legacy payloads",
+                    attempt.id, attempt.archetype_id, exc.detail,
+                )
+
         # Check if this is a pronunciation (read-aloud) submission.
         pronunciation_data = None
         if evaluation.evaluator_notes:
@@ -1682,14 +1766,50 @@ class LearningSessionService:
         """
         try:
             v2_service = _make_v2_session_service(self.db)
-            return await v2_service.prepare_attempt_for_delivery(attempt)
+            attempt = await v2_service.prepare_attempt_for_delivery(attempt)
         except Exception:
             logger.exception(
                 "Failed to repair task_content for attempt id=%s; "
                 "delivering as-is",
                 attempt.id,
             )
-            return attempt
+        self._apply_task_contract(attempt)
+        return attempt
+
+    def _apply_task_contract(self, attempt: ActivityAttempt) -> None:
+        """Validate + stamp the contract for schema-boundary archetypes.
+
+        Projects the loose ``task_content`` onto its strict task contract, merges
+        the validated fields back, and stamps ``activity_contract`` with the rich
+        widget keys so the task/evaluation/feedback events all route through the
+        contracted widgets. A validation failure is logged and the content is
+        delivered unchanged (the legacy renderer still handles it).
+        """
+        if attempt.archetype_id not in CONTRACT_ENABLED_ARCHETYPES:
+            return
+        content = dict(attempt.task_content or {})
+        try:
+            projected = project_task_payload(
+                attempt.archetype_id,
+                content,
+                activity_id=str(attempt.id),
+                sequence=int(attempt.sequence),
+            )
+        except ContractValidationError as exc:
+            logger.warning(
+                "Contract projection failed for attempt id=%s archetype=%s: %s "
+                "— delivering legacy content",
+                attempt.id, attempt.archetype_id, exc.detail,
+            )
+            return
+        widgets = contract_widgets(attempt.archetype_id)
+        # Keep the legacy `widget`/`ui_widget` keys so the live interactive
+        # renderer still routes correctly; the rich widget key travels on
+        # `task_widget` + `activity_contract` (frontend convergence is WS4/M4).
+        merged = {**content, **projected, "activity_contract": widgets}
+        if merged != content:
+            attempt.task_content = merged
+            self.db.commit()
 
     @staticmethod
     def _task_type_for_attempt(attempt: ActivityAttempt) -> str:

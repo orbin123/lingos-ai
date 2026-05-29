@@ -216,12 +216,7 @@ def compute_mcq_wrong_items(task_content: dict, user_response: dict) -> list[dic
     Task format: items[].correct_index (0-based int), items[].options (list of str)
     """
     wrong: list[dict] = []
-    inner = user_response.get("inner_response") or {}
-    submitted = {
-        a["item_id"]: a.get("selected_index")
-        for a in (inner.get("answers") or [])
-        if isinstance(a, dict) and "item_id" in a
-    }
+    submitted = _mcq_submitted_answer_map(user_response)
     for item in task_content.get("items", []):
         item_id = item.get("item_id", "")
         correct_idx = item.get("correct_index")
@@ -237,6 +232,33 @@ def compute_mcq_wrong_items(task_content: dict, user_response: dict) -> list[dic
                 "explanation": item.get("explanation", ""),
             })
     return wrong
+
+
+def _mcq_submitted_answer_map(user_response: dict) -> dict[str, int]:
+    inner = user_response.get("inner_response") or {}
+    rows = inner.get("answers") if isinstance(inner, dict) else None
+    if not isinstance(rows, list):
+        rows = user_response.get("answers")
+
+    submitted: dict[str, int] = {}
+    if isinstance(rows, list):
+        for answer in rows:
+            if not isinstance(answer, dict) or "item_id" not in answer:
+                continue
+            try:
+                submitted[str(answer["item_id"])] = int(answer.get("selected_index"))
+            except (TypeError, ValueError):
+                continue
+
+    for key, value in user_response.items():
+        if key in {"inner_response", "listen_analytics", "time_spent_seconds", "answers"}:
+            continue
+        try:
+            submitted.setdefault(str(key), int(value))
+        except (TypeError, ValueError):
+            continue
+
+    return submitted
 
 
 def compute_listen_cloze_wrong_items(task_content: dict, user_response: dict) -> list[dict]:

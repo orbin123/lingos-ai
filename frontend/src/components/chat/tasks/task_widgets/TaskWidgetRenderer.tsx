@@ -1,7 +1,7 @@
 "use client";
 
 import type { SessionPreviewState } from "../../teaching/source";
-import type { SessionTask } from "../source";
+import type { LiveTaskController, SessionTask } from "../source";
 import { ErrorCorrectionTaskWidget } from "./ErrorCorrectionTaskWidget";
 import { ErrorSpottingTaskWidget } from "./ErrorSpottingTaskWidget";
 import { FillBlanksTaskWidget } from "./FillBlanksTaskWidget";
@@ -40,10 +40,26 @@ import { SpeakDebateTaskWidget } from "./SpeakDebateTaskWidget";
 export function TaskWidgetRenderer({
   task,
   previewState,
+  live,
 }: {
   task: SessionTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  // Widgets converged for live interactive use (M4). Others ignore `live` and
+  // stay display-only.
+  if (task.widget === "fill_blanks") {
+    return <FillBlanksTaskWidget task={task} previewState={previewState} live={live} />;
+  }
+  if (task.widget === "listen_mcq") {
+    return <ListenMcqTaskWidget task={task} previewState={previewState} live={live} />;
+  }
+  if (task.widget === "open_text") {
+    return <OpenTextTaskWidget task={task} previewState={previewState} live={live} />;
+  }
+  if (task.widget === "speak_timed") {
+    return <SpeakTimedTaskWidget task={task} previewState={previewState} live={live} />;
+  }
   if (task.widget === "speak_debate") {
     return <SpeakDebateTaskWidget task={task} previewState={previewState} />;
   }
@@ -53,17 +69,11 @@ export function TaskWidgetRenderer({
   if (task.widget === "error_spotting") {
     return <ErrorSpottingTaskWidget task={task} previewState={previewState} />;
   }
-  if (task.widget === "fill_blanks") {
-    return <FillBlanksTaskWidget task={task} previewState={previewState} />;
-  }
   if (task.widget === "listen_cloze") {
-    return <ListenClozeTaskWidget task={task} previewState={previewState} />;
+    return <ListenClozeTaskWidget task={task} previewState={previewState} live={live} />;
   }
   if (task.widget === "listen_dictation") {
     return <ListenDictationTaskWidget task={task} previewState={previewState} />;
-  }
-  if (task.widget === "listen_mcq") {
-    return <ListenMcqTaskWidget task={task} previewState={previewState} />;
   }
   if (task.widget === "listen_infer") {
     return <ListenInferTaskWidget task={task} previewState={previewState} />;
@@ -85,9 +95,6 @@ export function TaskWidgetRenderer({
   }
   if (task.widget === "sentence_transform") {
     return <SentenceTransformTaskWidget task={task} previewState={previewState} />;
-  }
-  if (task.widget === "open_text") {
-    return <OpenTextTaskWidget task={task} previewState={previewState} />;
   }
   if (task.widget === "read_aloud") {
     return <ReadAloudTaskWidget task={task} previewState={previewState} />;
@@ -133,9 +140,6 @@ export function TaskWidgetRenderer({
   }
   if (task.widget === "write_word_upgrade") {
     return <WriteWordUpgradeTaskWidget task={task} previewState={previewState} />;
-  }
-  if (task.widget === "speak_timed") {
-    return <SpeakTimedTaskWidget task={task} previewState={previewState} />;
   }
   if (task.widget === "write_timed") {
     return <WriteTimedTaskWidget task={task} previewState={previewState} />;

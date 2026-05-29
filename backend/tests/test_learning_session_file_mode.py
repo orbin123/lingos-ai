@@ -85,9 +85,9 @@ def test_persona_from_file_returns_w1d2_and_stashes_scripted_plan() -> None:
 
 def test_persona_from_file_blank_day_raises() -> None:
     persona = LearningSessionService._persona_from_file
-    # W2D1 is intentionally blank in source_24w.py — file_source must refuse it.
+    # Cycle 1 (weeks 1-4) is authored; W5D1 is still blank, so file_source must refuse it.
     with pytest.raises(DayNotFound):
-        persona(None, "day_24_02_01")  # type: ignore[arg-type]
+        persona(None, "day_24_05_01")  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -705,6 +705,109 @@ async def test_restart_session_refreshes_w1d2_chat_persona() -> None:
     assert session.teacher_instructions["__scripted_plan"] == _teacher_script(w1d2)
     assert service.session_repo.save.call_count == 2
     service.db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_read_cloze_submission_emits_validated_contract_payloads(
+    monkeypatch,
+) -> None:
+    """M2 schema boundary: a contract-enabled archetype (READ_CLOZE) has its
+    evaluation + feedback validated against the strict contracts before the WS
+    events are emitted, so the wire payloads carry the full contract shape."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+    service._next_pending_attempt = MagicMock(return_value=None)
+
+    chat = MagicMock()
+    chat.session_id = "chat-w1d1"
+    chat.daily_session_id = 42
+    chat.user_id = 7
+    chat.skill_name = "grammar"
+    chat.topic = "Simple Present"
+    chat.task_type = "fill_in_blanks"
+    chat.task_queue = [{"status": "pending"}]
+    chat.messages = []
+
+    daily = MagicMock()
+    daily.session_id = "daily-w1d1"
+    service.db.get.return_value = daily
+
+    attempt = MagicMock()
+    attempt.id = 101
+    attempt.archetype_id = "READ_CLOZE"  # real value → contract path runs
+    attempt.sequence = 1
+    attempt.task_content = {
+        "widget": "fill_in_blanks",
+        "activity_contract": {
+            "archetype_id": "READ_CLOZE",
+            "task_widget": "fill_blanks",
+            "evaluation_widget": "read_listen_evaluation",
+            "feedback_widget": "read_listen_feedback",
+        },
+    }
+    evaluation = MagicMock()
+    evaluation.raw_score = 8.0
+    evaluation.rubric_scores = {"accuracy": 8.0}
+    evaluation.base_reward = 55
+    evaluation.weighted_points = {"grammar": 55.0}
+    evaluation.evaluator_notes = None
+    feedback = MagicMock()
+    feedback.score = 8
+    feedback.summary = "Good work."
+    feedback.did_well = ["Correct verb endings."]
+    feedback.mistakes = [
+        {
+            "issue": "Missing -s",
+            "user_wrote": "She drink",
+            "correction": "She drinks",
+            "rule": "3rd person -s",
+            "sub_skills_affected": ["verb_forms"],
+            "legacy_extra": "dropped",  # not in contract → must not leak through
+        }
+    ]
+    feedback.next_tip = "Keep practising."
+    feedback.sub_skill_breakdown = {"grammar": 8}
+
+    v2_service = MagicMock()
+    v2_service.submit_activity = AsyncMock(
+        return_value=(attempt, evaluation, feedback)
+    )
+    monkeypatch.setattr(
+        "app.modules.learning_session.service._make_v2_session_service",
+        MagicMock(return_value=v2_service),
+    )
+
+    messages = [
+        msg
+        async for msg in service._handle_task_submission_stream(
+            chat,
+            {"current_sequence": 1, "current_task_index": 0},
+            WSIncomingMessage(type="task_submission", answers={"q1": "works"}),
+        )
+    ]
+
+    scorecard_event = next(
+        m for m in messages if m.type == "ui_event" and m.widget == "scorecard"
+    )
+    feedback_event = next(
+        m for m in messages if m.type == "ui_event" and m.widget == "feedback_card"
+    )
+
+    # Evaluation went through ActivityEvaluationOutput → tier + percentage derived.
+    evaluation_payload = scorecard_event.payload["evaluation"]
+    assert evaluation_payload["tier"] == "excellent"
+    assert evaluation_payload["percentage"] == 80.0
+    assert evaluation_payload["archetype_id"] == "READ_CLOZE"
+
+    # Feedback went through ActivityFeedbackOutput → contract-shaped mistakes.
+    feedback_payload = feedback_event.payload["feedback"]
+    assert feedback_payload["archetype_id"] == "READ_CLOZE"
+    assert feedback_payload["score"] == 8
+    assert feedback_payload["next_tip"] == "Keep practising."
+    mistake = feedback_payload["mistakes"][0]
+    assert mistake["correction"] == "She drinks"
+    assert "legacy_extra" not in mistake  # strict contract dropped the extra key
 
 
 @pytest.mark.asyncio
