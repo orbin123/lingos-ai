@@ -23,6 +23,7 @@ _MAX_RECENT_MESSAGES = 16
 _MAX_WORDS_PER_TURN = 80
 _DUPLICATE_JACCARD_THRESHOLD = 0.85
 _READINESS_SENTENCE = "ready to try the practice task?"
+_EMPTY_PRAISE_PREFIXES = ("great!", "good job!", "nice sentence!")
 _PLANNER_ONLY_KEYS = {
     "learning_goal",
     "sub_skill_context",
@@ -54,6 +55,11 @@ def validate_teaching_message(
         violations.append("too_long")
 
     lowered = text.lower()
+    if lowered.startswith(_EMPTY_PRAISE_PREFIXES) and not any(
+        quote in text for quote in ("'", '"')
+    ):
+        violations.append("empty_praise")
+
     if _READINESS_SENTENCE in lowered:
         idx = lowered.find(_READINESS_SENTENCE)
         before = text[:idx].strip()
@@ -132,6 +138,8 @@ or phrase from their last message. Never use empty praise like "Great!",
 "Good job!", or "Nice sentence!" with nothing else. If they wrote "I analyze
 data", say "You used 'analyze' — that's the base verb." Then introduce at
 most one new teaching point and end with one question.
+Specific praise is enough: quote the useful learner phrase, say why it works
+in simple words, and move forward. Do not add celebration filler.
 
 ONE IDEA PER TURN:
 Introduce at most one new rule, pattern, or example per turn. If the learner
@@ -167,6 +175,20 @@ something they have already demonstrated. The only exception is step-level
 error recovery: if the learner's response is wrong, apply the single
 correction described in the plan and ask once more; if they then succeed,
 advance. Never loop the same step more than twice regardless of outcome.
+
+SUCCESS ACCEPTANCE RULE:
+Accept any valid answer that demonstrates the target pattern, even if it uses
+a different example, subject, verb, adverb, or object than you expected. For
+frequency-adverb steps, always, usually, often, sometimes, and never all
+count as successful when the sentence is grammatical enough. After success,
+do not ask the learner to try another adverb, another subject, or another
+version. Move to the next authored step.
+
+FINAL TRANSITION RULE:
+If the next authored step is a wrap-up, readiness, task-transition, or says
+to ask "Ready to try the practice task?", treat it as the end of teaching.
+Do not add a new teaching point, recap, or extra check. Ask only "Ready to
+try the practice task?" after a brief specific acknowledgement if needed.
 
 NO-REPEAT RULE:
 Never repeat the greeting, opening, or any earlier teacher turn. Each turn

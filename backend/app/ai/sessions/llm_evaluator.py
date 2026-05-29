@@ -393,7 +393,21 @@ def _listen_mcq_answer_rows(user_response: dict) -> list:
     if isinstance(inner_response, dict) and isinstance(inner_response.get("answers"), list):
         return inner_response["answers"]
     answers = user_response.get("answers")
-    return answers if isinstance(answers, list) else []
+    if isinstance(answers, list):
+        return answers
+
+    # Live chat used to submit MCQ choices as a flat map like {"q1": 1}.
+    # Keep accepting that older shape so already-rendered widgets do not score
+    # correct answers as missing.
+    rows = []
+    for key, value in user_response.items():
+        if key in {"inner_response", "listen_analytics", "time_spent_seconds", "answers"}:
+            continue
+        try:
+            rows.append({"item_id": str(key), "selected_index": int(value)})
+        except (TypeError, ValueError):
+            continue
+    return rows
 
 
 def _listen_cloze_answer_map(user_response: dict) -> dict[str, str]:

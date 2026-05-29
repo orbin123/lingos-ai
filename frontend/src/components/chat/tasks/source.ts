@@ -1,5 +1,23 @@
 import type { AnswerView, CourseTrack } from "../teaching/source";
 
+/**
+ * Live interactive controller for a task widget (M4 interactive convergence).
+ *
+ * When present, the widget renders its editable pre-submission state (wired to
+ * `setAnswers` / `onSubmit`) and, once `submitted`, its review state from
+ * `answers` — replacing the generic RuntimeTaskWidget. When absent, the widget
+ * stays in display-only preview mode driven by `previewState` (preview gallery).
+ *
+ * `answers` is keyed by the same item ids the backend evaluator consumes, so the
+ * submitted payload is wire-compatible with the existing submission contract.
+ */
+export interface LiveTaskController {
+  answers: Record<string, unknown>;
+  setAnswers: (next: Record<string, unknown>) => void;
+  onSubmit: (answers: Record<string, unknown>) => void;
+  submitted: boolean;
+}
+
 export type TaskWidgetKind =
   | "error_spotting"
   | "fill_blanks"
@@ -106,6 +124,7 @@ export interface ListenMcqTask extends BaseTask {
   widget: "listen_mcq";
   audioGenre: string;
   audioScript: string;
+  audioUrl?: string | null;
   audioDurationSeconds: number;
   innerWidget: "mcq";
   items: McqItem[];
@@ -179,6 +198,7 @@ export interface ListenClozeTask extends BaseTask {
   widget: "listen_cloze";
   audioGenre: string;
   audioScript: string;
+  audioUrl?: string | null;
   audioDurationSeconds: number;
   passageTitle: string;
   passage: string;
@@ -493,8 +513,10 @@ export interface SpeakTimedTask extends BaseTask {
   grammarRule: string;
   targetWords: string[];
   speakingDurationSeconds: number;
-  prompt: string;
-  sampleResponse: string;
+  prompts?: string[];
+  sampleResponses?: string[];
+  prompt?: string;
+  sampleResponse?: string;
   answers: Record<AnswerView, SpeakingAnswer[]>;
 }
 

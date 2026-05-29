@@ -319,7 +319,8 @@ class TestRepositories:
         day = repo.get_by_day_id("day_24_02_01")
         assert day is not None
         assert day.day_number == 1
-        assert day.topic == ""
+        # W2D1 is authored in source_24w.py (Cycle 1), so its topic is seeded.
+        assert day.topic == "Greetings & Introductions"
 
     def test_archetype_repo_lists_by_activity(self, db_session):
         seed_archetypes(db_session)

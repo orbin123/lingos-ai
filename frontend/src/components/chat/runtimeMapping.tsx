@@ -1,9 +1,10 @@
 "use client";
 
 import type React from "react";
-import { Check, FileText, Headphones, Mic2, PenLine, Play, Send } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, FileText, Headphones, Mic2, PenLine, Send } from "lucide-react";
 import type { SessionTask, TaskWidgetKind } from "./tasks/source";
-import { RuleCallout, TaskWidgetFrame, roundIconButton } from "./tasks/task_widgets/TaskWidgetFrame";
+import { ListeningAudioCard, RuleCallout, TaskWidgetFrame } from "./tasks/task_widgets/TaskWidgetFrame";
 
 export type WidgetKey =
   | "mcq"
@@ -121,6 +122,7 @@ function RuntimeTaskWidget({
   onSubmit,
 }: WidgetProps) {
   const disabled = state === "after";
+  const [listeningUnlocked, setListeningUnlocked] = useState(disabled);
   const frameTask = buildRuntimeSessionTask(payload);
   const grammarRule =
     textValue(payload.grammar_rule) ||
@@ -128,10 +130,17 @@ function RuntimeTaskWidget({
     textValue(payload.grammar_rule_to_practice);
   const targetWords = stringArray(payload.target_words);
 
+  useEffect(() => {
+    if (disabled) setListeningUnlocked(true);
+  }, [disabled]);
+
+  const submitDisabled = disabled || (payload.widget === "listen_and_respond" && !listeningUnlocked);
+  const showTeachingAids = payload.widget !== "listen_and_respond" || listeningUnlocked;
+
   return (
     <TaskWidgetFrame task={frameTask} icon={runtimeTaskIcon(frameTask.widget)}>
-      {grammarRule && <RuleCallout label="Focus rule">{grammarRule}</RuleCallout>}
-      {targetWords.length > 0 && (
+      {showTeachingAids && grammarRule && <RuleCallout label="Focus rule">{grammarRule}</RuleCallout>}
+      {showTeachingAids && targetWords.length > 0 && (
         <div className="tw-target-chip-row" style={{ marginBottom: 14 }}>
           {targetWords.map((word) => (
             <span className="tw-target-chip used" key={word}>
@@ -146,12 +155,14 @@ function RuntimeTaskWidget({
         answers={answers}
         setAnswers={setAnswers}
         disabled={disabled}
+        listeningUnlocked={listeningUnlocked}
+        setListeningUnlocked={setListeningUnlocked}
       />
 
       <button
         type="button"
         className="tw-submit-btn"
-        disabled={disabled}
+        disabled={submitDisabled}
         onClick={() => onSubmit(answers)}
       >
         <Send size={15} />
@@ -287,17 +298,27 @@ function WidgetBody({
   answers,
   setAnswers,
   disabled,
+  listeningUnlocked,
+  setListeningUnlocked,
 }: {
   payload: AnyTaskPayload;
   answers: Record<string, unknown>;
   setAnswers: (answers: Record<string, unknown>) => void;
   disabled: boolean;
+  listeningUnlocked: boolean;
+  setListeningUnlocked: (unlocked: boolean) => void;
 }) {
   if (payload.widget === "listen_and_respond") {
     return (
       <>
-        <AudioCard payload={payload} />
-        <InnerResponse payload={payload} answers={answers} setAnswers={setAnswers} disabled={disabled} />
+        <AudioCard
+          payload={payload}
+          unlocked={listeningUnlocked}
+          onUnlocked={() => setListeningUnlocked(true)}
+        />
+        {listeningUnlocked && (
+          <InnerResponse payload={payload} answers={answers} setAnswers={setAnswers} disabled={disabled} />
+        )}
       </>
     );
   }
@@ -335,28 +356,27 @@ function InnerResponse({
   return <OpenResponse payload={payload} answers={answers} setAnswers={setAnswers} disabled={disabled} />;
 }
 
-function AudioCard({ payload }: { payload: AnyTaskPayload }) {
+function AudioCard({
+  payload,
+  unlocked,
+  onUnlocked,
+}: {
+  payload: AnyTaskPayload;
+  unlocked: boolean;
+  onUnlocked: () => void;
+}) {
   const script = textValue(payload.audio_script) || textValue(payload.source_audio_script);
-  const playScript = () => {
-    if (!script || typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(script);
-    utterance.rate = 0.9;
-    window.speechSynthesis.speak(utterance);
-  };
-  if (!script) return null;
+  if (!script && !textValue(payload.audio_url)) return null;
   return (
-    <div className="tw-card" style={{ background: "oklch(97% 0.02 245)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button type="button" onClick={playScript} title="Play audio" aria-label="Play audio" style={roundIconButton}>
-          <Play size={18} fill="currentColor" />
-        </button>
-        <div style={{ minWidth: 0 }}>
-          <div className="tw-rule-label">{textValue(payload.audio_genre) || "Audio"}</div>
-          <div style={{ fontSize: 13.5, lineHeight: 1.55, color: "var(--tw-navy)" }}>{script}</div>
-        </div>
-      </div>
-    </div>
+    <ListeningAudioCard
+      title={textValue(payload.audio_genre) || "Listening audio"}
+      script={script}
+      audioUrl={textValue(payload.audio_url) || null}
+      durationSeconds={numberValue(payload.audio_duration_seconds)}
+      completed={unlocked}
+      hint="Listen once to unlock the task below."
+      onComplete={onUnlocked}
+    />
   );
 }
 

@@ -1,98 +1,130 @@
 "use client";
 
-import { Play, Volume2 } from "lucide-react";
+import { Volume2 } from "lucide-react";
+import { useState } from "react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { ListenClozeTask } from "../source";
+import type { ListenClozeTask, LiveTaskController } from "../source";
 import {
   FeedbackRow,
+  ListeningAudioCard,
+  liveStringRecord,
   normalizeAnswer,
   ResultBanner,
-  roundIconButton,
   RuleCallout,
   StatusDot,
+  SubmitButton,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
 export function ListenClozeTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: ListenClozeTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
-  const isDefault = previewState === "default";
-  const answers = isDefault ? {} : task.answers[previewState];
-  const correctCount = isDefault
-    ? 0
-    : task.items.filter(
+  const [audioComplete, setAudioComplete] = useState(false);
+  const unlocked = live ? live.submitted || audioComplete : previewState !== "default" || audioComplete;
+  const interactive = Boolean(live) && !live!.submitted && unlocked;
+  const showResults = live ? live.submitted : previewState !== "default";
+  const answers: Record<string, string> = live
+    ? liveStringRecord(live.answers)
+    : previewState === "default"
+      ? {}
+      : task.answers[previewState];
+  const correctCount = showResults
+    ? task.items.filter(
         (item) => normalizeAnswer(answers[item.itemId]) === normalizeAnswer(item.correctAnswer),
-      ).length;
+      ).length
+    : 0;
+  const passageBlankCount = (task.passage.match(/___/g) ?? []).length;
+  const passageAligned =
+    task.passage.trim().length > 0 && passageBlankCount === task.items.length;
   const parts = task.passage.split("___");
 
-  const playScript = () => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(task.audioScript);
-    utterance.rate = 0.9;
-    window.speechSynthesis.speak(utterance);
+  const setAnswer = (itemId: string, value: string) => {
+    live?.setAnswers({ ...live.answers, [itemId]: value });
   };
 
   return (
     <TaskWidgetFrame task={task} icon={<Volume2 size={18} strokeWidth={2.5} />}>
-      <div className="tw-card" style={{ background: "oklch(97% 0.02 245)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button
-            type="button"
-            onClick={playScript}
-            title="Play mock audio"
-            aria-label="Play mock audio"
-            style={roundIconButton}
-          >
-            <Play size={18} fill="currentColor" />
-          </button>
-          <div style={{ minWidth: 0 }}>
-            <div className="tw-rule-label">{task.audioGenre}</div>
-            <div style={{ fontSize: 13.5, lineHeight: 1.55, color: "var(--tw-navy)" }}>
-              {task.audioScript}
-            </div>
-          </div>
+      <ListeningAudioCard
+        title={task.audioGenre}
+        script={task.audioScript}
+        audioUrl={task.audioUrl}
+        durationSeconds={task.audioDurationSeconds}
+        completed={unlocked}
+        hint="Listen once to unlock the fill-in-the-blank task below."
+        onComplete={() => setAudioComplete(true)}
+      />
+      {unlocked && task.grammarRule && <RuleCallout label="Listening focus">{task.grammarRule}</RuleCallout>}
+      {unlocked && task.targetWords.length > 0 && (
+        <div className="tw-target-chip-row" style={{ marginBottom: 14 }}>
+          {task.targetWords.map((word) => (
+            <span className="tw-target-chip used" key={word}>
+              {word}
+            </span>
+          ))}
         </div>
-      </div>
-      <RuleCallout label="Listening focus">{task.grammarRule}</RuleCallout>
-      <div className="tw-target-chip-row" style={{ marginBottom: 14 }}>
-        {task.targetWords.map((word) => (
-          <span className="tw-target-chip used" key={word}>
-            {word}
-          </span>
-        ))}
-      </div>
-      {!isDefault && (
+      )}
+      {showResults && (
         <ResultBanner
           total={task.items.length}
           correct={correctCount}
           label={`${correctCount} of ${task.items.length} blanks correct`}
         />
       )}
-      <div className="tw-passage">
-        <div className="tw-passage-label">{task.passageTitle}</div>
-        {parts.map((part, index) => {
-          const item = task.items[index];
-          return (
-            <span key={`listen-part-${index}`}>
-              {part}
-              {item ? (
-                <InlineListenBlank
-                  item={item}
-                  value={answers[item.itemId]}
-                  index={index}
-                  isDefault={isDefault}
-                />
-              ) : null}
-            </span>
-          );
-        })}
-      </div>
-      {!isDefault && (
+      {unlocked && (
+        <div className="tw-passage">
+          <div className="tw-passage-label">{task.passageTitle}</div>
+          {passageAligned
+            ? parts.map((part, index) => {
+                const item = task.items[index];
+                return (
+                  <span key={`listen-part-${index}`}>
+                    {part}
+                    {item ? (
+                      <InlineListenBlank
+                        item={item}
+                        value={answers[item.itemId]}
+                        index={index}
+                        interactive={interactive}
+                        showResult={showResults}
+                        onChange={(value) => setAnswer(item.itemId, value)}
+                      />
+                    ) : null}
+                  </span>
+                );
+              })
+            : task.items.map((item, index) => {
+                const segments = item.sentenceWithBlank.includes("___")
+                  ? item.sentenceWithBlank.split("___")
+                  : [`${item.sentenceWithBlank} `, ""];
+                return (
+                  <div key={item.itemId} style={{ marginBottom: 6 }}>
+                    {segments.map((segment, segIndex) => (
+                      <span key={`${item.itemId}-seg-${segIndex}`}>
+                        {segment}
+                        {segIndex < segments.length - 1 ? (
+                          <InlineListenBlank
+                            item={item}
+                            value={answers[item.itemId]}
+                            index={index}
+                            interactive={interactive}
+                            showResult={showResults}
+                            onChange={(value) => setAnswer(item.itemId, value)}
+                          />
+                        ) : null}
+                      </span>
+                    ))}
+                  </div>
+                );
+              })}
+        </div>
+      )}
+      {showResults && (
         <div style={{ display: "grid", gap: 8 }}>
           {task.items.map((item, index) => {
             const value = answers[item.itemId];
@@ -112,6 +144,7 @@ export function ListenClozeTaskWidget({
           })}
         </div>
       )}
+      {interactive && <SubmitButton onClick={() => live!.onSubmit(live!.answers)} />}
     </TaskWidgetFrame>
   );
 }
@@ -120,25 +153,67 @@ function InlineListenBlank({
   item,
   value,
   index,
-  isDefault,
+  interactive,
+  showResult,
+  onChange,
 }: {
   item: ListenClozeTask["items"][number];
   value?: string;
   index: number;
-  isDefault: boolean;
+  interactive: boolean;
+  showResult: boolean;
+  onChange: (value: string) => void;
 }) {
-  if (isDefault) {
+  const wrapStyle = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    margin: "0 5px",
+    whiteSpace: "nowrap" as const,
+    verticalAlign: "baseline" as const,
+  };
+
+  if (interactive) {
     return (
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          margin: "0 5px",
-          whiteSpace: "nowrap",
-          verticalAlign: "baseline",
-        }}
-      >
+      <span style={wrapStyle}>
+        <span
+          aria-hidden
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: "50%",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "var(--tw-primary)",
+            color: "white",
+            fontSize: 11,
+            fontWeight: 800,
+            lineHeight: 1,
+            flexShrink: 0,
+          }}
+        >
+          {index + 1}
+        </span>
+        <input
+          className="tw-blank-input"
+          value={value ?? ""}
+          onChange={(event) => onChange(event.target.value)}
+          aria-label={`Blank ${index + 1}`}
+          style={{ width: "clamp(96px, 18vw, 160px)", textAlign: "left" }}
+        />
+        {item.baseVerb && (
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tw-primary)", fontStyle: "italic" }}>
+            ({item.baseVerb})
+          </span>
+        )}
+      </span>
+    );
+  }
+
+  if (!showResult) {
+    return (
+      <span style={wrapStyle}>
         <span
           aria-hidden
           style={{
@@ -160,16 +235,15 @@ function InlineListenBlank({
         </span>
         <span
           className="tw-blank-input"
-          style={{
-            width: "clamp(88px, 18vw, 150px)",
-            color: "oklch(55% 0.07 240)",
-          }}
+          style={{ width: "clamp(88px, 18vw, 150px)", color: "oklch(55% 0.07 240)" }}
         >
           answer
         </span>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tw-primary)", fontStyle: "italic" }}>
-          ({item.baseVerb})
-        </span>
+        {item.baseVerb && (
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tw-primary)", fontStyle: "italic" }}>
+            ({item.baseVerb})
+          </span>
+        )}
       </span>
     );
   }
@@ -177,16 +251,7 @@ function InlineListenBlank({
   const isCorrect = normalizeAnswer(value) === normalizeAnswer(item.correctAnswer);
 
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        margin: "0 5px",
-        whiteSpace: "nowrap",
-        verticalAlign: "baseline",
-      }}
-    >
+    <span style={wrapStyle}>
       <StatusDot ok={isCorrect} />
       <span
         className={isCorrect ? "tw-blank-input ok" : "tw-blank-input no"}

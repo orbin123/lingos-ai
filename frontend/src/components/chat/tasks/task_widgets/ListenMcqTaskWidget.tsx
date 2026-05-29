@@ -1,60 +1,66 @@
 "use client";
 
-import { Check, Play, Volume2, X } from "lucide-react";
+import { Check, Volume2, X } from "lucide-react";
+import { useState } from "react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { ListenMcqTask } from "../source";
-import { ResultBanner, roundIconButton, TaskWidgetFrame } from "./TaskWidgetFrame";
+import type { ListenMcqTask, LiveTaskController } from "../source";
+import {
+  ListeningAudioCard,
+  liveNumberRecord,
+  SubmitButton,
+  TaskWidgetFrame,
+} from "./TaskWidgetFrame";
 
 export function ListenMcqTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: ListenMcqTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
-  const isDefault = previewState === "default";
-  const answers = isDefault ? {} : task.answers[previewState];
-  const correctCount = isDefault
-    ? 0
-    : task.items.filter((item) => answers[item.itemId] === item.correctIndex).length;
+  const [audioComplete, setAudioComplete] = useState(false);
+  const unlocked = live ? live.submitted || audioComplete : previewState !== "default" || audioComplete;
+  const interactive = Boolean(live) && !live!.submitted && unlocked;
+  const showResults = live ? live.submitted : previewState !== "default";
+  const answers: Record<string, number> = live
+    ? liveNumberRecord(live.answers)
+    : previewState === "default"
+      ? {}
+      : task.answers[previewState];
 
-  const playScript = () => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(task.audioScript);
-    utterance.rate = 0.9;
-    window.speechSynthesis.speak(utterance);
+  const allAnswered = task.items.every((item) => answers[item.itemId] !== undefined);
+
+  const pick = (itemId: string, optionIndex: number) => {
+    live?.setAnswers({ ...live.answers, [itemId]: optionIndex });
+  };
+  const submitAnswers = () => {
+    live?.onSubmit({
+      inner_response: {
+        widget: "mcq",
+        answers: task.items
+          .filter((item) => answers[item.itemId] !== undefined)
+          .map((item) => ({
+            item_id: item.itemId,
+            selected_index: answers[item.itemId],
+          })),
+      },
+    });
   };
 
   return (
     <TaskWidgetFrame task={task} icon={<Volume2 size={18} strokeWidth={2.5} />}>
-      <div className="tw-card" style={{ background: "oklch(97% 0.02 245)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button
-            type="button"
-            onClick={playScript}
-            title="Play mock audio"
-            aria-label="Play mock audio"
-            style={roundIconButton}
-          >
-            <Play size={18} fill="currentColor" />
-          </button>
-          <div style={{ minWidth: 0 }}>
-            <div className="tw-rule-label">{task.audioGenre}</div>
-            <div style={{ fontSize: 13.5, lineHeight: 1.55, color: "var(--tw-navy)" }}>
-              {task.audioScript}
-            </div>
-          </div>
-        </div>
-      </div>
-      {!isDefault && (
-        <ResultBanner
-          total={task.items.length}
-          correct={correctCount}
-          label={`${correctCount} of ${task.items.length} questions correct`}
-        />
-      )}
-      {task.items.map((item, index) => {
+      <ListeningAudioCard
+        title={task.audioGenre}
+        script={task.audioScript}
+        audioUrl={task.audioUrl}
+        durationSeconds={task.audioDurationSeconds}
+        completed={unlocked}
+        hint="Listen once to unlock the questions below."
+        onComplete={() => setAudioComplete(true)}
+      />
+      {unlocked && task.items.map((item, index) => {
         const selected = answers[item.itemId];
         return (
           <div className="tw-card" key={item.itemId}>
@@ -64,9 +70,28 @@ export function ListenMcqTaskWidget({
             </div>
             <div className="tw-opt-list">
               {item.options.map((option, optionIndex) => {
-                const isCorrect = !isDefault && optionIndex === item.correctIndex;
-                const isWrongPick = !isDefault && optionIndex === selected && !isCorrect;
-                const cls = `tw-opt-row${isCorrect ? " correct" : ""}${isWrongPick ? " wrong" : ""}`;
+                const isSelected = optionIndex === selected;
+                const isCorrect = showResults && optionIndex === item.correctIndex;
+                const isWrongPick = showResults && isSelected && !isCorrect;
+                const cls =
+                  `tw-opt-row` +
+                  (isCorrect ? " correct" : "") +
+                  (isWrongPick ? " wrong" : "") +
+                  (interactive && isSelected ? " selected" : "");
+                if (interactive) {
+                  return (
+                    <button
+                      type="button"
+                      key={option}
+                      className={cls}
+                      onClick={() => pick(item.itemId, optionIndex)}
+                    >
+                      <span className="tw-opt-key">{optionIndex + 1}</span>
+                      <span style={{ flex: 1 }}>{option}</span>
+                      {isSelected && <Check size={14} strokeWidth={2.8} />}
+                    </button>
+                  );
+                }
                 return (
                   <div className={cls} key={option} style={{ cursor: "default" }}>
                     <span className="tw-opt-key">{optionIndex + 1}</span>
@@ -77,7 +102,7 @@ export function ListenMcqTaskWidget({
                 );
               })}
             </div>
-            {!isDefault && (
+            {showResults && (
               <div className="tw-fb-explain" style={{ marginTop: 12, paddingTop: 10 }}>
                 <strong>{selected === item.correctIndex ? "Correct." : "Why it is wrong."}</strong>{" "}
                 {item.explanation}
@@ -86,6 +111,7 @@ export function ListenMcqTaskWidget({
           </div>
         );
       })}
+      {interactive && <SubmitButton disabled={!allAnswered} onClick={submitAnswers} />}
     </TaskWidgetFrame>
   );
 }

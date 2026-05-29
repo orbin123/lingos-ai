@@ -36,6 +36,8 @@ import {
   RuntimeFinalScorecard,
   RuntimeRagFeedback,
 } from "@/components/chat/runtimeReviewMapping";
+import { adaptContractTask } from "@/components/chat/contractTaskAdapter";
+import { TaskWidgetRenderer } from "@/components/chat/tasks/task_widgets/TaskWidgetRenderer";
 import {
   ChatBubble,
   ChatGlobalStyles,
@@ -1656,6 +1658,25 @@ export default function ChatSessionPage() {
             }
             if (evt.kind === "task") {
               const widget = evt.payload.widget;
+              // M4: render converged archetypes through the rich widget library
+              // in live interactive mode — editable input before submission and
+              // a graded review after — replacing the generic RuntimeTaskWidget.
+              const richTask = adaptContractTask(evt.payload);
+              if (richTask) {
+                return (
+                  <TaskWidgetRenderer
+                    key={i}
+                    task={richTask}
+                    previewState="default"
+                    live={{
+                      answers: evt.answers,
+                      setAnswers: (next) => setTaskAnswers(i, next),
+                      onSubmit: (answers) => handleSubmitTask(i, answers),
+                      submitted: evt.submitted,
+                    }}
+                  />
+                );
+              }
               const Widget = WIDGET_COMPONENTS[widget];
               if (!Widget) {
                 return (

@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     # directory from TTS so retention/cleanup policies stay independent
     # (transcripts may have privacy implications audio doesn't).
     STT_CACHE_DIR: str = "app/ai/stt/_cache"
+    # Where learner-uploaded speaking clips live. These are not mounted as
+    # public StaticFiles; they are served through an owner-checked route.
+    LEARNER_AUDIO_DIR: str = "app/ai/stt/_learner_audio"
 
     # AI / Pronunciation (Azure Speech Pronunciation Assessment)
     # Optional at startup so Phase 4 code doesn't break environments that
