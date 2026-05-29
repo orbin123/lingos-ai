@@ -5,9 +5,107 @@ import { tasksApi } from "@/lib/tasks-api";
 import { sessionsApi, type PronunciationResult } from "@/lib/sessions-api";
 import { blobToWav } from "@/lib/audio-utils";
 import type { SessionWidgetProps } from "./types";
-import { TaskHeader, I } from "../../task/task-widgets/shared";
-import { formatDuration, resolveAudioUrl } from "../../task/task-widgets/types";
-import type { SpeakAndRecordPayload, SpeakRoleplayTurn } from "../../task/task-widgets/types";
+
+interface SpeakRoleplayTurn {
+  turn_id: string;
+  speaker: "ai" | "user";
+  ai_line?: string | null;
+}
+
+interface SpeakAndRecordPayload {
+  topic_override?: string;
+  topic?: string;
+  task_intro?: string;
+  instructions_override?: string;
+  instructions?: string;
+  sub_skill?: string;
+  activity?: string;
+  estimated_time_minutes?: number;
+  grammar_rule_to_practice?: string;
+  target_pattern?: string;
+  target_tone?: string;
+  source_audio_url?: string | null;
+  source_audio_script?: string;
+  reference_audio_url?: string | null;
+  scenario_description?: string;
+  preparation_seconds?: number;
+  speaking_duration_seconds?: number;
+  speaking_prompts?: string[];
+  speaking_items?: string[];
+  sample_responses?: string[];
+  text_to_read_aloud?: string;
+  passage?: string;
+  retelling_prompt?: string;
+  sample_response?: string | null;
+  speaking_prompt?: string;
+  sample_user_responses?: string[];
+  turns?: SpeakRoleplayTurn[];
+  target_words?: string[];
+  key_points_expected?: string[];
+  sample_talking_points?: string[];
+}
+
+const I = {
+  rule: "Rule",
+  clock: "Clock",
+  mic: "Mic",
+  stop: "Stop",
+  replay: "Again",
+  send: "Send",
+};
+
+function TaskHeader({
+  topic,
+  intro,
+  sub_skill,
+  activity,
+  time,
+  target_words,
+}: {
+  topic: string;
+  intro: { title: string; body: string };
+  sub_skill: string;
+  activity: string;
+  time: number;
+  target_words?: Array<{ word: string; used: boolean }>;
+}) {
+  return (
+    <div className="tw-task-header">
+      <div className="tw-task-topic">{topic}</div>
+      <div className="tw-task-title">{intro.title}</div>
+      <div className="tw-task-intro">{intro.body}</div>
+      <div className="tw-task-pill-row">
+        {sub_skill && <span className="tw-task-pill"><span className="tw-dot" />{sub_skill}</span>}
+        {activity && <span className="tw-task-pill activity"><span className="tw-dot" />{activity}</span>}
+        {time > 0 && <span className="tw-task-pill time"><span className="tw-dot" />{time} min</span>}
+      </div>
+      {target_words && target_words.length > 0 && (
+        <div className="tw-target-chip-row">
+          {target_words.map((item) => (
+            <span className={`tw-target-chip${item.used ? " used" : ""}`} key={item.word}>
+              {item.word}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${String(secs).padStart(2, "0")}`;
+}
+
+function resolveAudioUrl(url?: string | null): string | null {
+  if (!url) return null;
+  if (/^https?:\/\//.test(url) || url.startsWith("blob:") || url.startsWith("data:")) {
+    return url;
+  }
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  return `${apiBase.replace(/\/$/, "")}${url.startsWith("/") ? "" : "/"}${url}`;
+}
 
 function nowMs(): number {
   return Date.now();
@@ -464,7 +562,7 @@ export function SessionSpeakRecordWidget({ taskContent, disabled, onSubmit }: Se
                 READ THE PASSAGE ABOVE OUT LOUD
               </div>
               <div style={{ color: "var(--tw-ink-muted)", fontSize: 13 }}>
-                We'll score pace, pronunciation, and word-stress.
+                We&apos;ll score pace, pronunciation, and word-stress.
               </div>
             </div>
 

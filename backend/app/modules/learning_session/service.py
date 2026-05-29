@@ -52,6 +52,12 @@ from app.modules.curriculum.repository import (
     TaskArchetypeRepository,
 )
 from app.modules.learning_session.models import LearningSession
+from app.modules.learning_session.orchestrator import (
+    SessionEventOrchestrator,
+    activity_contract_from_content,
+    runtime_blueprint_from_attempts,
+    runtime_blueprint_from_session,
+)
 from app.modules.learning_session.repository import LearningSessionRepository
 from app.modules.learning_session.schemas import (
     StartSessionResponse,
@@ -82,6 +88,7 @@ from app.modules.sessions.repository import (
 )
 from app.modules.sessions.service import SessionService
 from app.modules.sessions.widget_mapping import normalize_widget_key
+from app.modules.skills.repository import SkillRepository
 from app.scoring import CourseLength
 
 logger = logging.getLogger(__name__)
@@ -382,6 +389,7 @@ class LearningSessionService:
         self.curriculum_day_repo = CurriculumDayRepository(db)
         self.archetype_repo = TaskArchetypeRepository(db)
         self.profile_repo = UserProfileRepository(db)
+        self.event_orchestrator = SessionEventOrchestrator()
 
     # ------------------------------------------------------------------
     # Session creation
@@ -678,15 +686,42 @@ class LearningSessionService:
 
     @staticmethod
     def _queue_from_attempts(attempts: list[ActivityAttempt]) -> list[dict[str, Any]]:
-        return [
-            {
-                "sequence": a.sequence,
-                "archetype_id": a.archetype_id,
-                "is_mandatory": a.is_mandatory,
-                "status": a.status.value if hasattr(a.status, "value") else str(a.status),
-            }
-            for a in attempts
-        ]
+        blueprint = runtime_blueprint_from_attempts(attempts)
+        activities_by_sequence = {
+            item.get("sequence"): item for item in blueprint.get("activities", [])
+        }
+        queue: list[dict[str, Any]] = []
+        for a in attempts:
+            sequence = int(a.sequence)
+            contract = dict(
+                activities_by_sequence.get(sequence)
+                or activity_contract_from_content(
+                    dict(a.task_content or {}),
+                    sequence=sequence,
+                    archetype_id=a.archetype_id,
+                    is_mandatory=a.is_mandatory,
+                )
+            )
+            queue.append(
+                {
+                    "sequence": a.sequence,
+                    "archetype_id": a.archetype_id,
+                    "is_mandatory": a.is_mandatory,
+                    "status": (
+                        a.status.value
+                        if hasattr(a.status, "value")
+                        else str(a.status)
+                    ),
+                    "activity_id": contract.get("activity_id"),
+                    "task_widget": contract.get("task_widget"),
+                    "evaluator_type": contract.get("evaluator_type"),
+                    "evaluation_widget": contract.get("evaluation_widget"),
+                    "feedback_type": contract.get("feedback_type"),
+                    "feedback_widget": contract.get("feedback_widget"),
+                    "activity_contract": contract,
+                }
+            )
+        return queue
 
     async def restart_session(
         self,
@@ -811,6 +846,7 @@ class LearningSessionService:
             return
         state = self._state_from_row(session)
         self._enrich_state_with_profile(state, session.user_id)
+        yield self._session_blueprint_message(session, state)
         async for msg in self._stream_teaching_turn(session, state):
             yield msg
 
@@ -830,6 +866,8 @@ class LearningSessionService:
             async for msg in self._stream_completed_daily_message():
                 yield msg
             return
+
+        yield self._session_blueprint_message(session, state)
 
         if session.phase == "teaching":
             previous = _last_tutor_message(session.messages or [])
@@ -872,10 +910,10 @@ class LearningSessionService:
             widget = normalize_widget_key(
                 str(payload.get("widget") or payload.get("ui_widget") or session.task_type)
             )
-            yield WSOutgoingMessage(
-                type="ui_event",
+            yield self._event_orchestrator().task_event(
                 widget=widget,
-                payload={**payload, "widget": widget},
+                task_payload={**payload, "widget": widget},
+                session_meta=payload.get("_session"),
             )
             return
 
@@ -922,6 +960,86 @@ class LearningSessionService:
             "to review the day and advance when you're ready."
         )
         return self._stream_chat_text(message, actions=["Go to dashboard"])
+
+    def _session_blueprint_message(
+        self,
+        session: LearningSession,
+        state: LearningSessionState | None = None,
+    ) -> WSOutgoingMessage:
+        daily = self.db.get(DailySession, session.daily_session_id)
+        final_review = self._final_review_widgets(daily) if daily is not None else None
+        task_queue = (
+            list(state.get("task_queue") or [])
+            if isinstance(state, dict)
+            else list(session.task_queue or [])
+        )
+        blueprint = runtime_blueprint_from_session(
+            session=session,
+            task_queue=task_queue,
+            final_review=final_review,
+        )
+        session_meta = {
+            "daily_session_id": session.daily_session_id,
+            "daily_session_uuid": daily.session_id if daily is not None else None,
+            "current_phase": session.phase,
+            "current_task_index": int(session.current_task_index or 0),
+            "total_tasks": len(task_queue),
+            **self._session_display_meta(daily),
+        }
+        return self._event_orchestrator().session_blueprint_event(
+            blueprint=blueprint,
+            session_meta=session_meta,
+        )
+
+    def _session_display_meta(self, daily: DailySession | None) -> dict[str, Any]:
+        """Return small labels the chat header can show to learners."""
+        if daily is None:
+            return {}
+
+        meta: dict[str, Any] = {
+            "course_length": daily.course_length,
+        }
+        day_id = getattr(daily, "day_id", None)
+        if not isinstance(day_id, str) or not day_id:
+            return meta
+
+        try:
+            week_number, day_number = _parse_day_id(day_id)
+            meta["week_number"] = week_number
+            meta["day_number"] = day_number
+        except ValueError:
+            pass
+
+        try:
+            file_day = file_get_day_by_id(day_id)
+        except DayNotFound:
+            file_day = None
+
+        if file_day is not None:
+            meta.update(
+                {
+                    "theme_type": file_day.theme_type,
+                    "cefr_level": file_day.cefr_level,
+                    "day_number": file_day.day_number,
+                    "week_number": file_day.week_number,
+                }
+            )
+            return meta
+
+        day = self.curriculum_day_repo.get_by_day_id(day_id)
+        week = day.week if day is not None else None
+        if day is not None:
+            meta.setdefault("day_number", day.day_number)
+        if week is not None:
+            theme = getattr(week.theme_type, "value", week.theme_type)
+            meta.update(
+                {
+                    "theme_type": theme,
+                    "cefr_level": week.cefr_level,
+                    "week_number": week.week_number,
+                }
+            )
+        return meta
 
     async def process_message_stream(
         self, session_id: str, message: WSIncomingMessage
@@ -1015,7 +1133,8 @@ class LearningSessionService:
                 self._apply_update(session, update)
                 self.db.commit()
                 async for msg in self._stream_outgoing_events(
-                    update.get("outgoing_events", [])
+                    update.get("outgoing_events", []),
+                    state=state,
                 ):
                     yield msg
             else:
@@ -1121,11 +1240,32 @@ class LearningSessionService:
             "current_task_index": int(state.get("current_task_index") or 0),
             "total_tasks": len(session.task_queue or []) or 1,
             "sequence": int(sequence),
+            "daily_session_id": session.daily_session_id,
         }
+        task_content = dict(attempt.task_content or {})
+        activity_contract = dict(task_content.get("activity_contract") or {})
+        task_widget = normalize_widget_key(
+            str(
+                task_content.get("widget")
+                or task_content.get("ui_widget")
+                or activity_contract.get("task_widget")
+                or session.task_type
+                or ""
+            )
+        )
+        evaluation_widget = str(
+            activity_contract.get("evaluation_widget")
+            or task_content.get("evaluation_widget")
+            or "activity_score"
+        )
+        feedback_widget_key = str(
+            activity_contract.get("feedback_widget")
+            or task_content.get("feedback_widget")
+            or "feedback_card"
+        )
 
         if pronunciation_data is not None:
             # ── Read-aloud: emit a dedicated pronunciation_result widget ──
-            task_content = attempt.task_content or {}
             reference_text = (
                 task_content.get("text_to_read_aloud")
                 or task_content.get("passage")
@@ -1136,12 +1276,21 @@ class LearningSessionService:
                 "raw_score": float(evaluation.raw_score),
                 "reference_text": reference_text,
                 "feedback": feedback_dict,
+                "activity_contract": activity_contract,
+                "task_widget": task_widget,
+                "evaluation_widget": evaluation_widget,
+                "feedback_widget": feedback_widget_key,
                 "_session": session_meta,
             }
-            yield WSOutgoingMessage(
-                type="ui_event",
+            yield self._event_orchestrator().evaluation_event(
                 widget="pronunciation_result",
-                payload=pronunciation_payload,
+                evaluation_payload=pronunciation_payload,
+                evaluation={
+                    **evaluation_dict,
+                    "pronunciation": pronunciation_data,
+                    "reference_text": reference_text,
+                },
+                session_meta=session_meta,
             )
         else:
             # ── Normal path: emit generic scorecard + feedback_card ──
@@ -1151,27 +1300,33 @@ class LearningSessionService:
                 "topic": session.topic,
                 "rubric_scores": evaluation_dict["rubric_scores"],
                 "weighted_points": evaluation_dict["weighted_points"],
+                "activity_contract": activity_contract,
+                "task_widget": task_widget,
+                "evaluation_widget": evaluation_widget,
+                "feedback_widget": feedback_widget_key,
                 "_session": session_meta,
             }
-            yield WSOutgoingMessage(
-                type="ui_event", widget="scorecard", payload=scorecard_payload,
+            yield self._event_orchestrator().evaluation_event(
+                widget="scorecard",
+                evaluation_payload=scorecard_payload,
+                evaluation=evaluation_dict,
+                session_meta=session_meta,
             )
 
-            feedback_widget = normalize_widget_key(
-                str(
-                    (attempt.task_content or {}).get("widget")
-                    or (attempt.task_content or {}).get("ui_widget")
-                    or session.task_type
-                    or ""
-                )
-            )
             feedback_payload = {
                 **feedback_dict,
-                "widget": feedback_widget,
+                "widget": task_widget,
+                "activity_contract": activity_contract,
+                "task_widget": task_widget,
+                "evaluation_widget": evaluation_widget,
+                "feedback_widget": feedback_widget_key,
                 "_session": session_meta,
             }
-            yield WSOutgoingMessage(
-                type="ui_event", widget="feedback_card", payload=feedback_payload,
+            yield self._event_orchestrator().feedback_event(
+                widget="feedback_card",
+                feedback_payload=feedback_payload,
+                feedback=feedback_dict,
+                session_meta=session_meta,
             )
 
         # Stream the conversational feedback summary as a chat message.
@@ -1256,7 +1411,8 @@ class LearningSessionService:
             self._apply_update(session, update)
             self.db.commit()
             async for msg in self._stream_outgoing_events(
-                update.get("outgoing_events", [])
+                update.get("outgoing_events", []),
+                state=state,
             ):
                 yield msg
             return
@@ -1283,6 +1439,7 @@ class LearningSessionService:
     ) -> AsyncIterator[WSOutgoingMessage]:
         """End the chat and complete the V2 DailySession if not yet completed."""
         daily = self.db.get(DailySession, session.daily_session_id)
+        scorecard = None
         if daily is not None and daily.status is SessionStatus.IN_PROGRESS:
             # If at least one attempt is evaluated, complete; otherwise leave open.
             attempts = self.attempts_repo.list_for_session(daily.id)
@@ -1290,11 +1447,56 @@ class LearningSessionService:
             if evaluated:
                 try:
                     v2_service = _make_v2_session_service(self.db)
-                    await v2_service.complete_session(
+                    scorecard, _report = await v2_service.complete_session(
                         session_id=daily.session_id, user_id=session.user_id,
                     )
                 except (SessionNotFound, SessionAbandoned, SessionAlreadyCompleted):
                     pass
+        elif daily is not None and daily.status is SessionStatus.COMPLETED:
+            try:
+                scorecard = _make_v2_session_service(self.db).get_scorecard(
+                    session_id=daily.session_id,
+                    user_id=session.user_id,
+                )
+            except (SessionNotFound, SessionAbandoned):
+                scorecard = None
+
+        if daily is not None and scorecard is not None:
+            session_meta = {
+                "daily_session_id": session.daily_session_id,
+                "daily_session_uuid": daily.session_id,
+                "total_tasks": len(session.task_queue or []),
+            }
+            final_widgets = self._final_review_widgets(daily)
+            scorecard_payload = self._final_scorecard_payload(
+                session=session,
+                daily=daily,
+                scorecard=scorecard,
+            )
+            yield self._event_orchestrator().final_scorecard_event(
+                widget=final_widgets["scorecard_widget"],
+                scorecard_payload=scorecard_payload,
+                session_meta=session_meta,
+            )
+            yield self._event_orchestrator().rag_feedback_event(
+                widget=final_widgets["rag_feedback_widget"],
+                feedback_payload={
+                    "mentor_note": scorecard_payload.get("mentor_note"),
+                    "available": bool(scorecard_payload.get("mentor_note")),
+                    "source": "feedback_memory",
+                    "_session": session_meta,
+                },
+                session_meta=session_meta,
+            )
+            yield self._event_orchestrator().completed_event(
+                payload={
+                    "status": "completed",
+                    "daily_session_id": session.daily_session_id,
+                    "daily_session_uuid": daily.session_id,
+                    "_session": session_meta,
+                },
+                session_meta=session_meta,
+            )
 
         farewell = (
             "Great work. Go back to the dashboard to review today's "
@@ -1311,6 +1513,42 @@ class LearningSessionService:
             farewell, actions=["Go to dashboard"],
         ):
             yield msg
+
+    def _final_review_widgets(self, daily: DailySession) -> dict[str, str]:
+        try:
+            file_day = file_get_day_by_id(daily.day_id)
+            final_review = dict(file_day.final_review or {})
+        except (DayNotFound, TypeError):
+            final_review = {}
+        return {
+            "scorecard_widget": str(
+                final_review.get("scorecard_widget") or "final_scorecard"
+            ),
+            "rag_feedback_widget": str(
+                final_review.get("rag_feedback_widget") or "rag_feedback"
+            ),
+        }
+
+    def _final_scorecard_payload(
+        self,
+        *,
+        session: LearningSession,
+        daily: DailySession,
+        scorecard: Any,
+    ) -> dict[str, Any]:
+        return {
+            "session_id": daily.session_id,
+            "chat_session_id": session.session_id,
+            "daily_session_id": session.daily_session_id,
+            "points_earned": dict(scorecard.points_earned or {}),
+            "subskill_totals_after": dict(scorecard.subskill_totals_after or {}),
+            "dashboard_after": dict(scorecard.dashboard_after or {}),
+            "skill_labels": SkillRepository(self.db).display_label_map(),
+            "completed_at": scorecard.completed_at,
+            "points_applied": bool(scorecard.points_applied),
+            "activities": list(scorecard.activities or []),
+            "mentor_note": scorecard.mentor_note,
+        }
 
     # ------------------------------------------------------------------
     # State helpers
@@ -1348,6 +1586,16 @@ class LearningSessionService:
         self, state: LearningSessionState, user_id: int,
     ) -> None:
         state["learner_profile"] = self._profile_context(user_id)
+
+    def _event_orchestrator(self) -> SessionEventOrchestrator:
+        # Some unit tests construct the service with ``__new__`` and then
+        # attach only the repositories they need. Lazily creating this bridge
+        # keeps those focused tests small.
+        orchestrator = getattr(self, "event_orchestrator", None)
+        if orchestrator is None:
+            orchestrator = SessionEventOrchestrator()
+            self.event_orchestrator = orchestrator
+        return orchestrator
 
     def _load_session(self, session_id: str) -> LearningSession:
         session = self.session_repo.get_by_session_id(session_id)
@@ -1498,7 +1746,10 @@ class LearningSessionService:
         )
 
     async def _stream_outgoing_events(
-        self, events: list[dict],
+        self,
+        events: list[dict],
+        *,
+        state: LearningSessionState | None = None,
     ) -> AsyncIterator[WSOutgoingMessage]:
         for event in events:
             if event.get("type") == "chat_message":
@@ -1508,6 +1759,22 @@ class LearningSessionService:
                     role=str(event.get("role") or "assistant"),
                 ):
                     yield msg
+            elif event.get("type") == "ui_event":
+                payload = dict(event.get("payload") or {})
+                widget = normalize_widget_key(
+                    str(
+                        event.get("widget")
+                        or payload.get("widget")
+                        or payload.get("ui_widget")
+                        or (state or {}).get("task_type")
+                        or ""
+                    )
+                )
+                yield self._event_orchestrator().task_event(
+                    widget=widget,
+                    task_payload=payload,
+                    session_meta=payload.get("_session"),
+                )
             else:
                 yield WSOutgoingMessage(**event)
 
@@ -1704,9 +1971,25 @@ def _make_v2_session_service(db: Session) -> SessionService:
     from app.ai.sessions import build_default_agents
 
     evaluator, feedback_generator, task_generator = build_default_agents()
-    return SessionService(
+    service = SessionService(
         db,
         evaluator=evaluator,
         feedback_generator=feedback_generator,
         task_generator=task_generator,
     )
+    try:
+        from app.ai.sessions.factory import build_rag_services
+        from app.modules.feedback_memory.rag_service import FeedbackRAGService
+
+        embedding_gen, mentor_gen = build_rag_services()
+        service._rag_service = FeedbackRAGService(
+            db,
+            embedding_generator=embedding_gen,
+        )
+        service._mentor_generator = mentor_gen
+    except Exception:
+        logger.warning(
+            "RAG services unavailable in learning chat; mentor notes disabled",
+            exc_info=True,
+        )
+    return service

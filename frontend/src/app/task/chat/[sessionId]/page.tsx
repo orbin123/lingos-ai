@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { LayoutDashboard, MoreHorizontal, RotateCcw } from "lucide-react";
+import { FileText, LayoutDashboard, MessageCircle, MoreHorizontal, RotateCcw, Sparkles } from "lucide-react";
 
 import { api } from "@/lib/api";
 
@@ -17,28 +17,35 @@ import { markDailyChatEntered, markScorecardViewed } from "@/lib/daily-session-e
 import {
   TaskChatLoadingSkeleton,
   type TaskChatLoadingType,
-} from "@/components/task/TaskChatSkeletons";
+} from "@/components/chat/TaskChatSkeletons";
 import { AppConfirmDialog } from "@/components/ui/AppConfirmDialog";
 import { SessionScorecard as DaySessionScorecard } from "@/components/sessions/SessionScorecard";
 import { type SessionScorecardRead, type PronunciationResult } from "@/lib/sessions-api";
 import {
-  FillBlanksWidget,
-  ErrorSpottingWidget,
-  ErrorCorrectionWidget,
-  ListenAndRespondWidget,
-  MCQWidget,
+  WIDGET_COMPONENTS,
+  WIDGET_SECTION_LABEL,
   normalizeWidgetKey,
-  OpenTextWidget,
-  SpeakRecordWidget,
-  StoryboardWidget,
-  StructuredEssayWidget,
-  TimedTextWidget,
-} from "@/components/task/task-widgets";
+} from "@/components/chat/runtimeMapping";
 import type {
   AnyTaskPayload,
   WidgetKey,
-  WidgetProps,
-} from "@/components/task/task-widgets";
+} from "@/components/chat/runtimeMapping";
+import {
+  RuntimeEvaluationCard,
+  RuntimeFeedbackCard,
+  RuntimeFinalScorecard,
+  RuntimeRagFeedback,
+} from "@/components/chat/runtimeReviewMapping";
+import {
+  ChatBubble,
+  ChatGlobalStyles,
+  ChatMain,
+  ChatPageShell,
+  ChatTopbar,
+  LessonMetaCard,
+  SectionMarker,
+  roundIconButton,
+} from "@/components/chat/ChatChrome";
 
 /* ── Score / Feedback payloads (rendered by chat session, not by widgets) ── */
 interface ScorecardPayload {
@@ -52,6 +59,65 @@ interface ScorecardPayload {
   rubric_scores?: Record<string, number>;
   weighted_points?: Record<string, number>;
   subskill_score?: number | null;
+}
+
+interface RuntimeBlueprintPayload {
+  blueprint?: {
+    teaching?: {
+      lesson_goal?: string;
+      lesson_description?: string;
+      focus?: string;
+      topic?: string;
+      skill_name?: string;
+    };
+    activities?: RuntimeActivityContract[];
+    final_review?: Record<string, unknown>;
+  };
+  _session?: RuntimeSessionMeta;
+}
+
+type RuntimeBlueprint = NonNullable<RuntimeBlueprintPayload["blueprint"]>;
+
+interface RuntimeSessionMeta {
+  theme_type?: string | null;
+  cefr_level?: string | null;
+  day_number?: number | string | null;
+  week_number?: number | string | null;
+}
+
+interface LessonMeta {
+  title: string;
+  focus: string;
+  theme: string;
+  cefr: string;
+  dayNumber: number | null;
+}
+
+type RuntimeActivityContract = Record<string, unknown> & {
+  activity_id?: string;
+  sequence?: number;
+  archetype_id?: string;
+  activity?: string;
+  task_widget?: string;
+  evaluation_widget?: string;
+  feedback_widget?: string;
+};
+
+interface FinalScorecardPayload {
+  points_earned?: Record<string, number>;
+  skill_labels?: Record<string, string>;
+  activities?: Array<{
+    sequence?: number;
+    archetype_id?: string;
+    raw_score?: number;
+    base_reward?: number;
+  }>;
+  mentor_note?: string | null;
+}
+
+interface RagFeedbackPayload {
+  mentor_note?: string | null;
+  available?: boolean;
 }
 
 interface FeedbackError {
@@ -105,6 +171,8 @@ type ChatEvent =
   | { kind: "section"; tone: "intro" | "task" | "score" | "feedback"; label: string }
   | { kind: "task"; payload: AnyTaskPayload; submitted: boolean; answers: Record<string, unknown> }
   | { kind: "scorecard"; payload: ScorecardPayload }
+  | { kind: "final_scorecard"; payload: FinalScorecardPayload }
+  | { kind: "rag_feedback"; payload: RagFeedbackPayload }
   | { kind: "feedback"; payload: FeedbackPayload }
   | { kind: "pronunciation"; payload: PronunciationResultPayload };
 
@@ -121,66 +189,27 @@ type WSOutgoing =
   | { type: "task_submission"; answers: Record<string, unknown> }
   | { type: "follow_up_action"; action: string };
 
-/* ── Widget dispatch ─────────────────────────────────────────────────── */
-const WIDGET_COMPONENTS: Record<WidgetKey, React.ComponentType<WidgetProps>> = {
-  mcq: MCQWidget as React.ComponentType<WidgetProps>,
-  fill_in_blanks: FillBlanksWidget as React.ComponentType<WidgetProps>,
-  open_text: OpenTextWidget as React.ComponentType<WidgetProps>,
-  timed_text: TimedTextWidget as React.ComponentType<WidgetProps>,
-  structured_essay: StructuredEssayWidget as React.ComponentType<WidgetProps>,
-  speak_and_record: SpeakRecordWidget as React.ComponentType<WidgetProps>,
-  listen_and_respond: ListenAndRespondWidget as React.ComponentType<WidgetProps>,
-  error_spotting: ErrorSpottingWidget as React.ComponentType<WidgetProps>,
-  storyboard: StoryboardWidget as React.ComponentType<WidgetProps>,
-  error_correction: ErrorCorrectionWidget as React.ComponentType<WidgetProps>,
-};
-
-const WIDGET_SECTION_LABEL: Record<WidgetKey, string> = {
-  mcq: "Multiple choice",
-  fill_in_blanks: "Fill in the blanks",
-  open_text: "Writing task",
-  timed_text: "Timed writing",
-  structured_essay: "Essay",
-  speak_and_record: "Speaking task",
-  listen_and_respond: "Listening task",
-  error_spotting: "Error spotting",
-  storyboard: "Storyboard",
-  error_correction: "Error correction",
-};
-
-function showsInlineActivityScore(widget: WidgetKey): boolean {
-  return (
-    widget === "fill_in_blanks" ||
-    widget === "listen_and_respond" ||
-    widget === "error_spotting"
-  );
-}
-
-function isWritingSpeakingWidget(widget: WidgetKey): boolean {
-  return (
-    widget === "open_text" ||
-    widget === "timed_text" ||
-    widget === "structured_essay" ||
-    widget === "speak_and_record" ||
-    widget === "storyboard" ||
-    widget === "error_correction"
-  );
-}
-
-function isOpenEndedFeedbackWidget(widget?: string): boolean {
-  const normalized = normalizeWidgetKey(widget ?? "");
-  return (
-    normalized === "open_text" ||
-    normalized === "timed_text" ||
-    normalized === "structured_essay" ||
-    normalized === "speak_and_record" ||
-    normalized === "storyboard" ||
-    normalized === "error_correction"
-  );
-}
-
 function isKnownWidget(widget: string): widget is WidgetKey {
   return normalizeWidgetKey(widget) in WIDGET_COMPONENTS;
+}
+
+function findRuntimeActivityContract(
+  blueprint: RuntimeBlueprint | null,
+  payload: Record<string, unknown>,
+): RuntimeActivityContract | null {
+  const activities = blueprint?.activities ?? [];
+  if (!activities.length) return null;
+
+  const activityId = String(payload.activity_id || "");
+  const archetypeId = String(payload.archetype_id || "");
+  const sequence = Number(payload.sequence || payload.activity_sequence || 0);
+
+  return (
+    activities.find((activity) => activityId && activity.activity_id === activityId) ||
+    activities.find((activity) => archetypeId && activity.archetype_id === archetypeId) ||
+    activities.find((activity) => sequence > 0 && Number(activity.sequence || 0) === sequence) ||
+    null
+  );
 }
 
 function shouldShowActivitySkeletonAfterChat(content?: string) {
@@ -192,20 +221,40 @@ function shouldShowActivitySkeletonAfterChat(content?: string) {
   );
 }
 
+function textValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function numberValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function displayLabel(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function buildLessonEyebrow(meta: LessonMeta): string {
+  const parts = [
+    meta.theme || "Lesson",
+    meta.cefr,
+    meta.dayNumber ? `Day ${meta.dayNumber}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
 function agentDebugLog(message: string, data: Record<string, unknown>, hypothesisId: string) {
   // #region agent log
   fetch('http://127.0.0.1:7588/ingest/7b2f1294-46b7-45e6-9e45-9caa7b81d367',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'dfa507'},body:JSON.stringify({sessionId:'dfa507',runId:'initial',hypothesisId,location:'frontend/src/app/task/chat/[sessionId]/page.tsx',message,data,timestamp:Date.now()})}).catch(()=>{});
   // #endregion
 }
 
-/* ── Icons ───────────────────────────────────────────────────────────── */
-function BackIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-      <path d="M10 12L6 8L10 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
 function SendIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -221,53 +270,11 @@ function MicIcon() {
     </svg>
   );
 }
-function SparkIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-      <path d="M7 1L8 5L12 6L8 7L7 11L6 7L2 6L6 5L7 1Z" fill="currentColor" />
-    </svg>
-  );
-}
-function TaskIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-      <path d="M3 3.5h6M3 7h8M3 10.5h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M11 9.5l1 1 2-2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function CheckIcon({ color = "white" }: { color?: string }) {
-  return (
-    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-      <path d="M3 6.5L5 8.5L9 4" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-function XIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-      <path d="M3.5 3.5L8.5 8.5M8.5 3.5L3.5 8.5" stroke="white" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-function LogoIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
-      <path d="M3.5 14L9 4L14.5 14" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M5.7 10.5h6.6" stroke="white" strokeWidth="1.7" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 /* ── Sub-components ──────────────────────────────────────────────────── */
 function Topbar({
-  skillLabel,
-  sceneLabel,
   onRestart,
   restarting,
 }: {
-  skillLabel: string;
-  sceneLabel: string;
   onRestart: () => void;
   restarting: boolean;
 }) {
@@ -304,65 +311,20 @@ function Topbar({
   };
 
   return (
-    <div style={{
-      position: "sticky", top: 0, zIndex: 50,
-      backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
-      background: "rgba(232,240,252,0.55)",
-      borderBottom: "1px solid rgba(140,170,220,0.14)",
-    }}>
-      <div style={{
-        maxWidth: 880, margin: "0 auto", padding: "14px 20px",
-        display: "flex", alignItems: "center", gap: 12,
-      }}>
-        <button
-          aria-label="Back to dashboard"
-          onClick={() => router.push("/dashboard")}
-          style={{
-            width: 36, height: 36, borderRadius: "50%",
-            background: "white", border: "1px solid oklch(85% 0.025 240)",
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-            color: "oklch(28% 0.08 245)", cursor: "pointer",
-          }}
-        >
-          <BackIcon />
-        </button>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 34, height: 34, borderRadius: 9, background: "oklch(52% 0.18 240)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 4px 12px rgba(60,100,200,0.3)",
-          }}>
-            <LogoIcon />
-          </div>
-          <span style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-0.02em", color: "oklch(20% 0.09 245)" }}>
-            LingosAI
-          </span>
-        </div>
-
-        <span style={{
-          display: "inline-flex", alignItems: "center", gap: 6,
-          padding: "5px 11px", borderRadius: 999,
-          background: "oklch(94% 0.05 145)", border: "1px solid oklch(82% 0.1 150)",
-          fontSize: 12, fontWeight: 700, color: "oklch(35% 0.13 150)",
-          textTransform: "capitalize",
-        }}>
-          {skillLabel} · {sceneLabel}
-        </span>
-
-        <div style={{ flex: 1 }} />
-
+    <ChatTopbar
+      subtitle="Chat session"
+      onBack={() => router.push("/dashboard")}
+      actions={
         <div ref={menuRef} style={{ position: "relative" }}>
           <button
+            type="button"
             aria-label="Session options"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
             style={{
-              width: 36, height: 36, borderRadius: "50%",
-              background: "white", border: "1px solid oklch(85% 0.025 240)",
-              display: "inline-flex", alignItems: "center", justifyContent: "center",
-              color: "oklch(28% 0.08 245)", cursor: "pointer",
+              ...roundIconButton,
+              cursor: "pointer",
             }}
           >
             <MoreHorizontal size={17} strokeWidth={2.4} />
@@ -435,550 +397,8 @@ function Topbar({
             </div>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-function ChatBubble({
-  role,
-  name,
-  children,
-  actions,
-  streaming,
-  onAction,
-}: {
-  role: "ai" | "you";
-  name?: string;
-  children: React.ReactNode;
-  actions?: string[];
-  streaming?: boolean;
-  onAction?: (label: string) => void;
-}) {
-  const isAi = role === "ai";
-  return (
-    <div style={{
-      display: "flex", gap: 10, marginBottom: 12,
-      alignItems: "flex-end",
-      flexDirection: isAi ? "row" : "row-reverse",
-      animation: "fadeIn 0.4s ease both",
-    }}>
-      <div style={{
-        width: 30, height: 30, borderRadius: "50%",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 12, fontWeight: 800, color: "white",
-        flexShrink: 0, marginBottom: 2,
-        background: isAi ? "oklch(52% 0.18 240)" : "oklch(20% 0.09 245)",
-        boxShadow: "0 2px 6px rgba(60,100,200,0.18)",
-      }}>
-        {isAi ? "L" : "U"}
-      </div>
-      <div style={{ maxWidth: "78%", display: "flex", flexDirection: "column", gap: 3, alignItems: isAi ? "flex-start" : "flex-end" }}>
-        {name && (
-          <div style={{ fontSize: 11, fontWeight: 700, color: "oklch(45% 0.07 240)", padding: "0 4px", letterSpacing: "0.02em" }}>
-            {name}
-          </div>
-        )}
-        <div style={{
-          padding: "13px 16px", borderRadius: 18,
-          fontSize: 14.5, lineHeight: 1.55, wordWrap: "break-word",
-          ...(isAi ? {
-            background: "white", color: "oklch(18% 0.06 240)",
-            border: "1px solid oklch(85% 0.025 240)",
-            borderBottomLeftRadius: 6,
-            boxShadow: "0 2px 10px rgba(80,110,180,0.06)",
-          } : {
-            background: "oklch(52% 0.18 240)", color: "white",
-            borderBottomRightRadius: 6,
-            boxShadow: "0 4px 14px rgba(60,100,200,0.25)",
-          }),
-        }}>
-          {children}
-          {isAi && streaming && (
-            <span
-              aria-hidden
-              style={{
-                display: "inline-block",
-                width: 7,
-                height: 16,
-                marginLeft: 3,
-                borderRadius: 999,
-                background: "oklch(52% 0.18 240)",
-                verticalAlign: "-3px",
-                animation: "streamPulse 0.9s ease-in-out infinite",
-              }}
-            />
-          )}
-          {isAi && actions && actions.length > 0 && (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-              {actions.map((label) => (
-                <button
-                  key={label}
-                  onClick={() => onAction?.(label)}
-                  style={{
-                    padding: "7px 13px", borderRadius: 999,
-                    background: "white", border: "1px solid oklch(85% 0.025 240)",
-                    fontSize: 12.5, fontWeight: 600, color: "oklch(20% 0.09 245)",
-                    cursor: "pointer", fontFamily: "inherit",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionMarker({
-  kind,
-  icon,
-  children,
-}: {
-  kind: "intro" | "task" | "score" | "feedback";
-  icon: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const colors: Record<string, string> = {
-    intro: "oklch(52% 0.18 240)",
-    task: "oklch(48% 0.18 290)",
-    score: "oklch(40% 0.16 155)",
-    feedback: "oklch(48% 0.16 60)",
-  };
-  return (
-    <div style={{ display: "flex", justifyContent: "center", margin: "10px 0 14px" }}>
-      <div style={{
-        display: "inline-flex", alignItems: "center", gap: 7,
-        padding: "6px 13px", borderRadius: 999,
-        background: "white", border: "1px solid oklch(85% 0.025 240)",
-        fontSize: 12.5, fontWeight: 700, letterSpacing: "0.01em",
-        color: colors[kind],
-        boxShadow: "0 2px 8px rgba(80,110,180,0.06)",
-        animation: "fadeIn 0.4s ease both",
-      }}>
-        {icon}
-        <span>{children}</span>
-      </div>
-    </div>
-  );
-}
-
-function ScoreRing({ pct }: { pct: number }) {
-  const r = 38;
-  const c = 2 * Math.PI * r;
-  const off = c - (pct / 100) * c;
-  return (
-    <div style={{ position: "relative", width: 92, height: 92, flexShrink: 0 }}>
-      <svg width="92" height="92" viewBox="0 0 92 92">
-        <circle cx="46" cy="46" r={r} stroke="oklch(92% 0.025 240)" strokeWidth="9" fill="none" />
-        <circle
-          cx="46" cy="46" r={r}
-          stroke="url(#ringGrad)" strokeWidth="9" fill="none"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={off}
-          transform="rotate(-90 46 46)"
-          style={{ transition: "stroke-dashoffset 1.2s ease" }}
-        />
-        <defs>
-          <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="oklch(52% 0.18 240)" />
-            <stop offset="100%" stopColor="oklch(72% 0.12 200)" />
-          </linearGradient>
-        </defs>
-      </svg>
-      <div style={{
-        position: "absolute", inset: 0,
-        display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column",
-        fontWeight: 800, color: "oklch(20% 0.09 245)",
-      }}>
-        <span style={{ fontSize: 22, lineHeight: 1, letterSpacing: "-0.02em" }}>
-          {pct}<span style={{ fontSize: 13, color: "oklch(45% 0.07 240)", fontWeight: 700 }}>%</span>
-        </span>
-        <span style={{ fontSize: 10, color: "oklch(45% 0.07 240)", fontWeight: 700, letterSpacing: "0.05em", marginTop: 2 }}>
-          SCORE
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function countTaskItems(taskPayload: AnyTaskPayload): number {
-  switch (taskPayload.widget) {
-    case "open_text":
-      return (taskPayload.items ?? []).length || 1;
-    case "structured_essay":
-      return (taskPayload.sections ?? []).length || 1;
-    case "storyboard":
-      return (taskPayload.scenes ?? []).length || 1;
-    case "speak_and_record": {
-      const p = taskPayload;
-      if (p.turns && p.turns.length > 0) return p.turns.filter((t) => t.speaker === "user").length || 1;
-      if (p.speaking_prompts && p.speaking_prompts.length > 0) return p.speaking_prompts.length;
-      if (p.speaking_items && p.speaking_items.length > 0) return p.speaking_items.length;
-      return 1;
-    }
-    case "timed_text":
-      return 1;
-    default:
-      return (taskPayload as { total?: number }).total ?? 1;
-  }
-}
-
-function countSubmittedRecordings(taskAnswers?: Record<string, unknown>): number {
-  const recordings = taskAnswers?.recordings;
-  if (!Array.isArray(recordings)) return 0;
-  return recordings.filter(
-    (row) =>
-      typeof row === "object" &&
-      row !== null &&
-      typeof (row as { transcript?: string }).transcript === "string" &&
-      (row as { transcript: string }).transcript.trim().length > 0,
-  ).length;
-}
-
-function buildScoreBannerLabel(
-  taskPayload: AnyTaskPayload | null,
-  taskAnswers?: Record<string, unknown>,
-): string {
-  if (taskPayload?.widget === "speak_and_record") {
-    const total = taskPayload ? countTaskItems(taskPayload) : 1;
-    const submitted = countSubmittedRecordings(taskAnswers);
-    if (submitted > 0) {
-      return submitted === 1
-        ? "1 recording submitted"
-        : total > 1
-          ? `${submitted} of ${total} recordings submitted`
-          : `${submitted} recordings submitted`;
-    }
-  }
-  const total = taskPayload ? countTaskItems(taskPayload) : 1;
-  return total === 1 ? "1 question attended" : `${total} out of ${total} attended`;
-}
-
-function InlineScoreBanner({
-  scorePayload,
-  taskPayload,
-  taskAnswers,
-}: {
-  scorePayload: ScorecardPayload;
-  taskPayload: AnyTaskPayload | null;
-  taskAnswers?: Record<string, unknown>;
-}) {
-  const pct = scorePayload.overall_score <= 10
-    ? Math.round(scorePayload.overall_score * 10)
-    : Math.round(scorePayload.overall_score);
-  const label = buildScoreBannerLabel(taskPayload, taskAnswers);
-  return (
-    <div
-      style={{
-        borderRadius: 14,
-        padding: "14px 18px",
-        marginBottom: 16,
-        marginTop: 4,
-        display: "flex",
-        alignItems: "center",
-        gap: 14,
-        background: "white",
-        border: "1.5px solid oklch(85% 0.025 240)",
-        boxShadow: "0 2px 10px rgba(80,110,180,0.07)",
-        animation: "fadeIn 0.4s ease both",
-      }}
-    >
-      <div className="tw-result-icon">
-        <SparkIcon />
-      </div>
-      <div className="tw-result-text">
-        <div className="tw-result-headline">{label}</div>
-        <div className="tw-result-sub">Review the feedback below.</div>
-      </div>
-      <div>
-        <div className="tw-result-score">
-          {pct}<span style={{ fontSize: 14 }}>%</span>
-        </div>
-        <div className="tw-result-score-sub">SCORE</div>
-      </div>
-    </div>
-  );
-}
-
-function Scorecard({ payload }: { payload: ScorecardPayload }) {
-  const pct = payload.overall_score <= 10
-    ? Math.round(payload.overall_score * 10)
-    : payload.overall_score;
-  const correctCount = payload.correct_count ?? Math.round(payload.overall_score);
-  const total = payload.total ?? 10;
-  const rubricCount = Object.keys(payload.rubric_scores ?? {}).length;
-  return (
-    <div style={{
-      borderRadius: 22, padding: 24,
-      background: "linear-gradient(135deg, oklch(94% 0.06 240) 0%, white 60%)",
-      border: "1.5px solid rgba(255,255,255,0.92)",
-      boxShadow: "0 8px 32px rgba(80,110,180,0.16)",
-      animation: "fadeIn 0.4s ease both",
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "oklch(20% 0.09 245)", letterSpacing: "-0.01em", textTransform: "capitalize" }}>
-            {payload.skill_name} — {payload.topic}
-          </div>
-          <div style={{ fontSize: 13, color: "oklch(45% 0.07 240)", marginTop: 3 }}>
-            {payload.subskill_score != null
-              ? `Grammar score: ${payload.subskill_score}/10`
-              : rubricCount > 0
-                ? `${rubricCount} rubric areas checked`
-                : `${correctCount} of ${total} correct`}
-          </div>
-        </div>
-        <ScoreRing pct={pct} />
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 16 }}>
-        {[
-          {
-            num: payload.subskill_score != null
-              ? `${payload.subskill_score}/10`
-              : `${payload.overall_score}/10`,
-            lbl: payload.subskill_score != null ? "Skill score" : "Raw score",
-          },
-          {
-            num: payload.subskill_score != null
-              ? `${payload.answered_count ?? correctCount}/${total}`
-              : String(rubricCount || total),
-            lbl: payload.subskill_score != null ? "Items done" : "Rubrics",
-          },
-          { num: `${pct}%`, lbl: "Score" },
-        ].map((s) => (
-          <div key={s.lbl} style={{
-            background: "white", borderRadius: 12, padding: "12px 14px",
-            border: "1px solid oklch(85% 0.025 240)",
-          }}>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "oklch(20% 0.09 245)", letterSpacing: "-0.02em" }}>{s.num}</div>
-            <div style={{ fontSize: 11.5, fontWeight: 600, color: "oklch(45% 0.07 240)", marginTop: 2, letterSpacing: "0.02em" }}>{s.lbl}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function FeedbackCard({ payload }: { payload: FeedbackPayload }) {
-  const errors = payload.errors ?? [];
-  const mistakes = payload.mistakes ?? [];
-  const summary = payload.summary || payload.overall_message || "";
-  const openEndedFeedback = isOpenEndedFeedbackWidget(payload.widget);
-  const errorSpottingFeedback = normalizeWidgetKey(payload.widget ?? "") === "error_spotting";
-  return (
-    <div style={{
-      borderRadius: 22,
-      marginBottom: 24,
-      background: "rgba(255,255,255,0.85)",
-      backdropFilter: "blur(18px)", WebkitBackdropFilter: "blur(18px)",
-      border: "1.5px solid rgba(255,255,255,0.92)",
-      boxShadow: "0 4px 28px rgba(80,110,180,0.1)",
-      overflow: "hidden",
-      animation: "fadeIn 0.4s ease both",
-    }}>
-      {errors.length === 0 && mistakes.length === 0 && (
-        <div style={{ padding: "20px 22px", display: "flex", gap: 14, alignItems: "center" }}>
-          <div style={{
-            width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            background: "oklch(55% 0.16 155)",
-          }}>
-            <CheckIcon />
-          </div>
-          <div style={{ fontSize: 13.5, color: "oklch(18% 0.06 240)", lineHeight: 1.55 }}>
-            {summary || "No major issues found."} {payload.practice_suggestion || payload.next_tip || ""}
-          </div>
-        </div>
-      )}
-      {mistakes.length > 0 && (
-        <>
-          <div style={{ padding: "16px 20px", borderBottom: "1px solid oklch(85% 0.025 240)" }}>
-            <div style={{ fontSize: 13.5, color: "oklch(18% 0.06 240)", lineHeight: 1.55 }}>
-              {summary}
-            </div>
-            {payload.did_well && payload.did_well.length > 0 && (
-              <div style={{ marginTop: 8, fontSize: 12.5, color: "oklch(45% 0.07 240)", lineHeight: 1.5 }}>
-                {payload.did_well.join(" ")}
-              </div>
-            )}
-          </div>
-          {mistakes.map((mistake, i) => {
-            const falsePositive =
-              errorSpottingFeedback && mistake.correction === "Do not flag this word";
-            return (
-            <div key={`${mistake.issue}-${i}`} style={{
-              padding: "16px 20px",
-              borderBottom: i < mistakes.length - 1 ? "1px solid oklch(85% 0.025 240)" : "none",
-              display: "flex", gap: 14,
-            }}>
-              <div style={{
-                width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: openEndedFeedback ? "oklch(60% 0.15 60)" : "oklch(58% 0.2 25)",
-                color: "white",
-              }}>
-                {openEndedFeedback ? <SparkIcon /> : <XIcon />}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, color: "oklch(18% 0.06 240)", marginBottom: 6, lineHeight: 1.55 }}>
-                  {errorSpottingFeedback ? (
-                    falsePositive ? (
-                      <strong>{mistake.issue}</strong>
-                    ) : (
-                      <>
-                        {mistake.user_wrote && (
-                          <span style={{
-                            display: "inline-block", padding: "0 6px", borderRadius: 4,
-                            fontWeight: 700, margin: "0 1px",
-                            background: "oklch(92% 0.08 25)",
-                            color: "oklch(35% 0.18 25)",
-                            textDecoration: "line-through",
-                          }}>
-                            {mistake.user_wrote}
-                          </span>
-                        )}
-                        {mistake.user_wrote && mistake.correction && " -> "}
-                        {mistake.correction && (
-                          <span style={{
-                            display: "inline-block", padding: "0 6px", borderRadius: 4,
-                            fontWeight: 700, margin: "0 1px",
-                            background: "oklch(92% 0.1 155)",
-                            color: "oklch(28% 0.16 155)",
-                          }}>
-                            {mistake.correction}
-                          </span>
-                        )}
-                      </>
-                    )
-                  ) : (
-                    <strong>{mistake.issue}</strong>
-                  )}
-                  {!errorSpottingFeedback && openEndedFeedback && mistake.user_wrote && (
-                    <div style={{ marginTop: 8 }}>
-                      <strong style={{ color: "oklch(42% 0.07 240)" }}>Your version:</strong>{" "}
-                      <span style={{
-                        display: "inline-block", padding: "1px 6px", borderRadius: 4,
-                        fontWeight: 650, margin: "0 1px",
-                        background: "oklch(96% 0.018 245)",
-                        color: "oklch(35% 0.07 240)",
-                      }}>
-                        {mistake.user_wrote}
-                      </span>
-                    </div>
-                  )}
-                  {!errorSpottingFeedback && openEndedFeedback && mistake.correction && (
-                    <div style={{ marginTop: 6 }}>
-                      <strong style={{ color: "oklch(42% 0.07 240)" }}>Improved version:</strong>{" "}
-                      <span style={{
-                        display: "inline-block", padding: "1px 6px", borderRadius: 4,
-                        fontWeight: 700, margin: "0 1px",
-                        background: "oklch(92% 0.1 155)",
-                        color: "oklch(28% 0.16 155)",
-                      }}>
-                        {mistake.correction}
-                      </span>
-                    </div>
-                  )}
-                  {!errorSpottingFeedback && !openEndedFeedback && mistake.user_wrote && (
-                    <>
-                      {": "}
-                      <span style={{
-                        display: "inline-block", padding: "0 6px", borderRadius: 4,
-                        fontWeight: 700, margin: "0 1px",
-                        background: "oklch(92% 0.08 25)",
-                        color: "oklch(35% 0.18 25)",
-                        textDecoration: mistake.correction ? "line-through" : "none",
-                      }}>
-                        {mistake.user_wrote}
-                      </span>
-                    </>
-                  )}
-                  {!errorSpottingFeedback && !openEndedFeedback && mistake.correction && (
-                    <>
-                      {" -> "}
-                      <span style={{
-                        display: "inline-block", padding: "0 6px", borderRadius: 4,
-                        fontWeight: 700, margin: "0 1px",
-                        background: "oklch(92% 0.1 155)", color: "oklch(28% 0.16 155)",
-                      }}>
-                        {mistake.correction}
-                      </span>
-                    </>
-                  )}
-                </div>
-                {(mistake.rule || payload.next_tip) && (
-                  <div style={{
-                    fontSize: 13, color: "oklch(45% 0.07 240)", lineHeight: 1.55,
-                    background: "oklch(96% 0.025 245)",
-                    borderRadius: 10, padding: "10px 12px", marginTop: 4,
-                  }}>
-                    {mistake.rule && <div><strong>Rule:</strong> {mistake.rule}</div>}
-                    {payload.next_tip && i === mistakes.length - 1 && (
-                      <div style={{ marginTop: mistake.rule ? 4 : 0 }}>
-                        <strong>Next:</strong> {payload.next_tip}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-            );
-          })}
-        </>
-      )}
-      {errors.map((err, i) => (
-        <div key={err.question_id} style={{
-          padding: "16px 20px",
-          borderBottom: i < errors.length - 1 ? "1px solid oklch(85% 0.025 240)" : "none",
-          display: "flex", gap: 14,
-        }}>
-          <div style={{
-            width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            background: "oklch(58% 0.2 25)",
-          }}>
-            <XIcon />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, color: "oklch(18% 0.06 240)", marginBottom: 6, lineHeight: 1.55 }}>
-              <strong>{err.question_id}.</strong>{" "}
-              <span style={{
-                display: "inline-block", padding: "0 6px", borderRadius: 4,
-                fontWeight: 700, margin: "0 1px",
-                background: "oklch(92% 0.08 25)",
-                color: "oklch(35% 0.18 25)",
-                textDecoration: "line-through",
-              }}>
-                {err.user_answer || "—"}
-              </span>{" "}→{" "}
-              <span style={{
-                display: "inline-block", padding: "0 6px", borderRadius: 4,
-                fontWeight: 700, margin: "0 1px",
-                background: "oklch(92% 0.1 155)", color: "oklch(28% 0.16 155)",
-              }}>
-                {err.correct_answer}
-              </span>
-            </div>
-            <div style={{
-              fontSize: 13, color: "oklch(45% 0.07 240)", lineHeight: 1.55,
-              background: "oklch(96% 0.025 245)",
-              borderRadius: 10, padding: "10px 12px", marginTop: 4,
-            }}>
-              <div><strong>Why:</strong> {err.why_wrong}</div>
-              <div style={{ marginTop: 4 }}><strong>Rule:</strong> {err.rule}</div>
-              <div style={{ marginTop: 4 }}><strong>Memory tip:</strong> {err.memory_tip}</div>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
+      }
+    />
   );
 }
 
@@ -1022,7 +442,7 @@ function ChatPronunciationCard({ payload }: { payload: PronunciationResultPayloa
         border: "1.5px solid rgba(255,255,255,0.92)",
         boxShadow: "0 8px 32px rgba(80,110,180,0.13)",
         overflow: "hidden",
-        animation: "fadeIn 0.4s ease both",
+        animation: "chatFadeIn 0.35s ease both",
         marginBottom: 16,
       }}
     >
@@ -1580,7 +1000,13 @@ export default function ChatSessionPage() {
   const [events, setEvents] = useState<ChatEvent[]>([]);
   const [composer, setComposer] = useState("");
   const [connectionState, setConnectionState] = useState(initialConnectionState);
-  const [skillName, setSkillName] = useState("");
+  const [lessonMeta, setLessonMeta] = useState<LessonMeta>({
+    title: "Today's lesson",
+    focus: "",
+    theme: "Lesson",
+    cefr: "",
+    dayNumber: null,
+  });
   const [phase, setPhase] = useState<"teaching" | "practice" | "submitted" | "ended">("teaching");
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [loadingType, setLoadingType] = useState<TaskChatLoadingType>(
@@ -1594,8 +1020,8 @@ export default function ChatSessionPage() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const pendingSendsRef = useRef<WSOutgoing[]>([]);
-  const stageRef = useRef<HTMLDivElement>(null);
   const eventsRef = useRef<ChatEvent[]>(events);
+  const runtimeBlueprintRef = useRef<RuntimeBlueprint | null>(null);
 
   useEffect(() => {
     eventsRef.current = events;
@@ -1804,11 +1230,108 @@ export default function ChatSessionPage() {
       return;
     }
     if (msg.type === "ui_event") {
-      const widget = normalizeWidgetKey(msg.widget);
+      const payloadKind = String(msg.payload?.payload_kind || "");
+      if (msg.widget === "session_blueprint" || payloadKind === "session_blueprint") {
+        const payload = msg.payload as RuntimeBlueprintPayload;
+        const teaching = payload.blueprint?.teaching;
+        const sessionMeta = payload._session;
+        runtimeBlueprintRef.current = payload.blueprint ?? null;
+        setLessonMeta((curr) => ({
+          title:
+            textValue(teaching?.topic) ||
+            textValue(teaching?.lesson_goal) ||
+            textValue(teaching?.skill_name) ||
+            curr.title,
+          focus:
+            textValue(teaching?.focus) ||
+            textValue(teaching?.lesson_description) ||
+            curr.focus,
+          theme: displayLabel(textValue(sessionMeta?.theme_type)) || curr.theme,
+          cefr: textValue(sessionMeta?.cefr_level) || curr.cefr,
+          dayNumber: numberValue(sessionMeta?.day_number) ?? curr.dayNumber,
+        }));
+        return;
+      }
+      if (msg.widget === "final_scorecard" || payloadKind === "final_scorecard") {
+        setLoadingType(null);
+        const payload = msg.payload as unknown as FinalScorecardPayload;
+        setEvents((prev) => [
+          ...prev,
+          { kind: "section", tone: "score", label: "Final scorecard" },
+          { kind: "final_scorecard", payload },
+        ]);
+        return;
+      }
+      if (msg.widget === "rag_feedback" || payloadKind === "rag_feedback") {
+        const payload = msg.payload as unknown as RagFeedbackPayload;
+        if (payload.available !== false) {
+          setEvents((prev) => [
+            ...prev,
+            { kind: "section", tone: "feedback", label: "Coach note" },
+            { kind: "rag_feedback", payload },
+          ]);
+        }
+        return;
+      }
+      if (msg.widget === "session_completed" || payloadKind === "completed") {
+        setPhase("ended");
+        setLoadingType(null);
+        return;
+      }
+      if (msg.widget === "pronunciation_result") {
+        setLoadingType(null);
+        const payload = msg.payload as unknown as PronunciationResultPayload;
+        setEvents((prev) => [
+          ...prev,
+          { kind: "section", tone: "score", label: "Pronunciation assessment" },
+          { kind: "pronunciation", payload },
+        ]);
+        setPhase("submitted");
+        return;
+      }
+      if (msg.widget === "scorecard" || payloadKind === "evaluation") {
+        setLoadingType("feedback_loading");
+        const payload = msg.payload as unknown as ScorecardPayload;
+        setLessonMeta((curr) => ({
+          ...curr,
+          title: curr.title === "Today's lesson" ? payload.topic || curr.title : curr.title,
+          theme: curr.theme === "Lesson" ? displayLabel(payload.skill_name || "") || curr.theme : curr.theme,
+        }));
+        setEvents((prev) => [
+          ...prev,
+          { kind: "section", tone: "score", label: "Activity score" },
+          { kind: "scorecard", payload },
+        ]);
+        setPhase("submitted");
+        return;
+      }
+      if (msg.widget === "feedback_card" || payloadKind === "feedback") {
+        setLoadingType(null);
+        const payload = msg.payload as unknown as FeedbackPayload;
+        setEvents((prev) => [
+          ...prev,
+          { kind: "section", tone: "feedback", label: "Activity feedback" },
+          { kind: "feedback", payload },
+        ]);
+        return;
+      }
+
+      const widget = normalizeWidgetKey(
+        String(
+          (msg.payload?.task_widget as string | undefined) ||
+          (msg.payload?.widget as string | undefined) ||
+          msg.widget,
+        ),
+      );
       if (isKnownWidget(widget)) {
         setLoadingType(null);
+        const activityContract = findRuntimeActivityContract(
+          runtimeBlueprintRef.current,
+          msg.payload,
+        );
         const payload = {
           ...msg.payload,
+          blueprint_contract: activityContract ?? undefined,
           widget,
         } as unknown as AnyTaskPayload;
         if (widget === "listen_and_respond") {
@@ -1840,46 +1363,18 @@ export default function ChatSessionPage() {
           (payload as { topic_name?: string; topic?: string }).topic_name ||
           (payload as { topic_name?: string; topic?: string }).topic ||
           "";
-        setSkillName((curr) => curr || topicName);
+        if (topicName) {
+          setLessonMeta((curr) => ({
+            ...curr,
+            title: curr.title === "Today's lesson" ? topicName : curr.title,
+          }));
+        }
         setEvents((prev) => [
           ...prev,
           { kind: "section", tone: "task", label: WIDGET_SECTION_LABEL[widget] },
           { kind: "task", payload, submitted: false, answers: {} },
         ]);
         setPhase("practice");
-        return;
-      }
-      if (msg.widget === "pronunciation_result") {
-        setLoadingType(null);
-        const payload = msg.payload as unknown as PronunciationResultPayload;
-        setEvents((prev) => [
-          ...prev,
-          { kind: "section", tone: "score", label: "Pronunciation assessment" },
-          { kind: "pronunciation", payload },
-        ]);
-        setPhase("submitted");
-        return;
-      }
-      if (msg.widget === "scorecard") {
-        setLoadingType("feedback_loading");
-        const payload = msg.payload as unknown as ScorecardPayload;
-        setSkillName((curr) => curr || payload.skill_name || "");
-        setEvents((prev) => [
-          ...prev,
-          { kind: "section", tone: "score", label: "Activity score" },
-          { kind: "scorecard", payload },
-        ]);
-        setPhase("submitted");
-        return;
-      }
-      if (msg.widget === "feedback_card") {
-        setLoadingType(null);
-        const payload = msg.payload as unknown as FeedbackPayload;
-        setEvents((prev) => [
-          ...prev,
-          { kind: "section", tone: "feedback", label: "Activity feedback" },
-          { kind: "feedback", payload },
-        ]);
         return;
       }
       // Unknown widget — surface as a chat message so the session doesn't get stuck silently.
@@ -2031,7 +1526,12 @@ export default function ChatSessionPage() {
       setEvents([]);
       setComposer("");
       setPhase(res.data.message === "Session complete" ? "ended" : "teaching");
-      setSkillName(res.data.skill_name || "");
+      setLessonMeta((curr) => ({
+        ...curr,
+        title: res.data.topic || "Today's lesson",
+        theme: displayLabel(res.data.skill_name || "") || curr.theme,
+        focus: "",
+      }));
       setConnectionState("connecting");
       setReconnectAttempt((attempt) => attempt + 1);
       markDailyChatEntered(res.data.session_id);
@@ -2081,12 +1581,6 @@ export default function ChatSessionPage() {
   }, [send]);
 
   /* --- Render ----------------------------------------------------- */
-  const sceneLabel =
-    phase === "teaching" ? "Intro"
-    : phase === "practice" ? "Practice"
-    : phase === "submitted" ? "Results"
-    : "Wrap up";
-
   const composerPlaceholder =
     phase === "teaching" ? "Type your answer…"
     : phase === "practice" ? "Use the task above…"
@@ -2105,41 +1599,10 @@ export default function ChatSessionPage() {
 
   return (
     <>
-      <link
-        rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
-      />
-      <style>{`
-        *, *::before, *::after { box-sizing: border-box; }
-        body { overflow-x: hidden; }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(8px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes streamPulse {
-          0%, 100% { opacity: 0.25; transform: scaleY(0.75); }
-          50% { opacity: 1; transform: scaleY(1); }
-        }
-        strong { font-weight: 700; }
-        em { font-style: italic; }
-      `}</style>
+      <ChatGlobalStyles />
 
-      <div style={{
-        minHeight: "100vh",
-        fontFamily: "'Plus Jakarta Sans', sans-serif",
-        background: "oklch(91% 0.04 245)",
-        position: "relative",
-        color: "oklch(18% 0.06 240)",
-      }}>
-        <div aria-hidden style={{
-          position: "fixed", inset: 0, pointerEvents: "none",
-          backgroundImage: "radial-gradient(circle, rgba(90,130,210,0.13) 1px, transparent 1px)",
-          backgroundSize: "22px 22px", zIndex: 0,
-        }} />
-
+      <ChatPageShell>
         <Topbar
-          skillLabel={skillName || "Lesson"}
-          sceneLabel={sceneLabel}
           onRestart={requestRestartSession}
           restarting={restarting}
         />
@@ -2156,12 +1619,14 @@ export default function ChatSessionPage() {
           onConfirm={confirmRestartSession}
         />
 
-        <main ref={stageRef} style={{
-          position: "relative", zIndex: 1,
-          maxWidth: 720, margin: "0 auto",
-          padding: "28px 20px 200px",
-        }}>
-          <SectionMarker kind="intro" icon={<SparkIcon />}>Intro</SectionMarker>
+        <ChatMain bottomPadding={200}>
+          <LessonMetaCard
+            eyebrow={buildLessonEyebrow(lessonMeta)}
+            title={lessonMeta.title}
+            focus={lessonMeta.focus}
+          />
+
+          <SectionMarker tone="intro" icon={<MessageCircle size={13} />}>Teaching</SectionMarker>
 
           {events.map((evt, i) => {
             if (evt.kind === "chat") {
@@ -2179,22 +1644,11 @@ export default function ChatSessionPage() {
               );
             }
             if (evt.kind === "section") {
-              // Widgets that show their own inline score tile suppress this marker.
-              if (evt.tone === "score") {
-                const lastTask = events.slice(0, i).reverse().find((e) => e.kind === "task");
-                if (
-                  lastTask?.kind === "task" &&
-                  (showsInlineActivityScore(lastTask.payload.widget) ||
-                    isWritingSpeakingWidget(lastTask.payload.widget))
-                ) {
-                  return null;
-                }
-              }
               return (
                 <SectionMarker
                   key={i}
-                  kind={evt.tone}
-                  icon={evt.tone === "task" ? <TaskIcon /> : <SparkIcon />}
+                  tone={evt.tone}
+                  icon={evt.tone === "task" ? <FileText size={13} /> : <Sparkles size={13} />}
                 >
                   {evt.label}
                 </SectionMarker>
@@ -2223,25 +1677,30 @@ export default function ChatSessionPage() {
             }
             if (evt.kind === "scorecard") {
               const lastTask = events.slice(0, i).reverse().find((e) => e.kind === "task");
-              if (lastTask?.kind === "task") {
-                if (showsInlineActivityScore(lastTask.payload.widget)) {
-                  return null;
-                }
-                if (isWritingSpeakingWidget(lastTask.payload.widget)) {
-                  return (
-                    <InlineScoreBanner
-                      key={i}
-                      scorePayload={evt.payload}
-                      taskPayload={lastTask.payload}
-                      taskAnswers={lastTask.answers}
-                    />
-                  );
-                }
-              }
-              return <Scorecard key={i} payload={evt.payload} />;
+              return (
+                <RuntimeEvaluationCard
+                  key={i}
+                  scorecard={evt.payload}
+                  taskPayload={lastTask?.kind === "task" ? lastTask.payload : null}
+                  taskAnswers={lastTask?.kind === "task" ? lastTask.answers : undefined}
+                />
+              );
+            }
+            if (evt.kind === "final_scorecard") {
+              return <RuntimeFinalScorecard key={i} payload={evt.payload} />;
+            }
+            if (evt.kind === "rag_feedback") {
+              return <RuntimeRagFeedback key={i} payload={evt.payload} />;
             }
             if (evt.kind === "feedback") {
-              return <FeedbackCard key={i} payload={evt.payload} />;
+              const lastTask = events.slice(0, i).reverse().find((e) => e.kind === "task");
+              return (
+                <RuntimeFeedbackCard
+                  key={i}
+                  feedback={evt.payload}
+                  taskPayload={lastTask?.kind === "task" ? lastTask.payload : null}
+                />
+              );
             }
             if (evt.kind === "pronunciation") {
               return <ChatPronunciationCard key={i} payload={evt.payload} />;
@@ -2283,7 +1742,7 @@ export default function ChatSessionPage() {
           )}
 
           <div style={{ height: 60 }} />
-        </main>
+        </ChatMain>
 
         <Composer
           value={composer}
@@ -2293,7 +1752,7 @@ export default function ChatSessionPage() {
         />
         {/* lastTaskIdx is exposed for future scroll-into-view; keeps lint quiet */}
         <span data-last-task={lastTaskIdx} style={{ display: "none" }} />
-      </div>
+      </ChatPageShell>
     </>
   );
 }

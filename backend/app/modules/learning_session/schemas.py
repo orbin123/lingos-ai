@@ -69,3 +69,14 @@ class WSOutgoingMessage(BaseModel):
     widget: Optional[str] = None
     payload: Optional[dict] = None
     actions: Optional[list[str]] = None
+    event_id: Optional[str] = None
+    event_type: Optional[str] = None
+    phase: Optional[str] = None
+    activity_id: Optional[str] = None
+    sequence: Optional[int] = None
+    archetype_id: Optional[str] = None
+    task_widget: Optional[str] = None
+    evaluation_widget: Optional[str] = None
+    feedback_widget: Optional[str] = None
+    activity_contract: Optional[dict] = None
+    payload_kind: Optional[str] = None

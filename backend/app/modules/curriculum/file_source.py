@@ -14,7 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
-from app.data.courses.curriculum.source_24w import (
+from app.modules.curriculum.blueprint_adapter import adapt_day_source
+from app.modules.curriculum.data.source_24w import (
     WEEKS_24,
     DaySource,
     WeekSource,
@@ -54,8 +55,10 @@ class FileDayRecord:
     teacher_agent_behaviour: tuple[str, ...]
     teacher_instructions: dict
     task_specs: tuple[dict, ...]
+    activity_contracts: tuple[dict, ...]
     evaluator_overrides: dict
     feedback_overrides: dict
+    final_review: dict
 
 
 def _find_week(week_number: int) -> WeekSource:
@@ -91,34 +94,31 @@ def get_day(week_number: int, day_index: int) -> FileDayRecord:
             f"(has {len(week.days)} days)"
         )
     day: DaySource = week.days[day_index]
-    if not day.title and not day.task_archetypes_used:
-        raise DayNotFound(
-            f"week {week_number} day {day_index} is blank — "
-            f"author it in source_24w.py before starting a session"
-        )
-    if day.task_specs and len(day.task_specs) != len(day.task_archetypes_used):
-        raise DayNotFound(
-            f"week {week_number} day {day_index}: task_specs must have one "
-            f"entry per task_archetypes_used item "
-            f"({len(day.task_specs)} specs for {len(day.task_archetypes_used)} archetypes)"
-        )
+    adapted = adapt_day_source(
+        week=week,
+        day=day,
+        week_number=week_number,
+        day_index=day_index,
+    )
     return FileDayRecord(
         day_id=_day_id(week_number, day_index + 1),
         week_number=week_number,
         day_index=day_index,
         day_number=day_index + 1,
-        topic=day.title,
-        explanation_brief=day.description,
+        topic=adapted.topic,
+        explanation_brief=adapted.explanation_brief,
         theme_type=week.theme_type,
         cefr_level=week.cefr_level,
         sub_level_min=week.sub_level_min,
         sub_level_max=week.sub_level_max,
-        task_archetypes_used=tuple(day.task_archetypes_used),
-        teacher_agent_behaviour=tuple(day.teacher_agent_behaviour),
-        teacher_instructions=dict(day.teacher_instructions),
-        task_specs=tuple(day.task_specs),
-        evaluator_overrides=dict(day.evaluator_overrides),
-        feedback_overrides=dict(day.feedback_overrides),
+        task_archetypes_used=adapted.task_archetypes_used,
+        teacher_agent_behaviour=adapted.teacher_agent_behaviour,
+        teacher_instructions=adapted.teacher_instructions,
+        task_specs=adapted.task_specs,
+        activity_contracts=adapted.activity_contracts,
+        evaluator_overrides=adapted.evaluator_overrides,
+        feedback_overrides=adapted.feedback_overrides,
+        final_review=adapted.final_review,
     )
 
 

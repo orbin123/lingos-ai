@@ -389,7 +389,13 @@ class SessionService:
             user_interests=None,
             task_spec=task_spec,
         )
-        return generated.content
+        return self._attach_activity_contract(
+            content=dict(generated.content),
+            archetype=archetype,
+            sequence=attempt.sequence,
+            is_mandatory=attempt.is_mandatory,
+            task_spec=task_spec,
+        )
 
     @staticmethod
     def _file_repair_context_for_attempt(
@@ -797,17 +803,66 @@ class SessionService:
             user_interests=user_interests,
             task_spec=task_spec,
         )
+        content = self._attach_activity_contract(
+            content=dict(generated.content),
+            archetype=spec,
+            sequence=sequence,
+            is_mandatory=is_mandatory,
+            task_spec=task_spec,
+        )
         attempt = ActivityAttempt(
             session_id=session.id,
             archetype_id=archetype_id,
             sequence=sequence,
             is_mandatory=is_mandatory,
             status=AttemptStatus.PENDING,
-            task_content=generated.content,
+            task_content=content,
         )
         self.db.add(attempt)
         self.db.flush()
         return attempt
+
+    @staticmethod
+    def _attach_activity_contract(
+        *,
+        content: dict,
+        archetype: ArchetypeSpec,
+        sequence: int,
+        is_mandatory: bool,
+        task_spec: dict | None,
+    ) -> dict:
+        """Persist deterministic blueprint metadata beside generated content."""
+
+        spec = task_spec or {}
+        contract = {
+            "activity_id": spec.get("activity_id"),
+            "sequence": sequence,
+            "archetype_id": archetype.archetype_id,
+            "activity": spec.get("activity") or archetype.core_activity,
+            "task_widget": spec.get("task_widget")
+            or content.get("widget")
+            or content.get("ui_widget")
+            or archetype.ui_widget,
+            "evaluator_type": spec.get("evaluator_type") or "default",
+            "evaluation_widget": spec.get("evaluation_widget") or "activity_score",
+            "feedback_type": spec.get("feedback_type") or "default",
+            "feedback_widget": spec.get("feedback_widget") or "feedback_card",
+            "mandatory": bool(spec.get("mandatory", is_mandatory)),
+        }
+        contract = {
+            key: value
+            for key, value in contract.items()
+            if value not in (None, "", {})
+        }
+        content["activity_contract"] = contract
+        content.setdefault("task_widget", contract["task_widget"])
+        content.setdefault("evaluator_type", contract["evaluator_type"])
+        content.setdefault("evaluation_widget", contract["evaluation_widget"])
+        content.setdefault("feedback_type", contract["feedback_type"])
+        content.setdefault("feedback_widget", contract["feedback_widget"])
+        if contract.get("activity_id") is not None:
+            content.setdefault("activity_id", contract["activity_id"])
+        return content
 
     def _current_points_for(self, user_id: int) -> dict[str, int]:
         """Build `{sub_skill: int_points}` for the user, filling missing skills with 0."""

@@ -1,4 +1,4 @@
-import TestChatSessionPage from "./chat_ui/ChatUI";
+import TestChatSessionPage from "./chat/ChatUI";
 
 export default function Page() {
   return <TestChatSessionPage />;

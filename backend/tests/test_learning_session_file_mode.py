@@ -12,11 +12,14 @@ isolation:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.data.courses.curriculum.source_24w import WEEKS_24
+from app.modules.curriculum.data.source_24w import WEEKS_24
+from app.modules.curriculum.file_source import get_day_by_id as file_get_day_by_id
 from app.modules.learning_session.service import (
     LearningSessionService,
     _parse_day_id,
@@ -24,8 +27,13 @@ from app.modules.learning_session.service import (
     _should_force_transition_to_practice,
     _tutor_asked_readiness,
 )
+from app.modules.learning_session.schemas import WSIncomingMessage, WSOutgoingMessage
 from app.modules.sessions.exceptions import DayNotFound
 from app.modules.sessions.models import AttemptStatus, SessionStatus
+
+
+def _teacher_script(day) -> list[str]:
+    return [step.instruction for step in day.teacher.steps]
 
 
 def test_parse_day_id_returns_week_and_day_numbers() -> None:
@@ -54,7 +62,7 @@ def test_persona_from_file_returns_w1d1_and_stashes_scripted_plan() -> None:
 
     # The reserved key carries the authored scripted lines verbatim.
     assert isinstance(instr, dict)
-    assert instr["__scripted_plan"] == list(w1d1.teacher_agent_behaviour)
+    assert instr["__scripted_plan"] == _teacher_script(w1d1)
 
     assert instr["lesson_description"] == w1d1.description
     assert "learning_goal" not in instr
@@ -70,7 +78,7 @@ def test_persona_from_file_returns_w1d2_and_stashes_scripted_plan() -> None:
     assert skill_name == "grammar"
     assert sub_level == WEEKS_24[0].sub_level_min
     assert isinstance(instr, dict)
-    assert instr["__scripted_plan"] == list(w1d2.teacher_agent_behaviour)
+    assert instr["__scripted_plan"] == _teacher_script(w1d2)
     assert instr["lesson_description"] == w1d2.description
     assert "Simple Past Tense" in topic
 
@@ -231,8 +239,184 @@ def _fake_attempt(*, archetype_id: str, sequence: int) -> MagicMock:
         "archetype_id": archetype_id,
         "widget": "fill_in_blanks",
         "ui_widget": "FillInBlanks",
+        "activity_contract": {
+            "activity_id": f"activity-{sequence}",
+            "sequence": sequence,
+            "archetype_id": archetype_id,
+            "task_widget": "fill_in_blanks",
+            "evaluation_widget": "activity_score",
+            "feedback_widget": "feedback_card",
+        },
     }
     return a
+
+
+def _w1d1_task_queue() -> list[dict]:
+    day = file_get_day_by_id("day_24_01_01")
+    queue = []
+    for contract in day.activity_contracts:
+        queue.append(
+            {
+                "sequence": contract["sequence"],
+                "archetype_id": contract["archetype_id"],
+                "is_mandatory": contract["mandatory"],
+                "status": "pending",
+                "activity_id": contract["activity_id"],
+                "task_widget": contract["task_widget"],
+                "evaluator_type": contract["evaluator_type"],
+                "evaluation_widget": contract["evaluation_widget"],
+                "feedback_type": contract["feedback_type"],
+                "feedback_widget": contract["feedback_widget"],
+                "activity_contract": dict(contract),
+            }
+        )
+    return queue
+
+
+def _w1d1_chat(*, phase: str = "teaching") -> MagicMock:
+    day = file_get_day_by_id("day_24_01_01")
+    chat = MagicMock()
+    chat.session_id = "chat-w1d1"
+    chat.daily_session_id = 42
+    chat.user_id = 7
+    chat.phase = phase
+    chat.topic = day.topic
+    chat.skill_name = day.theme_type
+    chat.task_type = "read"
+    chat.activity_type = "read"
+    chat.user_level = day.sub_level_min
+    chat.teacher_instructions = dict(day.teacher_instructions)
+    chat.task_queue = _w1d1_task_queue()
+    chat.current_task_index = 0
+    chat.messages = []
+    chat.pre_generated_tasks = {}
+    chat.user_submission = None
+    chat.evaluation = None
+    chat.feedback = None
+    chat.understanding_confirmed = False
+    chat.current_activity_order = 1
+    return chat
+
+
+def _w1d1_daily() -> MagicMock:
+    daily = MagicMock()
+    daily.id = 42
+    daily.session_id = "daily-w1d1"
+    daily.day_id = "day_24_01_01"
+    daily.status = SessionStatus.IN_PROGRESS
+    return daily
+
+
+async def _one_teaching_message(session, state):  # noqa: ANN001
+    yield WSOutgoingMessage(
+        type="chat_message",
+        role="assistant",
+        content="Welcome to simple present.",
+    )
+
+
+def _assert_w1d1_blueprint_event(message) -> None:  # noqa: ANN001
+    day = file_get_day_by_id("day_24_01_01")
+
+    assert message.type == "ui_event"
+    assert message.widget == "session_blueprint"
+    assert message.phase == "teaching"
+    assert message.payload_kind == "session_blueprint"
+    assert message.event_id
+
+    payload = message.payload
+    assert payload["phase"] == "teaching"
+    assert payload["payload_kind"] == "session_blueprint"
+    blueprint = payload["blueprint"]
+    assert blueprint["version"] == "learning_session.event.v1"
+    assert blueprint["teaching"]["teacher_style"] == day.teacher_instructions[
+        "teacher_style"
+    ]
+    assert blueprint["teaching"]["lesson_goal"] == day.teacher_instructions[
+        "lesson_goal"
+    ]
+    assert blueprint["teaching"]["readiness_prompt"] == day.teacher_instructions[
+        "readiness_prompt"
+    ]
+    assert len(blueprint["teaching"]["steps"]) == len(day.teacher_agent_behaviour)
+    assert blueprint["activities"] == list(day.activity_contracts)
+    assert blueprint["final_review"] == {
+        "scorecard_widget": "final_scorecard",
+        "rag_feedback_widget": "rag_feedback",
+    }
+
+
+def test_queue_from_attempts_remembers_runtime_blueprint_contract() -> None:
+    queue = LearningSessionService._queue_from_attempts(
+        [
+            _fake_attempt(archetype_id="READ_CLOZE", sequence=1),
+            _fake_attempt(archetype_id="WRITE_OPEN_SENT", sequence=2),
+        ]
+    )
+
+    assert queue[0]["sequence"] == 1
+    assert queue[0]["activity_id"] == "activity-1"
+    assert queue[0]["task_widget"] == "fill_in_blanks"
+    assert queue[0]["evaluation_widget"] == "activity_score"
+    assert queue[0]["feedback_widget"] == "feedback_card"
+    assert queue[0]["activity_contract"]["archetype_id"] == "READ_CLOZE"
+
+
+@pytest.mark.asyncio
+async def test_initial_stream_emits_session_blueprint_before_teaching() -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service._load_session = MagicMock(return_value=_w1d1_chat())
+    service._state_from_row = MagicMock()
+    service._enrich_state_with_profile = MagicMock()
+    service._auto_complete_daily_if_ready = AsyncMock(return_value=_w1d1_daily())
+    service._stream_teaching_turn = _one_teaching_message
+    service.db.get.return_value = _w1d1_daily()
+
+    state = {
+        "task_queue": _w1d1_task_queue(),
+        "messages": [],
+        "daily_plan": {},
+    }
+    service._state_from_row.return_value = state
+
+    messages = [
+        msg async for msg in service.initial_messages_stream("chat-w1d1")
+    ]
+
+    _assert_w1d1_blueprint_event(messages[0])
+    assert messages[1].type == "chat_message"
+
+
+@pytest.mark.asyncio
+async def test_resume_stream_emits_session_blueprint_before_replay() -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    chat = _w1d1_chat()
+    chat.messages = [
+        {
+            "role": "ai",
+            "content": "Welcome back. Ready to try the practice task?",
+            "type": "chat",
+        }
+    ]
+    service._load_session = MagicMock(return_value=chat)
+    service._state_from_row = MagicMock()
+    service._enrich_state_with_profile = MagicMock()
+    service._auto_complete_daily_if_ready = AsyncMock(return_value=_w1d1_daily())
+    service.db.get.return_value = _w1d1_daily()
+    service._state_from_row.return_value = {
+        "task_queue": _w1d1_task_queue(),
+        "messages": chat.messages,
+        "daily_plan": {},
+    }
+
+    messages = [
+        msg async for msg in service.resume_messages_stream("chat-w1d1")
+    ]
+
+    _assert_w1d1_blueprint_event(messages[0])
+    assert messages[1].type == "chat_stream_start"
 
 
 @pytest.mark.asyncio
@@ -299,7 +483,7 @@ async def test_create_session_file_mode_skips_planner_and_persists_script(
 
     instr = kwargs["teacher_instructions"]
     assert isinstance(instr, dict)
-    assert instr["__scripted_plan"] == list(w1d1.teacher_agent_behaviour)
+    assert instr["__scripted_plan"] == _teacher_script(w1d1)
     assert instr["lesson_description"] == w1d1.description
     assert "lesson_context" not in instr
 
@@ -345,9 +529,7 @@ async def test_create_session_db_mode_uses_source_persona_for_authored_w1d1(
     w1d1 = WEEKS_24[0].days[0]
     assert kwargs["topic"] == w1d1.title
     assert kwargs["skill_name"] == "grammar"
-    assert kwargs["teacher_instructions"]["__scripted_plan"] == list(
-        w1d1.teacher_agent_behaviour
-    )
+    assert kwargs["teacher_instructions"]["__scripted_plan"] == _teacher_script(w1d1)
     assert "subject-verb" in kwargs["teacher_instructions"]["lesson_description"]
 
 
@@ -392,9 +574,7 @@ async def test_create_session_file_mode_uses_source_persona_for_authored_w1d2(
     w1d2 = WEEKS_24[0].days[1]
     assert kwargs["topic"] == w1d2.title
     assert kwargs["skill_name"] == "grammar"
-    assert kwargs["teacher_instructions"]["__scripted_plan"] == list(
-        w1d2.teacher_agent_behaviour
-    )
+    assert kwargs["teacher_instructions"]["__scripted_plan"] == _teacher_script(w1d2)
     assert "completed actions" in kwargs["teacher_instructions"]["lesson_description"]
 
 
@@ -419,9 +599,7 @@ def test_resume_refreshes_stale_w1d2_chat_persona() -> None:
     assert session.topic == w1d2.title
     assert session.skill_name == "grammar"
     assert session.user_level == WEEKS_24[0].sub_level_min
-    assert session.teacher_instructions["__scripted_plan"] == list(
-        w1d2.teacher_agent_behaviour
-    )
+    assert session.teacher_instructions["__scripted_plan"] == _teacher_script(w1d2)
     assert session.teacher_instructions["lesson_description"] == w1d2.description
     service.session_repo.save.assert_called_once_with(session)
     service.db.commit.assert_called_once()
@@ -457,9 +635,7 @@ async def test_create_session_resume_refreshes_existing_w1d2_chat_persona() -> N
     w1d2 = WEEKS_24[0].days[1]
     assert response.message == "Session resumed"
     assert response.topic == w1d2.title
-    assert existing.teacher_instructions["__scripted_plan"] == list(
-        w1d2.teacher_agent_behaviour
-    )
+    assert existing.teacher_instructions["__scripted_plan"] == _teacher_script(w1d2)
     service.session_repo.save.assert_called_once_with(existing)
     service.db.commit.assert_called_once()
 
@@ -484,9 +660,7 @@ def test_restart_refreshes_w1d2_chat_persona_without_immediate_commit() -> None:
     w1d2 = WEEKS_24[0].days[1]
     assert refreshed is True
     assert session.topic == w1d2.title
-    assert session.teacher_instructions["__scripted_plan"] == list(
-        w1d2.teacher_agent_behaviour
-    )
+    assert session.teacher_instructions["__scripted_plan"] == _teacher_script(w1d2)
     service.session_repo.save.assert_called_once_with(session)
     service.db.commit.assert_not_called()
 
@@ -528,11 +702,248 @@ async def test_restart_session_refreshes_w1d2_chat_persona() -> None:
     assert response.topic == w1d2.title
     assert response.skill_name == "grammar"
     assert session.topic == w1d2.title
-    assert session.teacher_instructions["__scripted_plan"] == list(
-        w1d2.teacher_agent_behaviour
-    )
+    assert session.teacher_instructions["__scripted_plan"] == _teacher_script(w1d2)
     assert service.session_repo.save.call_count == 2
     service.db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_task_submission_events_expose_activity_contract(monkeypatch) -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+    service._next_pending_attempt = MagicMock(return_value=None)
+
+    chat = MagicMock()
+    chat.session_id = "chat-w1d1"
+    chat.daily_session_id = 42
+    chat.user_id = 7
+    chat.skill_name = "grammar"
+    chat.topic = "Simple Present"
+    chat.task_type = "fill_in_blanks"
+    chat.task_queue = [{"status": "pending"}]
+    chat.messages = []
+
+    daily = MagicMock()
+    daily.session_id = "daily-w1d1"
+    service.db.get.return_value = daily
+
+    contract = {
+        "activity_id": "read_cloze_simple_present",
+        "sequence": 1,
+        "archetype_id": "READ_CLOZE",
+        "task_widget": "fill_blanks",
+        "evaluation_widget": "read_listen_evaluation",
+        "feedback_widget": "read_listen_feedback",
+    }
+    attempt = MagicMock()
+    attempt.task_content = {
+        "widget": "fill_in_blanks",
+        "activity_contract": contract,
+        "evaluation_widget": "read_listen_evaluation",
+        "feedback_widget": "read_listen_feedback",
+    }
+    evaluation = MagicMock()
+    evaluation.raw_score = 8.0
+    evaluation.rubric_scores = {"accuracy": 8.0}
+    evaluation.base_reward = 55
+    evaluation.weighted_points = {"grammar": 55.0}
+    evaluation.evaluator_notes = None
+    feedback = MagicMock()
+    feedback.score = 8
+    feedback.summary = "Good work."
+    feedback.did_well = ["Submitted carefully."]
+    feedback.mistakes = []
+    feedback.next_tip = "Keep practising."
+    feedback.sub_skill_breakdown = {"grammar": 8}
+
+    v2_service = MagicMock()
+    v2_service.submit_activity = AsyncMock(
+        return_value=(attempt, evaluation, feedback)
+    )
+    monkeypatch.setattr(
+        "app.modules.learning_session.service._make_v2_session_service",
+        MagicMock(return_value=v2_service),
+    )
+
+    state = {
+        "current_sequence": 1,
+        "current_task_index": 0,
+    }
+    messages = [
+        msg
+        async for msg in service._handle_task_submission_stream(
+            chat,
+            state,
+            WSIncomingMessage(type="task_submission", answers={"q1": "works"}),
+        )
+    ]
+
+    scorecard_event = next(
+        msg for msg in messages if msg.type == "ui_event" and msg.widget == "scorecard"
+    )
+    feedback_event = next(
+        msg
+        for msg in messages
+        if msg.type == "ui_event" and msg.widget == "feedback_card"
+    )
+    assert scorecard_event.payload["activity_contract"] == contract
+    assert scorecard_event.payload["task_widget"] == "fill_in_blanks"
+    assert scorecard_event.payload["evaluation_widget"] == "read_listen_evaluation"
+    assert scorecard_event.payload["feedback_widget"] == "read_listen_feedback"
+    assert scorecard_event.phase == "evaluation"
+    assert scorecard_event.payload_kind == "evaluation"
+    assert scorecard_event.sequence == 1
+    assert scorecard_event.activity_id == "read_cloze_simple_present"
+    assert scorecard_event.archetype_id == "READ_CLOZE"
+    assert scorecard_event.event_id
+    assert scorecard_event.payload["phase"] == "evaluation"
+    assert scorecard_event.payload["payload_kind"] == "evaluation"
+    assert scorecard_event.payload["evaluation"]["raw_score"] == 8.0
+    assert feedback_event.payload["widget"] == "fill_in_blanks"
+    assert feedback_event.payload["activity_contract"] == contract
+    assert feedback_event.payload["feedback_widget"] == "read_listen_feedback"
+    assert feedback_event.phase == "feedback"
+    assert feedback_event.payload_kind == "feedback"
+    assert feedback_event.payload["phase"] == "feedback"
+    assert feedback_event.payload["feedback"]["summary"] == "Good work."
+
+
+@pytest.mark.asyncio
+async def test_task_delivery_events_are_phase_aware() -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    contract = {
+        "activity_id": "read_cloze_simple_present",
+        "sequence": 1,
+        "archetype_id": "READ_CLOZE",
+        "task_widget": "fill_blanks",
+        "evaluation_widget": "read_listen_evaluation",
+        "feedback_widget": "read_listen_feedback",
+    }
+
+    messages = [
+        msg
+        async for msg in service._stream_outgoing_events(
+            [
+                {
+                    "type": "ui_event",
+                    "widget": "fill_in_blanks",
+                    "payload": {
+                        "widget": "fill_in_blanks",
+                        "activity_contract": contract,
+                        "items": [{"id": "q1", "answer": "works"}],
+                        "_session": {
+                            "current_task_index": 0,
+                            "total_tasks": 4,
+                            "sequence": 1,
+                            "daily_session_id": 42,
+                        },
+                    },
+                }
+            ],
+            state={"task_type": "fill_in_blanks"},
+        )
+    ]
+
+    task_event = messages[0]
+    assert task_event.type == "ui_event"
+    assert task_event.widget == "fill_in_blanks"
+    assert task_event.phase == "task"
+    assert task_event.payload_kind == "task"
+    assert task_event.payload["phase"] == "task"
+    assert task_event.payload["payload_kind"] == "task"
+    assert task_event.payload["task"]["items"] == [{"id": "q1", "answer": "works"}]
+    assert task_event.payload["activity_contract"] == contract
+
+
+@pytest.mark.asyncio
+async def test_complete_and_announce_emits_final_review_events(
+    monkeypatch,
+) -> None:
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.attempts_repo = MagicMock()
+    service.session_repo = MagicMock()
+
+    chat = MagicMock()
+    chat.session_id = "chat-w1d1"
+    chat.daily_session_id = 42
+    chat.user_id = 7
+    chat.task_queue = [{"status": "evaluated"}]
+    chat.messages = []
+
+    daily = MagicMock()
+    daily.id = 42
+    daily.session_id = "daily-w1d1"
+    daily.day_id = "day_24_01_01"
+    daily.status = SessionStatus.IN_PROGRESS
+    service.db.get.return_value = daily
+    service.attempts_repo.list_for_session.return_value = [
+        MagicMock(status=AttemptStatus.EVALUATED)
+    ]
+
+    scorecard = SimpleNamespace(
+        points_earned={"grammar": 55},
+        subskill_totals_after={"grammar": 3055},
+        dashboard_after={"grammar": 6.1},
+        completed_at=datetime(2026, 5, 28, tzinfo=timezone.utc),
+        points_applied=True,
+        activities=[
+            {
+                "attempt_id": 1,
+                "sequence": 1,
+                "archetype_id": "READ_CLOZE",
+                "raw_score": 8.0,
+            }
+        ],
+        mentor_note="You are improving your subject-verb agreement.",
+    )
+    v2_service = MagicMock()
+    v2_service.complete_session = AsyncMock(
+        return_value=(scorecard, MagicMock())
+    )
+    monkeypatch.setattr(
+        "app.modules.learning_session.service._make_v2_session_service",
+        MagicMock(return_value=v2_service),
+    )
+
+    class FakeSkillRepository:
+        def __init__(self, db):  # noqa: ANN001
+            self.db = db
+
+        def display_label_map(self) -> dict[str, str]:
+            return {"grammar": "Grammar"}
+
+    monkeypatch.setattr(
+        "app.modules.learning_session.service.SkillRepository",
+        FakeSkillRepository,
+    )
+
+    messages = [
+        msg
+        async for msg in service._complete_and_announce(chat, {})
+    ]
+
+    final_scorecard = next(
+        msg for msg in messages if msg.widget == "final_scorecard"
+    )
+    rag_feedback = next(msg for msg in messages if msg.widget == "rag_feedback")
+    completed = next(msg for msg in messages if msg.widget == "session_completed")
+
+    assert final_scorecard.phase == "final_scorecard"
+    assert final_scorecard.payload_kind == "final_scorecard"
+    assert final_scorecard.payload["points_earned"] == {"grammar": 55}
+    assert final_scorecard.payload["skill_labels"] == {"grammar": "Grammar"}
+    assert final_scorecard.payload["scorecard"]["mentor_note"] == (
+        "You are improving your subject-verb agreement."
+    )
+    assert rag_feedback.phase == "rag_feedback"
+    assert rag_feedback.payload["available"] is True
+    assert rag_feedback.payload["mentor_note"] == (
+        "You are improving your subject-verb agreement."
+    )
+    assert completed.phase == "completed"
+    assert messages[-1].actions == ["Go to dashboard"]
 
 
 def test_ready_gate_requires_previous_readiness_prompt() -> None:

@@ -253,6 +253,21 @@ class TestStartSession:
         assert first_content["topic"] == source_day.task_specs[0]["topic_override"]
         assert first_content["explanation_brief"] == source_day.explanation_brief
         assert "family" not in first_content["instructions"].lower()
+        assert first_content["activity_contract"] == {
+            "activity_id": "read_cloze_simple_present",
+            "sequence": 1,
+            "archetype_id": "READ_CLOZE",
+            "activity": "read",
+            "task_widget": "fill_blanks",
+            "evaluator_type": "rule_plus_llm",
+            "evaluation_widget": "read_listen_evaluation",
+            "feedback_type": "default",
+            "feedback_widget": "read_listen_feedback",
+            "mandatory": True,
+        }
+        assert first_content["task_widget"] == "fill_blanks"
+        assert first_content["evaluation_widget"] == "read_listen_evaluation"
+        assert first_content["feedback_widget"] == "read_listen_feedback"
 
     @pytest.mark.asyncio
     async def test_blocks_second_in_progress_session(self, db_session):
@@ -287,6 +302,9 @@ class TestStartSession:
         assert content["archetype_id"] == "READ_CLOZE"
         assert content["topic"] == "Past negative and questions"
         assert content["ui_widget"] == ARCHETYPE_REGISTRY["READ_CLOZE"].ui_widget
+        assert content["activity_contract"]["task_widget"] == "fill_in_blanks"
+        assert content["activity_contract"]["evaluation_widget"] == "activity_score"
+        assert content["activity_contract"]["feedback_widget"] == "feedback_card"
 
 
 # ── lifecycle ──────────────────────────────────────────────────────
@@ -725,4 +743,4 @@ class TestAttemptDeliveryRepair:
         repair_call = task_generator.calls[-1]
         assert repair_call["archetype_id"] == "SPEAK_TIMED"
         assert repair_call["task_spec"]["topic_override"] == "Say simple present routines"
-        assert "speaking_prompts" in repair_call["task_spec"]["widget_requirements"]
+        assert "3 speaking prompts" in repair_call["task_spec"]["widget_requirements"]

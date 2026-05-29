@@ -10,8 +10,8 @@ import re
 
 import pytest
 
-from app.data.courses.curriculum import load_weeks
-from app.data.courses.curriculum.loader import (
+from app.modules.curriculum.data import load_weeks
+from app.modules.curriculum.data.loader import (
     DayRecord,
     WeekRecord,
     _CANDIDATES_BY_THEME,

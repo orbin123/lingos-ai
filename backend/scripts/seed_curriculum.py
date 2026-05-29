@@ -4,7 +4,7 @@ Usage:
     uv run python -m scripts.seed_curriculum
 
 Source of truth:
-  - Curriculum: `app.data.courses.curriculum.load_weeks(...)`
+  - Curriculum: `app.modules.curriculum.data.load_weeks(...)`
   - Archetypes: `app.scoring.ARCHETYPE_REGISTRY`
 
 Safe to re-run. Existing rows are updated in place; missing rows are
@@ -26,7 +26,7 @@ if str(_BACKEND_ROOT) not in sys.path:
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.core.database import SessionLocal  # noqa: E402
-from app.data.courses.curriculum import load_weeks  # noqa: E402
+from app.modules.curriculum.data import load_weeks  # noqa: E402
 from app.modules.curriculum.models import (  # noqa: E402
     CurriculumDay,
     CurriculumWeek,

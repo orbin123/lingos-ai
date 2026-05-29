@@ -9,8 +9,17 @@ from __future__ import annotations
 import pytest
 
 from app.modules.curriculum import file_source
+from app.modules.curriculum.data.source_24w import (
+    ActivityBlueprint,
+    DaySource,
+    EvaluationBlueprint,
+    FeedbackBlueprint,
+    TaskBlueprint,
+    TeacherBlueprint,
+    TeacherStep,
+    WeekSource,
+)
 from app.modules.sessions.exceptions import DayNotFound
-from app.data.courses.curriculum.source_24w import DaySource, WeekSource
 
 
 def test_get_day_returns_populated_w1_d1() -> None:
@@ -100,14 +109,19 @@ def test_w1d1_activity_order_includes_writing_third() -> None:
     assert writing_spec["topic_override"] == (
         "Write simple present routine sentences"
     )
-    assert "I/he/she" in writing_spec["instructions_override"]
+    assert "I, he, she" in writing_spec["instructions_override"]
+    assert day.activity_contracts[2]["task_widget"] == "open_text"
+    assert day.activity_contracts[2]["evaluation_widget"] == "write_speak_evaluation"
+    assert day.activity_contracts[2]["feedback_widget"] == "write_speak_feedback"
 
 
 def test_build_teacher_instructions_returns_minimal_lesson_context() -> None:
     day = file_source.get_day(1, 0)
     instr = file_source.build_teacher_instructions(day)
 
-    assert instr == {"lesson_description": day.explanation_brief}
+    assert instr["lesson_description"] == day.explanation_brief
+    assert instr["lesson_goal"] == "Teach simple present for facts, routines, and habits."
+    assert instr["readiness_prompt"] == "Ready to try the practice task?"
     assert "subject-verb" in instr["lesson_description"]
 
 
@@ -120,7 +134,7 @@ def test_task_spec_for_returns_authored_specs() -> None:
     assert file_source.task_spec_for(day, 99) == {}
 
 
-def test_get_day_rejects_task_spec_count_mismatch(monkeypatch) -> None:
+def test_get_day_rejects_non_contiguous_activity_sequences(monkeypatch) -> None:
     week = WeekSource(
         week_number=99,
         theme_type="grammar",
@@ -129,13 +143,44 @@ def test_get_day_rejects_task_spec_count_mismatch(monkeypatch) -> None:
         sub_level_max=1,
         days=(
             DaySource(
-                title="Mismatch day",
-                description="Mismatch brief",
-                task_archetypes_used=("READ_CLOZE", "WRITE_OPEN_SENT"),
-                task_specs=({"topic_override": "Only one spec"},),
+                title="Sequence mismatch day",
+                description="Sequence mismatch brief",
+                teacher=TeacherBlueprint(
+                    steps=(
+                        TeacherStep(
+                            id="open",
+                            goal="Introduce",
+                            instruction="Introduce the lesson.",
+                        ),
+                    ),
+                ),
+                activities=(
+                    ActivityBlueprint(
+                        id="read",
+                        sequence=1,
+                        task=TaskBlueprint(
+                            archetype_id="READ_CLOZE",
+                            activity="read",
+                            task_widget="fill_blanks",
+                        ),
+                        evaluation=EvaluationBlueprint(),
+                        feedback=FeedbackBlueprint(),
+                    ),
+                    ActivityBlueprint(
+                        id="write",
+                        sequence=3,
+                        task=TaskBlueprint(
+                            archetype_id="WRITE_OPEN_SENT",
+                            activity="write",
+                            task_widget="open_text",
+                        ),
+                        evaluation=EvaluationBlueprint(),
+                        feedback=FeedbackBlueprint(),
+                    ),
+                ),
             ),
         ),
     )
     monkeypatch.setattr(file_source, "WEEKS_24", (week,))
-    with pytest.raises(DayNotFound, match="task_specs must have one entry"):
+    with pytest.raises(DayNotFound, match="contiguous"):
         file_source.get_day(99, 0)
