@@ -583,11 +583,9 @@ function EnrolledView({
             </div>
           </div>
 
-          {/* 13-week activity grid + streak state demo */}
-          <div style={{ position: "relative" }}>
-            <ActivityGridCard />
-            <StreakStateDemoPanel />
-          </div>
+          {/* 13-week activity grid */}
+          <ActivityGridCard />
+          <StreakStateDemoPanel />
 
           {/* Yesterday's wins */}
           <Card>

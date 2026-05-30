@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { Play } from "lucide-react";
 import { STREAK_DEMO_PRESETS } from "@/components/streak/streak-demo-presets";
 import { useStreakDemoStore } from "@/store/streakDemoStore";
@@ -9,13 +10,13 @@ export function StreakStateDemoPanel() {
   const setPreset = useStreakDemoStore((s) => s.setPreset);
   const requestPlay = useStreakDemoStore((s) => s.requestPlay);
 
-  return (
+  const panel = (
     <div
       style={{
-        position: "absolute",
-        bottom: 12,
-        right: 12,
-        zIndex: 50,
+        position: "fixed",
+        bottom: 20,
+        right: 20,
+        zIndex: 100,
         width: 220,
         background: "white",
         borderRadius: 14,
@@ -126,4 +127,8 @@ export function StreakStateDemoPanel() {
       )}
     </div>
   );
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(panel, document.body);
 }
