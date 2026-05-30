@@ -1,6 +1,12 @@
 import { api } from "./api";
 
-export type AnimationType = "initial" | "continued" | "frozen" | "reset";
+export type AnimationType =
+  | "rekindle"
+  | "on_fire"
+  | "frozen_to_fire"
+  | "frozen";
+
+export type StreakStatus = "new" | "active" | "frozen" | "broken";
 
 export type StreakState =
   | "NO_STREAK_YET"
@@ -24,7 +30,10 @@ export interface StreakData {
   longest_streak: number;
   freezes_remaining: number;
   today_complete: boolean;
+  today_streak_awarded: boolean;
   last_activity_date: string | null;
+  last_streak_date: string | null;
+  streak_status: StreakStatus;
   streak_state_for_ui: StreakState;
   should_show_animation: boolean;
   animation_type: AnimationType | null;

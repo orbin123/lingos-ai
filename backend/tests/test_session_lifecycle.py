@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 # Register all models on Base.metadata.
 from app import models  # noqa: F401
 from app.core.database import Base
-from app.modules.auth.models import User
+from app.modules.auth.models import User, UserProfile
 from app.modules.curriculum import file_source
 from app.modules.curriculum.models import (
     CurriculumDay,
@@ -44,6 +44,8 @@ from app.modules.sessions.models import (
     SessionScorecard,
     SessionStatus,
 )
+from app.modules.streaks.models import DailyActivity, StreakFreezeUsage
+from app.modules.streaks.service import StreakService
 from app.modules.sessions.service import SessionService
 from app.modules.sessions.task_generator import GeneratedTask
 from app.modules.sessions.widget_mapping import normalize_widget_key
@@ -71,6 +73,9 @@ def db_session():
             ActivityFeedback.__table__,
             SessionScorecard.__table__,
             UserCoursePreference.__table__,
+            UserProfile.__table__,
+            DailyActivity.__table__,
+            StreakFreezeUsage.__table__,
         ],
     )
     SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -87,6 +92,8 @@ def _seed_world(db):
     """Seed users, the 7 skills, archetypes, and one curriculum week+day."""
     user = User(email="learner@example.com", password_hash="x", name="L")
     db.add(user)
+    db.flush()
+    db.add(UserProfile(user_id=user.id, timezone="Asia/Kolkata"))
     for sub_skill in SUB_SKILLS:
         db.add(Skill(name=sub_skill, description=sub_skill))
     db.flush()
@@ -429,6 +436,38 @@ class TestSessionLifecycle:
         )
         assert refreshed.attempts[0].user_response == {"answer": "yes"}
         assert refreshed.attempts[0].submitted_at is not None
+
+    @pytest.mark.asyncio
+    async def test_streak_on_first_submit_not_on_complete(self, db_session):
+        """Streak is awarded on activity submit; complete does not double-award."""
+        service, session = await self._start(db_session, tasks_per_day=2, score=8.0)
+        await service.submit_activity(
+            session_id=session.session_id,
+            user_id=session.user_id,
+            sequence=1,
+            user_response={"a": "b"},
+        )
+        uid = session.user_id
+        profile = db_session.query(UserProfile).filter_by(user_id=uid).one()
+        assert profile.current_streak == 1
+        assert profile.last_animation_type == "rekindle"
+        rows = db_session.query(DailyActivity).filter_by(user_id=uid).all()
+        assert len(rows) == 1
+        assert rows[0].streak_awarded is True
+        assert rows[0].activity_count == 1
+
+        await service.complete_session(
+            session_id=session.session_id,
+            user_id=session.user_id,
+        )
+        db_session.refresh(profile)
+        assert profile.current_streak == 1
+        rows_after = db_session.query(DailyActivity).filter_by(user_id=uid).all()
+        assert len(rows_after) == 1
+        assert rows_after[0].activity_count == 1
+
+        streak_data = StreakService(db_session).get_streak_data(user_id=uid)
+        assert streak_data.today_streak_awarded is True
 
 
 class TestAdvanceDay:

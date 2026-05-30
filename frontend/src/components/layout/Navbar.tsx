@@ -4,15 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, LogOut, Settings, User } from "lucide-react";
 import type { UserOut } from "@/lib/auth-api";
-import {
-  streakApi,
-  type ActivityGridCell,
-  type StreakData,
-} from "@/lib/streak-api";
+import type { ActivityGridCell } from "@/lib/streak-api";
 import { StreakCelebration } from "@/components/streak/StreakCelebration";
+import { useStreakDisplay } from "@/hooks/useStreakDisplay";
+import { useStreakDemoStore } from "@/store/streakDemoStore";
 
 interface NavbarProps {
   user: UserOut | undefined;
@@ -102,12 +99,11 @@ function FlakeIcon() {
 function StreakPill() {
   const [open, setOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const [dismissedPlayKey, setDismissedPlayKey] = useState(0);
 
-  const { data, refetch } = useQuery<StreakData>({
-    queryKey: ["streak", "me"],
-    queryFn: streakApi.getMe,
-    refetchOnWindowFocus: false,
-  });
+  const display = useStreakDisplay();
+  const playNonce = useStreakDemoStore((s) => s.playNonce);
+  const setDemoPreset = useStreakDemoStore((s) => s.setPreset);
 
   useEffect(() => {
     if (!open) return;
@@ -120,25 +116,30 @@ function StreakPill() {
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
 
-  const streak = data?.current_streak ?? 0;
-  const best = data?.longest_streak ?? 0;
-  // "Frozen" visual when the user has an active streak but hasn't completed
-  // today — fits the reference design (ice tint while at risk).
-  const frozen = !!data && !data.today_complete && data.current_streak > 0;
+  const streak = display.streak;
+  const best = display.best;
+  const frozen = display.frozen;
+
+  const gridData = display.apiData;
 
   const todayIso = useMemo(() => {
-    if (!data) return null;
-    // Backend grid is ascending, today is always the last cell.
-    return data.activity_grid[data.activity_grid.length - 1]?.date ?? null;
-  }, [data]);
+    if (!gridData) return null;
+    return gridData.activity_grid[gridData.activity_grid.length - 1]?.date ?? null;
+  }, [gridData]);
 
   const days: PopupDay[] = useMemo(
-    () => (data ? buildLastSevenDays(data.activity_grid, todayIso) : []),
-    [data, todayIso],
+    () =>
+      gridData ? buildLastSevenDays(gridData.activity_grid, todayIso) : [],
+    [gridData, todayIso],
   );
 
-  const showCelebration =
-    !!data && data.should_show_animation && !!data.animation_type;
+  const showAutoCelebration =
+    display.showAutoCelebration && !!display.autoAnimationType;
+  const showManualCelebration =
+    display.isDemo &&
+    playNonce > 0 &&
+    playNonce !== dismissedPlayKey &&
+    display.demoSnapshot !== null;
 
   const circleStyle: React.CSSProperties = {
     width: 30,
@@ -178,14 +179,37 @@ function StreakPill() {
     return "oklch(65% 0.03 240)";
   }
 
+  function handleManualCelebrationClose() {
+    const frozenPillDemo =
+      display.demoSnapshot?.animationType === "frozen" &&
+      display.demoSnapshot.frozen;
+
+    setDismissedPlayKey(playNonce);
+    if (frozenPillDemo) {
+      setDemoPreset("frozen-to-fire");
+    }
+  }
+
   return (
     <div style={{ position: "relative" }} ref={popoverRef}>
-      {showCelebration && data?.animation_type && (
+      {showAutoCelebration && display.autoAnimationType && (
         <StreakCelebration
           streak={streak}
           best={best}
-          animationType={data.animation_type}
-          onClose={() => refetch()}
+          animationType={display.autoAnimationType}
+          variant={display.celebrationVariant}
+          onClose={() => display.refetch()}
+        />
+      )}
+      {showManualCelebration && display.demoSnapshot && (
+        <StreakCelebration
+          key={playNonce}
+          streak={display.demoSnapshot.streak}
+          best={display.demoSnapshot.best}
+          animationType={display.demoSnapshot.animationType}
+          variant={display.demoSnapshot.variant}
+          preview
+          onClose={handleManualCelebrationClose}
         />
       )}
       {/* Pill trigger */}
@@ -453,7 +477,7 @@ function StreakPill() {
                 </strong>{" "}
                 to keep it going — your record is {best}.
               </>
-            ) : data?.today_complete ? (
+            ) : display.todayComplete ? (
               <>
                 <strong style={{ color: "oklch(20% 0.09 245)", fontWeight: 700 }}>
                   Lit today.

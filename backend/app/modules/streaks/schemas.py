@@ -17,7 +17,9 @@ StreakState = Literal[
     "INACTIVE_TODAY",
 ]
 
-AnimationType = Literal["initial", "continued", "frozen", "reset"]
+StreakStatus = Literal["new", "active", "frozen", "broken"]
+
+AnimationType = Literal["rekindle", "on_fire", "frozen_to_fire", "frozen"]
 
 
 class ActivityGridCell(BaseModel):
@@ -33,7 +35,10 @@ class StreakDataResponse(BaseModel):
     longest_streak: int
     freezes_remaining: int
     today_complete: bool
+    today_streak_awarded: bool
     last_activity_date: date | None
+    last_streak_date: date | None
+    streak_status: StreakStatus
     streak_state_for_ui: StreakState
     should_show_animation: bool
     animation_type: AnimationType | None

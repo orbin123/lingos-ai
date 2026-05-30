@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     debug: bool = True
     log_level: str = "info"
 
+    # Schema-boundary strictness. When False (prod default during rollout), a
+    # contract-projection or agent-input validation failure is logged and the
+    # legacy payload is delivered unchanged. When True (set in tests), the same
+    # failure raises so contract violations surface loudly instead of silently
+    # falling back. Env: STRICT_CONTRACTS.
+    strict_contracts: bool = False
+
     # Database
     database_url: str 
 

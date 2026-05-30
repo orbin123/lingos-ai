@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from sqlalchemy import (
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -53,6 +54,9 @@ class DailyActivity(Base, IDMixin, TimestampMixin):
     )
     completed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False,
+    )
+    streak_awarded: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False,
     )
 
     __table_args__ = (

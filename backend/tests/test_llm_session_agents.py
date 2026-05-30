@@ -1615,3 +1615,142 @@ class TestEveryArchetypeRoundTrips:
         )
         assert spec.archetype_id in prompt
         assert "rubric criteria" in prompt.lower()
+
+
+# ── Generator output → schema-boundary projection (Layer 2, Task 2.3) ──────
+#
+# The seam that drifts: the LLM-side generation schemas (TaskGenOutput,
+# FillInBlanksTask, ErrorSpottingTask, ...) and the normalize helpers are loose;
+# the wire contracts in contracts/task_payloads.py are strict. These tests run
+# the *real* LLMTaskGenerator.generate() path (LLM mock → normalize) and then
+# project_task_payload() the result, proving the generated content satisfies its
+# contract end to end across the major task families. (The exhaustive
+# per-archetype projection coverage lives in test_contract_projection.py; this is
+# the integration seam through the production generator.)
+
+
+def _fill_in_blanks_canned() -> FillInBlanksTask:
+    return FillInBlanksTask(
+        topic="Simple present routines",
+        instructions="Fill each blank with the correct simple present verb.",
+        items=[
+            {
+                "item_id": "b1",
+                "sentence_with_blank": "He always ___ to school.",
+                "base_verb": "walk",
+                "correct_answer": "walks",
+                "explanation": "With he, add -s.",
+            }
+        ],
+    )
+
+
+def _error_correction_canned() -> ErrorCorrectionTask:
+    return ErrorCorrectionTask(
+        topic="Fix past tense mistakes",
+        instructions="Rewrite each sentence correctly.",
+        task_intro="Correct the mistakes.",
+        items=[
+            {
+                "item_id": "e1",
+                "incorrect_sentence": "She walk to work.",
+                "sample_answer": "She walks to work.",
+                "watch_hints": ["third person -s"],
+            },
+            {
+                "item_id": "e2",
+                "incorrect_sentence": "He go yesterday.",
+                "sample_answer": "He went yesterday.",
+                "watch_hints": ["irregular past"],
+            },
+            {
+                "item_id": "e3",
+                "incorrect_sentence": "They was happy.",
+                "sample_answer": "They were happy.",
+                "watch_hints": ["were with they"],
+            },
+        ],
+    )
+
+
+def _mcq_canned() -> TaskGenOutput:
+    return TaskGenOutput(
+        topic="Reading comprehension",
+        instructions="Choose the best answer.",
+        primary_text="Maria wakes at seven and drinks coffee.",
+        items=[
+            {
+                "item_id": "q1",
+                "prompt": "When does Maria wake up?",
+                "options": ["Six", "Seven", "Eight"],
+                "correct_index": 1,
+                "explanation": "She wakes at seven.",
+            }
+        ],
+    )
+
+
+def _tfng_canned() -> TaskGenOutput:
+    return TaskGenOutput(
+        topic="True, false, or not given",
+        instructions="Decide true, false, or not given.",
+        primary_text="Cats are mammals.",
+        items=[
+            {
+                "item_id": "t1",
+                "prompt": "Cats are mammals.",
+                "correct_answer": "true",
+                "explanation": "Stated directly.",
+            }
+        ],
+    )
+
+
+_GENERATOR_PROJECTION_CASES = [
+    ("READ_CLOZE", _fill_in_blanks_canned),
+    ("READ_ERROR_SPOT", lambda: ErrorSpottingTask.model_validate(_error_spotting_content())),
+    ("WRITE_ERROR_CORR", _error_correction_canned),
+    ("READ_COMP_MCQ", _mcq_canned),
+    ("READ_TFNG", _tfng_canned),
+]
+
+
+class TestGeneratorOutputProjectsThroughContract:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "archetype_id,canned_factory",
+        _GENERATOR_PROJECTION_CASES,
+        ids=[case[0] for case in _GENERATOR_PROJECTION_CASES],
+    )
+    async def test_generated_content_projects_onto_contract(
+        self, archetype_id, canned_factory
+    ):
+        from app.modules.sessions.contracts import project_task_payload
+        from app.modules.sessions.contracts.registry import get_contract
+
+        spec = get_archetype(archetype_id)
+        agent = LLMTaskGenerator(FakeLLMClient([canned_factory()]))
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic=spec.name,
+            explanation_brief="Cycle-1 practice task.",
+            cefr_level="A1",
+            sub_level=1,
+        )
+
+        # The mock produces valid output, so we stay on the live LLM path.
+        assert generated.content["phase"] == "live"
+
+        # The loose generated content projects onto its strict wire contract.
+        payload = project_task_payload(
+            archetype_id,
+            dict(generated.content),
+            activity_id="attempt-1",
+            sequence=1,
+        )
+        # Round-trips through the strict contract (which enforces non-empty
+        # items/sentences via min_length), proving the generated shape is valid.
+        model = get_contract(archetype_id).task_payload.model_validate(payload)
+        assert model.archetype_id == archetype_id
+        assert model.task_widget == get_contract(archetype_id).task_widget

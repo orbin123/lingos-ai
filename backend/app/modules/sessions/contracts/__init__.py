@@ -12,6 +12,13 @@ orchestrator emits it; a payload that validates here is guaranteed renderable.
 
 from __future__ import annotations
 
+from app.modules.sessions.contracts.agent_inputs import (
+    EvaluatorAgentInput,
+    FeedbackAgentInput,
+    TaskGenAgentInput,
+    TeacherAgentInput,
+    build_agent_input,
+)
 from app.modules.sessions.contracts.evaluation import (
     ActivityEvaluationOutput,
     OverallScorecard,
@@ -85,4 +92,10 @@ __all__ = [
     "ActivityFeedbackOutput",
     "FeedbackMistake",
     "RagFeedbackOutput",
+    # agent inputs (service→agent boundary)
+    "TeacherAgentInput",
+    "TaskGenAgentInput",
+    "EvaluatorAgentInput",
+    "FeedbackAgentInput",
+    "build_agent_input",
 ]

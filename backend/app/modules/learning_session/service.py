@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.agents.planner import PlannerAgent
 from app.ai.agents.teacher import stream_teaching_turn
+from app.core.config import settings
 from app.modules.curriculum.file_source import (
     SCRIPTED_PLAN_KEY,
     build_teacher_instructions as file_build_teacher_instructions,
@@ -88,6 +89,8 @@ from app.modules.sessions.repository import (
 )
 from app.modules.sessions.contracts import (
     ContractValidationError,
+    TeacherAgentInput,
+    build_agent_input,
     contract_widgets,
     project_evaluation,
     project_feedback,
@@ -102,24 +105,48 @@ from app.scoring import CourseLength
 
 logger = logging.getLogger(__name__)
 
+
+def _validate_teacher_input(**fields) -> None:
+    """Guard the teacher-agent boundary. Raises under ``strict_contracts``;
+    otherwise logs and proceeds. Validation is for its side effect."""
+    if (
+        build_agent_input(
+            TeacherAgentInput, strict=settings.strict_contracts, **fields
+        )
+        is None
+    ):
+        logger.warning(
+            "Teacher agent input validation failed — proceeding on legacy path",
+        )
+
+
 # Archetypes promoted to the strict schema-boundary path. Output for these is
 # validated against its contract and stamped with the rich widget keys before
 # delivery; everything else stays on the legacy normalize path. On a validation
-# failure the legacy content is delivered unchanged, so promoting an archetype
-# can only add enforcement, never break delivery.
+# failure the legacy content is delivered unchanged (unless STRICT_CONTRACTS is
+# set), so promoting an archetype can only add enforcement, never break delivery.
 #
-# M3 covers the authored W1 families that route through the standard
-# task/evaluation/feedback flow. SPEAK_TIMED also uses that standard flow (only
-# the read-aloud archetypes take the dedicated pronunciation path), so it is
-# promoted here for the W1D1 interactive-widget convergence (M4).
+# Layer 2 promotes the full Cycle-1 set: all 34 unique archetypes authored across
+# weeks 1-4. Every payload model has a projection builder (guaranteed by
+# ``test_every_contract_archetype_has_a_task_builder``), and the read-aloud
+# archetypes keep their dedicated pronunciation rendering path on top of the
+# projected eval/feedback merge. ``test_cycle1_day_integrity`` guards that this
+# set stays equal to the archetypes the authored days actually reference.
 CONTRACT_ENABLED_ARCHETYPES: frozenset[str] = frozenset(
     {
-        "READ_CLOZE",
-        "LISTEN_CLOZE",
-        "LISTEN_MCQ",
-        "READ_ERROR_SPOT",
-        "WRITE_OPEN_SENT",
-        "WRITE_ERROR_CORR",
+        # Reading
+        "READ_CLOZE", "READ_COMP_MCQ", "READ_CONTEXT_MCQ", "READ_ERROR_SPOT",
+        "READ_STRUCTURE_ID", "READ_TFNG", "READ_TONE_ID", "READ_WORD_MATCH",
+        # Writing
+        "WRITE_BULLETS_TO_PARA", "WRITE_EMAIL", "WRITE_ERROR_CORR",
+        "WRITE_IDEA_PARA", "WRITE_OPEN_SENT", "WRITE_PARA", "WRITE_PARAPHRASE",
+        "WRITE_SENT_TRANS", "WRITE_TIMED", "WRITE_WORD_UPGRADE",
+        # Listening
+        "LISTEN_CLOZE", "LISTEN_DICTATION", "LISTEN_INFER", "LISTEN_MCQ",
+        "LISTEN_RETELL", "LISTEN_SHADOW", "LISTEN_TONE",
+        # Speaking
+        "SPEAK_DEBATE", "SPEAK_INTERVIEW", "SPEAK_OPINION", "SPEAK_PIC_DESC",
+        "SPEAK_PRESENT", "SPEAK_READ_ALOUD", "SPEAK_ROLEPLAY", "SPEAK_SMALLTALK",
         "SPEAK_TIMED",
     }
 )
@@ -1300,6 +1327,8 @@ class LearningSessionService:
                     )
                 )
             except ContractValidationError as exc:
+                if settings.strict_contracts:
+                    raise
                 logger.warning(
                     "Contract projection failed for eval/feedback attempt id=%s "
                     "archetype=%s: %s — emitting legacy payloads",
@@ -1783,7 +1812,14 @@ class LearningSessionService:
         the validated fields back, and stamps ``activity_contract`` with the rich
         widget keys so the task/evaluation/feedback events all route through the
         contracted widgets. A validation failure is logged and the content is
-        delivered unchanged (the legacy renderer still handles it).
+        delivered unchanged (the legacy renderer still handles it), unless
+        ``settings.strict_contracts`` is set, in which case it raises.
+
+        This is the deliberate projection boundary: it runs at *delivery*, called
+        right after ``prepare_attempt_for_delivery`` attaches TTS audio. Projecting
+        earlier (e.g. in ``SessionService._materialise_attempt``) would run before
+        audio exists, so listening payloads (``DictationPayload``, ``LISTEN_CLOZE``)
+        would fail their ``AudioMixin`` requirement. Keep projection here.
         """
         if attempt.archetype_id not in CONTRACT_ENABLED_ARCHETYPES:
             return
@@ -1796,6 +1832,8 @@ class LearningSessionService:
                 sequence=int(attempt.sequence),
             )
         except ContractValidationError as exc:
+            if settings.strict_contracts:
+                raise
             logger.warning(
                 "Contract projection failed for attempt id=%s archetype=%s: %s "
                 "— delivering legacy content",
@@ -1928,6 +1966,27 @@ class LearningSessionService:
         session: LearningSession,
         state: LearningSessionState,
     ) -> AsyncIterator[WSOutgoingMessage]:
+        # Boundary guard (before the broad except below, so strict mode surfaces
+        # loudly rather than being swallowed by the fallback handler).
+        raw_pre_instructions = (state.get("daily_plan") or {}).get(
+            "teacher_instructions"
+        )
+        pre_instructions, pre_scripted = split_scripted_plan(
+            raw_pre_instructions if isinstance(raw_pre_instructions, dict) else None,
+        )
+        pre_description = (
+            pre_instructions.get("lesson_description")
+            if isinstance(pre_instructions, dict)
+            else None
+        )
+        _validate_teacher_input(
+            topic=state.get("topic") or "today's English topic",
+            lesson_description=(
+                pre_description if isinstance(pre_description, str) else ""
+            ),
+            scripted_plan=tuple(str(s) for s in (pre_scripted or ())),
+        )
+
         stream_id = uuid.uuid4().hex
         yield WSOutgoingMessage(
             type="chat_stream_start", role="assistant", stream_id=stream_id,

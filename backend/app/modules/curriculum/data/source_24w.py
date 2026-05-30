@@ -506,10 +506,10 @@ WEEKS_24: tuple[WeekSource, ...] = (
                         ),
                         evaluation=EvaluationBlueprint(
                             evaluator="speaking_eval",
-                            evaluation_widget="write_speak_evaluation",
+                            evaluation_widget="read_aloud_assessment",
                         ),
                         feedback=FeedbackBlueprint(
-                            feedback_widget="write_speak_feedback",
+                            feedback_widget="read_aloud_assessment",
                         ),
                     ),
                 ),
@@ -1084,10 +1084,10 @@ WEEKS_24: tuple[WeekSource, ...] = (
                         ),
                         evaluation=EvaluationBlueprint(
                             evaluator="speaking_eval",
-                            evaluation_widget="read_listen_evaluation",
+                            evaluation_widget="read_aloud_assessment",
                         ),
                         feedback=FeedbackBlueprint(
-                            feedback_widget="read_listen_feedback",
+                            feedback_widget="read_aloud_assessment",
                         ),
                     ),
                     ActivityBlueprint(
@@ -3613,10 +3613,10 @@ WEEKS_24: tuple[WeekSource, ...] = (
                         ),
                         evaluation=EvaluationBlueprint(
                             evaluator="speaking_eval",
-                            evaluation_widget="read_listen_evaluation",
+                            evaluation_widget="read_aloud_assessment",
                         ),
                         feedback=FeedbackBlueprint(
-                            feedback_widget="read_listen_feedback",
+                            feedback_widget="read_aloud_assessment",
                         ),
                     ),
                     ActivityBlueprint(
@@ -3668,10 +3668,10 @@ WEEKS_24: tuple[WeekSource, ...] = (
                         ),
                         evaluation=EvaluationBlueprint(
                             evaluator="speaking_eval",
-                            evaluation_widget="write_speak_evaluation",
+                            evaluation_widget="read_aloud_assessment",
                         ),
                         feedback=FeedbackBlueprint(
-                            feedback_widget="write_speak_feedback",
+                            feedback_widget="read_aloud_assessment",
                         ),
                     ),
                 ),
@@ -4088,10 +4088,10 @@ WEEKS_24: tuple[WeekSource, ...] = (
                         ),
                         evaluation=EvaluationBlueprint(
                             evaluator="speaking_eval",
-                            evaluation_widget="read_listen_evaluation",
+                            evaluation_widget="read_aloud_assessment",
                         ),
                         feedback=FeedbackBlueprint(
-                            feedback_widget="read_listen_feedback",
+                            feedback_widget="read_aloud_assessment",
                         ),
                     ),
                     ActivityBlueprint(
@@ -4565,10 +4565,10 @@ WEEKS_24: tuple[WeekSource, ...] = (
                         ),
                         evaluation=EvaluationBlueprint(
                             evaluator="speaking_eval",
-                            evaluation_widget="read_listen_evaluation",
+                            evaluation_widget="read_aloud_assessment",
                         ),
                         feedback=FeedbackBlueprint(
-                            feedback_widget="read_listen_feedback",
+                            feedback_widget="read_aloud_assessment",
                         ),
                     ),
                     ActivityBlueprint(

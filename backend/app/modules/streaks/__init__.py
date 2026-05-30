@@ -6,7 +6,7 @@ GitHub-style 13-week activity grid that the dashboard renders.
 
 Public surface:
   - StreakService.record_in_same_tx(user_id, session_id=None)
-        Hook called from SessionService.complete_session — does NOT commit.
+        Hook called from SessionService.submit_activity — does NOT commit.
   - StreakService.get_streak_data(user_id) -> StreakDataResponse
         Used by GET /streak/me.
 """

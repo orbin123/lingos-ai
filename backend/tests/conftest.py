@@ -13,3 +13,6 @@ os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 os.environ.setdefault("LANGCHAIN_API_KEY", "test-langchain-key")
 os.environ.setdefault("PINECONE_API_KEY", "test-pinecone-key")
+# Schema-boundary contracts raise (not fall back) under tests so contract
+# violations surface loudly. Prod default stays False during rollout.
+os.environ.setdefault("STRICT_CONTRACTS", "true")

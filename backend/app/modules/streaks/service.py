@@ -2,8 +2,8 @@
 
 Two entry points:
 
-* `record_in_same_tx` — called from `SessionService.complete_session` after
-  status flips to COMPLETED but BEFORE the outer commit. Flushes inserts
+* `record_in_same_tx` — called from `SessionService.submit_activity` after
+  an activity is evaluated but BEFORE the outer commit. Flushes inserts
   so the unique constraint catches double-fires, but does NOT commit; the
   outer caller owns the transaction boundary.
 
@@ -20,8 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Literal
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -31,6 +30,7 @@ from app.modules.streaks.activity_grid import count_evaluated_activities_by_loca
 from app.modules.streaks.dates import (
     DEFAULT_TIMEZONE,
     build_last_n_days,
+    get_previous_local_date,
     get_user_local_date,
 )
 from app.modules.streaks.models import DailyActivity, StreakFreezeUsage
@@ -43,6 +43,7 @@ from app.modules.streaks.schemas import (
     AnimationType,
     StreakDataResponse,
     StreakState,
+    StreakStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,13 @@ logger = logging.getLogger(__name__)
 DEFAULT_FREEZES_ON_SIGNUP: int = 0
 MAX_AUTO_FREEZE_DAYS: int = 0
 GRID_DAYS: int = 91
+
+_LEGACY_ANIMATION_MAP: dict[str, AnimationType] = {
+    "initial": "rekindle",
+    "continued": "on_fire",
+    "reset": "frozen_to_fire",
+    "frozen": "frozen",
+}
 
 
 @dataclass(frozen=True)
@@ -123,6 +131,7 @@ class StreakService:
                 user_id=user_id,
                 local_date=today,
                 activity_count=1,
+                streak_awarded=True,
                 last_session_id=session_id,
                 completed_at=now_utc,
             ))
@@ -166,7 +175,7 @@ class StreakService:
         self,
         *,
         profile: UserProfile,
-        today,
+        today: date,
         now_utc: datetime,
     ) -> tuple[StreakState, AnimationType]:
         last = profile.last_activity_date
@@ -175,7 +184,7 @@ class StreakService:
             profile.current_streak = 1
             profile.last_activity_date = today
             profile.longest_streak = max(profile.longest_streak, 1)
-            return "FIRST_STREAK_EARNED", "initial"
+            return "FIRST_STREAK_EARNED", "rekindle"
 
         gap = (today - last).days
         if gap <= 0:
@@ -186,15 +195,15 @@ class StreakService:
                 "streak: non-positive gap=%s last=%s today=%s user_id=%s",
                 gap, last, today, profile.user_id,
             )
-            return "STREAK_ALREADY_COMPLETED_TODAY", "continued"
+            return "STREAK_ALREADY_COMPLETED_TODAY", "on_fire"
 
         if gap == 1:
             profile.current_streak += 1
             profile.last_activity_date = today
             profile.longest_streak = max(profile.longest_streak, profile.current_streak)
-            return "STREAK_CONTINUED", "continued"
+            return "STREAK_CONTINUED", "on_fire"
 
-        # gap > 1 → missed days. Try to auto-protect.
+        # gap > 1 → missed days. Try to auto-protect (disabled when MAX=0).
         missed_days = gap - 1
         if (
             MAX_AUTO_FREEZE_DAYS > 0
@@ -218,7 +227,7 @@ class StreakService:
         profile.current_streak = 1
         profile.last_activity_date = today
         profile.longest_streak = max(profile.longest_streak, 1)
-        return "STREAK_RESET", "reset"
+        return "STREAK_RESET", "frozen_to_fire"
 
     # ── read path ─────────────────────────────────────────────────────
 
@@ -257,7 +266,16 @@ class StreakService:
             for d in window
         ]
 
+        today_row = self.activities.get_for_date(user_id=user_id, local_date=today)
         today_complete = today in by_date_session
+        today_streak_awarded = (
+            today_row is not None and today_row.streak_awarded
+        )
+        streak_status = self._derive_streak_status(
+            profile=profile,
+            today=today,
+            today_complete=today_complete,
+        )
         streak_state = self._derive_ui_state(profile, today_complete)
         should_show_animation = (
             today_complete
@@ -269,12 +287,16 @@ class StreakService:
             if should_show_animation else None
         )
 
+        last_date = profile.last_activity_date
         return StreakDataResponse(
             current_streak=profile.current_streak,
             longest_streak=profile.longest_streak,
             freezes_remaining=profile.streak_freezes,
             today_complete=today_complete,
-            last_activity_date=profile.last_activity_date,
+            today_streak_awarded=today_streak_awarded,
+            last_activity_date=last_date,
+            last_streak_date=last_date,
+            streak_status=streak_status,
             streak_state_for_ui=streak_state,
             should_show_animation=should_show_animation,
             animation_type=animation_type,
@@ -292,6 +314,27 @@ class StreakService:
         return self.get_streak_data(user_id=user_id)
 
     # ── helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _derive_streak_status(
+        *,
+        profile: UserProfile,
+        today: date,
+        today_complete: bool,
+    ) -> StreakStatus:
+        last = profile.last_activity_date
+        if last is None:
+            return "new"
+        if today_complete:
+            return "active"
+        yesterday = get_previous_local_date(today)
+        if last == yesterday:
+            return "active"
+        if (today - last).days > 1:
+            return "frozen"
+        if profile.current_streak == 0:
+            return "broken"
+        return "active"
 
     @staticmethod
     def _derive_ui_state(profile: UserProfile, today_complete: bool) -> StreakState:
@@ -330,6 +373,8 @@ class StreakService:
 
 
 def _coerce_animation(value: str | None) -> AnimationType | None:
-    if value in {"initial", "continued", "frozen", "reset"}:
+    if value is None:
+        return None
+    if value in {"rekindle", "on_fire", "frozen_to_fire", "frozen"}:
         return value  # type: ignore[return-value]
-    return None
+    return _LEGACY_ANIMATION_MAP.get(value)

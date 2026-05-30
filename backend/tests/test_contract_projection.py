@@ -361,3 +361,271 @@ def test_every_contract_archetype_has_a_task_builder() -> None:
 
     for contract in ARCHETYPE_CONTRACTS.values():
         assert contract.task_payload in _BODY_BUILDERS, contract.archetype_id
+
+
+# ── Cycle-1: every enabled archetype projects task + eval + feedback ────────
+#
+# Layer 2 promotes all 34 Cycle-1 archetypes to the strict schema-boundary path
+# (CONTRACT_ENABLED_ARCHETYPES). This block proves each one projects end to end —
+# loose content → strict task contract, EvaluationResult → eval contract,
+# FeedbackResult → feedback contract — so promotion can never silently fall back
+# to legacy at runtime.
+
+from app.modules.sessions.contracts.evaluation import (  # noqa: E402
+    ActivityEvaluationOutput,
+    PronunciationAssessment,
+)
+from app.modules.sessions.contracts.feedback import (  # noqa: E402
+    ActivityFeedbackOutput,
+)
+from app.modules.sessions.contracts.registry import get_contract  # noqa: E402
+
+# The 34 unique archetypes authored across Cycle-1 (weeks 1-4). Kept explicit
+# here; ``test_cycle1_day_integrity`` guards the count/membership against source.
+CYCLE1_ARCHETYPES: tuple[str, ...] = (
+    "READ_CLOZE", "READ_COMP_MCQ", "READ_CONTEXT_MCQ", "READ_ERROR_SPOT",
+    "READ_STRUCTURE_ID", "READ_TFNG", "READ_TONE_ID", "READ_WORD_MATCH",
+    "WRITE_BULLETS_TO_PARA", "WRITE_EMAIL", "WRITE_ERROR_CORR", "WRITE_IDEA_PARA",
+    "WRITE_OPEN_SENT", "WRITE_PARA", "WRITE_PARAPHRASE", "WRITE_SENT_TRANS",
+    "WRITE_TIMED", "WRITE_WORD_UPGRADE",
+    "LISTEN_CLOZE", "LISTEN_DICTATION", "LISTEN_INFER", "LISTEN_MCQ",
+    "LISTEN_RETELL", "LISTEN_SHADOW", "LISTEN_TONE",
+    "SPEAK_DEBATE", "SPEAK_INTERVIEW", "SPEAK_OPINION", "SPEAK_PIC_DESC",
+    "SPEAK_PRESENT", "SPEAK_READ_ALOUD", "SPEAK_ROLEPLAY", "SPEAK_SMALLTALK",
+    "SPEAK_TIMED",
+)
+
+_PRONUNCIATION_ASSESSMENT = {
+    "overall_score": 82.0,
+    "accuracy_score": 85.0,
+    "fluency_score": 80.0,
+    "completeness_score": 90.0,
+    "words": [{"word": "walked", "accuracy_score": 88.0, "error_type": "none"}],
+}
+
+
+def _fill_blanks_loose() -> dict:
+    return {
+        "passage": "Maria ___ up at seven. She ___ coffee first.",
+        "items": [
+            {
+                "item_id": "b1",
+                "sentence_with_blank": "Maria ___ up at seven.",
+                "base_verb": "wake",
+                "correct_answer": "wakes",
+                "explanation": "Third person singular adds -s.",
+            },
+        ],
+    }
+
+
+def _mcq_loose() -> dict:
+    return {
+        "items": [
+            {
+                "item_id": "q1",
+                "prompt": "When does Maria wake up?",
+                "options": ["Six", "Seven", "Eight"],
+                "correct_index": 1,
+                "explanation": "She wakes at seven.",
+            }
+        ],
+    }
+
+
+def _tfng_loose() -> dict:
+    return {
+        "passage": "Cats are mammals.",
+        "items": [
+            {
+                "item_id": "t1",
+                "prompt": "Cats are mammals.",
+                "correct_answer": "true",
+                "explanation": "Stated directly.",
+            }
+        ],
+    }
+
+
+def _error_spotting_loose() -> dict:
+    return {
+        "passage_sentences": [
+            {
+                "sentence_id": "s1",
+                "tokens": [
+                    {"token_id": "s1_t1", "text": "She", "is_error": False},
+                    {"token_id": "s1_t2", "text": "goed", "is_error": True},
+                ],
+                "error": {
+                    "token_id": "s1_t2",
+                    "incorrect_phrase": "goed",
+                    "correction": "went",
+                    "rule": "Irregular past.",
+                    "explanation": "go → went.",
+                },
+            }
+        ],
+    }
+
+
+def _dictation_loose() -> dict:
+    return {
+        "audio_genre": "monologue",
+        "audio_script": "She walks to work.",
+        "audio_duration_seconds": 8,
+        "items": [
+            {
+                "item_id": "d1",
+                "prompt": "Sentence 1",
+                "correct_answer": "She walks to work.",
+                "explanation": "Listen for -s.",
+            }
+        ],
+    }
+
+
+def _open_text_loose() -> dict:
+    return {
+        "items": [
+            {
+                "item_id": "o1",
+                "prompt": "Describe your morning.",
+                "sample_answer": "I usually wake up at seven.",
+                "answer_hints": ["Use a frequency adverb."],
+            }
+        ],
+    }
+
+
+def _transform_loose() -> dict:
+    return {
+        "items": [
+            {
+                "item_id": "tr1",
+                "source_sentence": "The cat was chased by the dog.",
+                "sample_answer": "The dog chased the cat.",
+                "watch_hints": ["Move the object to subject."],
+            }
+        ],
+    }
+
+
+def _error_correction_loose() -> dict:
+    return {
+        "items": [
+            {
+                "item_id": "e1",
+                "incorrect_sentence": "She walk to work.",
+                "sample_answer": "She walks to work.",
+                "watch_hints": ["Third person -s."],
+            }
+        ],
+    }
+
+
+def _read_structure_loose() -> dict:
+    return {
+        "structure_labels": ["Intro", "Body", "Conclusion"],
+        "items": [
+            {
+                "item_id": "p1",
+                "paragraph": "This essay argues...",
+                "correct_answer": "Intro",
+                "explanation": "It introduces the thesis.",
+            }
+        ],
+    }
+
+
+def _speaking_loose() -> dict:
+    return {
+        "speaking_prompts": ["Describe your daily routine."],
+        "sample_responses": ["I wake up at seven and..."],
+        "speaking_duration_seconds": 60,
+    }
+
+
+_CONTENT_BY_PAYLOAD = {
+    FillBlanksPayload: _fill_blanks_loose,
+    McqPayload: _mcq_loose,
+    TfngPayload: _tfng_loose,
+    ErrorSpottingPayload: _error_spotting_loose,
+    DictationPayload: _dictation_loose,
+    OpenTextPayload: _open_text_loose,
+    TransformPayload: _transform_loose,
+    ErrorCorrectionPayload: _error_correction_loose,
+    ReadStructurePayload: _read_structure_loose,
+    SpeakingPayload: _speaking_loose,
+}
+
+
+def _content_for(archetype_id: str) -> dict:
+    """Minimal valid loose content for an archetype, keyed by its payload family."""
+    return _CONTENT_BY_PAYLOAD[get_contract(archetype_id).task_payload]()
+
+
+def test_cycle1_fixture_factory_covers_every_family() -> None:
+    """Guard: every Cycle-1 archetype maps to a family with a loose-content builder."""
+    for archetype_id in CYCLE1_ARCHETYPES:
+        assert get_contract(archetype_id).task_payload in _CONTENT_BY_PAYLOAD, archetype_id
+
+
+@pytest.mark.parametrize("archetype_id", CYCLE1_ARCHETYPES)
+def test_cycle1_archetype_projects_end_to_end(archetype_id: str) -> None:
+    contract = get_contract(archetype_id)
+
+    # 1-3. Task content projects and round-trips through its strict contract.
+    payload = project_task_payload(
+        archetype_id, _content_for(archetype_id), activity_id="act-1", sequence=1
+    )
+    task_model = contract.task_payload.model_validate(payload)
+    assert task_model.archetype_id == archetype_id
+    assert task_model.task_widget == contract.task_widget
+    assert task_model.core_activity == contract.core_activity
+
+    # 4 + 6. Evaluation projects; pronunciation archetypes carry an assessment.
+    is_pronunciation = contract.has_pronunciation
+    eval_out = project_evaluation(
+        archetype_id,
+        activity_id="act-1",
+        evaluation=EvaluationResult(
+            raw_score=8.0,
+            rubric_scores={"accuracy": 8.0},
+            evaluator_notes="ok",
+        ),
+        sub_skill_breakdown={"grammar": 8.0},
+        pronunciation_assessment=(
+            _PRONUNCIATION_ASSESSMENT if is_pronunciation else None
+        ),
+    )
+    ActivityEvaluationOutput.model_validate(eval_out)  # round-trips
+    assert eval_out["archetype_id"] == archetype_id
+    if is_pronunciation:
+        assert eval_out["pronunciation_assessment"] is not None
+        PronunciationAssessment.model_validate(eval_out["pronunciation_assessment"])
+    else:
+        assert eval_out["pronunciation_assessment"] is None
+
+    # 5. Feedback projects and round-trips.
+    fb_out = project_feedback(
+        archetype_id,
+        activity_id="act-1",
+        feedback=FeedbackResult(
+            score=7,
+            summary="Good effort.",
+            did_well=("Clear structure.",),
+            mistakes=(
+                MistakeOut(
+                    issue="Minor slip",
+                    user_wrote="She walk",
+                    correction="She walks",
+                    rule="3rd person -s",
+                    sub_skills_affected=("grammar",),
+                ),
+            ),
+            next_tip=None,
+            sub_skill_breakdown={"grammar": 7},
+        ),
+    )
+    ActivityFeedbackOutput.model_validate(fb_out)  # round-trips
+    assert fb_out["archetype_id"] == archetype_id

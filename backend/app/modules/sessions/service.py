@@ -22,6 +22,13 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
+from app.modules.sessions.contracts.agent_inputs import (
+    EvaluatorAgentInput,
+    FeedbackAgentInput,
+    TaskGenAgentInput,
+    build_agent_input,
+)
 from app.modules.curriculum.file_source import (
     get_day_by_id as file_get_day_by_id,
     resolve_archetypes as file_resolve_archetypes,
@@ -91,6 +98,20 @@ from app.scoring import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_agent_input(model_cls, **fields) -> None:
+    """Guard a service→agent boundary input.
+
+    Raises under ``settings.strict_contracts``; otherwise logs and proceeds on
+    the legacy path. Validation is for its side effect (catch missing/mistyped
+    inputs early) — callers keep using their original values.
+    """
+    if build_agent_input(model_cls, strict=settings.strict_contracts, **fields) is None:
+        logger.warning(
+            "Agent input validation failed at %s boundary — proceeding on legacy path",
+            model_cls.__name__,
+        )
 
 
 class SessionService:
@@ -457,6 +478,12 @@ class SessionService:
         file_overrides = self._file_overrides_for_day(session.day_id)
 
         # Run the evaluator.
+        _validate_agent_input(
+            EvaluatorAgentInput,
+            archetype_id=attempt.archetype_id,
+            task_content=attempt.task_content or {},
+            user_response=user_response or {},
+        )
         eval_result: EvaluationResult = await self.evaluator.evaluate(
             archetype=spec,
             task_content=attempt.task_content,
@@ -478,6 +505,16 @@ class SessionService:
         self.evaluations_repo.add(evaluation)
 
         # Run the feedback generator.
+        _validate_agent_input(
+            FeedbackAgentInput,
+            archetype_id=attempt.archetype_id,
+            task_content=attempt.task_content or {},
+            evaluation={
+                "raw_score": eval_result.raw_score,
+                "rubric_scores": dict(eval_result.rubric_scores or {}),
+            },
+            user_response=user_response or {},
+        )
         fb: FeedbackResult = await self.feedback_generator.generate(
             archetype=spec,
             evaluation=eval_result,
@@ -506,6 +543,16 @@ class SessionService:
         self.feedback_repo.add(feedback)
 
         attempt.status = AttemptStatus.EVALUATED
+
+        # Streak: first evaluated activity per local calendar day (same TX).
+        from app.modules.streaks.service import StreakService
+
+        StreakService(self.db).record_in_same_tx(
+            user_id=session.user_id,
+            session_id=session.id,
+            now_utc=now,
+        )
+
         self.db.commit()
         self.db.refresh(attempt)
         self.db.refresh(evaluation)
@@ -670,15 +717,6 @@ class SessionService:
         session.status = SessionStatus.COMPLETED
         session.completed_at = now
 
-        # Record streak event in the same transaction. Idempotent under
-        # double-fire via the unique constraint on (user_id, local_date).
-        from app.modules.streaks.service import StreakService
-        StreakService(self.db).record_in_same_tx(
-            user_id=session.user_id,
-            session_id=session.id,
-            now_utc=now,
-        )
-
         self.db.commit()
         self.db.refresh(scorecard)
 
@@ -794,6 +832,15 @@ class SessionService:
         task_spec: dict | None = None,
     ) -> ActivityAttempt:
         spec = get_archetype(archetype_id)
+        _validate_agent_input(
+            TaskGenAgentInput,
+            archetype_id=archetype_id,
+            day_topic=day_topic,
+            explanation_brief=explanation_brief,
+            cefr_level=cefr_level,
+            sub_level=sub_level,
+            task_spec=task_spec or {},
+        )
         generated = await self.task_generator.generate(
             archetype=spec,
             day_topic=day_topic,

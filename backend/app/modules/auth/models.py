@@ -443,9 +443,9 @@ class UserProfile(Base, IDMixin, TimestampMixin):
 
     # The animation kind to play next time the dashboard loads — set
     # inside record_daily_activity, cleared once acknowledged.
-    # One of: "initial" | "continued" | "frozen" | "reset" | None
+    # One of: "rekindle" | "on_fire" | "frozen_to_fire" | "frozen" | None
     last_animation_type: Mapped[str | None] = mapped_column(
-        String(16), nullable=True,
+        String(20), nullable=True,
     )
 
     # Relationships

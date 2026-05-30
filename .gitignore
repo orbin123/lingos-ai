@@ -50,3 +50,5 @@ backend/app/ai/pronunciation/_cache/
 
 # Image-generation cache (regenerated on demand from OpenAI)
 backend/app/ai/imagegen/_cache/
+
+/graphify-out/

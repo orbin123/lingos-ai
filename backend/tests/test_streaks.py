@@ -61,6 +61,15 @@ def _fixed_utc(local_d: date, hour_utc: int = 6, tz: str = "Asia/Kolkata") -> da
         + timedelta(hours=hour_utc)
 
 
+def _ist_late_night(local_d: date, hour_ist: int, minute: int = 0) -> datetime:
+    """UTC instant for a given local time in Asia/Kolkata (UTC+5:30)."""
+    # IST = UTC + 5:30 → UTC = local - 5:30
+    local_dt = datetime.combine(local_d, datetime.min.time()) + timedelta(
+        hours=hour_ist, minutes=minute,
+    )
+    return (local_dt - timedelta(hours=5, minutes=30)).replace(tzinfo=timezone.utc)
+
+
 class TestRecord:
     def test_first_activity_sets_streak_to_1(self, db_session):
         uid = _make_user(db_session)
@@ -71,12 +80,15 @@ class TestRecord:
         db_session.commit()
         assert result.state == "FIRST_STREAK_EARNED"
         assert result.current_streak == 1
-        assert result.animation_type == "initial"
+        assert result.animation_type == "rekindle"
 
         profile = db_session.query(UserProfile).filter_by(user_id=uid).one()
         assert profile.last_activity_date == date(2026, 5, 19)
         assert profile.longest_streak == 1
-        assert profile.last_animation_type == "initial"
+        assert profile.last_animation_type == "rekindle"
+
+        row = db_session.query(DailyActivity).filter_by(user_id=uid).one()
+        assert row.streak_awarded is True
 
     def test_two_activities_same_day_no_double_increment(self, db_session):
         uid = _make_user(db_session)
@@ -92,6 +104,7 @@ class TestRecord:
         assert result2.animation_type is None
         row = db_session.query(DailyActivity).filter_by(user_id=uid).one()
         assert row.activity_count == 2
+        assert row.streak_awarded is True
 
     def test_consecutive_day_increments(self, db_session):
         uid = _make_user(db_session)
@@ -104,13 +117,12 @@ class TestRecord:
         db_session.commit()
         assert result.state == "STREAK_CONTINUED"
         assert result.current_streak == 2
-        assert result.animation_type == "continued"
+        assert result.animation_type == "on_fire"
 
-    def test_one_missed_day_default_strict_resets(self, db_session):
+    def test_one_missed_day_strict_resets_with_frozen_to_fire(self, db_session):
         uid = _make_user(db_session)
         svc = StreakService(db_session)
         svc.record_in_same_tx(user_id=uid, now_utc=_fixed_utc(date(2026, 5, 19)))
-        # Skip the 20th.
         db_session.commit()
         result = svc.record_in_same_tx(
             user_id=uid, now_utc=_fixed_utc(date(2026, 5, 21)),
@@ -118,12 +130,11 @@ class TestRecord:
         db_session.commit()
         assert result.state == "STREAK_RESET"
         assert result.current_streak == 1
-        assert result.animation_type == "reset"
+        assert result.animation_type == "frozen_to_fire"
 
     def test_one_missed_day_with_freeze_protects(self, db_session, monkeypatch):
         monkeypatch.setattr(streak_service_module, "MAX_AUTO_FREEZE_DAYS", 1)
         uid = _make_user(db_session)
-        # Seed profile with 1 freeze.
         profile = db_session.query(UserProfile).filter_by(user_id=uid).one()
         profile.streak_freezes = 1
         db_session.commit()
@@ -139,47 +150,105 @@ class TestRecord:
         assert result.current_streak == 2
         assert result.freezes_remaining == 0
         assert result.animation_type == "frozen"
-        # The 20th was protected.
         freeze_row = db_session.query(StreakFreezeUsage).filter_by(user_id=uid).one()
         assert freeze_row.protected_date == date(2026, 5, 20)
+
+    def test_midnight_boundary_two_local_days(self, db_session):
+        """23:55 IST and 00:05 IST next calendar day → two streak days."""
+        uid = _make_user(db_session, tz="Asia/Kolkata")
+        svc = StreakService(db_session)
+        d1 = date(2026, 5, 19)
+        d2 = date(2026, 5, 20)
+        svc.record_in_same_tx(user_id=uid, now_utc=_ist_late_night(d1, 23, 55))
+        db_session.commit()
+        result = svc.record_in_same_tx(
+            user_id=uid, now_utc=_ist_late_night(d2, 0, 5),
+        )
+        db_session.commit()
+        assert result.current_streak == 2
+        assert result.animation_type == "on_fire"
+        assert db_session.query(DailyActivity).filter_by(user_id=uid).count() == 2
 
 
 class TestGetStreakData:
     def test_grid_length_91_and_intensity_clamps(self, db_session):
         uid = _make_user(db_session)
         svc = StreakService(db_session)
-        # Bump same day 5 times → activity_count should be 5, intensity clamps at 4.
         for h in range(5):
             svc.record_in_same_tx(
                 user_id=uid, now_utc=_fixed_utc(date(2026, 5, 19), hour_utc=6 + h),
             )
         db_session.commit()
 
-        # Force "today" by setting profile so service computes a date relative
-        # to wall clock. Simplest: just verify grid length / intensity from
-        # the read path against the natural today.
         data = svc.get_streak_data(user_id=uid)
         assert len(data.activity_grid) == 91
-        # Find today's cell (will only be present if real "today" matches our
-        # synthetic date). Assert intensity logic by inspecting the DA row.
         row = db_session.query(DailyActivity).filter_by(user_id=uid).one()
         assert row.activity_count == 5
-        # Grid cells beyond today's count should be 0
         assert all(c.intensity <= 4 for c in data.activity_grid)
 
     def test_animation_seen_marks_profile(self, db_session):
         uid = _make_user(db_session)
         svc = StreakService(db_session)
-        # Use current real time so today_complete is true on the read.
         svc.record_in_same_tx(user_id=uid)
         db_session.commit()
 
         data = svc.get_streak_data(user_id=uid)
         assert data.today_complete is True
+        assert data.today_streak_awarded is True
         assert data.should_show_animation is True
-        assert data.animation_type == "initial"
+        assert data.animation_type == "rekindle"
+        assert data.streak_status == "active"
 
         svc.mark_animation_seen(user_id=uid)
         data2 = svc.get_streak_data(user_id=uid)
         assert data2.should_show_animation is False
         assert data2.animation_type is None
+
+    def test_streak_status_frozen_before_return(self, db_session, monkeypatch):
+        """After a miss, status is frozen until the user completes today."""
+        from app.modules.streaks.dates import get_user_local_date as _real_local_date
+
+        def _patched_local_date(tz, now_utc=None):
+            if now_utc is not None:
+                return _real_local_date(tz, now_utc=now_utc)
+            return date(2026, 5, 22)
+
+        monkeypatch.setattr(
+            streak_service_module,
+            "get_user_local_date",
+            _patched_local_date,
+        )
+        uid = _make_user(db_session)
+        svc = StreakService(db_session)
+        svc.record_in_same_tx(user_id=uid, now_utc=_fixed_utc(date(2026, 5, 19)))
+        db_session.commit()
+
+        data = svc.get_streak_data(user_id=uid)
+        assert data.streak_status == "frozen"
+        assert data.today_complete is False
+
+    def test_legacy_animation_coercion(self, db_session, monkeypatch):
+        from app.modules.streaks.dates import get_user_local_date as _real_local_date
+
+        fixed_today = date(2026, 5, 19)
+
+        def _patched_local_date(tz, now_utc=None):
+            if now_utc is not None:
+                return _real_local_date(tz, now_utc=now_utc)
+            return fixed_today
+
+        monkeypatch.setattr(
+            streak_service_module,
+            "get_user_local_date",
+            _patched_local_date,
+        )
+        uid = _make_user(db_session)
+        svc = StreakService(db_session)
+        svc.record_in_same_tx(user_id=uid, now_utc=_fixed_utc(fixed_today))
+        db_session.commit()
+        profile = db_session.query(UserProfile).filter_by(user_id=uid).one()
+        profile.last_animation_type = "continued"
+        profile.last_seen_streak_animation_date = None
+        db_session.commit()
+        data = svc.get_streak_data(user_id=uid)
+        assert data.animation_type == "on_fire"
