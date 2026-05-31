@@ -8,6 +8,7 @@ routes; these tests lock the contracts the routes depend on.
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -299,6 +300,37 @@ class TestLLMEvaluator:
 
         assert result.raw_score == 10.0
         assert all(value == 10.0 for value in result.rubric_scores.values())
+        assert fake.calls == []
+
+    @pytest.mark.asyncio
+    async def test_read_cloze_scores_deterministically_without_llm_call(self):
+        spec = get_archetype("READ_CLOZE")
+        fake = FakeLLMClient([])
+        agent = LLMEvaluator(fake)
+
+        result = await agent.evaluate(
+            archetype=spec,
+            task_content={
+                "items": [
+                    {"item_id": "b1", "correct_answer": "brush"},
+                    {"item_id": "b2", "correct_answer": "eats"},
+                    {"item_id": "b3", "correct_answer": "walks"},
+                    {"item_id": "b4", "correct_answer": "drink"},
+                ]
+            },
+            user_response={
+                "b1": "brush",
+                "b2": "eats",
+                "b3": "walk",
+                "b4": "drink",
+            },
+        )
+
+        assert result.raw_score == 7.5
+        assert all(value == 7.5 for value in result.rubric_scores.values())
+        notes = json.loads(result.evaluator_notes or "{}")
+        assert notes["correct_count"] == 3
+        assert notes["total_blanks"] == 4
         assert fake.calls == []
 
     def test_listen_mcq_feedback_accepts_flat_live_answer_map(self):

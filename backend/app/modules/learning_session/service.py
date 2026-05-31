@@ -269,6 +269,28 @@ _FOLLOWUP_STREAM_FIRST_CHUNK_TIMEOUT_S = 8.0
 _FOLLOWUP_STREAM_CHUNK_TIMEOUT_S = 20.0
 
 
+def _deterministic_scorecard_counts(
+    _archetype_id: str,
+    evaluator_notes: str | None,
+) -> tuple[int | None, int | None]:
+    """Extract correct/total counts from deterministic evaluator notes."""
+    notes = evaluator_notes or ""
+    match = re.search(r"(\d+)/(\d+) correct", notes)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    try:
+        parsed = json.loads(notes)
+    except (json.JSONDecodeError, TypeError):
+        return None, None
+    if not isinstance(parsed, dict):
+        return None, None
+    correct = parsed.get("correct_count")
+    total = parsed.get("total_blanks") or parsed.get("total")
+    if correct is None or total is None:
+        return None, None
+    return int(correct), int(total)
+
+
 class LearningSessionTaskUnavailable(Exception):
     """Raised when a chat session cannot be opened against the V2 daily session."""
 
@@ -1407,8 +1429,12 @@ class LearningSessionService:
             )
         else:
             # ── Normal path: emit generic scorecard + feedback_card ──
+            correct_count, total = _deterministic_scorecard_counts(
+                attempt.archetype_id,
+                evaluation.evaluator_notes,
+            )
             scorecard_payload = {
-                "overall_score": feedback.score,
+                "overall_score": float(evaluation.raw_score),
                 "skill_name": session.skill_name,
                 "topic": session.topic,
                 "rubric_scores": evaluation_dict["rubric_scores"],
@@ -1419,6 +1445,10 @@ class LearningSessionService:
                 "feedback_widget": feedback_widget_key,
                 "_session": session_meta,
             }
+            if correct_count is not None and total is not None:
+                scorecard_payload["correct_count"] = correct_count
+                scorecard_payload["total"] = total
+                scorecard_payload["answered_count"] = total
             yield self._event_orchestrator().evaluation_event(
                 widget="scorecard",
                 evaluation_payload=scorecard_payload,
@@ -1428,6 +1458,7 @@ class LearningSessionService:
 
             feedback_payload = {
                 **feedback_dict,
+                "score": float(evaluation.raw_score),
                 "widget": task_widget,
                 "activity_contract": activity_contract,
                 "task_widget": task_widget,

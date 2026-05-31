@@ -30,6 +30,17 @@ from app.scoring import ArchetypeSpec
 
 logger = logging.getLogger(__name__)
 
+_DETERMINISTIC_MCQ_ARCHETYPES = frozenset({
+    "LISTEN_MCQ",
+    "LISTEN_INFER",
+    "LISTEN_TONE",
+    "READ_COMP_MCQ",
+    "READ_CONTEXT_MCQ",
+    "READ_WORD_MATCH",
+    "READ_TONE_ID",
+})
+_DETERMINISTIC_CLOZE_ARCHETYPES = frozenset({"READ_CLOZE", "LISTEN_CLOZE"})
+
 
 class EvaluationOutput(BaseModel):
     """LLM-side schema enforced via structured output."""
@@ -61,7 +72,7 @@ class LLMEvaluator:
                 evaluator_notes="No response submitted.",
             )
 
-        if archetype.archetype_id == "LISTEN_MCQ":
+        if archetype.archetype_id in _DETERMINISTIC_MCQ_ARCHETYPES:
             return self._evaluate_listen_mcq(
                 archetype=archetype,
                 task_content=task_content,
@@ -69,7 +80,7 @@ class LLMEvaluator:
             )
 
         if (
-            archetype.archetype_id == "LISTEN_CLOZE"
+            archetype.archetype_id in _DETERMINISTIC_CLOZE_ARCHETYPES
             or (
                 task_content.get("widget") == "listen_and_respond"
                 and task_content.get("inner_widget") == "fill_in_blanks"
@@ -290,7 +301,11 @@ class LLMEvaluator:
 
         raw_score = round((correct / total) * 10, 1) if total else 0.0
         notes = {
-            "task_type": "listen_cloze",
+            "task_type": (
+                "read_cloze"
+                if archetype.archetype_id == "READ_CLOZE"
+                else "listen_cloze"
+            ),
             "correct_count": correct,
             "total_blanks": total,
             "missing": missing,

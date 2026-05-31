@@ -39,6 +39,18 @@ logger = logging.getLogger(__name__)
 # items were wrong. MCQ and others use different fields (correct_index) so
 # they are not included here.
 _DETERMINISTIC_WIDGET_KEYS = {"fill_in_blanks", "error_spotting"}
+_DETERMINISTIC_SCORE_ARCHETYPES = frozenset({
+    "LISTEN_MCQ",
+    "LISTEN_CLOZE",
+    "LISTEN_INFER",
+    "LISTEN_TONE",
+    "READ_CLOZE",
+    "READ_ERROR_SPOT",
+    "READ_COMP_MCQ",
+    "READ_CONTEXT_MCQ",
+    "READ_WORD_MATCH",
+    "READ_TONE_ID",
+})
 _MCQ_INNER_WIDGET_KEYS = {"listen_and_respond"}
 _OPEN_ENDED_WIDGET_KEYS = {
     "open_text",
@@ -156,7 +168,6 @@ class LLMFeedbackGenerator:
                 sub_skill_breakdown={skill: rounded for skill in archetype.weight_map},
             )
 
-        breakdown = {skill: int(output.score) for skill in archetype.weight_map}
         mistakes = output.mistakes
         if widget_key == "error_spotting" and confirmed_mistakes is not None:
             mistakes = _normalize_error_spotting_mistakes(confirmed_mistakes)
@@ -175,8 +186,14 @@ class LLMFeedbackGenerator:
             )
             for m in mistakes[:3]
         )
+        if archetype.archetype_id in _DETERMINISTIC_SCORE_ARCHETYPES:
+            score = int(round(evaluation.raw_score))
+            breakdown = {skill: score for skill in archetype.weight_map}
+        else:
+            score = int(output.score)
+            breakdown = {skill: int(output.score) for skill in archetype.weight_map}
         return FeedbackResult(
-            score=int(output.score),
+            score=score,
             summary=output.summary,
             did_well=tuple(output.did_well),
             mistakes=mistakes_capped,
