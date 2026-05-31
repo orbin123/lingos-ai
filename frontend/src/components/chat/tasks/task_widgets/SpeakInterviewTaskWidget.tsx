@@ -2,7 +2,8 @@
 
 import { Mic2, MessagesSquare, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { SpeakInterviewTask } from "../source";
+import type { LiveTaskController, SpeakInterviewTask } from "../source";
+import { LiveSpeakingRecorder } from "./LiveSpeakingRecorder";
 import {
   ResultBanner,
   RuleCallout,
@@ -13,10 +14,38 @@ import {
 export function SpeakInterviewTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: SpeakInterviewTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<MessagesSquare size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Interview focus">{task.grammarRule}</RuleCallout>
+        {task.interviewContext && (
+          <div className="tw-card" style={{ background: "oklch(98% 0.01 245)", marginBottom: 12 }}>
+            {task.interviewContext}
+          </div>
+        )}
+        <LiveSpeakingRecorder
+          live={live}
+          durationSeconds={task.speakingDurationSeconds}
+          slots={task.questions.map((question, index) => ({
+            id: `prompt_${index + 1}`,
+            prompt: question.interviewerPrompt,
+            sampleResponse: question.sampleAnswer,
+            context: question.answerHint ? (
+              <div className="tw-write-helper" style={{ marginBottom: 4 }}>
+                Hint: {question.answerHint}
+              </div>
+            ) : undefined,
+          }))}
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;

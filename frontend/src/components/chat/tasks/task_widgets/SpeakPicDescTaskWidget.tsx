@@ -2,7 +2,8 @@
 
 import { Mic2, Image as ImageIcon } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { SpeakPicDescTask } from "../source";
+import type { LiveTaskController, SpeakPicDescTask } from "../source";
+import { LiveSpeakingRecorder } from "./LiveSpeakingRecorder";
 import {
   ResultBanner,
   RuleCallout,
@@ -13,10 +14,46 @@ import {
 export function SpeakPicDescTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: SpeakPicDescTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Speaking pattern">{task.grammarRule}</RuleCallout>
+        <LiveSpeakingRecorder
+          live={live}
+          durationSeconds={task.speakingDurationSeconds}
+          slots={[
+            {
+              id: "prompt_1",
+              prompt: task.prompts?.[0] || "Describe what you see in the picture using full sentences.",
+              sampleResponse: task.sampleResponses?.[0] || "",
+              context: task.imageUrl ? (
+                <div
+                  role="img"
+                  aria-label={task.imageAlt || "Picture to describe"}
+                  style={{
+                    width: "100%",
+                    aspectRatio: "16 / 9",
+                    borderRadius: 14,
+                    marginBottom: 12,
+                    backgroundImage: `url(${task.imageUrl})`,
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                    border: "1px solid var(--tw-border)",
+                  }}
+                />
+              ) : undefined,
+            },
+          ]}
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;

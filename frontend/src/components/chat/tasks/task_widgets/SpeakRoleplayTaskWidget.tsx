@@ -2,7 +2,8 @@
 
 import { Mic2, MessageSquare, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { SpeakRoleplayTask } from "../source";
+import type { LiveTaskController, SpeakRoleplayTask } from "../source";
+import { DialogueContextBlock, LiveSpeakingRecorder } from "./LiveSpeakingRecorder";
 import {
   ResultBanner,
   RuleCallout,
@@ -13,10 +14,31 @@ import {
 export function SpeakRoleplayTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: SpeakRoleplayTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<MessageSquare size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Speaking focus">{task.grammarRule}</RuleCallout>
+        <LiveSpeakingRecorder
+          live={live}
+          durationSeconds={task.speakingDurationSeconds}
+          slots={[
+            {
+              id: "prompt_1",
+              prompt: task.prompts?.[0] || "Play your role in this conversation out loud.",
+              sampleResponse: task.sampleResponses?.[0] || "",
+              context: <DialogueContextBlock turns={task.dialogueContext} />,
+            },
+          ]}
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const learnerTurnIndexes = task.dialogueContext

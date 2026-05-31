@@ -1,17 +1,56 @@
 "use client";
 
 import { FileText, Mic2, Volume2 } from "lucide-react";
+import { useState } from "react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { ListenRetellTask } from "../source";
-import { ResultBanner, RuleCallout, TaskWidgetFrame, StatusDot } from "./TaskWidgetFrame";
+import type { ListenRetellTask, LiveTaskController } from "../source";
+import { LiveSpeakingRecorder } from "./LiveSpeakingRecorder";
+import { ListeningAudioCard, ResultBanner, RuleCallout, TaskWidgetFrame, StatusDot } from "./TaskWidgetFrame";
+
+function LiveListenRetell({ task, live }: { task: ListenRetellTask; live: LiveTaskController }) {
+  const [audioComplete, setAudioComplete] = useState(false);
+  const unlocked = live.submitted || audioComplete;
+  return (
+    <TaskWidgetFrame task={task} icon={<Volume2 size={18} strokeWidth={2.5} />}>
+      <RuleCallout label="Retelling focus">{task.grammarRule}</RuleCallout>
+      <ListeningAudioCard
+        title={task.audioGenre}
+        script={task.audioScript}
+        audioUrl={task.audioUrl}
+        durationSeconds={task.audioDurationSeconds}
+        completed={unlocked}
+        hint="Listen once, then retell what you heard."
+        onComplete={() => setAudioComplete(true)}
+      />
+      {unlocked && (
+        <LiveSpeakingRecorder
+          live={live}
+          durationSeconds={60}
+          slots={[
+            {
+              id: "prompt_1",
+              prompt: task.prompts?.[0] || "Retell what you heard in your own words.",
+              sampleResponse: task.passageToRetell || task.sampleResponses?.[0] || "",
+            },
+          ]}
+        />
+      )}
+    </TaskWidgetFrame>
+  );
+}
 
 export function ListenRetellTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: ListenRetellTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return <LiveListenRetell task={task} live={live} />;
+  }
   const isDefault = previewState === "default";
   const answer = isDefault ? null : task.answers[previewState][0];
   const correctCount = answer?.isCorrect ? 1 : 0;
