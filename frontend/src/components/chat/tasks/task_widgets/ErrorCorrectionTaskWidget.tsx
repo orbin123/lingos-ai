@@ -2,21 +2,65 @@
 
 import { FilePenLine, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { ErrorCorrectionTask } from "../source";
+import type { ErrorCorrectionTask, LiveTaskController } from "../source";
 import {
+  LiveTextItems,
   ResultBanner,
   RuleCallout,
   StatusDot,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
+function IncorrectSentenceBox({ sentence }: { sentence: string }) {
+  return (
+    <div
+      style={{
+        background: "#FEF2F2",
+        border: "1.5px solid #FEE2E2",
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 14,
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "#991B1B", marginBottom: 8 }}>
+        Rewrite this
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--tw-navy)", lineHeight: 1.5 }}>
+        &ldquo;{sentence}&rdquo;
+      </div>
+    </div>
+  );
+}
+
 export function ErrorCorrectionTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: ErrorCorrectionTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<FilePenLine size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Correction rule">{task.grammarRule}</RuleCallout>
+        <LiveTextItems
+          items={task.items.map((item) => ({
+            itemId: item.itemId,
+            sampleAnswer: item.sampleAnswer,
+            minHeight: 82,
+            placeholder: "Write your correction here...",
+            hints: item.watchHints,
+            context: <IncorrectSentenceBox sentence={item.incorrectSentence} />,
+          }))}
+          live={live}
+          yourLabel="Your correction"
+          sampleLabel="Model correction"
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;
