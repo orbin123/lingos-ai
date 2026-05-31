@@ -2,21 +2,49 @@
 
 import { FileText, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { WriteEmailTask } from "../source";
+import type { LiveTaskController, WriteEmailTask } from "../source";
 import {
+  LiveTextItems,
   ResultBanner,
   RuleCallout,
   StatusDot,
+  TargetWordsRow,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
 export function WriteEmailTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: WriteEmailTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Email focus">{task.grammarRule}</RuleCallout>
+        <TargetWordsRow words={task.targetWords} label="Target phrases" />
+        <LiveTextItems
+          items={[
+            {
+              itemId: task.itemId ?? "item_1",
+              prompt: task.prompt,
+              sampleAnswer: task.sampleAnswer,
+              minHeight: 140,
+              placeholder: "Write your email here. You can include To: and Subject: lines.",
+              hints: task.answerHints,
+            },
+          ]}
+          live={live}
+          numbered={false}
+          yourLabel="Your email"
+          sampleLabel="Sample answer"
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;
