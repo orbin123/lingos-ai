@@ -3,7 +3,7 @@
 import { Check, Play, Send, Sparkles, X } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import type { SessionTask } from "../source";
+import type { LiveTaskController, SessionTask } from "../source";
 
 /** Shared submit button for live interactive task widgets (M4). */
 export function SubmitButton({
@@ -450,6 +450,239 @@ export function liveNumberRecord(
     if (Number.isFinite(num)) out[key] = num;
   }
   return out;
+}
+
+/** Read MCQ selections from flat keys or nested inner_response.answers rows. */
+export function liveMcqAnswerRecord(
+  answers: Record<string, unknown>,
+): Record<string, number> {
+  const inner = answers.inner_response;
+  if (typeof inner === "object" && inner !== null && !Array.isArray(inner)) {
+    const rows = (inner as { answers?: unknown }).answers;
+    if (Array.isArray(rows)) {
+      const out: Record<string, number> = {};
+      for (const row of rows) {
+        if (typeof row !== "object" || row === null) continue;
+        const itemId = (row as { item_id?: unknown }).item_id;
+        const selected = (row as { selected_index?: unknown }).selected_index;
+        const num = Number(selected);
+        if (typeof itemId === "string" && itemId && Number.isFinite(num)) {
+          out[itemId] = num;
+        }
+      }
+      if (Object.keys(out).length > 0) return out;
+    }
+  }
+  return liveNumberRecord(answers);
+}
+
+/**
+ * Build the MCQ submit payload the backend MCQ evaluator accepts (see
+ * `_listen_mcq_answer_rows`): a flat `item_id → selected_index` map plus the
+ * nested `inner_response.answers[]` rows. Shared by every Mcq-family widget so
+ * the submit shape never drifts between siblings.
+ */
+export function mcqSubmission(
+  items: { itemId: string }[],
+  answers: Record<string, number>,
+): Record<string, unknown> {
+  const answered = items.filter((item) => answers[item.itemId] !== undefined);
+  return {
+    ...Object.fromEntries(answered.map((item) => [item.itemId, answers[item.itemId]])),
+    inner_response: {
+      widget: "mcq",
+      answers: answered.map((item) => ({
+        item_id: item.itemId,
+        selected_index: answers[item.itemId],
+      })),
+    },
+  };
+}
+
+/**
+ * Shared MCQ option list + explanation used by every Mcq-family widget. In live
+ * interactive mode the options are clickable; after submit (live) or in a
+ * preview review state they show the correct answer and the learner's wrong pick.
+ */
+export function McqOptionList({
+  item,
+  selected,
+  interactive,
+  showResults,
+  onPick,
+  optionKey,
+}: {
+  item: { itemId: string; options: string[]; correctIndex: number; explanation: string };
+  selected: number | undefined;
+  interactive: boolean;
+  showResults: boolean;
+  onPick: (optionIndex: number) => void;
+  optionKey?: (optionIndex: number) => ReactNode;
+}) {
+  return (
+    <>
+      <div className="tw-opt-list">
+        {item.options.map((option, optionIndex) => {
+          const isSelected = optionIndex === selected;
+          const isCorrect = showResults && optionIndex === item.correctIndex;
+          const isWrongPick = showResults && isSelected && !isCorrect;
+          const cls =
+            "tw-opt-row" +
+            (isCorrect ? " correct" : "") +
+            (isWrongPick ? " wrong" : "") +
+            (interactive && isSelected ? " selected" : "");
+          const keyNode = optionKey ? optionKey(optionIndex) : optionIndex + 1;
+          if (interactive) {
+            return (
+              <button
+                type="button"
+                key={option}
+                className={cls}
+                onClick={() => onPick(optionIndex)}
+              >
+                <span className="tw-opt-key">{keyNode}</span>
+                <span style={{ flex: 1 }}>{option}</span>
+                {isSelected && <Check size={14} strokeWidth={2.8} />}
+              </button>
+            );
+          }
+          return (
+            <div className={cls} key={option} style={{ cursor: "default" }}>
+              <span className="tw-opt-key">{keyNode}</span>
+              <span style={{ flex: 1 }}>{option}</span>
+              {isCorrect && <Check size={14} strokeWidth={2.8} />}
+              {isWrongPick && <X size={14} strokeWidth={2.8} />}
+            </div>
+          );
+        })}
+      </div>
+      {showResults && (
+        <div className="tw-fb-explain" style={{ marginTop: 12, paddingTop: 10 }}>
+          <strong>{selected === item.correctIndex ? "Correct." : "Why it is wrong."}</strong>{" "}
+          {item.explanation}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Uppercase label + chip row of target vocabulary for write/speak widgets. */
+export function TargetWordsRow({ words, label }: { words: string[]; label: string }) {
+  if (words.length === 0) return null;
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 800,
+          color: "oklch(45% 0.07 240)",
+          marginBottom: 6,
+          textTransform: "uppercase",
+        }}
+      >
+        {label}
+      </div>
+      <div className="tw-target-chip-row">
+        {words.map((word) => (
+          <span className="tw-target-chip used" key={word}>
+            {word}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export interface LiveTextItem {
+  itemId: string;
+  prompt?: string;
+  sampleAnswer: string;
+  context?: ReactNode;
+  hints?: string[];
+  placeholder?: string;
+  minHeight?: number;
+}
+
+/**
+ * Shared live 3-mode body for text-answer families (OpenText, Transform,
+ * ErrorCorrection): a textarea per item before submit, a "your answer vs sample"
+ * compare after submit, and a submit button. Submits the flat `live.answers`
+ * map (item_id → text) the generic LLM evaluator reads. Per-item correctness is
+ * decided by the LLM (shown in the feedback card), so no pass/fail marks here.
+ */
+export function LiveTextItems({
+  items,
+  live,
+  numbered = true,
+  yourLabel = "Your answer",
+  sampleLabel = "Sample answer",
+}: {
+  items: LiveTextItem[];
+  live: LiveTaskController;
+  numbered?: boolean;
+  yourLabel?: string;
+  sampleLabel?: string;
+}) {
+  const interactive = !live.submitted;
+  const answers = liveStringRecord(live.answers);
+  const setAnswer = (itemId: string, value: string) =>
+    live.setAnswers({ ...live.answers, [itemId]: value });
+  const allAnswered = items.every((item) => (answers[item.itemId] ?? "").trim().length > 0);
+
+  return (
+    <>
+      {items.map((item, index) => (
+        <div className="tw-card" key={item.itemId}>
+          {(numbered || item.prompt) && (
+            <div className="tw-q-number-row" style={{ marginBottom: 12 }}>
+              {numbered && <div className="tw-q-number-badge">{index + 1}</div>}
+              {item.prompt && <div className="tw-q-stem">{item.prompt}</div>}
+            </div>
+          )}
+          {item.context}
+          {interactive ? (
+            <textarea
+              className="tw-write-area"
+              value={answers[item.itemId] ?? ""}
+              onChange={(event) => setAnswer(item.itemId, event.target.value)}
+              placeholder={item.placeholder ?? "Write your answer here..."}
+              style={{ minHeight: item.minHeight ?? 92 }}
+            />
+          ) : (
+            <div className="tw-compare-grid">
+              <div className="tw-compare-card">
+                <div className="tw-compare-label">{yourLabel}</div>
+                <div className="tw-compare-body">{answers[item.itemId]}</div>
+              </div>
+              <div className="tw-compare-card sample">
+                <div className="tw-compare-label">
+                  <Sparkles size={12} />
+                  {sampleLabel}
+                </div>
+                <div className="tw-compare-body">{item.sampleAnswer}</div>
+              </div>
+            </div>
+          )}
+          {item.hints && item.hints.length > 0 && (
+            <div className="tw-hints-block">
+              <div className="tw-hints-label">Hints</div>
+              <div className="tw-hints-list">
+                {item.hints.map((hint) => (
+                  <div className="tw-hint-item" key={hint}>
+                    <span className="tw-hint-dot" />
+                    {hint}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+      {interactive && (
+        <SubmitButton disabled={!allAnswered} onClick={() => live.onSubmit(live.answers)} />
+      )}
+    </>
+  );
 }
 
 export const roundIconButton: CSSProperties = {

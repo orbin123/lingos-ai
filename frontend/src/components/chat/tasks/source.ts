@@ -135,6 +135,7 @@ export interface ListenInferTask extends BaseTask {
   widget: "listen_infer";
   audioGenre: string;
   audioScript: string;
+  audioUrl?: string | null;
   audioDurationSeconds: number;
   intentFocus: string;
   items: McqItem[];
@@ -153,6 +154,12 @@ export interface ListenToneTask extends BaseTask {
   widget: "listen_tone";
   grammarRule: string;
   intros: ListenToneIntroItem[];
+  // Live mode: a single audio track from the wire (the mock gallery uses the
+  // per-speaker `intros` clips above instead).
+  audioGenre?: string;
+  audioScript?: string;
+  audioUrl?: string | null;
+  audioDurationSeconds?: number;
   items: McqItem[];
   answers: Record<AnswerView, Record<string, number>>;
 }
@@ -219,6 +226,7 @@ export interface ListenDictationTask extends BaseTask {
   widget: "listen_dictation";
   audioGenre: string;
   audioScript: string;
+  audioUrl?: string | null;
   audioDurationSeconds: number;
   grammarRule: string;
   targetWords: string[];
@@ -309,6 +317,11 @@ export interface WordMatchItem {
   prompt: string;
   correctAnswer: string;
   explanation: string;
+  // Live mode: READ_WORD_MATCH is an Mcq archetype on the wire (objective
+  // index scoring), so live items carry their own options + correct index and
+  // submit `selected_index`. The mock gallery omits these (string matching).
+  options?: string[];
+  correctIndex?: number;
 }
 
 export interface ReadWordMatchTask extends BaseTask {
@@ -342,6 +355,8 @@ export interface SpeakPicDescTask extends BaseTask {
   imageAlt: string;
   grammarRule: string;
   speakingDurationSeconds: number;
+  prompts?: string[];
+  sampleResponses?: string[];
   answers: Record<AnswerView, SpeakingAnswer[]>;
 }
 
@@ -353,6 +368,8 @@ export interface WriteParagraphTask extends BaseTask {
   minimumWords: number;
   sampleAnswer: string;
   answerHints: string[];
+  // Live mode: wire item_id the single textarea answer is submitted under.
+  itemId?: string;
   answers: Record<AnswerView, OpenTextAnswer[]>;
 }
 
@@ -365,6 +382,7 @@ export interface WriteBulletsToParaTask extends BaseTask {
   minimumWords: number;
   sampleAnswer: string;
   answerHints: string[];
+  itemId?: string;
   answers: Record<AnswerView, OpenTextAnswer[]>;
 }
 
@@ -378,6 +396,8 @@ export interface SpeakRoleplayTask extends BaseTask {
   grammarRule: string;
   targetWords: string[];
   speakingDurationSeconds: number;
+  prompts?: string[];
+  sampleResponses?: string[];
   answers: Record<AnswerView, SpeakingAnswer[]>;
 }
 
@@ -418,6 +438,7 @@ export interface ListenShadowTask extends BaseTask {
   widget: "listen_shadow";
   audioGenre: string;
   audioScript: string;
+  audioUrl?: string | null;
   audioDurationSeconds: number;
   grammarRule: string;
   targetWords: string[];
@@ -433,6 +454,7 @@ export interface WriteEmailTask extends BaseTask {
   minimumWords: number;
   sampleAnswer: string;
   answerHints: string[];
+  itemId?: string;
   answers: Record<AnswerView, OpenTextAnswer[]>;
 }
 
@@ -446,6 +468,8 @@ export interface SpeakSmalltalkTask extends BaseTask {
   grammarRule: string;
   targetWords: string[];
   speakingDurationSeconds: number;
+  prompts?: string[];
+  sampleResponses?: string[];
   answers: Record<AnswerView, SpeakingAnswer[]>;
 }
 
@@ -462,10 +486,13 @@ export interface ListenRetellTask extends BaseTask {
   responseMode?: "spoken" | "written";
   audioGenre: string;
   audioScript: string;
+  audioUrl?: string | null;
   audioDurationSeconds: number;
   grammarRule: string;
   targetWords: string[];
   passageToRetell: string;
+  prompts?: string[];
+  sampleResponses?: string[];
   answers: Record<AnswerView, RetellAnswer[]>;
 }
 
@@ -490,6 +517,8 @@ export interface SpeakPresentTask extends BaseTask {
   speakingDurationSeconds: number;
   visualPromptDescription: string;
   modelPresentation?: string;
+  prompts?: string[];
+  sampleResponses?: string[];
   answers: Record<AnswerView, SpeakingAnswer[]>;
 }
 
@@ -527,6 +556,7 @@ export interface WriteTimedTask extends BaseTask {
   writingDurationSeconds: number;
   prompt: string;
   sampleAnswer: string;
+  itemId?: string;
   answers: Record<AnswerView, Array<{ itemId: string; text: string; isCorrect: boolean }>>;
   answerHints: string[];
 }
@@ -543,6 +573,8 @@ export interface SpeakDebateTask extends BaseTask {
   targetWords: string[];
   speakingDurationSeconds: number;
   debateContext: SpeakDebateDialogueTurn[];
+  prompts?: string[];
+  sampleResponses?: string[];
   answers: Record<AnswerView, SpeakingAnswer[]>;
 }
 

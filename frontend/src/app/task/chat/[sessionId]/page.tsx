@@ -36,7 +36,7 @@ import {
   RuntimeFinalScorecard,
   RuntimeRagFeedback,
 } from "@/components/chat/runtimeReviewMapping";
-import { adaptContractTask } from "@/components/chat/contractTaskAdapter";
+import { adaptContractTask, rawContractTaskWidget } from "@/components/chat/contractTaskAdapter";
 import { TaskWidgetRenderer } from "@/components/chat/tasks/task_widgets/TaskWidgetRenderer";
 import {
   ChatBubble,
@@ -1675,6 +1675,22 @@ export default function ChatSessionPage() {
                       submitted: evt.submitted,
                     }}
                   />
+                );
+              }
+              // Every Week 1–4 contract archetype is converged onto the rich
+              // widget library above. If a contract task reaches here it is a
+              // regression — scream loudly in dev so it cannot pass silently
+              // through the generic runtime widget.
+              const rawTaskWidget = rawContractTaskWidget(evt.payload);
+              if (rawTaskWidget && process.env.NODE_ENV !== "production") {
+                return (
+                  <ChatBubble key={i} role="ai">
+                    <span style={{ color: "#cf2e2e", fontWeight: 800 }}>
+                      ⚠ Dev: task_widget &ldquo;{rawTaskWidget}&rdquo; did not converge to the rich
+                      widget library (fell back to the generic widget). Add it to CONVERGED_WIDGETS
+                      + adaptContractTask.
+                    </span>
+                  </ChatBubble>
                 );
               }
               const Widget = WIDGET_COMPONENTS[widget];
