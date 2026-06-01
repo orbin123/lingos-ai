@@ -98,9 +98,11 @@ def test_cap_holds_dashboard_at_ten_while_earned_keeps_logging():
     internal total and dashboard score stop moving."""
     activities = [
         ActivityScore(
-            archetype_id="SPEAK_PRON_DRILL",
+            # Synthetic pronunciation-heavy split (0.85/0.15) to make the cap
+            # math obvious; archetype_id is just a label and isn't looked up.
+            archetype_id="WORKED_EXAMPLE_PRON",
             raw_score=9.0,                                # Excellent → 55 (24w)
-            weight_map=get_archetype("SPEAK_PRON_DRILL").weight_map,
+            weight_map={"pronunciation": 0.85, "fluency": 0.15},
         ),
     ]
     agg = build_session_aggregation(

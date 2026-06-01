@@ -840,6 +840,11 @@ async def test_task_submission_events_expose_activity_contract(monkeypatch) -> N
         "feedback_widget": "read_listen_feedback",
     }
     attempt = MagicMock()
+    # Projection now runs unconditionally for every archetype (the migration
+    # gate is gone), so the attempt needs a real archetype_id, not a MagicMock.
+    attempt.id = 1
+    attempt.sequence = 1
+    attempt.archetype_id = "READ_CLOZE"
     attempt.task_content = {
         "widget": "fill_in_blanks",
         "activity_contract": contract,

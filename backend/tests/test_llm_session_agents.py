@@ -19,6 +19,7 @@ from app.ai.llm.exceptions import LLMError, LLMProviderError
 from app.ai.sessions.llm_evaluator import EvaluationOutput, LLMEvaluator
 from app.ai.sessions.llm_feedback import FeedbackOutput, LLMFeedbackGenerator, MistakeOutSchema
 from app.ai.sessions.prompts import compute_mcq_wrong_items
+from app.ai.sessions.exceptions import TaskGenerationFailed
 from app.ai.sessions.llm_task_generator import (
     ErrorSpottingTask,
     ErrorCorrectionTask,
@@ -779,21 +780,23 @@ class TestLLMTaskGenerator:
         assert c["sub_level"] == 3
 
     @pytest.mark.asyncio
-    async def test_llm_failure_falls_back_to_stub_content(self):
+    async def test_llm_failure_retries_once_then_raises(self):
         spec = get_archetype("WRITE_EMAIL")
-        fake = FakeLLMClient([LLMError("provider down")])
+        fake = FakeLLMClient([LLMError("provider down"), LLMError("still down")])
         agent = LLMTaskGenerator(fake)
 
-        generated = await agent.generate(
-            archetype=spec,
-            day_topic="Email writing",
-            explanation_brief="brief",
-            cefr_level="A2",
-            sub_level=3,
-        )
-        # Fallback uses StubTaskGenerator → phase becomes "stub".
-        assert generated.content["phase"] == "stub"
-        assert generated.content["archetype_id"] == "WRITE_EMAIL"
+        # No silent substitution: the LLM is retried once, then a typed error is
+        # raised so the orchestrator can surface a clean error event.
+        with pytest.raises(TaskGenerationFailed) as exc_info:
+            await agent.generate(
+                archetype=spec,
+                day_topic="Email writing",
+                explanation_brief="brief",
+                cefr_level="A2",
+                sub_level=3,
+            )
+        assert exc_info.value.archetype_id == "WRITE_EMAIL"
+        assert len(fake.calls) == 2  # initial attempt + one retry
 
     @pytest.mark.asyncio
     async def test_fill_in_blanks_uses_widget_schema_and_protects_widget_key(self):
@@ -855,24 +858,21 @@ class TestLLMTaskGenerator:
         assert len(content["passage_sentences"]) == 5
 
     @pytest.mark.asyncio
-    async def test_error_spotting_failure_falls_back_to_valid_payload(self):
+    async def test_error_spotting_failure_retries_then_raises(self):
         spec = get_archetype("READ_ERROR_SPOT")
-        fake = FakeLLMClient([LLMError("provider down")])
+        fake = FakeLLMClient([LLMError("provider down"), LLMError("still down")])
         agent = LLMTaskGenerator(fake)
 
-        generated = await agent.generate(
-            archetype=spec,
-            day_topic="Spot past tense errors",
-            explanation_brief="Past tense error spotting.",
-            cefr_level="A1",
-            sub_level=1,
-        )
-
-        content = generated.content
-        assert content["phase"] == "stub"
-        assert content["widget"] == "error_spotting"
-        assert content["total_errors"] == 5
-        assert len(content["passage_sentences"]) == 5
+        with pytest.raises(TaskGenerationFailed) as exc_info:
+            await agent.generate(
+                archetype=spec,
+                day_topic="Spot past tense errors",
+                explanation_brief="Past tense error spotting.",
+                cefr_level="A1",
+                sub_level=1,
+            )
+        assert exc_info.value.archetype_id == "READ_ERROR_SPOT"
+        assert len(fake.calls) == 2
 
     @pytest.mark.asyncio
     async def test_w1d1_simple_present_fill_in_blanks_calls_llm(self):
@@ -924,29 +924,25 @@ class TestLLMTaskGenerator:
         assert "base_verb" in prompt
 
     @pytest.mark.asyncio
-    async def test_invalid_fill_in_blanks_output_falls_back_to_valid_items(self):
+    async def test_invalid_fill_in_blanks_output_retries_then_raises(self):
         spec = get_archetype("READ_CLOZE")
-        fake = FakeLLMClient([
-            TaskGenOutput(
-                topic="Simple present routines",
-                instructions="Fill the blanks.",
-            )
-        ])
+        invalid = TaskGenOutput(
+            topic="Simple present routines",
+            instructions="Fill the blanks.",
+        )
+        fake = FakeLLMClient([invalid, invalid])
         agent = LLMTaskGenerator(fake)
 
-        generated = await agent.generate(
-            archetype=spec,
-            day_topic="Simple present routines",
-            explanation_brief="Routines with third-person -s.",
-            cefr_level="A1",
-            sub_level=1,
-        )
-
-        content = generated.content
-        assert content["phase"] == "stub"
-        assert content["widget"] == "fill_in_blanks"
-        assert len(content["items"]) == 4
-        FillInBlanksTask.model_validate(content)
+        with pytest.raises(TaskGenerationFailed) as exc_info:
+            await agent.generate(
+                archetype=spec,
+                day_topic="Simple present routines",
+                explanation_brief="Routines with third-person -s.",
+                cefr_level="A1",
+                sub_level=1,
+            )
+        assert exc_info.value.archetype_id == "READ_CLOZE"
+        assert len(fake.calls) == 2
 
     @pytest.mark.asyncio
     async def test_write_open_sent_preserves_valid_open_text_items(self):
@@ -1014,35 +1010,26 @@ class TestLLMTaskGenerator:
         assert "frequency adverb" in prompt
 
     @pytest.mark.asyncio
-    async def test_write_open_sent_malformed_output_falls_back_to_three_prompts(self):
+    async def test_write_open_sent_malformed_output_retries_then_raises(self):
         spec = get_archetype("WRITE_OPEN_SENT")
-        fake = FakeLLMClient([
-            TaskGenOutput(
-                topic="Write simple present routine sentences",
-                instructions="Write routine sentences.",
-                items=[],
-            )
-        ])
+        invalid = TaskGenOutput(
+            topic="Write simple present routine sentences",
+            instructions="Write routine sentences.",
+            items=[],
+        )
+        fake = FakeLLMClient([invalid, invalid])
         agent = LLMTaskGenerator(fake)
 
-        generated = await agent.generate(
-            archetype=spec,
-            day_topic="Simple present routines",
-            explanation_brief="Routine sentences with frequency adverbs.",
-            cefr_level="A1",
-            sub_level=1,
-        )
-
-        content = generated.content
-        assert content["phase"] == "stub"
-        assert content["widget"] == "open_text"
-        assert len(content["items"]) == 3
-        assert [item["item_id"] for item in content["items"]] == [
-            "routine_i",
-            "routine_he",
-            "routine_she",
-        ]
-        assert "always" in content["target_words"]
+        with pytest.raises(TaskGenerationFailed) as exc_info:
+            await agent.generate(
+                archetype=spec,
+                day_topic="Simple present routines",
+                explanation_brief="Routine sentences with frequency adverbs.",
+                cefr_level="A1",
+                sub_level=1,
+            )
+        assert exc_info.value.archetype_id == "WRITE_OPEN_SENT"
+        assert len(fake.calls) == 2
 
     @pytest.mark.asyncio
     async def test_write_error_correction_preserves_valid_items(self):
@@ -1092,30 +1079,26 @@ class TestLLMTaskGenerator:
         assert content["items"][0]["watch_hints"] == ["tense", "double negatives"]
 
     @pytest.mark.asyncio
-    async def test_write_error_correction_malformed_output_falls_back_to_stubs(self):
+    async def test_write_error_correction_malformed_output_retries_then_raises(self):
         spec = get_archetype("WRITE_ERROR_CORR")
-        fake = FakeLLMClient([
-            TaskGenOutput(
-                topic="Correct past tense mistakes",
-                instructions="Rewrite sentences.",
-                items=[],
-            )
-        ])
+        invalid = TaskGenOutput(
+            topic="Correct past tense mistakes",
+            instructions="Rewrite sentences.",
+            items=[],
+        )
+        fake = FakeLLMClient([invalid, invalid])
         agent = LLMTaskGenerator(fake)
 
-        generated = await agent.generate(
-            archetype=spec,
-            day_topic="Simple past",
-            explanation_brief="Past tense error correction.",
-            cefr_level="A1",
-            sub_level=1,
-        )
-
-        content = generated.content
-        assert content["phase"] == "stub"
-        assert content["widget"] == "error_correction"
-        assert len(content["items"]) == 3
-        assert content["items"][0]["incorrect_sentence"] == "He don't have no time to attending the meeting yesterday."
+        with pytest.raises(TaskGenerationFailed) as exc_info:
+            await agent.generate(
+                archetype=spec,
+                day_topic="Simple past",
+                explanation_brief="Past tense error correction.",
+                cefr_level="A1",
+                sub_level=1,
+            )
+        assert exc_info.value.archetype_id == "WRITE_ERROR_CORR"
+        assert len(fake.calls) == 2
 
 
     @pytest.mark.asyncio
@@ -1166,31 +1149,26 @@ class TestLLMTaskGenerator:
         assert content["speaking_duration_seconds"] == 45
 
     @pytest.mark.asyncio
-    async def test_speak_timed_malformed_output_falls_back_to_authored_payload(self):
+    async def test_speak_timed_malformed_output_retries_then_raises(self):
         spec = get_archetype("SPEAK_TIMED")
-        fake = FakeLLMClient([
-            TaskGenOutput(
-                topic="Say simple present routines",
-                instructions="Speak naturally.",
-                speaking_prompts=[],
-            )
-        ])
+        invalid = TaskGenOutput(
+            topic="Say simple present routines",
+            instructions="Speak naturally.",
+            speaking_prompts=[],
+        )
+        fake = FakeLLMClient([invalid, invalid])
         agent = LLMTaskGenerator(fake)
 
-        generated = await agent.generate(
-            archetype=spec,
-            day_topic="Say simple present routines",
-            explanation_brief="Routine sentences with frequency adverbs.",
-            cefr_level="A1",
-            sub_level=1,
-        )
-
-        content = generated.content
-        assert content["widget"] == "speak_and_record"
-        assert len(content["speaking_prompts"]) == 3
-        assert len(content["sample_responses"]) == 3
-        assert content["speaking_duration_seconds"] == 45
-        assert "always" in content["target_words"]
+        with pytest.raises(TaskGenerationFailed) as exc_info:
+            await agent.generate(
+                archetype=spec,
+                day_topic="Say simple present routines",
+                explanation_brief="Routine sentences with frequency adverbs.",
+                cefr_level="A1",
+                sub_level=1,
+            )
+        assert exc_info.value.archetype_id == "SPEAK_TIMED"
+        assert len(fake.calls) == 2
 
     @pytest.mark.asyncio
     async def test_listen_mcq_synthesizes_required_audio(self, monkeypatch):
@@ -1234,36 +1212,28 @@ class TestLLMTaskGenerator:
         assert fake_tts.calls[0]["text"] == "Mina usually studies English after breakfast."
 
     @pytest.mark.asyncio
-    async def test_malformed_listen_mcq_falls_back_to_valid_payload(self, monkeypatch):
-        from app.ai import tts as tts_module
-
+    async def test_malformed_listen_mcq_retries_then_raises(self):
         spec = get_archetype("LISTEN_MCQ")
-        fake_tts = FakeTTSService()
-        monkeypatch.setattr(tts_module, "get_default_tts_service", lambda: fake_tts)
-        fake = FakeLLMClient([
-            TaskGenOutput(
-                topic="Listening for routines",
-                instructions="Listen and answer.",
-                audio_script="This has no questions.",
-                inner_widget="multiple_choice",
-                items=[],
-            )
-        ])
+        invalid = TaskGenOutput(
+            topic="Listening for routines",
+            instructions="Listen and answer.",
+            audio_script="This has no questions.",
+            inner_widget="multiple_choice",
+            items=[],
+        )
+        fake = FakeLLMClient([invalid, invalid])
         agent = LLMTaskGenerator(fake)
 
-        generated = await agent.generate(
-            archetype=spec,
-            day_topic="Daily routines",
-            explanation_brief="Simple present routines.",
-            cefr_level="A1",
-            sub_level=1,
-        )
-
-        content = generated.content
-        assert content["phase"] == "stub"
-        assert content["inner_widget"] == "mcq"
-        assert len(content["items"]) == 4
-        assert content["audio_url"] == "/audio/fake-listening.mp3"
+        with pytest.raises(TaskGenerationFailed) as exc_info:
+            await agent.generate(
+                archetype=spec,
+                day_topic="Daily routines",
+                explanation_brief="Simple present routines.",
+                cefr_level="A1",
+                sub_level=1,
+            )
+        assert exc_info.value.archetype_id == "LISTEN_MCQ"
+        assert len(fake.calls) == 2
 
     @pytest.mark.asyncio
     async def test_listen_mcq_tts_failure_uses_browser_fallback(self, monkeypatch):

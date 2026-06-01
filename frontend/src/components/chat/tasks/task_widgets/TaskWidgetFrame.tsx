@@ -2,7 +2,7 @@
 
 import { Check, Play, Send, Sparkles, X } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveTaskController, SessionTask } from "../source";
 
 /** Shared submit button for live interactive task widgets (M4). */
@@ -211,7 +211,15 @@ export function ListeningAudioCard({
   const [fallbackUnavailable, setFallbackUnavailable] = useState(false);
   const resolvedAudioUrl = resolveAudioUrl(audioUrl);
 
+  const finishPlayback = useCallback(() => {
+    setPlaying(false);
+    setFallbackUnavailable(false);
+    setElapsed(duration || durationSeconds || 0);
+    onComplete();
+  }, [duration, durationSeconds, onComplete]);
+
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDuration(durationSeconds || 0);
     setElapsed(0);
     setPlaying(false);
@@ -220,17 +228,30 @@ export function ListeningAudioCard({
 
   useEffect(() => {
     if (completed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPlaying(false);
       setElapsed(duration || durationSeconds || 0);
     }
   }, [completed, duration, durationSeconds]);
 
-  const finishPlayback = () => {
-    setPlaying(false);
-    setFallbackUnavailable(false);
-    setElapsed(duration || durationSeconds || 0);
-    onComplete();
-  };
+  useEffect(() => {
+    if (!playing || resolvedAudioUrl) return;
+
+    const intervalTime = 100; // ms
+    const timer = setInterval(() => {
+      setElapsed((prev) => {
+        const next = prev + intervalTime / 1000;
+        if (next >= duration) {
+          clearInterval(timer);
+          finishPlayback();
+          return duration;
+        }
+        return next;
+      });
+    }, intervalTime);
+
+    return () => clearInterval(timer);
+  }, [playing, resolvedAudioUrl, duration, finishPlayback]);
 
   const playWithSpeech = () => {
     if (!script || typeof window === "undefined" || !("speechSynthesis" in window)) {
@@ -354,8 +375,8 @@ export function ListeningAudioCard({
                     width: 3,
                     height,
                     borderRadius: 999,
-                    background: filled || playing ? "#f59e0b" : "#d7a981",
-                    opacity: filled || playing ? 1 : 0.75,
+                    background: filled ? "#f59e0b" : "#d7a981",
+                    opacity: filled ? 1 : 0.75,
                   }}
                 />
               );

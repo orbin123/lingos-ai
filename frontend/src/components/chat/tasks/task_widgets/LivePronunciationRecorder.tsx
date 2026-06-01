@@ -87,12 +87,6 @@ export function LivePronunciationRecorder({
           <StatusDot ok={Boolean(pronunciation)} />
           Pronunciation submitted
         </div>
-        {pronunciation && (
-          <div className="tw-compare-body">
-            Overall {Math.round(pronunciation.overall_score)}/100 · Accuracy{" "}
-            {Math.round(pronunciation.accuracy_score)} · Fluency {Math.round(pronunciation.fluency_score)}
-          </div>
-        )}
       </div>
     );
   }

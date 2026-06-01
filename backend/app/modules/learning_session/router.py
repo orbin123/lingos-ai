@@ -222,8 +222,9 @@ async def get_scorecard_for_chat_session(
                 session_id=daily.session_id, user_id=current_user.id,
             )
         except Exception:  # noqa: BLE001
-            # Unexpected error — fall through and return whatever scorecard exists.
-            pass
+            # Unexpected error — roll back so the DB session is clean for the
+            # get_scorecard() query below (avoids PendingRollbackError).
+            db.rollback()
 
     scorecard = service.get_scorecard(
         session_id=daily.session_id, user_id=current_user.id,

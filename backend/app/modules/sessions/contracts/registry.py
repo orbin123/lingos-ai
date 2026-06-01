@@ -81,16 +81,11 @@ _TASK_SPEC: dict[str, tuple[str, type[BaseModel]]] = {
     "WRITE_SENT_TRANS": ("sentence_transform", TransformPayload),
     "WRITE_ERROR_CORR": ("error_correction", ErrorCorrectionPayload),
     "WRITE_PARA": ("write_paragraph", OpenTextPayload),
-    "WRITE_ESSAY": ("write_paragraph", OpenTextPayload),
     "WRITE_EMAIL": ("write_email", OpenTextPayload),
-    "WRITE_CONCISE": ("error_correction", ErrorCorrectionPayload),
     "WRITE_WORD_UPGRADE": ("write_word_upgrade", OpenTextPayload),
     "WRITE_PARAPHRASE": ("write_paraphrase", OpenTextPayload),
-    "WRITE_REGISTER": ("error_correction", ErrorCorrectionPayload),
     "WRITE_IDEA_PARA": ("write_paragraph", OpenTextPayload),
-    "WRITE_SUMMARY": ("write_paragraph", OpenTextPayload),
     "WRITE_TIMED": ("write_timed", OpenTextPayload),
-    "WRITE_VOICE_CONV": ("sentence_transform", TransformPayload),
     "WRITE_BULLETS_TO_PARA": ("write_bullets_to_para", OpenTextPayload),
     # Listening
     "LISTEN_MCQ": ("listen_mcq", McqPayload),
@@ -104,13 +99,11 @@ _TASK_SPEC: dict[str, tuple[str, type[BaseModel]]] = {
     "SPEAK_READ_ALOUD": ("read_aloud", SpeakingPayload),
     "SPEAK_PIC_DESC": ("speak_pic_desc", SpeakingPayload),
     "SPEAK_TIMED": ("speak_timed", SpeakingPayload),
-    "SPEAK_STORYBOARD": ("speak_present", SpeakingPayload),
     "SPEAK_INTERVIEW": ("speak_interview", SpeakingPayload),
     "SPEAK_ROLEPLAY": ("speak_roleplay", SpeakingPayload),
     "SPEAK_OPINION": ("speak_present", SpeakingPayload),
     "SPEAK_SMALLTALK": ("speak_smalltalk", SpeakingPayload),
     "SPEAK_DEBATE": ("speak_debate", SpeakingPayload),
-    "SPEAK_PRON_DRILL": ("read_aloud", SpeakingPayload),
     "SPEAK_PRESENT": ("speak_present", SpeakingPayload),
 }
 
@@ -126,7 +119,7 @@ _OBJECTIVE: frozenset[str] = frozenset(
 
 # Archetypes that produce a pronunciation assessment (Azure Speech).
 _PRONUNCIATION: frozenset[str] = frozenset(
-    {"SPEAK_READ_ALOUD", "SPEAK_PRON_DRILL", "LISTEN_SHADOW"}
+    {"SPEAK_READ_ALOUD", "LISTEN_SHADOW"}
 )
 
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/authStore";
 import { authApi } from "@/lib/auth-api";
+import { progressApi } from "@/lib/progress-api";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { DailyTaskPanel } from "@/components/dashboard/DailyTaskPanel";
@@ -231,6 +232,14 @@ export default function DashboardPage() {
     enabled: isReady,
   });
 
+  // Real per-skill scores live in the points store (seeded by the diagnosis and
+  // updated after each session), not on /me — fetch them from /progress/scores.
+  const { data: skillScores } = useQuery({
+    queryKey: ["progress", "scores"],
+    queryFn: progressApi.getScores,
+    enabled: isReady && !!user?.diagnosis_completed,
+  });
+
   useEffect(() => {
     if (user && !user.diagnosis_completed) router.replace("/diagnosis");
   }, [user, router]);
@@ -275,20 +284,18 @@ export default function DashboardPage() {
   }
 
   const preference = user?.preference;
-  const userRecord = user as unknown as Record<string, unknown> | undefined;
-  const rawScores = userRecord?.skill_scores;
   // Normalise incoming keys through `normalizeSkillKey` so that data shipped
   // under doc names ("thought_org") or long-form names ("thought_organization")
   // gets folded onto the canonical legacy identifier. Without this step the
   // SkillScorePreview tail-appends extra rows for the aliases (see Phase 0 §2
   // and the regression that prompted this fix).
   const scores: Record<string, number> = (() => {
-    if (!rawScores || typeof rawScores !== "object" || Array.isArray(rawScores)) {
+    if (!skillScores || skillScores.length === 0) {
       return DEFAULT_SCORES;
     }
     const out: Record<string, number> = { ...DEFAULT_SCORES };
-    for (const [k, v] of Object.entries(rawScores as Record<string, unknown>)) {
-      if (typeof v === "number") out[normalizeSkillKey(k)] = v;
+    for (const row of skillScores) {
+      out[normalizeSkillKey(row.skill_name)] = row.score;
     }
     return out;
   })();

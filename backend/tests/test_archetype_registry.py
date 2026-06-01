@@ -50,9 +50,9 @@ _PREFIX_TO_ACTIVITY = {
 
 
 def test_registry_is_populated():
-    # Doc §9 ships ~38 archetypes (sans LISTEN_REG_MIS). We expect 40 with the
-    # current registry — guard the lower bound only so additions don't break it.
-    assert len(ARCHETYPE_REGISTRY) >= 35
+    # The registry is finalized at exactly the canonical 34 archetypes (the
+    # single source of truth). See tests/test_archetype_sweep.py::THE_34.
+    assert len(ARCHETYPE_REGISTRY) == 34
 
 
 def test_no_duplicate_ids():

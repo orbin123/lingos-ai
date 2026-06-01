@@ -69,6 +69,9 @@ export interface StatsDashboard {
 
 export const progressApi = {
   getStats: () => api.get<StatsDashboard>("/progress/stats").then((r) => r.data),
+  /** Current display score (0–10) for every tracked skill — seeded by diagnosis. */
+  getScores: () =>
+    api.get<SkillScoreSnapshot[]>("/progress/scores").then((r) => r.data),
   getActivities: (limit = 50, offset = 0) =>
     api
       .get<RecentActivity[]>("/progress/activities", { params: { limit, offset } })

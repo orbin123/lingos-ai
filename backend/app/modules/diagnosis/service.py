@@ -2,15 +2,14 @@
 
 from sqlalchemy.orm import Session
 
-from app.ai.agents.diagnosis_feedback import (
+from app.modules.auth.repository import UserProfileRepository
+from app.modules.diagnosis.diagnosis_agents.diagnosis_feedback import (
     DiagnosisFeedbackOutput,
     generate_diagnosis_feedback,
 )
-from app.modules.auth.repository import UserProfileRepository
-from app.modules.diagnosis.evaluators import (
-    RuleBasedEvaluator,
-    SpeechEvaluator,
-    TextEvaluator,
+from app.modules.diagnosis.diagnosis_agents.evaluators import RuleBasedEvaluator
+from app.modules.diagnosis.diagnosis_agents.writing_evaluator import (
+    evaluate_writing,
 )
 from app.modules.diagnosis.exceptions import (
     DiagnosisAlreadyCompleted,
@@ -19,11 +18,48 @@ from app.modules.diagnosis.exceptions import (
 from app.modules.diagnosis.schemas import (
     DiagnosisSubmitRequest,
     ReadAloudAnalysisOut,
+    ReadAloudIn,
 )
 from app.modules.diagnosis.scoring import compute_skill_scores
 from app.modules.personalization.service import PersonalizationService
 from app.modules.progress.repository import SkillPointsRepository
 from app.modules.skills.repository import SkillRepository
+
+# Azure word-accuracy below this (0–100) flags a word as "to improve".
+_WORD_IMPROVE_ACCURACY_THRESHOLD = 60.0
+_MAX_WORDS_TO_IMPROVE = 6
+
+
+def _build_read_aloud_analysis(read_aloud: ReadAloudIn) -> ReadAloudAnalysisOut:
+    """Turn the submitted Azure pronunciation result into the result-page view.
+
+    ``words_to_improve`` collects words Azure flagged with an error type or
+    scored below the accuracy threshold, deduped (case-insensitive) and capped.
+    """
+    seen: set[str] = set()
+    words_to_improve: list[str] = []
+    for word in read_aloud.words:
+        token = word.word.strip()
+        if not token:
+            continue
+        flagged = bool(word.error_type) or (
+            word.accuracy_score < _WORD_IMPROVE_ACCURACY_THRESHOLD
+        )
+        key = token.lower()
+        if flagged and key not in seen:
+            seen.add(key)
+            words_to_improve.append(token)
+        if len(words_to_improve) >= _MAX_WORDS_TO_IMPROVE:
+            break
+
+    return ReadAloudAnalysisOut(
+        overall=read_aloud.overall_score,
+        accuracy=read_aloud.accuracy_score,
+        fluency=read_aloud.fluency_score,
+        completeness=read_aloud.completeness_score,
+        prosody=read_aloud.prosody_score,
+        words_to_improve=words_to_improve,
+    )
 
 
 class DiagnosisService:
@@ -35,8 +71,6 @@ class DiagnosisService:
         self.skills = SkillRepository(db)
         self.points = SkillPointsRepository(db)
         self.rule_eval = RuleBasedEvaluator()
-        self.text_eval = TextEvaluator()
-        self.speech_eval = SpeechEvaluator()
 
     async def run_diagnosis(
         self, *, user_id: int, payload: DiagnosisSubmitRequest
@@ -45,7 +79,8 @@ class DiagnosisService:
 
         Steps:
           1. Verify user has not already completed diagnosis
-          2. Run 3 evaluators on the submission
+          2. Grade fill-blank (rule-based) + writing (LLM); read read-aloud
+             scores straight from the submitted Azure assessment
           3. Apply master scoring formula → 7 skill scores
           4. Seed `skill_points` with `round(score * 1000)` per skill
           5. Update user_profile (self-assessment fields + diagnosis_completed)
@@ -53,11 +88,8 @@ class DiagnosisService:
           7. Call AI feedback agent with scores → get human-friendly feedback
 
         Returns:
-            Tuple of (
-                skill_scores dict,
-                DiagnosisFeedbackOutput,
-                ReadAloudAnalysisOut,
-            )
+            Tuple of (skill_scores dict, DiagnosisFeedbackOutput,
+            ReadAloudAnalysisOut).
 
         Raises:
             DiagnosisInvalidPayload: profile missing
@@ -79,29 +111,25 @@ class DiagnosisService:
             question_set_id=payload.fill_blank.question_set_id,
             user_answers=payload.fill_blank.answers,
         )
-        writing = self.text_eval.evaluate_writing(
+        writing = await evaluate_writing(
             prompt_id=payload.writing.prompt_id,
             response_text=payload.writing.response_text,
         )
-        # Speech evaluator now uses the Whisper transcript (not a stub audio_url)
-        speech = self.speech_eval.evaluate_read_aloud(
-            passage_id=payload.read_aloud.passage_id,
-            transcript=payload.read_aloud.transcript,
-            duration_seconds=payload.read_aloud.duration_seconds,
-            words=payload.read_aloud.words,
-        )
+        # Read-aloud was already scored by Azure on the frontend; just project
+        # the submitted scores into the result-page view model.
+        read_aloud_analysis = _build_read_aloud_analysis(payload.read_aloud)
 
-        # 3. Compute 7 scores
+        # 3. Compute 7 scores. Azure scores are 0–100; the formula wants 0–1.
         sa = payload.self_assessment
         skill_scores = compute_skill_scores(
             level=sa.self_assessed_level,
             exposure=sa.content_exposure,
             fill_blank_correct_count=fill_correct,
-            writing_expression=writing["expression_score"],
-            writing_vocabulary=writing["vocabulary_score"],
-            writing_tone=writing["tone_score"],
-            speech_fluency=speech.fluency_score,
-            speech_clarity=speech.clarity_score,
+            writing_expression=writing.expression_score,
+            writing_vocabulary=writing.vocabulary_score,
+            writing_tone=writing.tone_score,
+            speech_fluency=payload.read_aloud.fluency_score / 100.0,
+            speech_clarity=payload.read_aloud.accuracy_score / 100.0,
         )
 
         # 4. Seed SkillPoints from diagnosis values (1.0 score = 1000 points).
@@ -135,15 +163,18 @@ class DiagnosisService:
         except Exception:
             self.db.rollback()
 
-        # 7. Call AI feedback agent
-        weakest = sorted(skill_scores.items(), key=lambda kv: kv[1])[:2]
-        weakest_skill_names = [name for name, _ in weakest]
+        # 7. Call AI feedback agent. Weakest/strongest are picked here so the
+        # prose can never disagree with the numbers on screen.
+        ranked = sorted(skill_scores.items(), key=lambda kv: kv[1])
+        weakest_skill = ranked[0][0]
+        strongest_skill = ranked[-1][0]
 
         feedback = await generate_diagnosis_feedback(
             self_assessed_level=sa.self_assessed_level.value,
             goal=sa.goal.value,
             skill_scores=skill_scores,
-            weakest_skills=weakest_skill_names,
+            weakest_skill=weakest_skill,
+            strongest_skill=strongest_skill,
         )
 
-        return skill_scores, feedback, speech
+        return skill_scores, feedback, read_aloud_analysis

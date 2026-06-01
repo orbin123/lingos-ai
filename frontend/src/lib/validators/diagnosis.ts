@@ -33,18 +33,17 @@ export const writingSchema = z.object({
     .max(2000, "Maximum 2000 characters"),
 });
 
-export const readAloudWordSchema = z.object({
-  word: z.string().min(1),
-  start_seconds: z.number().min(0),
-  end_seconds: z.number().min(0),
-  confidence: z.number().min(0).max(1).nullable().optional(),
+export const pronunciationWordSchema = z.object({
+  word: z.string(),
+  accuracy_score: z.number().min(0).max(100),
+  error_type: z.string().nullable().optional(),
 });
 
-// Step 4: read-aloud — user must record audio and receive a transcript back
-// from POST /diagnosis/transcribe before submitting the main form.
-// audioBlob holds the raw recording in memory only (not submitted in JSON).
-// transcript + duration_seconds + words come from the transcribe response and ARE
-// included in the final JSON submit.
+// Step 4: read-aloud — the user records audio, which is scored by Azure Speech
+// Pronunciation Assessment via POST /diagnosis/pronunciation-score before the
+// main form is submitted. audioBlob holds the raw recording in memory only
+// (not sent as JSON). The five Azure scores + words come from the scoring
+// response and ARE included in the final JSON submit.
 export const readAloudSchema = z.object({
   // The recorded audio blob — stored in form state only, never sent as JSON.
   // We use z.instanceof(Blob) so the form validates that a recording exists.
@@ -53,10 +52,13 @@ export const readAloudSchema = z.object({
     .refine((b) => (b as Blob).size > 0, {
       message: "Please record your voice reading the passage",
     }),
-  // From Whisper — populated after transcribe call succeeds
-  transcript: z.string().min(1, "Transcription is missing — please record again"),
-  duration_seconds: z.number().positive("Duration must be greater than 0"),
-  words: z.array(readAloudWordSchema).default([]),
+  // Populated after the Azure pronunciation-score call succeeds (0–100 scale).
+  overall_score: z.number().min(0).max(100),
+  accuracy_score: z.number().min(0).max(100),
+  fluency_score: z.number().min(0).max(100),
+  completeness_score: z.number().min(0).max(100),
+  prosody_score: z.number().min(0).max(100),
+  words: z.array(pronunciationWordSchema).default([]),
 });
 
 // Combined schema — used for the whole multi-step form

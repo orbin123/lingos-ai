@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { ReactNode } from "react";
+import { LandingNavbar } from "@/components/layout/LandingNavbar";
 
 interface AuthCardProps {
   title: string;
@@ -39,43 +39,7 @@ export function AuthCard({ title, subtitle, children, footer }: AuthCardProps) {
         }}
       />
 
-      {/* Top Navigation Bar */}
-      <nav className="fixed top-0 left-0 right-0 z-50 px-10">
-        <div className="max-w-[1180px] mx-auto flex items-center h-[68px]">
-          <Link
-            href="/"
-            className="flex items-center gap-2 group"
-            aria-label="LingosAI home"
-          >
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center transition-transform group-hover:scale-105"
-              style={{ background: "oklch(52% 0.18 240)" }}
-            >
-              <svg width="17" height="17" viewBox="0 0 17 17" fill="none">
-                <path
-                  d="M3 13L8.5 4L14 13"
-                  stroke="white"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M5.2 10h6.6"
-                  stroke="white"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
-            <span
-              className="font-bold text-[17px] tracking-tight"
-              style={{ color: "oklch(18% 0.09 245)", letterSpacing: "-0.3px" }}
-            >
-              LingosAI
-            </span>
-          </Link>
-        </div>
-      </nav>
+      <LandingNavbar variant="minimal" />
 
       <div className="relative w-full max-w-[440px]">
         <div

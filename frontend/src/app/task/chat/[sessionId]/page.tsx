@@ -405,7 +405,7 @@ function Topbar({
 }
 
 function ChatPronunciationCard({ payload }: { payload: PronunciationResultPayload }) {
-  const { pronunciation: p, raw_score, reference_text, feedback } = payload;
+  const { pronunciation: p, raw_score, feedback } = payload;
 
   function scoreColor(score: number) {
     if (score >= 80) return "oklch(48% 0.18 155)";
@@ -590,66 +590,6 @@ function ChatPronunciationCard({ payload }: { payload: PronunciationResultPayloa
         </div>
       </div>
 
-      {/* Reference passage */}
-      {reference_text && (
-        <div style={{ padding: "0 22px 16px" }}>
-          <div style={{ fontSize: 11.5, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, color: "oklch(50% 0.05 240)", marginBottom: 8 }}>
-            Model passage
-          </div>
-          <div
-            style={{
-              padding: "14px 16px",
-              background: "oklch(96% 0.02 245)",
-              borderRadius: 12,
-              fontSize: 14,
-              lineHeight: 1.65,
-              color: "oklch(20% 0.09 245)",
-              borderLeft: "4px solid oklch(62% 0.16 240)",
-            }}
-          >
-            {reference_text}
-          </div>
-        </div>
-      )}
-
-      {/* Coaching tips from LLM feedback */}
-      {(feedback.did_well?.length || feedback.mistakes?.length || feedback.next_tip) && (
-        <div style={{ padding: "0 22px 20px", display: "flex", flexDirection: "column", gap: 12, borderTop: "1px solid oklch(92% 0.01 245)", paddingTop: 16 }}>
-          <div style={{ fontSize: 11.5, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700, color: "oklch(50% 0.05 240)", marginBottom: 2 }}>
-            Coach&apos;s tips
-          </div>
-
-          {feedback.did_well && feedback.did_well.length > 0 && (
-            <div>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: "oklch(48% 0.18 155)", marginBottom: 4 }}>What you did well</div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6, color: "oklch(20% 0.09 245)" }}>
-                {feedback.did_well.map((item, idx) => (
-                  <li key={idx} style={{ marginBottom: 2 }}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {feedback.mistakes && feedback.mistakes.length > 0 && (
-            <div>
-              <div style={{ fontSize: 12.5, fontWeight: 700, color: "oklch(50% 0.15 25)", marginBottom: 4 }}>Areas to improve</div>
-              {feedback.mistakes.map((m, idx) => (
-                <div key={idx} style={{ background: "oklch(98% 0.01 25)", padding: "8px 12px", borderRadius: 8, borderLeft: "3px solid oklch(65% 0.15 25)", marginBottom: 6 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "oklch(20% 0.09 245)" }}>{m.issue}</div>
-                  {m.rule && <div style={{ fontSize: 12, color: "oklch(45% 0.07 240)", marginTop: 2 }}>{m.rule}</div>}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {feedback.next_tip && (
-            <div style={{ background: "oklch(96% 0.03 245)", padding: "10px 14px", borderRadius: 8, fontSize: 13 }}>
-              <span style={{ fontWeight: 700, color: "oklch(52% 0.18 240)" }}>Next tip: </span>
-              <span style={{ color: "oklch(20% 0.09 245)" }}>{feedback.next_tip}</span>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -1038,12 +978,25 @@ export default function ChatSessionPage() {
     Promise.resolve().then(() => {
       if (!cancelled) setDaySessionScorecardError(null);
     });
-    api
-      .get<SessionScorecardRead>(`/api/learning/sessions/${sessionId}/scorecard`)
-      .then((r) => {
+
+    const fetchWithRetry = async (url: string, retries = 2): Promise<SessionScorecardRead> => {
+      try {
+        const r = await api.get<SessionScorecardRead>(url);
+        return r.data;
+      } catch (err) {
+        if (!cancelled && retries > 0) {
+          await new Promise((res) => setTimeout(res, 1500));
+          return fetchWithRetry(url, retries - 1);
+        }
+        throw err;
+      }
+    };
+
+    fetchWithRetry(`/api/learning/sessions/${sessionId}/scorecard`)
+      .then((data) => {
         if (cancelled) return;
-        setDaySessionScorecard(r.data);
-        markScorecardViewed(r.data.session_id);
+        setDaySessionScorecard(data);
+        markScorecardViewed(data.session_id);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
