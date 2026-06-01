@@ -1,20 +1,25 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 
 const ACCENT_HUE = 240;
 
 interface LandingNavbarProps {
+  variant?: "full" | "minimal";
   onCTAClick?: () => void;
   showCTA?: boolean;
 }
 
-export function LandingNavbar({ onCTAClick, showCTA = false }: LandingNavbarProps) {
+export function LandingNavbar({
+  variant = "full",
+  onCTAClick,
+  showCTA = false,
+}: LandingNavbarProps) {
   const [scrolled, setScrolled] = useState(false);
-  const router = useRouter();
   const pathname = usePathname();
+  const isMinimal = variant === "minimal";
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 30);
@@ -47,9 +52,15 @@ export function LandingNavbar({ onCTAClick, showCTA = false }: LandingNavbarProp
           gap: 40,
         }}
       >
-        <div
-          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-          onClick={() => router.push("/")}
+        <Link
+          href="/"
+          aria-label="LingosAI home"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            textDecoration: "none",
+          }}
         >
           <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
             <img
@@ -68,7 +79,8 @@ export function LandingNavbar({ onCTAClick, showCTA = false }: LandingNavbarProp
           >
             LingosAI
           </span>
-        </div>
+        </Link>
+        {!isMinimal && (
         <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
           {[
             { label: "Features", href: "/features" },
@@ -103,7 +115,8 @@ export function LandingNavbar({ onCTAClick, showCTA = false }: LandingNavbarProp
             );
           })}
         </div>
-        {showCTA && (
+        )}
+        {!isMinimal && showCTA && (
           <button
             onClick={onCTAClick}
             style={{

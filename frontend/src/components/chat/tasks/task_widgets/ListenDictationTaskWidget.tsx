@@ -1,25 +1,68 @@
 "use client";
 
 import { FileText, Play, Volume2 } from "lucide-react";
+import { useState } from "react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { ListenDictationTask } from "../source";
+import type { ListenDictationTask, LiveTaskController } from "../source";
 import {
   FeedbackRow,
+  ListeningAudioCard,
+  LiveTextItems,
   normalizeAnswer,
   ResultBanner,
   roundIconButton,
   RuleCallout,
   StatusDot,
+  TargetWordsRow,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
+
+function LiveDictation({ task, live }: { task: ListenDictationTask; live: LiveTaskController }) {
+  const [audioComplete, setAudioComplete] = useState(false);
+  const unlocked = live.submitted || audioComplete;
+  return (
+    <TaskWidgetFrame task={task} icon={<Volume2 size={18} strokeWidth={2.5} />}>
+      <ListeningAudioCard
+        title={task.audioGenre}
+        script={task.audioScript}
+        audioUrl={task.audioUrl}
+        durationSeconds={task.audioDurationSeconds}
+        completed={unlocked}
+        hint="Listen once to unlock the dictation below."
+        onComplete={() => setAudioComplete(true)}
+      />
+      {unlocked && task.grammarRule && <RuleCallout label="Listening focus">{task.grammarRule}</RuleCallout>}
+      {unlocked && <TargetWordsRow words={task.targetWords} label="Target words" />}
+      {unlocked && (
+        <LiveTextItems
+          items={task.items.map((item) => ({
+            itemId: item.itemId,
+            prompt: item.prompt,
+            sampleAnswer: item.correctAnswer,
+            minHeight: 60,
+            placeholder: "Type the exact sentence you heard...",
+          }))}
+          live={live}
+          yourLabel="Your sentence"
+          sampleLabel="Exact sentence"
+        />
+      )}
+    </TaskWidgetFrame>
+  );
+}
 
 export function ListenDictationTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: ListenDictationTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return <LiveDictation task={task} live={live} />;
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? {} : task.answers[previewState];
   const correctCount = isDefault

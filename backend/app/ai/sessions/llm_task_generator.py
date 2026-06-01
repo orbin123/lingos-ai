@@ -20,20 +20,15 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from app.ai.llm.exceptions import LLMError
 from app.ai.llm.interface import ILLMClient
+from app.ai.sessions.exceptions import TaskGenerationFailed
 from app.ai.sessions.prompts import (
     build_task_gen_user_prompt,
     task_gen_system_prompt,
 )
 from app.modules.sessions.task_generator import (
     GeneratedTask,
-    StubTaskGenerator,
     authored_fill_in_blanks_content,
     authored_listen_and_respond_content,
-    build_simple_present_open_text_content,
-    build_simple_present_speak_and_record_content,
-    build_past_error_spotting_content,
-    build_past_listening_cloze_content,
-    build_past_error_correction_content,
     is_valid_error_spotting_payload,
     is_valid_listening_payload,
     is_valid_open_text_payload,
@@ -70,6 +65,14 @@ def _agent_debug_log(message: str, data: dict, hypothesis_id: str) -> None:
     except Exception:
         pass
     # endregion
+
+
+class _TaskContentInvalid(Exception):
+    """Internal: a generated payload failed its archetype validation.
+
+    Used to trigger a retry inside ``LLMTaskGenerator.generate``; never escapes
+    the module (the retry loop converts it to ``TaskGenerationFailed``).
+    """
 
 
 class TaskGenOutput(BaseModel):
@@ -184,13 +187,15 @@ class ErrorSpottingTask(BaseModel):
 
 
 class LLMTaskGenerator:
-    """Production `TaskGenerator` — invokes the LLM, validates output, falls
-    back to the stub on failure."""
+    """Production `TaskGenerator` — invokes the LLM and validates output.
+
+    On a failed attempt it retries the LLM once; if the payload still fails
+    validation it raises ``TaskGenerationFailed`` rather than substituting
+    off-theme placeholder content."""
 
     def __init__(self, llm: ILLMClient, *, temperature: float | None = 0.7) -> None:
         self.llm = llm
         self.temperature = temperature
-        self._fallback = StubTaskGenerator()
 
     async def generate(
         self,
@@ -252,6 +257,50 @@ class LLMTaskGenerator:
             )
             return GeneratedTask(content=content)
 
+        last_exc: Exception | None = None
+        for attempt_no in range(2):  # initial attempt + one retry
+            try:
+                content = await self._generate_once(
+                    archetype=archetype,
+                    day_topic=day_topic,
+                    explanation_brief=explanation_brief,
+                    cefr_level=cefr_level,
+                    sub_level=sub_level,
+                    user_interests=user_interests,
+                    task_spec=task_spec,
+                )
+                return GeneratedTask(content=content)
+            except (LLMError, ValidationError, ValueError, _TaskContentInvalid) as exc:
+                last_exc = exc
+                logger.warning(
+                    "Task generation attempt %d/2 failed for archetype=%s: %s",
+                    attempt_no + 1, archetype.archetype_id, exc,
+                )
+
+        raise TaskGenerationFailed(
+            archetype.archetype_id,
+            str(last_exc) if last_exc is not None else "unknown error",
+        ) from last_exc
+
+    async def _generate_once(
+        self,
+        *,
+        archetype: ArchetypeSpec,
+        day_topic: str,
+        explanation_brief: str,
+        cefr_level: str,
+        sub_level: int,
+        user_interests: list[str] | None,
+        task_spec: dict | None,
+    ) -> dict:
+        """Run one full LLM generation attempt.
+
+        Returns validated, render-ready task content, or raises (``LLMError`` /
+        ``ValidationError`` / ``ValueError`` from the LLM call, or
+        ``_TaskContentInvalid`` from payload validation) so the caller can retry
+        and ultimately surface a clean error. Never substitutes placeholder
+        content.
+        """
         if self._is_error_spotting_task(archetype):
             output_model: type[BaseModel] = ErrorSpottingTask
         elif archetype.ui_widget == "ErrorCorrection":
@@ -260,44 +309,10 @@ class LLMTaskGenerator:
             output_model = FillInBlanksTask
         else:
             output_model = TaskGenOutput
-        try:
-            output = await self.llm.generate_structured(
-                system_prompt=task_gen_system_prompt(),
-                user_prompt=build_task_gen_user_prompt(
-                    archetype=archetype,
-                    day_topic=day_topic,
-                    explanation_brief=explanation_brief,
-                    cefr_level=cefr_level,
-                    sub_level=sub_level,
-                    user_interests=user_interests,
-                    task_spec=task_spec,
-                ),
-                output_model=output_model,
-                temperature=self.temperature,
-            )
-            generated_payload = output.model_dump(exclude_none=True)
-            generated_payload.update(output.model_extra or {})
-            if archetype.ui_widget == "FillInBlanks":
-                generated_payload = FillInBlanksTask.model_validate(
-                    generated_payload
-                ).model_dump(exclude_none=True)
-                generated_payload = normalize_fill_in_blanks_payload(generated_payload)
-            if archetype.ui_widget == "ErrorCorrection":
-                generated_payload = ErrorCorrectionTask.model_validate(
-                    generated_payload
-                ).model_dump(exclude_none=True)
-                generated_payload = normalize_error_correction_payload(generated_payload)
-            if self._is_error_spotting_task(archetype):
-                generated_payload = ErrorSpottingTask.model_validate(
-                    generated_payload
-                ).model_dump(exclude_none=True)
-                generated_payload = normalize_error_spotting_payload(generated_payload)
-        except (LLMError, ValidationError, ValueError) as exc:
-            logger.warning(
-                "LLM task generator failed for archetype=%s: %s — using stub content",
-                archetype.archetype_id, exc,
-            )
-            fallback_content = await self._fallback_content(
+
+        output = await self.llm.generate_structured(
+            system_prompt=task_gen_system_prompt(),
+            user_prompt=build_task_gen_user_prompt(
                 archetype=archetype,
                 day_topic=day_topic,
                 explanation_brief=explanation_brief,
@@ -305,8 +320,27 @@ class LLMTaskGenerator:
                 sub_level=sub_level,
                 user_interests=user_interests,
                 task_spec=task_spec,
-            )
-            return GeneratedTask(content=fallback_content)
+            ),
+            output_model=output_model,
+            temperature=self.temperature,
+        )
+        generated_payload = output.model_dump(exclude_none=True)
+        generated_payload.update(output.model_extra or {})
+        if archetype.ui_widget == "FillInBlanks":
+            generated_payload = FillInBlanksTask.model_validate(
+                generated_payload
+            ).model_dump(exclude_none=True)
+            generated_payload = normalize_fill_in_blanks_payload(generated_payload)
+        if archetype.ui_widget == "ErrorCorrection":
+            generated_payload = ErrorCorrectionTask.model_validate(
+                generated_payload
+            ).model_dump(exclude_none=True)
+            generated_payload = normalize_error_correction_payload(generated_payload)
+        if self._is_error_spotting_task(archetype):
+            generated_payload = ErrorSpottingTask.model_validate(
+                generated_payload
+            ).model_dump(exclude_none=True)
+            generated_payload = normalize_error_spotting_payload(generated_payload)
 
         content = {
             **generated_payload,
@@ -333,195 +367,43 @@ class LLMTaskGenerator:
         if self._is_open_text_writing_task(archetype):
             content = normalize_open_text_payload(content)
             if not is_valid_open_text_payload(content, expected_items=3):
-                logger.warning(
-                    "Invalid open-text payload for archetype=%s — using stub content",
-                    archetype.archetype_id,
-                )
-                content = await self._fallback_content(
-                    archetype=archetype,
-                    day_topic=day_topic,
-                    explanation_brief=explanation_brief,
-                    cefr_level=cefr_level,
-                    sub_level=sub_level,
-                    user_interests=user_interests,
-                    task_spec=task_spec,
+                raise _TaskContentInvalid(
+                    f"open-text payload failed validation for {archetype.archetype_id}"
                 )
         elif self._is_speak_and_record_task(archetype):
-            raw_prompts = generated_payload.get("speaking_prompts")
-            raw_samples = generated_payload.get("sample_responses")
-            logger.info(
-                "speak_and_record LLM output: prompts=%d samples=%d "
-                "task_intro=%r instructions_len=%d",
-                len(raw_prompts) if isinstance(raw_prompts, list) else -1,
-                len(raw_samples) if isinstance(raw_samples, list) else -1,
-                (generated_payload.get("task_intro") or "")[:60],
-                len(str(generated_payload.get("instructions") or "")),
-            )
             content = normalize_speak_and_record_payload(content)
-            valid = is_valid_speak_and_record_payload(content)
-            logger.info(
-                "speak_and_record after normalize: valid=%s prompts=%d samples=%d "
-                "task_intro=%r",
-                valid,
-                len(content.get("speaking_prompts") or []),
-                len(content.get("sample_responses") or []),
-                (content.get("task_intro") or "")[:60],
-            )
-            if not valid:
-                logger.warning(
-                    "Invalid speak-and-record payload for archetype=%s — using stub content",
-                    archetype.archetype_id,
-                )
-                content = await self._fallback_content(
-                    archetype=archetype,
-                    day_topic=day_topic,
-                    explanation_brief=explanation_brief,
-                    cefr_level=cefr_level,
-                    sub_level=sub_level,
-                    user_interests=user_interests,
-                    task_spec=task_spec,
-                )
-                logger.info(
-                    "speak_and_record fallback applied: prompts=%d task_intro=%r",
-                    len(content.get("speaking_prompts") or []),
-                    (content.get("task_intro") or "")[:60],
+            if not is_valid_speak_and_record_payload(content):
+                raise _TaskContentInvalid(
+                    f"speak-and-record payload failed validation for {archetype.archetype_id}"
                 )
         if archetype.ui_widget == "ErrorCorrection":
             content = normalize_error_correction_payload(content)
             if not is_valid_error_correction_payload(content, expected_items=3):
-                logger.warning(
-                    "Invalid error-correction payload for archetype=%s — using stub content",
-                    archetype.archetype_id,
-                )
-                content = await self._fallback_content(
-                    archetype=archetype,
-                    day_topic=day_topic,
-                    explanation_brief=explanation_brief,
-                    cefr_level=cefr_level,
-                    sub_level=sub_level,
-                    user_interests=user_interests,
-                    task_spec=task_spec,
+                raise _TaskContentInvalid(
+                    f"error-correction payload failed validation for {archetype.archetype_id}"
                 )
         elif self._is_error_spotting_task(archetype):
             content = normalize_error_spotting_payload(content)
             if not is_valid_error_spotting_payload(content):
-                logger.warning(
-                    "Invalid error-spotting payload for archetype=%s — using stub content",
-                    archetype.archetype_id,
-                )
-                content = await self._fallback_content(
-                    archetype=archetype,
-                    day_topic=day_topic,
-                    explanation_brief=explanation_brief,
-                    cefr_level=cefr_level,
-                    sub_level=sub_level,
-                    user_interests=user_interests,
-                    task_spec=task_spec,
+                raise _TaskContentInvalid(
+                    f"error-spotting payload failed validation for {archetype.archetype_id}"
                 )
         elif self._is_listening_task(archetype):
             content = normalize_listen_and_respond_payload(content)
             if not is_valid_listening_payload(content):
-                logger.warning(
-                    "Invalid listening payload for archetype=%s — using stub content",
-                    archetype.archetype_id,
+                raise _TaskContentInvalid(
+                    f"listening payload failed validation for {archetype.archetype_id}"
                 )
-                content = await self._fallback_content(
-                    archetype=archetype,
-                    day_topic=day_topic,
-                    explanation_brief=explanation_brief,
-                    cefr_level=cefr_level,
-                    sub_level=sub_level,
-                    user_interests=user_interests,
-                    task_spec=task_spec,
-                )
-            else:
-                content = await self._attach_required_audio(
-                    content=content,
-                    archetype=archetype,
-                )
+            content = await self._attach_required_audio(
+                content=content,
+                archetype=archetype,
+            )
         elif content.get("audio_script") and not content.get("audio_url"):
             content = await self._attach_optional_audio(
                 content=content,
                 archetype=archetype,
             )
 
-        return GeneratedTask(content=content)
-
-    async def _fallback_content(
-        self,
-        *,
-        archetype: ArchetypeSpec,
-        day_topic: str,
-        explanation_brief: str,
-        cefr_level: str,
-        sub_level: int,
-        user_interests: list[str] | None,
-        task_spec: dict | None,
-    ) -> dict:
-        fallback = await self._fallback.generate(
-            archetype=archetype,
-            day_topic=day_topic,
-            explanation_brief=explanation_brief,
-            cefr_level=cefr_level,
-            sub_level=sub_level,
-            user_interests=user_interests,
-            task_spec=task_spec,
-        )
-        content = dict(fallback.content)
-        if self._is_open_text_writing_task(archetype):
-            content = normalize_open_text_payload(content)
-            if not is_valid_open_text_payload(content, expected_items=3):
-                content.update(
-                    build_simple_present_open_text_content(
-                        str(content.get("topic") or day_topic)
-                    )
-                )
-                content = normalize_open_text_payload(content)
-        if self._is_speak_and_record_task(archetype):
-            content = normalize_speak_and_record_payload(content)
-            if not is_valid_speak_and_record_payload(content):
-                content.update(
-                    build_simple_present_speak_and_record_content(
-                        str(content.get("topic") or day_topic)
-                    )
-                )
-                content = normalize_speak_and_record_payload(content)
-        if self._is_error_spotting_task(archetype):
-            content = normalize_error_spotting_payload(content)
-            if not is_valid_error_spotting_payload(content):
-                content.update(
-                    build_past_error_spotting_content(
-                        str(content.get("topic") or day_topic)
-                    )
-                )
-                content = normalize_error_spotting_payload(content)
-        if archetype.ui_widget == "ErrorCorrection":
-            content = normalize_error_correction_payload(content)
-            if not is_valid_error_correction_payload(content):
-                content.update(
-                    build_past_error_correction_content(
-                        str(content.get("topic") or day_topic)
-                    )
-                )
-                content = normalize_error_correction_payload(content)
-        if self._is_listening_task(archetype):
-            content = normalize_listen_and_respond_payload(content)
-            if not is_valid_listening_payload(content):
-                if archetype.archetype_id == "LISTEN_CLOZE":
-                    content.update(
-                        build_past_listening_cloze_content(
-                            str(content.get("topic") or day_topic)
-                        )
-                    )
-                    content = normalize_listen_and_respond_payload(content)
-                if not is_valid_listening_payload(content):
-                    raise ValueError(
-                        f"Fallback listening payload is invalid for {archetype.archetype_id}"
-                    )
-            content = await self._attach_required_audio(
-                content=content,
-                archetype=archetype,
-            )
         return content
 
     async def _attach_optional_audio(

@@ -363,13 +363,13 @@ def test_every_contract_archetype_has_a_task_builder() -> None:
         assert contract.task_payload in _BODY_BUILDERS, contract.archetype_id
 
 
-# ── Cycle-1: every enabled archetype projects task + eval + feedback ────────
+# ── Cycle-1: every archetype projects task + eval + feedback ────────────────
 #
-# Layer 2 promotes all 34 Cycle-1 archetypes to the strict schema-boundary path
-# (CONTRACT_ENABLED_ARCHETYPES). This block proves each one projects end to end —
-# loose content → strict task contract, EvaluationResult → eval contract,
-# FeedbackResult → feedback contract — so promotion can never silently fall back
-# to legacy at runtime.
+# All 34 Cycle-1 archetypes flow through the strict schema-boundary path
+# unconditionally (no allowlist). This block proves each one projects end to
+# end — loose content → strict task contract, EvaluationResult → eval contract,
+# FeedbackResult → feedback contract — so the runtime can never silently fall
+# back to legacy.
 
 from app.modules.sessions.contracts.evaluation import (  # noqa: E402
     ActivityEvaluationOutput,

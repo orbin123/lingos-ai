@@ -74,14 +74,25 @@ export function ChatSessionOrchestrator({
             </SectionMarker>
             <TaskWidgetRenderer task={task} previewState={previewState} />
 
-            {previewState !== "default" && isReadAloud && evaluation && feedback && (
+            {previewState !== "default" && isReadAloud && evaluation && (
               <>
                 <SectionMarker tone="score" icon={<Sparkles size={13} />}>
                   Read aloud assessment
                 </SectionMarker>
                 <ReadAloudAssessmentWidget
-                  task={task}
                   evaluation={evaluation}
+                  answerView={previewState}
+                />
+              </>
+            )}
+
+            {previewState !== "default" && isReadAloud && feedback && (
+              <>
+                <SectionMarker tone="feedback" icon={<Sparkles size={13} />}>
+                  Activity feedback
+                </SectionMarker>
+                <FeedbackWidgetRenderer
+                  task={task}
                   feedback={feedback}
                   answerView={previewState}
                 />

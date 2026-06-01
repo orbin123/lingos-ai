@@ -1,22 +1,80 @@
 "use client";
 
 import { FileText, Sparkles, Timer } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { WriteTimedTask } from "../source";
+import type { LiveTaskController, WriteTimedTask } from "../source";
 import {
+  LiveTextItems,
   ResultBanner,
   RuleCallout,
   StatusDot,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
+function LiveWriteTimed({ task, live }: { task: WriteTimedTask; live: LiveTaskController }) {
+  const [remaining, setRemaining] = useState(task.writingDurationSeconds);
+  useEffect(() => {
+    if (live.submitted) return;
+    const id = setInterval(() => setRemaining((r) => (r > 0 ? r - 1 : 0)), 1000);
+    return () => clearInterval(id);
+  }, [live.submitted]);
+  const clock = `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`;
+
+  return (
+    <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
+      <RuleCallout label="Writing pressure">{task.grammarRule}</RuleCallout>
+      {!live.submitted && (
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 14px",
+            borderRadius: 999,
+            fontWeight: 800,
+            fontSize: 13.5,
+            color: remaining <= 10 ? "var(--tw-red)" : "#0070C4",
+            background: remaining <= 10 ? "rgba(220,50,50,0.08)" : "rgba(0,112,196,0.08)",
+            marginBottom: 14,
+          }}
+        >
+          <Timer size={15} />
+          {clock} remaining
+        </div>
+      )}
+      <LiveTextItems
+        items={[
+          {
+            itemId: task.itemId ?? "item_1",
+            prompt: task.prompt,
+            sampleAnswer: task.sampleAnswer,
+            minHeight: 120,
+            placeholder: "Write your response under time pressure...",
+            hints: task.answerHints,
+          },
+        ]}
+        live={live}
+        numbered={false}
+        yourLabel="Your response"
+        sampleLabel="Model Answer"
+      />
+    </TaskWidgetFrame>
+  );
+}
+
 export function WriteTimedTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: WriteTimedTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return <LiveWriteTimed task={task} live={live} />;
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;

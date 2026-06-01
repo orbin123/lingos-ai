@@ -1,4 +1,5 @@
 import { api } from "./api";
+import { blobToWav } from "./audio-utils";
 import type { DiagnosisInput } from "./validators/diagnosis";
 
 // Versioned IDs the backend expects
@@ -8,59 +9,56 @@ const READ_ALOUD_PASSAGE_ID = "diag_passage_v1";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export interface ReadAloudWord {
+/** One word from Azure pronunciation assessment (subset we use). */
+export interface PronunciationWord {
   word: string;
-  start_seconds: number;
-  end_seconds: number;
-  confidence?: number | null;
+  accuracy_score: number;
+  error_type: string | null;
+  phonemes?: { phoneme: string; accuracy_score: number }[];
 }
 
-export interface TranscribeResult {
-  transcript: string;
-  duration_seconds: number;
-  words: ReadAloudWord[];
-}
-
-export interface ReadAloudMismatch {
-  issue: "substitution" | "omission" | "insertion";
-  reference_word: string | null;
-  transcript_word: string | null;
-  reference_index: number | null;
-  transcript_index: number | null;
-}
-
-export interface ReadAloudAnalysis {
+/** Raw result returned by POST /diagnosis/pronunciation-score (Azure scale 0–100). */
+export interface PronunciationScore {
+  overall_score: number;
+  accuracy_score: number;
   fluency_score: number;
-  clarity_score: number;
-  transcript_similarity: number;
-  word_accuracy: number;
-  words_per_minute: number;
-  pause_count: number;
-  long_pause_count: number;
-  longest_pause_seconds: number;
-  average_pause_seconds: number;
-  mismatch_count: number;
-  mismatches: ReadAloudMismatch[];
+  completeness_score: number;
+  prosody_score: number;
+  words: PronunciationWord[];
 }
 
-export interface WeakSkillExplanation {
+/** Read-aloud analysis shown in the result page scorecard (Azure scale 0–100). */
+export interface ReadAloudAnalysis {
+  overall: number;
+  accuracy: number;
+  fluency: number;
+  completeness: number;
+  prosody: number;
+  words_to_improve: string[];
+}
+
+export interface SkillCallout {
   skill_name: string;
-  what_it_means: string;
-  why_it_matters: string;
-  what_to_expect: string;
+  description: string;
+}
+
+export interface FocusCallout {
+  title: string;
+  description: string;
 }
 
 export interface DiagnosisFeedback {
   estimated_level_label: string;
+  level_description: string;
   summary: string;
-  weak_skill_explanations: WeakSkillExplanation[];
-  motivation: string;
-  first_week_focus: string;
+  biggest_weakness: SkillCallout;
+  strongest_skill: SkillCallout;
+  first_focus: FocusCallout;
 }
 
 export interface DiagnosisResult {
   skill_scores: Record<string, number>;
-  weakest_skills: string[];
+  goal: string;
   feedback: DiagnosisFeedback;
   read_aloud_analysis?: ReadAloudAnalysis | null;
   next_step: string;
@@ -73,20 +71,21 @@ export const diagnosisApi = {
     api.post<{ next: string }>("/diagnosis/start").then((r) => r.data),
 
   /**
-   * Upload an audio blob to Whisper transcription.
-   * Called when the user finishes recording in StepReadAloud.
-   * Returns transcript text + duration + word timings for later scoring.
+   * Score a read-aloud recording with Azure Speech Pronunciation Assessment.
+   * Azure does not accept WebM, so we convert the recorded blob to WAV on the
+   * client first (same as the main read-aloud task). The canonical reference
+   * text is resolved server-side from the passage id.
    */
-  transcribe: (audioBlob: Blob): Promise<TranscribeResult> => {
+  scorePronunciation: async (
+    audioBlob: Blob,
+    passageId: string = READ_ALOUD_PASSAGE_ID,
+  ): Promise<PronunciationScore> => {
+    const wav = await blobToWav(audioBlob);
     const formData = new FormData();
-    // Give the file a name with the correct extension so the backend
-    // can detect the format. Browsers record in webm by default.
-    const mimeType = audioBlob.type || "audio/webm";
-    const ext = mimeType.includes("mp4") ? "mp4" : "webm";
-    formData.append("audio", audioBlob, `recording.${ext}`);
-
+    formData.append("audio", wav, "recording.wav");
+    formData.append("passage_id", passageId);
     return api
-      .post<TranscribeResult>("/diagnosis/transcribe", formData, {
+      .post<PronunciationScore>("/diagnosis/pronunciation-score", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       })
       .then((r) => r.data);
@@ -94,7 +93,7 @@ export const diagnosisApi = {
 
   /**
    * Submit the full diagnosis form.
-   * read_aloud sends transcript + duration_seconds + words (from transcribe()),
+   * read_aloud sends the Azure pronunciation result (from scorePronunciation()),
    * NOT the audio blob — keeps this endpoint clean JSON.
    */
   submit: (data: DiagnosisInput): Promise<DiagnosisResult> => {
@@ -110,8 +109,11 @@ export const diagnosisApi = {
       },
       read_aloud: {
         passage_id: READ_ALOUD_PASSAGE_ID,
-        transcript: data.read_aloud.transcript,
-        duration_seconds: data.read_aloud.duration_seconds,
+        overall_score: data.read_aloud.overall_score,
+        accuracy_score: data.read_aloud.accuracy_score,
+        fluency_score: data.read_aloud.fluency_score,
+        completeness_score: data.read_aloud.completeness_score,
+        prosody_score: data.read_aloud.prosody_score,
         words: data.read_aloud.words,
       },
     };

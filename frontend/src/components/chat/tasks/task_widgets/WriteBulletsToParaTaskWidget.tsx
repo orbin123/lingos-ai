@@ -2,21 +2,82 @@
 
 import { FileText, Sparkles, ShoppingBag } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { WriteBulletsToParaTask } from "../source";
+import type { LiveTaskController, WriteBulletsToParaTask } from "../source";
 import {
+  LiveTextItems,
   ResultBanner,
   RuleCallout,
   StatusDot,
+  TargetWordsRow,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
+
+function BulletsPanel({ bullets }: { bullets: string[] }) {
+  return (
+    <div
+      style={{
+        background: "linear-gradient(135deg, #FFFDF6 0%, #FFF9E6 100%)",
+        border: "1.5px solid #F3E5C8",
+        borderRadius: 18,
+        padding: "18px 20px",
+        marginBottom: 18,
+        boxShadow: "0 6px 20px rgba(220,180,100,0.12)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <ShoppingBag size={18} style={{ color: "oklch(58% 0.16 60)" }} />
+        <div style={{ fontSize: 13, fontWeight: 800, color: "oklch(42% 0.12 60)", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          Your Shopping List
+        </div>
+      </div>
+      <ul style={{ margin: 0, paddingLeft: 24, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+        {bullets.map((bullet) => (
+          <li key={bullet} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 14.5, fontWeight: 600, color: "oklch(22% 0.06 60)" }}>
+            <div style={{ width: 18, height: 18, borderRadius: 5, border: "1.8px solid oklch(58% 0.16 60)", background: "white", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: "oklch(58% 0.16 60)", opacity: 0.8 }} />
+            </div>
+            <span>{bullet}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export function WriteBulletsToParaTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: WriteBulletsToParaTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Writing focus">{task.grammarRule}</RuleCallout>
+        <BulletsPanel bullets={task.bullets} />
+        <TargetWordsRow words={task.targetWords} label="Target words to use" />
+        <LiveTextItems
+          items={[
+            {
+              itemId: task.itemId ?? "item_1",
+              prompt: task.prompt,
+              sampleAnswer: task.sampleAnswer,
+              minHeight: 120,
+              placeholder: "Write your message here...",
+              hints: task.answerHints,
+            },
+          ]}
+          live={live}
+          numbered={false}
+          yourLabel="Your message"
+          sampleLabel="Model Answer"
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;

@@ -86,8 +86,7 @@ class OpenTextPayload(TaskPayloadBase):
     """Free-writing tasks driven by prompts.
 
     WRITE_OPEN_SENT, WRITE_PARA, WRITE_EMAIL, WRITE_PARAPHRASE,
-    WRITE_WORD_UPGRADE, WRITE_BULLETS_TO_PARA, WRITE_IDEA_PARA, WRITE_SUMMARY,
-    WRITE_ESSAY.
+    WRITE_WORD_UPGRADE, WRITE_BULLETS_TO_PARA, WRITE_IDEA_PARA, WRITE_TIMED.
     """
 
     items: tuple[OpenTextItem, ...] = Field(min_length=1)
@@ -99,13 +98,13 @@ class OpenTextPayload(TaskPayloadBase):
 
 
 class TransformPayload(TaskPayloadBase):
-    """WRITE_SENT_TRANS, WRITE_VOICE_CONV — rewrite a source sentence."""
+    """WRITE_SENT_TRANS — rewrite a source sentence."""
 
     items: tuple[TransformItem, ...] = Field(min_length=1)
 
 
 class ErrorCorrectionPayload(TaskPayloadBase):
-    """WRITE_ERROR_CORR, WRITE_CONCISE, WRITE_REGISTER — fix the sentence."""
+    """WRITE_ERROR_CORR — fix the sentence."""
 
     items: tuple[ErrorCorrectionItem, ...] = Field(min_length=1)
 

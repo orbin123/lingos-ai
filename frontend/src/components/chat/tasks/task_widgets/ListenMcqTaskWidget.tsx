@@ -6,7 +6,7 @@ import type { SessionPreviewState } from "../../teaching/source";
 import type { ListenMcqTask, LiveTaskController } from "../source";
 import {
   ListeningAudioCard,
-  liveNumberRecord,
+  liveMcqAnswerRecord,
   SubmitButton,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
@@ -25,7 +25,7 @@ export function ListenMcqTaskWidget({
   const interactive = Boolean(live) && !live!.submitted && unlocked;
   const showResults = live ? live.submitted : previewState !== "default";
   const answers: Record<string, number> = live
-    ? liveNumberRecord(live.answers)
+    ? liveMcqAnswerRecord(live.answers)
     : previewState === "default"
       ? {}
       : task.answers[previewState];
@@ -36,7 +36,13 @@ export function ListenMcqTaskWidget({
     live?.setAnswers({ ...live.answers, [itemId]: optionIndex });
   };
   const submitAnswers = () => {
+    const flatAnswers = Object.fromEntries(
+      task.items
+        .filter((item) => answers[item.itemId] !== undefined)
+        .map((item) => [item.itemId, answers[item.itemId]]),
+    );
     live?.onSubmit({
+      ...flatAnswers,
       inner_response: {
         widget: "mcq",
         answers: task.items

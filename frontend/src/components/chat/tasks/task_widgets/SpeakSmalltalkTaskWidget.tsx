@@ -2,7 +2,8 @@
 
 import { Mic2, MessageSquare, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { SpeakSmalltalkTask } from "../source";
+import type { LiveTaskController, SpeakSmalltalkTask } from "../source";
+import { DialogueContextBlock, LiveSpeakingRecorder } from "./LiveSpeakingRecorder";
 import {
   ResultBanner,
   RuleCallout,
@@ -13,10 +14,31 @@ import {
 export function SpeakSmalltalkTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: SpeakSmalltalkTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<MessageSquare size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Speaking Focus">{task.grammarRule}</RuleCallout>
+        <LiveSpeakingRecorder
+          live={live}
+          durationSeconds={task.speakingDurationSeconds}
+          slots={[
+            {
+              id: "prompt_1",
+              prompt: task.prompts?.[0] || "Play your part in this small-talk exchange out loud.",
+              sampleResponse: task.sampleResponses?.[0] || "",
+              context: <DialogueContextBlock turns={task.dialogueContext} />,
+            },
+          ]}
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;

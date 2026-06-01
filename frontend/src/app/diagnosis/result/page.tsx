@@ -1,96 +1,82 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useDiagnosisStore } from "@/store/diagnosisStore";
 import { SKILL_LABEL_FALLBACK } from "@/lib/skill-labels";
+import { LandingNavbar } from "@/components/layout/LandingNavbar";
 
-// Phase 5: shared static fallback for the seven sub-skill labels. Backend
-// ships `display_label` in newer endpoints; prefer that when the payload
-// includes it (the diagnosis result currently does not — keep static fallback).
-const SKILL_LABELS: Record<string, string> = SKILL_LABEL_FALLBACK;
+/* ----------------------------------------------------------------------------
+ * Skill scores are shown raw on their native 0–4 scale — no rescaling.
+ * Bars fill proportionally to SCORE_MAX; colour thresholds are on the 0–4 scale.
+ * -------------------------------------------------------------------------- */
+const SCORE_MAX = 4;
 
-// Diagnosis scores are capped at 4 (out of a real 0-10 scale).
-// Multiply by 2.5 to display on 0-10 scale.
-function toDisplayScore(diagnosisScore: number): number {
-  return parseFloat((diagnosisScore * 2.5).toFixed(1));
-}
+const stateOf = (s: number) => (s < 2 ? "red" : s < 3 ? "amber" : "green");
+const labelOf = (s: number) =>
+  s < 2 ? "Critical Focus" : s < 3 ? "Developing" : "Strong Foundation";
 
-function displayScoreColor(displayScore: number): string {
-  if (displayScore >= 8) return "bg-emerald-500";
-  if (displayScore >= 6) return "bg-blue-500";
-  if (displayScore >= 4) return "bg-amber-400";
-  return "bg-red-400";
-}
+const titleCase = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const skillLabel = (name: string) => SKILL_LABEL_FALLBACK[name] ?? titleCase(name);
 
-function displayScoreLabel(displayScore: number): string {
-  if (displayScore >= 8) return "Strong";
-  if (displayScore >= 6) return "Developing";
-  if (displayScore >= 4) return "Needs work";
-  return "Weak";
-}
+/* ------------------------------ Icons -------------------------------------- */
+const I = {
+  warn: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <path d="M8 1.5L15 14H1L8 1.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M8 6.5v3M8 11.5v.01" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  ),
+  star: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+      <path d="M8 1.5l1.9 4.1 4.5.5-3.3 3 .9 4.4L8 11.4l-4 2.1.9-4.4-3.3-3 4.5-.5L8 1.5z" />
+    </svg>
+  ),
+  target: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="8" cy="8" r="1" fill="currentColor" />
+    </svg>
+  ),
+  level: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <path d="M2 13h2v-4H2v4zm5 0h2V5H7v8zm5 0h2V8h-2v5z" fill="currentColor" />
+    </svg>
+  ),
+  arrow: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  mic: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+      <rect x="6" y="2" width="4" height="8" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5v2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
+};
 
-function paceLabel(wordsPerMinute: number): string {
-  if (wordsPerMinute < 100) return "Measured";
-  if (wordsPerMinute <= 160) return "On target";
-  return "Fast";
-}
-
-function describeMismatch(mismatch: {
-  issue: "substitution" | "omission" | "insertion";
-  reference_word: string | null;
-  transcript_word: string | null;
-}): string {
-  if (mismatch.issue === "omission" && mismatch.reference_word) {
-    return `Missed "${mismatch.reference_word}"`;
-  }
-  if (mismatch.issue === "insertion" && mismatch.transcript_word) {
-    return `Added "${mismatch.transcript_word}"`;
-  }
-  if (mismatch.reference_word && mismatch.transcript_word) {
-    return `Expected "${mismatch.reference_word}", heard "${mismatch.transcript_word}"`;
-  }
-  return "Minor word mismatch";
-}
-
-function Reveal({
-  children,
-  delay = 0,
-  className = "",
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  className?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          entry.target.classList.remove("opacity-40", "blur-[4px]");
-          entry.target.classList.add("opacity-100", "blur-none");
-          observer.unobserve(entry.target);
-        }
-      },
-      { threshold: 0.1, rootMargin: "0px 0px -50px 0px" }
-    );
-    
-    if (ref.current) {
-      observer.observe(ref.current);
-    }
-    
-    return () => observer.disconnect();
-  }, []);
+function Dial({ score, label, desc }: { score: number; label: string; desc: string }) {
+  const r = 32;
+  const c = 2 * Math.PI * r;
+  const offset = c - (score / 100) * c;
+  const color = score >= 80 ? "#10b981" : score >= 60 ? "#f59e0b" : "#ef4444";
 
   return (
-    <div
-      ref={ref}
-      className={`opacity-40 blur-[4px] transition-all duration-[600ms] ease-out ${className}`}
-      style={{ transitionDelay: `${delay}ms` }}
-    >
-      {children}
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
+      <div style={{ position: "relative", width: "70px", height: "70px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <svg width="70" height="70" style={{ transform: "rotate(-90deg)", position: "absolute", inset: 0 }}>
+          <circle cx="35" cy="35" r={r} fill="transparent" stroke="rgba(255,255,255,0.15)" strokeWidth="5" />
+          <circle cx="35" cy="35" r={r} fill="transparent" stroke={color} strokeWidth="5" strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s ease-out" }} />
+        </svg>
+        <span style={{ fontSize: "16px", fontWeight: 800, position: "relative", zIndex: 1 }}>{score}<span style={{ fontSize: "11px", opacity: 0.7 }}>%</span></span>
+      </div>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: "12px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", opacity: 0.9 }}>{label}</div>
+        <div style={{ fontSize: "11px", opacity: 0.6, marginTop: "3px" }}>{desc}</div>
+      </div>
     </div>
   );
 }
@@ -106,278 +92,303 @@ export default function DiagnosisResultPage() {
 
   if (!result) return null;
 
-  const { skill_scores, weakest_skills, feedback, read_aloud_analysis } = result;
+  const { skill_scores, feedback, read_aloud_analysis, goal } = result;
+  const skills = Object.entries(skill_scores);
+  const ra = read_aloud_analysis ?? null;
 
   const continueToDashboard = () => {
-    // NOW we invalidate /me — after the user has seen the result.
+    // Invalidate /me and the freshly-seeded skill scores only after the user
+    // has seen the result, so the dashboard renders them on arrival.
     queryClient.invalidateQueries({ queryKey: ["me"] });
+    queryClient.invalidateQueries({ queryKey: ["progress", "scores"] });
     clear();
     router.push("/dashboard");
   };
 
   return (
     <main
-      className="relative min-h-screen w-full bg-gradient-to-b from-[#dbeafe] to-[#eff6ff] pb-24"
+      className="relative min-h-screen w-full bg-gradient-to-b from-[#dbeafe] to-[#eff6ff]"
       style={{ fontFamily: "'Plus Jakarta Sans', sans-serif" }}
     >
       <link
         rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Source+Serif+4:ital@1&display=swap"
       />
-      
-      <style>{`
-        @keyframes slideDownFade {
-          from { opacity: 0; transform: translateY(-8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-slide-down-fade {
-          animation: slideDownFade 400ms ease-out forwards;
-        }
-        
-        @keyframes subtlePulse {
-          0% { transform: scale(1); box-shadow: 0 4px 18px rgba(10,15,31,0.25); }
-          50% { transform: scale(1.02); box-shadow: 0 8px 24px rgba(10,15,31,0.35); }
-          100% { transform: scale(1); box-shadow: 0 4px 18px rgba(10,15,31,0.25); }
-        }
-        .animate-subtle-pulse {
-          animation: subtlePulse 2s ease-in-out 2;
-        }
-      `}</style>
-
-      {/* Dot pattern */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
         style={{
-          backgroundImage:
-            "radial-gradient(circle, rgba(37,99,235,0.10) 1px, transparent 1px)",
+          backgroundImage: "radial-gradient(circle, rgba(37,99,235,0.10) 1px, transparent 1px)",
           backgroundSize: "22px 22px",
         }}
       />
 
-      <section className="relative z-10 mx-auto w-full max-w-5xl px-4 py-12 sm:px-6">
-        {/* Header */}
-        <div className="mb-12 text-center animate-slide-down-fade opacity-0">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-3 py-1 text-[12.5px] font-semibold text-blue-800 shadow-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
-            Diagnosis complete
-          </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-[#0a1f44] sm:text-[36px]">
-            Your starting profile
-          </h1>
-          <p className="mt-3 text-[15.5px] text-slate-600">
-            Here is an honest picture of where you are right now.
-          </p>
-        </div>
+      <LandingNavbar variant="minimal" />
 
-        <div className="flex flex-col gap-8 md:flex-row">
-          {/* Left Column (40%) - Sticky */}
-          <div className="flex-shrink-0 md:w-[40%]">
-            <div className="sticky top-8 space-y-6">
-              <Reveal>
-                <div className="rounded-3xl border border-white/90 bg-white/90 px-6 py-7 shadow-[0_8px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-                  <div className="flex items-center gap-3">
-                    <span className="rounded-full bg-blue-600 px-4 py-1.5 text-[13px] font-bold text-white shadow-sm">
-                      {feedback.estimated_level_label}
-                    </span>
-                  </div>
-                  <p className="mt-5 text-[15px] leading-relaxed text-[#0a1f44]">
-                    {feedback.summary}
-                  </p>
-                </div>
-              </Reveal>
-
-              <Reveal delay={150}>
-                <div className="rounded-3xl border border-blue-100 bg-blue-50/80 px-6 py-6 shadow-[0_4px_16px_rgba(37,99,235,0.08)] backdrop-blur-sm">
-                  <p className="text-[15px] font-semibold leading-relaxed text-blue-900">
-                    {feedback.motivation}
-                  </p>
-                  <p className="mt-3 text-[13.5px] leading-relaxed text-blue-800">
-                    <span className="font-semibold">First week focus: </span>
-                    {feedback.first_week_focus}
-                  </p>
-                </div>
-              </Reveal>
-            </div>
-          </div>
-
-          {/* Right Column (60%) - Scrollable content */}
-          <div className="space-y-8 md:w-[60%]">
-            {/* Skill scores */}
-            <Reveal>
-              <div className="rounded-3xl border border-white/90 bg-white/90 px-6 py-7 shadow-[0_8px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-                <h2 className="mb-6 text-[13px] font-bold uppercase tracking-widest text-slate-500">
-                  Detailed Skill Scores
-                </h2>
-                <ul className="space-y-10">
-                  {Object.entries(skill_scores)
-                    .sort((a, b) => a[1] - b[1])
-                    .map(([key, score]) => {
-                      const displayScore = toDisplayScore(score);
-                      const isWeak = weakest_skills.includes(key);
-                      return (
-                        <li key={key} className="relative">
-                          <div className="mb-2 flex items-center justify-between text-[13.5px]">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-[#0a1f44]">
-                                {SKILL_LABELS[key] ?? key}
-                              </span>
-                              {isWeak && (
-                                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 border border-amber-100">
-                                  Focus area
-                                </span>
-                              )}
-                            </div>
-                            <span className="font-medium text-slate-500">
-                              {displayScore.toFixed(1)} / 10 &middot; {displayScoreLabel(displayScore)}
-                            </span>
-                          </div>
-                          
-                          <div className="relative mt-2 h-2 w-full rounded-full bg-slate-100">
-                            {/* The filled bar */}
-                            <div
-                              className={`absolute left-0 top-0 h-full rounded-full transition-all duration-[1000ms] ease-out ${displayScoreColor(displayScore)}`}
-                              style={{ width: `${(displayScore / 10) * 100}%` }}
-                            />
-                            
-
-                          </div>
-                        </li>
-                      );
-                    })}
-                </ul>
+      <section className="relative z-10 mx-auto w-full max-w-[1120px] px-4 pb-20 pt-[68px] sm:px-6">
+        <div className="rounded-3xl border border-white/90 bg-white/90 shadow-[0_8px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl overflow-hidden text-[#0a1f44]">
+          {/* ZONE 1 — HERO */}
+          <section className="hero">
+            <div className="hero-left fade-in d1">
+              <div className="eyebrow">
+                <span className="eyebrow-dot"></span>Your diagnosis is ready
               </div>
-            </Reveal>
+              <h1 className="h1">
+                Your English<br />
+                <span className="grad">Snapshot</span>
+              </h1>
+              <p className="hero-summary">{feedback.summary}</p>
+              <div className="hero-meta">
+                <span>
+                  <b>4</b> exercises analysed
+                </span>
+                <span>·</span>
+                <span>
+                  <b>7</b> skills evaluated
+                </span>
+                <span>·</span>
+                <span>
+                  Personalized for <b>{titleCase(goal)}</b>
+                </span>
+              </div>
+            </div>
+          </section>
 
-            {read_aloud_analysis && (
-              <Reveal delay={100}>
-                <div className="rounded-3xl border border-white/90 bg-white/90 px-6 py-7 shadow-[0_8px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-                  <h2 className="mb-6 text-[13px] font-bold uppercase tracking-widest text-slate-500">
-                    Read-Aloud Snapshot
-                  </h2>
-
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
-                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                        Transcript Match
-                      </p>
-                      <p className="mt-2 text-2xl font-extrabold text-[#0a1f44]">
-                        {Math.round(read_aloud_analysis.transcript_similarity * 100)}%
-                      </p>
-                      <p className="mt-1 text-[12.5px] text-slate-500">
-                        Word accuracy {Math.round(read_aloud_analysis.word_accuracy * 100)}%
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
-                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                        Reading Pace
-                      </p>
-                      <p className="mt-2 text-2xl font-extrabold text-[#0a1f44]">
-                        {read_aloud_analysis.words_per_minute.toFixed(0)} WPM
-                      </p>
-                      <p className="mt-1 text-[12.5px] text-slate-500">
-                        {paceLabel(read_aloud_analysis.words_per_minute)}
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
-                      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
-                        Pauses
-                      </p>
-                      <p className="mt-2 text-2xl font-extrabold text-[#0a1f44]">
-                        {read_aloud_analysis.long_pause_count}
-                      </p>
-                      <p className="mt-1 text-[12.5px] text-slate-500">
-                        Long pauses, longest {read_aloud_analysis.longest_pause_seconds.toFixed(2)}s
-                      </p>
+          {/* ZONE 2 — SKILL PROFILE */}
+          <section className="zone2 fade-in d2">
+            <div className="flex flex-col justify-center items-center w-full">
+              <div className="stat-grid">
+                <div className="stat red">
+                  <div>
+                    <div className="stat-head">
+                      <span className="stat-ico">{I.warn}</span> Biggest weakness
                     </div>
                   </div>
+                  <div>
+                    <div className="stat-value">{skillLabel(feedback.biggest_weakness.skill_name)}</div>
+                    <div className="stat-sub">{feedback.biggest_weakness.description}</div>
+                  </div>
+                </div>
+                <div className="stat green">
+                  <div>
+                    <div className="stat-head">
+                      <span className="stat-ico">{I.star}</span> Strongest skill
+                    </div>
+                  </div>
+                  <div>
+                    <div className="stat-value">{skillLabel(feedback.strongest_skill.skill_name)}</div>
+                    <div className="stat-sub">{feedback.strongest_skill.description}</div>
+                  </div>
+                </div>
+                <div className="stat blue">
+                  <div>
+                    <div className="stat-head">
+                      <span className="stat-ico">{I.target}</span> First focus
+                    </div>
+                  </div>
+                  <div>
+                    <div className="stat-value">{feedback.first_focus.title}</div>
+                    <div className="stat-sub">{feedback.first_focus.description}</div>
+                  </div>
+                </div>
+                <div className="stat amber">
+                  <div>
+                    <div className="stat-head">
+                      <span className="stat-ico">{I.level}</span> Level
+                    </div>
+                  </div>
+                  <div>
+                    <div className="stat-value">{feedback.estimated_level_label}</div>
+                    <div className="stat-sub">{feedback.level_description}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div className="zone-title">Your skill profile</div>
+              <div className="zone-sub">Where you stand across the seven core communication skills.</div>
+              <div className="skill-list">
+                {skills.map(([name, score]) => {
+                  const s = stateOf(score);
+                  const lbl = labelOf(score);
+                  return (
+                    <div className="skill-row" key={name}>
+                      <span className="skill-name">{skillLabel(name)}</span>
+                      <div className="skill-bar">
+                        <div
+                          className={`skill-bar-fill bar-${s}`}
+                          style={{ width: `${Math.min(100, (score / SCORE_MAX) * 100)}%` }}
+                        />
+                      </div>
+                      <span className={`skill-tag tag-${s}`}>{lbl}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="legend">
+                <span className="legend-item">
+                  <span className="legend-dot" style={{ background: "#ef4444" }}></span>Critical focus
+                </span>
+                <span className="legend-item">
+                  <span className="legend-dot" style={{ background: "#f59e0b" }}></span>Developing
+                </span>
+                <span className="legend-item">
+                  <span className="legend-dot" style={{ background: "#22c55e" }}></span>Strong foundation
+                </span>
+              </div>
+            </div>
+          </section>
 
-                  {read_aloud_analysis.mismatches.length > 0 && (
-                    <div className="mt-6">
-                      <p className="text-[12px] font-bold uppercase tracking-widest text-slate-400">
-                        Top Word Mismatches
-                      </p>
-                      <ul className="mt-3 space-y-2">
-                        {read_aloud_analysis.mismatches.slice(0, 5).map((mismatch, index) => (
-                          <li
-                            key={`${mismatch.issue}-${mismatch.reference_index ?? "x"}-${mismatch.transcript_index ?? index}`}
-                            className="rounded-xl border border-amber-100 bg-amber-50/60 px-4 py-3 text-[13.5px] text-[#0a1f44]"
-                          >
-                            {describeMismatch(mismatch)}
-                          </li>
-                        ))}
-                      </ul>
+          {/* ZONE 3 — SPEAKING */}
+          {ra && (
+            <section className="zone3 fade-in d3" style={{ gridTemplateColumns: "1fr", maxWidth: "100%", margin: "0 auto" }}>
+              <div>
+                <div className="zone-title">Azure Speech Analysis</div>
+                <div className="zone-sub">Detailed read-aloud evaluation powered by Azure AI.</div>
+                <div className="speaking-card" style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                  <div className="speak-head">
+                    <span className="speak-title">
+                      {I.mic} &nbsp;Read-Aloud Scorecard
+                    </span>
+                    <span className="speak-pill">Azure AI</span>
+                  </div>
+
+                  <div style={{ display: "flex", justifyItems: "center", justifyContent: "space-around", flexWrap: "wrap", gap: "16px", padding: "10px 0" }}>
+                    <Dial score={Math.round(ra.overall)} label="Overall" desc="Read-aloud score" />
+                    <Dial score={Math.round(ra.accuracy)} label="Accuracy" desc="Phoneme precision" />
+                    <Dial score={Math.round(ra.fluency)} label="Fluency" desc="Pacing and pauses" />
+                    <Dial score={Math.round(ra.completeness)} label="Completeness" desc="Words spoken" />
+                    <Dial score={Math.round(ra.prosody)} label="Prosody" desc="Stress and rhythm" />
+                  </div>
+
+                  {ra.words_to_improve.length > 0 && (
+                    <div className="words-row" style={{ marginTop: "0", paddingTop: "16px", borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+                      <span className="word-label">Words to improve</span>
+                      {ra.words_to_improve.map((w) => (
+                        <span key={w} className="word-chip">
+                          &ldquo;{w}&rdquo;
+                        </span>
+                      ))}
                     </div>
                   )}
                 </div>
-              </Reveal>
-            )}
-
-            {/* Weak skill explanations */}
-            {feedback.weak_skill_explanations.length > 0 && (
-              <div className="space-y-4">
-                <Reveal>
-                  <h2 className="ml-2 mt-4 text-[13px] font-bold uppercase tracking-widest text-slate-500">
-                    We will focus on
-                  </h2>
-                </Reveal>
-                
-                {feedback.weak_skill_explanations.map((exp, index) => (
-                  <Reveal key={exp.skill_name} delay={index * 100}>
-                    <div className="rounded-2xl border border-white/90 border-l-[4px] border-l-amber-400 bg-white/90 p-6 shadow-[0_8px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-                      <div className="mb-4">
-                        <span className="inline-block rounded-full bg-amber-50 px-3 py-1 text-[13px] font-bold text-amber-800">
-                          {SKILL_LABELS[exp.skill_name] ?? exp.skill_name}
-                        </span>
-                      </div>
-                      <div className="space-y-4">
-                        <div>
-                          <p className="text-[12px] font-bold uppercase tracking-wider text-slate-400">
-                            What it is
-                          </p>
-                          <p className="mt-1 text-[14.5px] leading-relaxed text-[#0a1f44]">
-                            {exp.what_it_means}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[12px] font-bold uppercase tracking-wider text-slate-400">
-                            Why it matters
-                          </p>
-                          <p className="mt-1 text-[14.5px] leading-relaxed text-[#0a1f44]">
-                            {exp.why_it_matters}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-[12px] font-bold uppercase tracking-wider text-slate-400">
-                            What you will practice
-                          </p>
-                          <p className="mt-1 text-[14.5px] leading-relaxed text-slate-600">
-                            {exp.what_to_expect}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </Reveal>
-                ))}
               </div>
-            )}
+            </section>
+          )}
 
-            {/* CTA */}
-            <Reveal delay={200}>
-              <div className="pt-6">
-                <button
-                  onClick={continueToDashboard}
-                  className="animate-subtle-pulse w-full rounded-full bg-[#0a0f1f] py-4 text-[16px] font-bold text-white shadow-[0_4px_18px_rgba(10,15,31,0.25)] transition-all hover:scale-[1.01] active:scale-[0.99]"
-                >
-                  Start my journey →
+          {/* ZONE 4 — CTA */}
+          <section className="zone4 fade-in d4">
+            <div className="cta-card">
+              <div className="cta-content">
+                <div className="cta-eyebrow">Ready when you are</div>
+                <div className="cta-title">Start your personalized journey</div>
+                <div className="cta-sub">30 minutes a day. Adapted lessons. Real progress in week one.</div>
+              </div>
+              <div className="cta-action">
+                <button className="cta-btn" onClick={continueToDashboard}>
+                  Start my journey {I.arrow}
                 </button>
+                <div className="cta-foot">
+                  <div className="avatar-stack">
+                    <div style={{ background: "#fca5a5" }}></div>
+                    <div style={{ background: "#fcd34d" }}></div>
+                    <div style={{ background: "#86efac" }}></div>
+                  </div>
+                  <span>Joining 12,400 learners this week</span>
+                </div>
               </div>
-            </Reveal>
-          </div>
+            </div>
+          </section>
         </div>
       </section>
+
+      <style dangerouslySetInnerHTML={{ __html: `
+        .eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px; background: white; border: 1px solid #dbeafe; font-size: 12px; font-weight: 600; color: #1e40af; box-shadow: 0 1px 3px rgba(15,23,42,0.04); }
+        .eyebrow-dot { width: 6px; height: 6px; border-radius: 50%; background: #2563eb; animation: pulseDot 2s infinite; }
+        @keyframes pulseDot { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: 0.6; } }
+
+        /* ZONE 1 — Hero */
+        .hero { display: grid; grid-template-columns: 1.15fr 1fr; gap: 22px; padding: 28px 32px; }
+        .hero-left .h1 { font-size: 36px; font-weight: 800; letter-spacing: -0.025em; color: #0a1f44; line-height: 1.05; margin: 12px 0 14px; }
+        .hero-left .h1 .grad { background: linear-gradient(90deg, #2563eb 0%, #6366f1 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .hero-summary { font-size: 15px; line-height: 1.55; color: #334155; max-width: 460px; }
+        .hero-meta { display: flex; gap: 16px; margin-top: 18px; font-size: 12.5px; color: #64748b; }
+        .hero-meta b { color: #0a1f44; font-weight: 600; }
+
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; width: 100%; margin: 0 auto; }
+        .stat { background: white; border: 1px solid #eef2f7; border-radius: 20px; padding: 18px 16px; box-shadow: 0 4px 16px rgba(15,23,42,0.04); display: flex; flex-direction: column; justify-content: space-between; min-height: 165px; position: relative; overflow: hidden; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .stat:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(15,23,42,0.08); }
+        .stat-head { display: flex; align-items: center; gap: 8px; font-size: 10.5px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+        .stat-ico { width: 24px; height: 24px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .stat-value { font-size: 20px; font-weight: 800; color: #0a1f44; letter-spacing: -0.01em; line-height: 1.15; margin-bottom: 4px; }
+        .stat-sub { font-size: 13px; color: #64748b; line-height: 1.45; opacity: 0.75; }
+        .stat.red { background: linear-gradient(180deg, #fff5f5 0%, white 100%); border-color: #fecaca; }
+        .stat.red .stat-ico { background: #fee2e2; color: #dc2626; }
+        .stat.green { background: linear-gradient(180deg, #f0fdf4 0%, white 100%); border-color: #bbf7d0; }
+        .stat.green .stat-ico { background: #dcfce7; color: #16a34a; }
+        .stat.blue { background: linear-gradient(180deg, #eff6ff 0%, white 100%); border-color: #bfdbfe; }
+        .stat.blue .stat-ico { background: #dbeafe; color: #2563eb; }
+        .stat.amber { background: linear-gradient(180deg, #fffbeb 0%, white 100%); border-color: #fde68a; }
+        .stat.amber .stat-ico { background: #fef3c7; color: #d97706; }
+
+        /* ZONE 2 — Skill Profile */
+        .zone2 { display: grid; grid-template-columns: 1.05fr 1fr; gap: 22px; padding: 22px 32px; border-top: 1px solid rgba(226,232,240,0.7); }
+        .skill-list { display: flex; flex-direction: column; gap: 8px; }
+        .skill-row { display: grid; grid-template-columns: 105px 1fr 120px; align-items: center; gap: 12px; padding: 6px 0; }
+        .skill-name { font-size: 13.5px; font-weight: 600; color: #0a1f44; text-transform: capitalize; }
+        .skill-bar { position: relative; height: 8px; background: #eef2f7; border-radius: 999px; overflow: hidden; }
+        .skill-bar-fill { position: absolute; top: 0; left: 0; height: 100%; border-radius: 999px; transition: width 0.9s cubic-bezier(.16,1,.3,1); }
+        .skill-tag { font-size: 11px; font-weight: 700; text-align: right; letter-spacing: 0.02em; text-transform: uppercase; }
+        .tag-red { color: #dc2626; } .bar-red { background: linear-gradient(90deg, #f87171 0%, #ef4444 100%); }
+        .tag-amber { color: #d97706; } .bar-amber { background: linear-gradient(90deg, #fbbf24 0%, #f59e0b 100%); }
+        .tag-green { color: #16a34a; } .bar-green { background: linear-gradient(90deg, #4ade80 0%, #22c55e 100%); }
+
+        .zone-title { font-size: 18px; font-weight: 700; letter-spacing: -0.015em; color: #0a1f44; margin-bottom: 4px; }
+        .zone-sub { font-size: 12.5px; color: #64748b; margin-bottom: 14px; }
+        .legend { display: flex; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: #475569; }
+        .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+        /* ZONE 3 — Speaking */
+        .zone3 { display: grid; gap: 22px; padding: 22px 32px; border-top: 1px solid rgba(226,232,240,0.7); }
+        .speaking-card { background: linear-gradient(160deg, #0a0f1f 0%, #1e3a8a 100%); border-radius: 18px; padding: 18px; color: white; box-shadow: 0 10px 30px rgba(10,15,31,0.18); position: relative; overflow: hidden; }
+        .speaking-card::before { content: ""; position: absolute; top: -40px; right: -40px; width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle, rgba(96,165,250,0.3) 0%, transparent 70%); }
+        .speak-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; position: relative; }
+        .speak-title { font-size: 13px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; opacity: 0.85; display: flex; align-items: center; gap: 6px; }
+        .speak-pill { font-size: 10.5px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,0.15); color: #bfdbfe; }
+        .words-row { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; position: relative; }
+        .word-chip { font-size: 11.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: rgba(248,113,113,0.18); color: #fca5a5; border: 1px solid rgba(248,113,113,0.25); font-family: 'Source Serif 4', serif; font-style: italic; }
+        .word-label { font-size: 10.5px; font-weight: 700; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; align-self: center; }
+
+        /* ZONE 4 — CTA */
+        .zone4 { padding: 40px 32px 50px; border-top: 1px solid rgba(226,232,240,0.7); display: flex; justify-content: center; }
+        .cta-card { background: linear-gradient(135deg, #2563eb 0%, #1e40af 50%, #4338ca 100%); border-radius: 24px; padding: 44px 50px; color: white; box-shadow: 0 14px 40px rgba(37,99,235,0.25); position: relative; overflow: hidden; width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 40px; }
+        .cta-card::before { content: ""; position: absolute; inset: 0; background: radial-gradient(100% 100% at 100% 0%, rgba(255,255,255,0.15) 0%, transparent 60%); pointer-events: none; }
+        .cta-content { flex: 1; position: relative; z-index: 1; }
+        .cta-eyebrow { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.8; margin-bottom: 8px; }
+        .cta-title { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 12px; }
+        .cta-sub { font-size: 15px; line-height: 1.5; opacity: 0.85; max-width: 440px; }
+        .cta-action { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 14px; min-width: 280px; }
+        .cta-btn { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: white; color: #0a1f44; font-size: 16px; font-weight: 700; border: none; padding: 16px 24px; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,0.15); transition: transform 0.15s; cursor: pointer; }
+        .cta-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.2); }
+        .cta-foot { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px; opacity: 0.85; }
+        .avatar-stack { display: flex; }
+        .avatar-stack div { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #1e40af; margin-left: -8px; }
+        .avatar-stack div:first-child { margin-left: 0; }
+
+        @media (max-width: 960px) {
+          .hero, .zone2 { grid-template-columns: 1fr; }
+          .cta-card { flex-direction: column; text-align: center; padding: 36px 24px; gap: 28px; }
+          .cta-sub { margin: 0 auto; }
+          .cta-action { width: 100%; min-width: 0; }
+        }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeUp 0.5s cubic-bezier(.16,1,.3,1) both; }
+        .fade-in.d1 { animation-delay: 0.05s; }
+        .fade-in.d2 { animation-delay: 0.12s; }
+        .fade-in.d3 { animation-delay: 0.2s; }
+        .fade-in.d4 { animation-delay: 0.3s; }
+      `}} />
     </main>
   );
 }

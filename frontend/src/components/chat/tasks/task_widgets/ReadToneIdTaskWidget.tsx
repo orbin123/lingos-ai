@@ -1,22 +1,42 @@
 "use client";
 
-import { Check, FileText, MessageSquareText, X } from "lucide-react";
+import { FileText, MessageSquareText } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { ReadToneIdTask } from "../source";
-import { ResultBanner, RuleCallout, TaskWidgetFrame } from "./TaskWidgetFrame";
+import type { LiveTaskController, ReadToneIdTask } from "../source";
+import {
+  liveMcqAnswerRecord,
+  McqOptionList,
+  mcqSubmission,
+  ResultBanner,
+  RuleCallout,
+  SubmitButton,
+  TaskWidgetFrame,
+} from "./TaskWidgetFrame";
 
 export function ReadToneIdTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: ReadToneIdTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
-  const isDefault = previewState === "default";
-  const answers = isDefault ? {} : task.answers[previewState];
-  const correctCount = isDefault
-    ? 0
-    : task.items.filter((item) => answers[item.itemId] === item.correctIndex).length;
+  const interactive = Boolean(live) && !live!.submitted;
+  const showResults = live ? live.submitted : previewState !== "default";
+  const answers: Record<string, number> = live
+    ? liveMcqAnswerRecord(live.answers)
+    : previewState === "default"
+      ? {}
+      : task.answers[previewState];
+  const allAnswered = task.items.every((item) => answers[item.itemId] !== undefined);
+  const correctCount = showResults
+    ? task.items.filter((item) => answers[item.itemId] === item.correctIndex).length
+    : 0;
+
+  const pick = (itemId: string, optionIndex: number) => {
+    live?.setAnswers({ ...live.answers, [itemId]: optionIndex });
+  };
 
   return (
     <TaskWidgetFrame task={task} icon={<MessageSquareText size={18} strokeWidth={2.5} />}>
@@ -27,7 +47,7 @@ export function ReadToneIdTaskWidget({
         Read each message and choose the tone that best matches the wording.
       </div>
 
-      {!isDefault && (
+      {showResults && !live?.submitted && (
         <ResultBanner
           total={task.items.length}
           correct={correctCount}
@@ -35,16 +55,14 @@ export function ReadToneIdTaskWidget({
         />
       )}
 
-      {task.items.map((item, index) => {
-        const selected = answers[item.itemId];
+      {task.items.map((item, index) => (
+        <div className="tw-card" key={item.itemId}>
+          <div className="tw-q-number-row" style={{ marginBottom: 12 }}>
+            <div className="tw-q-number-badge">{index + 1}</div>
+            <div className="tw-q-stem">{item.prompt}</div>
+          </div>
 
-        return (
-          <div className="tw-card" key={item.itemId}>
-            <div className="tw-q-number-row" style={{ marginBottom: 12 }}>
-              <div className="tw-q-number-badge">{index + 1}</div>
-              <div className="tw-q-stem">{item.prompt}</div>
-            </div>
-
+          {item.message && (
             <div
               style={{
                 border: "1.5px solid oklch(89% 0.03 245)",
@@ -73,17 +91,19 @@ export function ReadToneIdTaskWidget({
                 <FileText size={15} strokeWidth={2.5} />
               </div>
               <div style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    color: "oklch(45% 0.07 240)",
-                    textTransform: "uppercase",
-                    marginBottom: 5,
-                  }}
-                >
-                  {item.sender}
-                </div>
+                {item.sender && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: "oklch(45% 0.07 240)",
+                      textTransform: "uppercase",
+                      marginBottom: 5,
+                    }}
+                  >
+                    {item.sender}
+                  </div>
+                )}
                 <div
                   style={{
                     fontSize: 15,
@@ -96,33 +116,24 @@ export function ReadToneIdTaskWidget({
                 </div>
               </div>
             </div>
+          )}
 
-            <div className="tw-opt-list">
-              {item.options.map((option, optionIndex) => {
-                const isCorrect = !isDefault && optionIndex === item.correctIndex;
-                const isWrongPick = !isDefault && optionIndex === selected && !isCorrect;
-                const cls = `tw-opt-row${isCorrect ? " correct" : ""}${isWrongPick ? " wrong" : ""}`;
+          <McqOptionList
+            item={item}
+            selected={answers[item.itemId]}
+            interactive={interactive}
+            showResults={showResults}
+            onPick={(optionIndex) => pick(item.itemId, optionIndex)}
+          />
+        </div>
+      ))}
 
-                return (
-                  <div className={cls} key={option} style={{ cursor: "default" }}>
-                    <span className="tw-opt-key">{optionIndex + 1}</span>
-                    <span style={{ flex: 1 }}>{option}</span>
-                    {isCorrect && <Check size={14} strokeWidth={2.8} />}
-                    {isWrongPick && <X size={14} strokeWidth={2.8} />}
-                  </div>
-                );
-              })}
-            </div>
-
-            {!isDefault && (
-              <div className="tw-fb-explain" style={{ marginTop: 12, paddingTop: 10 }}>
-                <strong>{selected === item.correctIndex ? "Correct." : "Why it is wrong."}</strong>{" "}
-                {item.explanation}
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {interactive && (
+        <SubmitButton
+          disabled={!allAnswered}
+          onClick={() => live!.onSubmit(mcqSubmission(task.items, answers))}
+        />
+      )}
     </TaskWidgetFrame>
   );
 }

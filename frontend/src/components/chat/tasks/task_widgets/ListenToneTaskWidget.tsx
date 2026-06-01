@@ -3,10 +3,88 @@
 import { useEffect, useState } from "react";
 import { Check, Pause, Play, Volume2, X } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { ListenToneTask } from "../source";
-import { ResultBanner, RuleCallout, TaskWidgetFrame, roundIconButton } from "./TaskWidgetFrame";
+import type { ListenToneTask, LiveTaskController } from "../source";
+import {
+  ListeningAudioCard,
+  liveMcqAnswerRecord,
+  McqOptionList,
+  mcqSubmission,
+  ResultBanner,
+  RuleCallout,
+  SubmitButton,
+  TaskWidgetFrame,
+  roundIconButton,
+} from "./TaskWidgetFrame";
 
 export function ListenToneTaskWidget({
+  task,
+  previewState,
+  live,
+}: {
+  task: ListenToneTask;
+  previewState: SessionPreviewState;
+  live?: LiveTaskController;
+}) {
+  if (live) {
+    return <LiveListenTone task={task} live={live} />;
+  }
+  return <PreviewListenTone task={task} previewState={previewState} />;
+}
+
+function LiveListenTone({ task, live }: { task: ListenToneTask; live: LiveTaskController }) {
+  const [audioComplete, setAudioComplete] = useState(false);
+  const unlocked = live.submitted || audioComplete;
+  const interactive = !live.submitted && unlocked;
+  const showResults = live.submitted;
+  const answers = liveMcqAnswerRecord(live.answers);
+  const allAnswered = task.items.every((item) => answers[item.itemId] !== undefined);
+
+  const pick = (itemId: string, optionIndex: number) => {
+    live.setAnswers({ ...live.answers, [itemId]: optionIndex });
+  };
+
+  return (
+    <TaskWidgetFrame task={task} icon={<Volume2 size={18} strokeWidth={2.5} />}>
+      <RuleCallout label="Tone focus">{task.grammarRule}</RuleCallout>
+
+      <ListeningAudioCard
+        title={task.audioGenre || "Audio"}
+        script={task.audioScript || ""}
+        audioUrl={task.audioUrl}
+        durationSeconds={task.audioDurationSeconds || 0}
+        completed={unlocked}
+        hint="Listen once to unlock the questions below."
+        onComplete={() => setAudioComplete(true)}
+      />
+
+      {unlocked &&
+        task.items.map((item, index) => (
+          <div className="tw-card" key={item.itemId}>
+            <div className="tw-q-number-row">
+              <div className="tw-q-number-badge">{index + 1}</div>
+              <div className="tw-q-stem">{item.prompt}</div>
+            </div>
+            <McqOptionList
+              item={item}
+              selected={answers[item.itemId]}
+              interactive={interactive}
+              showResults={showResults}
+              onPick={(optionIndex) => pick(item.itemId, optionIndex)}
+            />
+          </div>
+        ))}
+
+      {interactive && (
+        <SubmitButton
+          disabled={!allAnswered}
+          onClick={() => live.onSubmit(mcqSubmission(task.items, answers))}
+        />
+      )}
+    </TaskWidgetFrame>
+  );
+}
+
+function PreviewListenTone({
   task,
   previewState,
 }: {

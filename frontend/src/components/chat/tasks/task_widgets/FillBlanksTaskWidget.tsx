@@ -56,7 +56,7 @@ export function FillBlanksTaskWidget({
   return (
     <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Grammar rule">{task.grammarRule}</RuleCallout>
-      {showResults && (
+      {showResults && !live?.submitted && (
         <ResultBanner
           total={task.items.length}
           correct={correctCount}

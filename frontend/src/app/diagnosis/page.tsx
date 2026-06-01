@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useForm, Controller } from "react-hook-form";
+import { LandingNavbar } from "@/components/layout/LandingNavbar";
+import { AudioPlayer } from "@/components/ui/AudioPlayer";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -77,8 +78,11 @@ const DEFAULT_VALUES: DiagnosisFormInput = {
   writing: { response_text: "" },
   read_aloud: {
     audioBlob: undefined as unknown as Blob,
-    transcript: "",
-    duration_seconds: 0,
+    overall_score: 0,
+    accuracy_score: 0,
+    fluency_score: 0,
+    completeness_score: 0,
+    prosody_score: 0,
     words: [],
   },
 };
@@ -372,8 +376,14 @@ function StepWriting({ form }: { form: ReturnType<typeof useForm<DiagnosisFormIn
 /* ── Step 4 — Read Aloud with real microphone recording ────────────────── */
 type RecordState = "idle" | "recording" | "transcribing" | "done" | "error";
 
-function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisFormInput, unknown, DiagnosisInput>> }) {
-  const { setValue, watch } = form;
+function StepReadAloud({
+  form,
+  onScoredChange,
+}: {
+  form: ReturnType<typeof useForm<DiagnosisFormInput, unknown, DiagnosisInput>>;
+  onScoredChange: (scored: boolean) => void;
+}) {
+  const { setValue } = form;
 
   const [recordState, setRecordState] = useState<RecordState>("idle");
   const [elapsed, setElapsed] = useState(0);          // seconds while recording
@@ -384,10 +394,6 @@ function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisForm
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
-
-  // Current form values for transcript (to show confirmation)
-  const transcript = watch("read_aloud.transcript") as string;
-  const audioBlob = watch("read_aloud.audioBlob");
 
   // Clean up object URLs on unmount
   useEffect(() => {
@@ -429,7 +435,6 @@ function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisForm
       stream.getTracks().forEach((t) => t.stop());
 
       const blob = new Blob(chunksRef.current, { type: mimeType });
-      const duration = (Date.now() - startTimeRef.current) / 1000;
 
       // Create a playback URL
       if (audioUrl) URL.revokeObjectURL(audioUrl);
@@ -437,22 +442,32 @@ function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisForm
 
       // Store blob in form (for validation)
       setValue("read_aloud.audioBlob", blob, { shouldValidate: false });
-      setValue("read_aloud.duration_seconds", duration, { shouldValidate: false });
-      setValue("read_aloud.words", [], { shouldValidate: false });
 
-      // Send to Whisper
+      // Score with Azure Speech Pronunciation Assessment
       setRecordState("transcribing");
       try {
-        const result = await diagnosisApi.transcribe(blob);
-        setValue("read_aloud.transcript", result.transcript, { shouldValidate: true });
-        setValue("read_aloud.duration_seconds", result.duration_seconds, { shouldValidate: true });
-        setValue("read_aloud.words", result.words, { shouldValidate: true });
+        const result = await diagnosisApi.scorePronunciation(blob);
+        setValue("read_aloud.overall_score", result.overall_score, { shouldValidate: true });
+        setValue("read_aloud.accuracy_score", result.accuracy_score, { shouldValidate: true });
+        setValue("read_aloud.fluency_score", result.fluency_score, { shouldValidate: true });
+        setValue("read_aloud.completeness_score", result.completeness_score, { shouldValidate: true });
+        setValue("read_aloud.prosody_score", result.prosody_score, { shouldValidate: true });
+        setValue(
+          "read_aloud.words",
+          result.words.map((w) => ({
+            word: w.word,
+            accuracy_score: w.accuracy_score,
+            error_type: w.error_type,
+          })),
+          { shouldValidate: true },
+        );
         setValue("read_aloud.audioBlob", blob, { shouldValidate: true });
+        onScoredChange(true);
         setRecordState("done");
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Transcription failed. Please try again.";
-        setValue("read_aloud.words", [], { shouldValidate: false });
+        const msg = err instanceof Error ? err.message : "We couldn't process that recording. Please try again.";
         setTranscribeError(msg);
+        onScoredChange(false);
         setRecordState("error");
       }
     };
@@ -477,10 +492,14 @@ function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisForm
     setRecordState("idle");
     setElapsed(0);
     setTranscribeError(null);
+    onScoredChange(false);
     if (audioUrl) { URL.revokeObjectURL(audioUrl); setAudioUrl(null); }
     setValue("read_aloud.audioBlob", undefined as unknown as Blob, { shouldValidate: false });
-    setValue("read_aloud.transcript", "", { shouldValidate: false });
-    setValue("read_aloud.duration_seconds", 0, { shouldValidate: false });
+    setValue("read_aloud.overall_score", 0, { shouldValidate: false });
+    setValue("read_aloud.accuracy_score", 0, { shouldValidate: false });
+    setValue("read_aloud.fluency_score", 0, { shouldValidate: false });
+    setValue("read_aloud.completeness_score", 0, { shouldValidate: false });
+    setValue("read_aloud.prosody_score", 0, { shouldValidate: false });
     setValue("read_aloud.words", [], { shouldValidate: false });
   };
 
@@ -538,11 +557,11 @@ function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisForm
           </div>
         )}
 
-        {/* transcribing */}
+        {/* saving */}
         {recordState === "transcribing" && (
           <div className="flex flex-col items-center gap-3 py-4">
             <SpinIcon className="h-6 w-6 text-blue-600" />
-            <p className="text-[13.5px] font-medium text-slate-600">Analysing your speech…</p>
+            <p className="text-[13.5px] font-medium text-slate-600">Saving your recording…</p>
           </div>
         )}
 
@@ -553,19 +572,10 @@ function StepReadAloud({ form }: { form: ReturnType<typeof useForm<DiagnosisForm
               <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100">
                 <CheckIcon className="text-emerald-600" />
               </div>
-              Recording complete
+              Audio recorded successfully
             </div>
-            {/* Playback */}
-            {audioUrl && (
-              <audio controls src={audioUrl} className="w-full rounded-lg" aria-label="Your recording" />
-            )}
-            {/* Transcript preview */}
-            {transcript && (
-              <div className="rounded-xl bg-slate-50 px-4 py-3">
-                <p className="mb-1 text-[11px] font-bold uppercase tracking-widest text-slate-400">What we heard</p>
-                <p className="text-[13.5px] leading-relaxed text-[#0a1f44]">{transcript}</p>
-              </div>
-            )}
+            {/* Playback so the learner can confirm the audio loaded */}
+            {audioUrl && <AudioPlayer src={audioUrl} />}
             <button
               type="button"
               onClick={resetRecording}
@@ -620,7 +630,8 @@ export default function DiagnosisPage() {
   const { mutate, isPending, error, reset } = useDiagnosis();
   const serverError = error ? getApiErrorMessage(error) : null;
 
-  const readAloudTranscript = form.watch("read_aloud.transcript") as string;
+  // Set true once Azure pronunciation scoring succeeds for the read-aloud step.
+  const [readAloudScored, setReadAloudScored] = useState(false);
 
   useEffect(() => {
     const node = cardRef.current;
@@ -662,16 +673,9 @@ export default function DiagnosisPage() {
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" />
       <div aria-hidden className="pointer-events-none absolute inset-0" style={{ backgroundImage: "radial-gradient(circle, rgba(37,99,235,0.10) 1px, transparent 1px)", backgroundSize: "22px 22px" }} />
 
-      <header className="relative z-10 flex items-center justify-between px-5 py-5 sm:px-8">
-        <Link href="/" className="group inline-flex items-center gap-2" aria-label="LingosAI home">
-          <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-blue-600 transition-transform group-hover:scale-105">
-            <span className="text-[17px] font-extrabold leading-none text-white">A</span>
-          </div>
-          <span className="text-[17px] font-bold tracking-tight text-[#0a1f44]">LingosAI</span>
-        </Link>
-      </header>
+      <LandingNavbar variant="minimal" />
 
-      <section className="relative z-10 mx-auto w-full max-w-[760px] px-4 pb-20 pt-2 sm:px-6">
+      <section className="relative z-10 mx-auto w-full max-w-[760px] px-4 pb-20 pt-[68px] sm:px-6">
         <div ref={cardRef} className="rounded-3xl border border-white/90 bg-white/90 px-5 py-8 shadow-[0_8px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:px-10 sm:py-10">
           <Stepper current={currentStep} />
           <form onSubmit={onSubmit} noValidate>
@@ -679,7 +683,7 @@ export default function DiagnosisPage() {
               {currentStep === 0 && <StepAboutYou form={form} />}
               {currentStep === 1 && <StepFillBlanks form={form} />}
               {currentStep === 2 && <StepWriting form={form} />}
-              {currentStep === 3 && <StepReadAloud form={form} />}
+              {currentStep === 3 && <StepReadAloud form={form} onScoredChange={setReadAloudScored} />}
             </div>
 
             {serverError && (
@@ -696,7 +700,7 @@ export default function DiagnosisPage() {
               </button>
 
               {isLastStep ? (
-                <button type="submit" disabled={isPending || !readAloudTranscript}
+                <button type="submit" disabled={isPending || !readAloudScored}
                   className="inline-flex items-center gap-2 rounded-full bg-[#0a0f1f] px-6 py-3 text-[14.5px] font-bold text-white shadow-[0_4px_18px_rgba(10,15,31,0.25)] transition-all hover:scale-[1.02] active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60">
                   {isPending ? <><SpinIcon className="text-white" /> Submitting…</> : <>Submit diagnosis <ArrowRightIcon /></>}
                 </button>

@@ -120,38 +120,6 @@ def _validate_teacher_input(**fields) -> None:
         )
 
 
-# Archetypes promoted to the strict schema-boundary path. Output for these is
-# validated against its contract and stamped with the rich widget keys before
-# delivery; everything else stays on the legacy normalize path. On a validation
-# failure the legacy content is delivered unchanged (unless STRICT_CONTRACTS is
-# set), so promoting an archetype can only add enforcement, never break delivery.
-#
-# Layer 2 promotes the full Cycle-1 set: all 34 unique archetypes authored across
-# weeks 1-4. Every payload model has a projection builder (guaranteed by
-# ``test_every_contract_archetype_has_a_task_builder``), and the read-aloud
-# archetypes keep their dedicated pronunciation rendering path on top of the
-# projected eval/feedback merge. ``test_cycle1_day_integrity`` guards that this
-# set stays equal to the archetypes the authored days actually reference.
-CONTRACT_ENABLED_ARCHETYPES: frozenset[str] = frozenset(
-    {
-        # Reading
-        "READ_CLOZE", "READ_COMP_MCQ", "READ_CONTEXT_MCQ", "READ_ERROR_SPOT",
-        "READ_STRUCTURE_ID", "READ_TFNG", "READ_TONE_ID", "READ_WORD_MATCH",
-        # Writing
-        "WRITE_BULLETS_TO_PARA", "WRITE_EMAIL", "WRITE_ERROR_CORR",
-        "WRITE_IDEA_PARA", "WRITE_OPEN_SENT", "WRITE_PARA", "WRITE_PARAPHRASE",
-        "WRITE_SENT_TRANS", "WRITE_TIMED", "WRITE_WORD_UPGRADE",
-        # Listening
-        "LISTEN_CLOZE", "LISTEN_DICTATION", "LISTEN_INFER", "LISTEN_MCQ",
-        "LISTEN_RETELL", "LISTEN_SHADOW", "LISTEN_TONE",
-        # Speaking
-        "SPEAK_DEBATE", "SPEAK_INTERVIEW", "SPEAK_OPINION", "SPEAK_PIC_DESC",
-        "SPEAK_PRESENT", "SPEAK_READ_ALOUD", "SPEAK_ROLEPLAY", "SPEAK_SMALLTALK",
-        "SPEAK_TIMED",
-    }
-)
-
-
 _READY_RESPONSE_PHRASES = (
     "ready", "yes", "yeah", "yep", "sure", "ok", "okay",
     "let's go", "lets go", "i'm ready", "im ready", "go ahead",
@@ -267,6 +235,28 @@ _TEACHING_STREAM_FIRST_CHUNK_TIMEOUT_S = 8.0
 _TEACHING_STREAM_CHUNK_TIMEOUT_S = 20.0
 _FOLLOWUP_STREAM_FIRST_CHUNK_TIMEOUT_S = 8.0
 _FOLLOWUP_STREAM_CHUNK_TIMEOUT_S = 20.0
+
+
+def _deterministic_scorecard_counts(
+    _archetype_id: str,
+    evaluator_notes: str | None,
+) -> tuple[int | None, int | None]:
+    """Extract correct/total counts from deterministic evaluator notes."""
+    notes = evaluator_notes or ""
+    match = re.search(r"(\d+)/(\d+) correct", notes)
+    if match:
+        return int(match.group(1)), int(match.group(2))
+    try:
+        parsed = json.loads(notes)
+    except (json.JSONDecodeError, TypeError):
+        return None, None
+    if not isinstance(parsed, dict):
+        return None, None
+    correct = parsed.get("correct_count")
+    total = parsed.get("total_blanks") or parsed.get("total")
+    if correct is None or total is None:
+        return None, None
+    return int(correct), int(total)
 
 
 class LearningSessionTaskUnavailable(Exception):
@@ -1280,60 +1270,59 @@ class LearningSessionService:
             "sub_skill_breakdown": dict(feedback.sub_skill_breakdown or {}),
         }
 
-        # Schema boundary: for contract-enabled archetypes, validate the
-        # evaluation/feedback against their strict contracts and merge the
-        # validated shape into the wire payloads. Bad output is logged and the
-        # legacy dicts are emitted as-is rather than reaching a widget malformed.
-        if attempt.archetype_id in CONTRACT_ENABLED_ARCHETYPES:
-            try:
-                evaluation_dict.update(
-                    project_evaluation(
-                        attempt.archetype_id,
-                        activity_id=str(attempt.id),
-                        evaluation=EvaluationResult(
-                            raw_score=float(evaluation.raw_score),
-                            rubric_scores=dict(evaluation.rubric_scores or {}),
-                            evaluator_notes=evaluation.evaluator_notes,
+        # Schema boundary: validate every archetype's evaluation/feedback against
+        # its strict contract and merge the validated shape into the wire
+        # payloads. Bad output is logged and the legacy dicts are emitted as-is
+        # rather than reaching a widget malformed (unless STRICT_CONTRACTS is set).
+        try:
+            evaluation_dict.update(
+                project_evaluation(
+                    attempt.archetype_id,
+                    activity_id=str(attempt.id),
+                    evaluation=EvaluationResult(
+                        raw_score=float(evaluation.raw_score),
+                        rubric_scores=dict(evaluation.rubric_scores or {}),
+                        evaluator_notes=evaluation.evaluator_notes,
+                    ),
+                    sub_skill_breakdown=dict(feedback.sub_skill_breakdown or {}),
+                )
+            )
+            feedback_dict.update(
+                project_feedback(
+                    attempt.archetype_id,
+                    activity_id=str(attempt.id),
+                    feedback=FeedbackResult(
+                        score=int(feedback.score),
+                        summary=feedback.summary or "",
+                        did_well=tuple(feedback.did_well or ()),
+                        mistakes=tuple(
+                            MistakeOut(
+                                issue=str(m.get("issue") or ""),
+                                user_wrote=m.get("user_wrote"),
+                                correction=m.get("correction"),
+                                rule=m.get("rule"),
+                                sub_skills_affected=tuple(
+                                    m.get("sub_skills_affected") or ()
+                                ),
+                            )
+                            for m in (feedback.mistakes or [])
+                            if isinstance(m, dict)
                         ),
-                        sub_skill_breakdown=dict(feedback.sub_skill_breakdown or {}),
-                    )
-                )
-                feedback_dict.update(
-                    project_feedback(
-                        attempt.archetype_id,
-                        activity_id=str(attempt.id),
-                        feedback=FeedbackResult(
-                            score=int(feedback.score),
-                            summary=feedback.summary or "",
-                            did_well=tuple(feedback.did_well or ()),
-                            mistakes=tuple(
-                                MistakeOut(
-                                    issue=str(m.get("issue") or ""),
-                                    user_wrote=m.get("user_wrote"),
-                                    correction=m.get("correction"),
-                                    rule=m.get("rule"),
-                                    sub_skills_affected=tuple(
-                                        m.get("sub_skills_affected") or ()
-                                    ),
-                                )
-                                for m in (feedback.mistakes or [])
-                                if isinstance(m, dict)
-                            ),
-                            next_tip=feedback.next_tip,
-                            sub_skill_breakdown=dict(
-                                feedback.sub_skill_breakdown or {}
-                            ),
+                        next_tip=feedback.next_tip,
+                        sub_skill_breakdown=dict(
+                            feedback.sub_skill_breakdown or {}
                         ),
-                    )
+                    ),
                 )
-            except ContractValidationError as exc:
-                if settings.strict_contracts:
-                    raise
-                logger.warning(
-                    "Contract projection failed for eval/feedback attempt id=%s "
-                    "archetype=%s: %s — emitting legacy payloads",
-                    attempt.id, attempt.archetype_id, exc.detail,
-                )
+            )
+        except ContractValidationError as exc:
+            if settings.strict_contracts:
+                raise
+            logger.warning(
+                "Contract projection failed for eval/feedback attempt id=%s "
+                "archetype=%s: %s — emitting legacy payloads",
+                attempt.id, attempt.archetype_id, exc.detail,
+            )
 
         # Check if this is a pronunciation (read-aloud) submission.
         pronunciation_data = None
@@ -1407,8 +1396,12 @@ class LearningSessionService:
             )
         else:
             # ── Normal path: emit generic scorecard + feedback_card ──
+            correct_count, total = _deterministic_scorecard_counts(
+                attempt.archetype_id,
+                evaluation.evaluator_notes,
+            )
             scorecard_payload = {
-                "overall_score": feedback.score,
+                "overall_score": float(evaluation.raw_score),
                 "skill_name": session.skill_name,
                 "topic": session.topic,
                 "rubric_scores": evaluation_dict["rubric_scores"],
@@ -1419,6 +1412,10 @@ class LearningSessionService:
                 "feedback_widget": feedback_widget_key,
                 "_session": session_meta,
             }
+            if correct_count is not None and total is not None:
+                scorecard_payload["correct_count"] = correct_count
+                scorecard_payload["total"] = total
+                scorecard_payload["answered_count"] = total
             yield self._event_orchestrator().evaluation_event(
                 widget="scorecard",
                 evaluation_payload=scorecard_payload,
@@ -1428,6 +1425,7 @@ class LearningSessionService:
 
             feedback_payload = {
                 **feedback_dict,
+                "score": float(evaluation.raw_score),
                 "widget": task_widget,
                 "activity_contract": activity_contract,
                 "task_widget": task_widget,
@@ -1806,7 +1804,7 @@ class LearningSessionService:
         return attempt
 
     def _apply_task_contract(self, attempt: ActivityAttempt) -> None:
-        """Validate + stamp the contract for schema-boundary archetypes.
+        """Validate + stamp the contract for every archetype.
 
         Projects the loose ``task_content`` onto its strict task contract, merges
         the validated fields back, and stamps ``activity_contract`` with the rich
@@ -1821,8 +1819,6 @@ class LearningSessionService:
         audio exists, so listening payloads (``DictationPayload``, ``LISTEN_CLOZE``)
         would fail their ``AudioMixin`` requirement. Keep projection here.
         """
-        if attempt.archetype_id not in CONTRACT_ENABLED_ARCHETYPES:
-            return
         content = dict(attempt.task_content or {})
         try:
             projected = project_task_payload(

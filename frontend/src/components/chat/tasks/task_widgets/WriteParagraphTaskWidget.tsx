@@ -2,21 +2,49 @@
 
 import { FileText, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { WriteParagraphTask } from "../source";
+import type { LiveTaskController, WriteParagraphTask } from "../source";
 import {
+  LiveTextItems,
   ResultBanner,
   RuleCallout,
   StatusDot,
+  TargetWordsRow,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
 export function WriteParagraphTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: WriteParagraphTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Grammar Rule">{task.grammarRule}</RuleCallout>
+        <TargetWordsRow words={task.targetWords} label="Target words to use" />
+        <LiveTextItems
+          items={[
+            {
+              itemId: task.itemId ?? "item_1",
+              prompt: task.prompt,
+              sampleAnswer: task.sampleAnswer,
+              minHeight: 120,
+              placeholder: "Write your paragraph here...",
+              hints: task.answerHints,
+            },
+          ]}
+          live={live}
+          numbered={false}
+          yourLabel="Your paragraph"
+          sampleLabel="Model Answer"
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;

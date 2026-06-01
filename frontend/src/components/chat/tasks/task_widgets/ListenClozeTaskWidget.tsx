@@ -69,7 +69,7 @@ export function ListenClozeTaskWidget({
           ))}
         </div>
       )}
-      {showResults && (
+      {showResults && !live?.submitted && (
         <ResultBanner
           total={task.items.length}
           correct={correctCount}

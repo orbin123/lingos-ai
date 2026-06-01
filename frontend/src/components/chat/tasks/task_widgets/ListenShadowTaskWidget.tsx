@@ -1,17 +1,57 @@
 "use client";
 
 import { Mic2, Volume2 } from "lucide-react";
+import { useState } from "react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { ListenShadowTask } from "../source";
-import { ResultBanner, RuleCallout, TaskWidgetFrame, StatusDot } from "./TaskWidgetFrame";
+import type { ListenShadowTask, LiveTaskController } from "../source";
+import { LivePronunciationRecorder } from "./LivePronunciationRecorder";
+import { ListeningAudioCard, ResultBanner, RuleCallout, TargetWordsRow, TaskWidgetFrame, StatusDot } from "./TaskWidgetFrame";
+
+function LiveListenShadow({ task, live }: { task: ListenShadowTask; live: LiveTaskController }) {
+  const [audioComplete, setAudioComplete] = useState(false);
+  const unlocked = live.submitted || audioComplete;
+  return (
+    <TaskWidgetFrame task={task} icon={<Volume2 size={18} strokeWidth={2.5} />}>
+      <RuleCallout label="Shadowing focus">{task.grammarRule}</RuleCallout>
+      <TargetWordsRow words={task.targetWords} label="Target phrases" />
+      <ListeningAudioCard
+        title={task.audioGenre}
+        script={task.audioScript}
+        audioUrl={task.audioUrl}
+        durationSeconds={task.audioDurationSeconds}
+        completed={unlocked}
+        hint="Listen once, then shadow (repeat) the line aloud."
+        onComplete={() => setAudioComplete(true)}
+      />
+      {unlocked && (
+        <>
+          <div className="tw-passage">
+            <div className="tw-passage-label">Shadow this line</div>
+            {task.textToShadow}
+          </div>
+          <LivePronunciationRecorder
+            live={live}
+            referenceText={task.textToShadow}
+            durationSeconds={task.audioDurationSeconds || 30}
+          />
+        </>
+      )}
+    </TaskWidgetFrame>
+  );
+}
 
 export function ListenShadowTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: ListenShadowTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return <LiveListenShadow task={task} live={live} />;
+  }
   const isDefault = previewState === "default";
   const answer = isDefault ? null : task.answers[previewState][0];
   const correctCount = answer?.isCorrect ? 1 : 0;

@@ -2,21 +2,65 @@
 
 import { FilePenLine, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { SentenceTransformTask } from "../source";
+import type { LiveTaskController, SentenceTransformTask } from "../source";
 import {
+  LiveTextItems,
   ResultBanner,
   RuleCallout,
   StatusDot,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
+function RewriteSourceBox({ sentence }: { sentence: string }) {
+  return (
+    <div
+      style={{
+        background: "oklch(96% 0.025 245)",
+        border: "1.5px solid oklch(88% 0.035 245)",
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 14,
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--tw-primary)", marginBottom: 8 }}>
+        Rewrite this
+      </div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--tw-navy)", lineHeight: 1.5 }}>
+        &ldquo;{sentence}&rdquo;
+      </div>
+    </div>
+  );
+}
+
 export function SentenceTransformTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: SentenceTransformTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<FilePenLine size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Writing focus">{task.grammarRule}</RuleCallout>
+        <LiveTextItems
+          items={task.items.map((item) => ({
+            itemId: item.itemId,
+            sampleAnswer: item.sampleAnswer,
+            minHeight: 82,
+            placeholder: "Rewrite the sentence here...",
+            hints: item.watchHints,
+            context: <RewriteSourceBox sentence={item.sourceSentence} />,
+          }))}
+          live={live}
+          yourLabel="Your sentence"
+          sampleLabel="Model sentence"
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;

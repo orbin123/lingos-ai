@@ -2,16 +2,46 @@
 
 import { Mic2, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { SpeakPresentTask } from "../source";
-import { ResultBanner, RuleCallout, StatusDot, TaskWidgetFrame } from "./TaskWidgetFrame";
+import type { LiveTaskController, SpeakPresentTask } from "../source";
+import { LiveSpeakingRecorder } from "./LiveSpeakingRecorder";
+import { ResultBanner, RuleCallout, StatusDot, TargetWordsRow, TaskWidgetFrame } from "./TaskWidgetFrame";
 
 export function SpeakPresentTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: SpeakPresentTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Speaking focus">{task.grammarRule}</RuleCallout>
+        <TargetWordsRow words={task.targetWords} label="Target speaking cues" />
+        <LiveSpeakingRecorder
+          live={live}
+          durationSeconds={task.speakingDurationSeconds}
+          slots={[
+            {
+              id: "prompt_1",
+              prompt: task.prompts?.[0] || "Give your short presentation using the cues above.",
+              sampleResponse: task.modelPresentation || task.sampleResponses?.[0] || "",
+              context: task.visualPromptDescription ? (
+                <div
+                  className="tw-card"
+                  style={{ background: "oklch(98% 0.01 245)", marginBottom: 12 }}
+                >
+                  {task.visualPromptDescription}
+                </div>
+              ) : undefined,
+            },
+          ]}
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;

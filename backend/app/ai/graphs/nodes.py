@@ -33,8 +33,6 @@ from app.modules.curriculum.repository import (
 from app.modules.sessions.models import DailySession
 from app.modules.sessions.repository import ActivityAttemptRepository
 from app.modules.sessions.task_generator import (
-    build_simple_present_fill_in_blanks_content,
-    is_simple_present_fill_in_blanks_task,
     normalize_fill_in_blanks_payload,
 )
 from app.modules.sessions.widget_mapping import normalize_widget_key
@@ -182,12 +180,6 @@ async def task_delivery_node(state: LearningSessionState) -> dict[str, Any]:
     V2 task generator. The chat layer just relays it as a UI event.
     """
     task_content = dict(state.get("task_content") or {})
-    if is_simple_present_fill_in_blanks_task(task_content):
-        task_content.update(
-            build_simple_present_fill_in_blanks_content(
-                str(task_content.get("topic") or state.get("topic") or "")
-            )
-        )
     task_type = state.get("task_type") or "fill_in_blanks"
     queue = list(state.get("task_queue") or [])
     current_index = int(state.get("current_task_index") or 0)

@@ -1,18 +1,19 @@
 """Diagnosis HTTP routes."""
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.ai.stt import (
-    STTError,
-    STTPayloadTooLarge,
-    STTValidationError,
-    get_default_stt_service,
+from app.ai.pronunciation import (
+    PronunciationError,
+    PronunciationResult,
+    PronunciationValidationError,
+    get_default_pronunciation_service,
 )
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.auth.repository import UserProfileRepository
+from app.modules.diagnosis.diagnosis_agents.evaluators import PASSAGES
 from app.modules.diagnosis.exceptions import (
     DiagnosisAlreadyCompleted,
     DiagnosisInvalidPayload,
@@ -21,17 +22,12 @@ from app.modules.diagnosis.schemas import (
     DiagnosisFeedbackOut,
     DiagnosisSubmitRequest,
     DiagnosisSubmitResponse,
-    TranscribeResponse,
-    WeakSkillExplanationOut,
+    FocusCalloutOut,
+    SkillCalloutOut,
 )
 from app.modules.diagnosis.service import DiagnosisService
 
 router = APIRouter()
-
-# Floor used to satisfy `TranscribeResponse.duration_seconds > 0` if Whisper
-# ever returns 0.0 for very short audio. Real recordings are always > 0.01s,
-# so this clamp only fires on degenerate inputs and keeps us from 500ing.
-_MIN_REPORTED_DURATION_S = 0.01
 
 
 @router.post("/start", status_code=status.HTTP_200_OK)
@@ -55,77 +51,60 @@ def start_diagnosis(
 
 
 @router.post(
-    "/transcribe",
-    response_model=TranscribeResponse,
+    "/pronunciation-score",
+    response_model=PronunciationResult,
     status_code=status.HTTP_200_OK,
 )
-async def transcribe_audio(
-    audio: UploadFile = File(..., description="Audio recording from the read-aloud step"),
+async def score_read_aloud(
+    audio: UploadFile = File(..., description="WAV recording of the read-aloud passage"),
+    passage_id: str = Form(..., description="Canonical passage id, e.g. diag_passage_v1"),
+    language: str = Form(default="en-US"),
     current_user: User = Depends(get_current_user),
-) -> TranscribeResponse:
-    """Transcribe a read-aloud audio recording via the shared STT service.
+) -> PronunciationResult:
+    """Score a read-aloud recording with Azure Speech Pronunciation Assessment.
 
-    The STT service (`app.ai.stt`) handles:
-      - calling OpenAI Whisper with `verbose_json` so duration is real,
-        not estimated from byte size
-      - requesting word timestamps so we can do pacing + mismatch analysis
-      - 25 MB pre-flight size check (raises STTPayloadTooLarge)
-      - hash-based caching — re-uploads of the same recording are free
-      - retries on transient OpenAI failures
+    The frontend records the passage, converts the audio to WAV client-side
+    (Azure does not accept WebM), and posts it here. The canonical reference
+    text is resolved from ``passage_id`` server-side so the client can't tamper
+    with what's being graded. The returned result is included in the main
+    ``/submit`` payload.
 
-    We deliberately do NOT validate `audio.content_type` here. Browser
-    MIME labels are unreliable (some clients send `application/octet-stream`
-    for valid webm), and Whisper detects the format from the file's
-    extension via the multipart filename. Filename is what matters.
-
-    Returns: transcript text + duration in seconds.
     Auth: Bearer token required.
     """
+    reference_text = PASSAGES.get(passage_id)
+    if reference_text is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown passage_id: {passage_id!r}",
+        )
+
     audio_bytes = await audio.read()
     if not audio_bytes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Audio file is empty.",
         )
+    filename = audio.filename or "recording.wav"
 
-    # Whisper sniffs the format from the filename extension, so we always
-    # hand it one. If the upload didn't carry a name, default to .webm —
-    # the format the diagnosis frontend records in via MediaRecorder.
-    filename = audio.filename or "recording.webm"
-
-    service = get_default_stt_service()
+    service = get_default_pronunciation_service()
     try:
-        result = await service.transcribe(
+        result = await service.score(
             audio_bytes=audio_bytes,
             filename=filename,
-            language="en",
-            with_timestamps=True,
+            reference_text=reference_text,
+            language=language,
         )
-    except STTPayloadTooLarge as exc:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=str(exc),
-        ) from exc
-    except STTValidationError as exc:
-        # Empty bytes / bad filename / unsupported format — caller's fault.
+    except PronunciationValidationError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
-    except STTError as exc:
-        # Provider-side failure (timeout, rate limit, 5xx). 502 keeps the
-        # original signal: "upstream is the problem, not your request."
+    except PronunciationError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Transcription failed: {exc}",
+            detail=str(exc),
         ) from exc
-
-    duration = max(result["duration_seconds"], _MIN_REPORTED_DURATION_S)
-    return TranscribeResponse(
-        transcript=result["text"].strip(),
-        duration_seconds=round(duration, 2),
-        words=result["words"] or [],
-    )
+    return result
 
 
 @router.post(
@@ -158,28 +137,27 @@ async def submit_diagnosis(
             detail=str(e),
         )
 
-    weakest = sorted(skill_scores.items(), key=lambda kv: kv[1])[:2]
-    weakest_skill_names = [name for name, _ in weakest]
-
     feedback_out = DiagnosisFeedbackOut(
         estimated_level_label=ai_feedback.estimated_level_label,
+        level_description=ai_feedback.level_description,
         summary=ai_feedback.summary,
-        weak_skill_explanations=[
-            WeakSkillExplanationOut(
-                skill_name=e.skill_name,
-                what_it_means=e.what_it_means,
-                why_it_matters=e.why_it_matters,
-                what_to_expect=e.what_to_expect,
-            )
-            for e in ai_feedback.weak_skill_explanations
-        ],
-        motivation=ai_feedback.motivation,
-        first_week_focus=ai_feedback.first_week_focus,
+        biggest_weakness=SkillCalloutOut(
+            skill_name=ai_feedback.biggest_weakness.skill_name,
+            description=ai_feedback.biggest_weakness.description,
+        ),
+        strongest_skill=SkillCalloutOut(
+            skill_name=ai_feedback.strongest_skill.skill_name,
+            description=ai_feedback.strongest_skill.description,
+        ),
+        first_focus=FocusCalloutOut(
+            title=ai_feedback.first_focus.title,
+            description=ai_feedback.first_focus.description,
+        ),
     )
 
     return DiagnosisSubmitResponse(
         skill_scores=skill_scores,
-        weakest_skills=weakest_skill_names,
+        goal=payload.self_assessment.goal,
         feedback=feedback_out,
         read_aloud_analysis=read_aloud_analysis,
     )

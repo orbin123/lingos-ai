@@ -218,11 +218,15 @@ def _cycle1_archetypes() -> set[str]:
     }
 
 
-def test_contract_enabled_archetypes_match_authored_days() -> None:
-    """Layer 2 drift guard: the strict schema-boundary gate must cover exactly
-    the archetypes the authored Cycle-1 days reference — no more, no less. If a
-    day's archetype changes, this fails until ``CONTRACT_ENABLED_ARCHETYPES`` is
-    updated, so projection enforcement never silently drifts out of sync."""
-    from app.modules.learning_session.service import CONTRACT_ENABLED_ARCHETYPES
-
-    assert set(CONTRACT_ENABLED_ARCHETYPES) == _cycle1_archetypes()
+def test_authored_archetypes_all_have_contracts() -> None:
+    """Drift guard: every archetype the authored Cycle-1 days reference must have
+    a contract in the registry. The migration gate is gone — projection now runs
+    unconditionally for all archetypes — so the invariant is contract coverage,
+    not allowlist membership. Cycle-1 authors the full canonical set of 34."""
+    authored = _cycle1_archetypes()
+    missing = authored - set(ARCHETYPE_CONTRACTS)
+    assert not missing, f"authored archetypes without a contract: {sorted(missing)}"
+    assert authored == set(ARCHETYPE_CONTRACTS), {
+        "authored_but_unregistered": sorted(authored - set(ARCHETYPE_CONTRACTS)),
+        "registered_but_unauthored": sorted(set(ARCHETYPE_CONTRACTS) - authored),
+    }

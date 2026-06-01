@@ -2,21 +2,83 @@
 
 import { FilePenLine, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { WriteWordUpgradeTask } from "../source";
+import type { LiveTaskController, WriteWordUpgradeTask } from "../source";
 import {
+  LiveTextItems,
   ResultBanner,
   RuleCallout,
   StatusDot,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
+function UpgradeSourceBox({ sourceSentence, targetUpgradeWord }: { sourceSentence: string; targetUpgradeWord: string }) {
+  return (
+    <div
+      style={{
+        background: "linear-gradient(135deg, oklch(98% 0.01 245) 0%, oklch(96% 0.02 245) 100%)",
+        border: "1.5px solid oklch(90% 0.02 245)",
+        borderRadius: 14,
+        padding: "16px 18px",
+        marginBottom: 14,
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+      }}
+    >
+      <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: "#0070C4" }}>
+        Original (Weak vocabulary)
+      </div>
+      <div style={{ fontSize: 15.5, fontWeight: 700, color: "var(--tw-navy)", lineHeight: 1.5 }}>
+        &ldquo;{sourceSentence}&rdquo;
+      </div>
+      {targetUpgradeWord && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 12, fontWeight: 700, color: "oklch(45% 0.07 240)" }}>
+          <span>Upgrade to:</span>
+          <span style={{ background: "oklch(91% 0.04 155)", color: "oklch(35% 0.16 155)", padding: "3px 9px", borderRadius: 999, fontWeight: 800, textTransform: "lowercase" }}>
+            {targetUpgradeWord}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function WriteWordUpgradeTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: WriteWordUpgradeTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<FilePenLine size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Writing focus">{task.grammarRule}</RuleCallout>
+        <LiveTextItems
+          items={task.items.map((item) => ({
+            itemId: item.itemId,
+            sampleAnswer: item.sampleAnswer,
+            minHeight: 82,
+            placeholder: item.targetUpgradeWord
+              ? `Rewrite using "${item.targetUpgradeWord}"...`
+              : "Rewrite the sentence...",
+            hints: item.watchHints,
+            context: (
+              <UpgradeSourceBox
+                sourceSentence={item.sourceSentence}
+                targetUpgradeWord={item.targetUpgradeWord}
+              />
+            ),
+          }))}
+          live={live}
+          yourLabel="Your Upgraded Sentence"
+          sampleLabel="Model Answer"
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answers = isDefault ? [] : task.answers[previewState];
   const correctCount = isDefault ? 0 : answers.filter((answer) => answer.isCorrect).length;

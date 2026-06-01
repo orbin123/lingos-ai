@@ -32,9 +32,17 @@ from app.modules.auth.models import (
     UserProfile,
 )
 from app.modules.diagnosis import service as diagnosis_service_module
+from app.modules.diagnosis.diagnosis_agents.diagnosis_feedback import (
+    FocusCallout,
+    SkillCallout,
+)
+from app.modules.diagnosis.diagnosis_agents.writing_evaluator import (
+    DiagnosisWritingScores,
+)
 from app.modules.diagnosis.schemas import (
     DiagnosisSubmitRequest,
     FillBlankIn,
+    PronunciationWordIn,
     ReadAloudIn,
     SelfAssessmentIn,
     WritingIn,
@@ -103,14 +111,18 @@ def _sample_payload() -> DiagnosisSubmitRequest:
         ),
         read_aloud=ReadAloudIn(
             passage_id="diag_passage_v1",
-            transcript=(
-                "Every morning I wake up early and walk in the park. "
-                "The fresh air helps me think clearly. "
-                "I greet a few neighbours, finish a short jog, "
-                "and return home feeling ready for the day."
-            ),
-            duration_seconds=20.0,
-            words=[],
+            overall_score=82.0,
+            accuracy_score=86.0,
+            fluency_score=78.0,
+            completeness_score=92.0,
+            prosody_score=75.0,
+            words=[
+                PronunciationWordIn(word="every", accuracy_score=95.0, error_type=None),
+                PronunciationWordIn(
+                    word="neighbours", accuracy_score=40.0, error_type="Mispronunciation"
+                ),
+                PronunciationWordIn(word="clearly", accuracy_score=55.0, error_type=None),
+            ],
         ),
     )
 
@@ -118,20 +130,34 @@ def _sample_payload() -> DiagnosisSubmitRequest:
 class TestDiagnosisWritesPointsOnly:
     @pytest.mark.asyncio
     async def test_seeds_seven_skill_points_rows(self, db_session, monkeypatch):
-        # Stub the LLM feedback agent and the personalization refresh so
-        # the test runs offline.
+        # Stub the LLM writing evaluator, the LLM feedback agent, and the
+        # personalization refresh so the test runs offline.
+        async def _fake_writing(**_kwargs):
+            return DiagnosisWritingScores(
+                writing_score=7.0,
+                expression_score=0.6,
+                vocabulary_score=0.5,
+                tone_score=0.5,
+            )
+
         async def _fake_feedback(**_kwargs):
             return diagnosis_service_module.DiagnosisFeedbackOutput(
-                estimated_level_label="Upper Beginner",
+                estimated_level_label="B1 · Intermediate",
+                level_description="ok",
                 summary="ok",
-                weak_skill_explanations=[],
-                motivation="ok",
-                first_week_focus="ok",
+                biggest_weakness=SkillCallout(skill_name="tone", description="ok"),
+                strongest_skill=SkillCallout(skill_name="grammar", description="ok"),
+                first_focus=FocusCallout(title="Speaking", description="ok"),
             )
 
         async def _noop_refresh(self, user_id: int):  # noqa: ARG001
             return None
 
+        monkeypatch.setattr(
+            diagnosis_service_module,
+            "evaluate_writing",
+            _fake_writing,
+        )
         monkeypatch.setattr(
             diagnosis_service_module,
             "generate_diagnosis_feedback",
@@ -145,9 +171,19 @@ class TestDiagnosisWritesPointsOnly:
 
         user = db_session.query(User).one()
         svc = DiagnosisService(db_session)
-        skill_scores, _feedback, _read_aloud = await svc.run_diagnosis(
+        skill_scores, _feedback, read_aloud = await svc.run_diagnosis(
             user_id=user.id, payload=_sample_payload()
         )
+
+        # Read-aloud analysis carries the 5 Azure metrics straight through,
+        # and words_to_improve is derived from the flagged words (error_type
+        # set OR accuracy below the threshold), deduped.
+        assert read_aloud.overall == 82.0
+        assert read_aloud.accuracy == 86.0
+        assert read_aloud.fluency == 78.0
+        assert read_aloud.completeness == 92.0
+        assert read_aloud.prosody == 75.0
+        assert read_aloud.words_to_improve == ["neighbours", "clearly"]
 
         # 7 skill points rows, one per sub-skill.
         rows = (

@@ -1,26 +1,19 @@
 import { FileText, Mic2, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import type { AnswerView } from "../../teaching/source";
-import type { ReadAloudTask } from "../../tasks/source";
 import type {
   ActivityEvaluation,
   PronunciationWordScore,
 } from "../../evaluation/source";
-import type { ActivityFeedback } from "../source";
 
 export function ReadAloudAssessmentWidget({
-  task,
   evaluation,
-  feedback,
   answerView,
 }: {
-  task: ReadAloudTask;
   evaluation: ActivityEvaluation;
-  feedback: ActivityFeedback;
   answerView: AnswerView;
 }) {
   const evalOutput = evaluation.outputs[answerView];
-  const feedbackOutput = feedback.outputs[answerView];
   const pronunciation = evalOutput.pronunciationAssessment;
 
   if (!pronunciation) {
@@ -85,9 +78,6 @@ export function ReadAloudAssessmentWidget({
             <div style={{ fontSize: 18, fontWeight: 800, color: "oklch(20% 0.09 245)" }}>
               Read aloud assessment
             </div>
-            <div style={{ fontSize: 13.5, color: "oklch(45% 0.07 240)", marginTop: 4, lineHeight: 1.45 }}>
-              {feedbackOutput.summary}
-            </div>
           </div>
         </div>
         <ScoreBadge score={pronunciation.overallScore} label="Overall" />
@@ -143,80 +133,6 @@ export function ReadAloudAssessmentWidget({
         </div>
       )}
 
-      <div style={{ padding: "0 22px 16px" }}>
-        <SectionTitle>Model passage</SectionTitle>
-        <div
-          style={{
-            padding: "14px 16px",
-            background: "oklch(96% 0.02 245)",
-            borderRadius: 12,
-            fontSize: 14,
-            lineHeight: 1.65,
-            color: "oklch(20% 0.09 245)",
-            borderLeft: "4px solid oklch(62% 0.16 240)",
-          }}
-        >
-          {task.textToReadAloud}
-        </div>
-      </div>
-
-      <div
-        style={{
-          padding: "16px 22px 20px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 12,
-          borderTop: "1px solid oklch(92% 0.01 245)",
-        }}
-      >
-        <SectionTitle>Coach&apos;s tips</SectionTitle>
-        {feedbackOutput.didWell.length > 0 && (
-          <div>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: "oklch(48% 0.18 155)", marginBottom: 4 }}>
-              What you did well
-            </div>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6, color: "oklch(20% 0.09 245)" }}>
-              {feedbackOutput.didWell.map((item) => (
-                <li key={item} style={{ marginBottom: 2 }}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {feedbackOutput.mistakes.length > 0 && (
-          <div>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: "oklch(50% 0.15 25)", marginBottom: 6 }}>
-              Areas to improve
-            </div>
-            {feedbackOutput.mistakes.map((mistake, index) => (
-              <div
-                key={`${mistake.issue}-${index}`}
-                style={{
-                  background: "oklch(98% 0.01 25)",
-                  padding: "9px 12px",
-                  borderRadius: 8,
-                  borderLeft: "3px solid oklch(65% 0.15 25)",
-                  marginBottom: 6,
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 800, color: "oklch(20% 0.09 245)" }}>
-                  {mistake.issue}
-                </div>
-                {mistake.rule && (
-                  <div style={{ fontSize: 12, color: "oklch(45% 0.07 240)", marginTop: 2 }}>
-                    {mistake.rule}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div style={{ background: "oklch(96% 0.03 245)", padding: "10px 14px", borderRadius: 8, fontSize: 13 }}>
-          <span style={{ fontWeight: 800, color: "oklch(52% 0.18 240)" }}>Next tip: </span>
-          <span style={{ color: "oklch(20% 0.09 245)" }}>{feedbackOutput.nextTip}</span>
-        </div>
-      </div>
     </section>
   );
 }

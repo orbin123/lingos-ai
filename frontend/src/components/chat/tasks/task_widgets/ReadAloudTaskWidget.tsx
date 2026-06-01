@@ -2,21 +2,42 @@
 
 import { Mic2, Volume2 } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
-import type { ReadAloudTask } from "../source";
+import type { LiveTaskController, ReadAloudTask } from "../source";
+import { LivePronunciationRecorder } from "./LivePronunciationRecorder";
 import {
   ResultBanner,
   RuleCallout,
   StatusDot,
+  TargetWordsRow,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
 export function ReadAloudTaskWidget({
   task,
   previewState,
+  live,
 }: {
   task: ReadAloudTask;
   previewState: SessionPreviewState;
+  live?: LiveTaskController;
 }) {
+  if (live) {
+    return (
+      <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
+        <RuleCallout label="Read-aloud focus">{task.grammarRule}</RuleCallout>
+        <TargetWordsRow words={task.targetWords} label="Target words" />
+        <div className="tw-passage">
+          <div className="tw-passage-label">Text to read aloud</div>
+          {task.textToReadAloud}
+        </div>
+        <LivePronunciationRecorder
+          live={live}
+          referenceText={task.textToReadAloud}
+          durationSeconds={task.speakingDurationSeconds}
+        />
+      </TaskWidgetFrame>
+    );
+  }
   const isDefault = previewState === "default";
   const answer = isDefault ? null : task.answers[previewState][0];
   const correctCount = answer?.isCorrect ? 1 : 0;

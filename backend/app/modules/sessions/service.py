@@ -602,43 +602,41 @@ class SessionService:
         # Set to True in the COMPLETED rebuild path to prevent double-counting.
         old_points_applied: bool = False
 
-        if session.status is SessionStatus.COMPLETED:
-            existing = self.scorecards_repo.get_for_session(session.id)
-            if existing is None:
-                raise RuntimeError(
-                    f"session {session_id!r} is COMPLETED but has no scorecard"
+        existing = self.scorecards_repo.get_for_session(session.id)
+
+        if existing is not None:
+            if session.status is SessionStatus.COMPLETED:
+                # Check whether any attempt evaluation score has changed since the
+                # scorecard was built.
+                current_attempts = self.attempts_repo.list_for_session(session.id)
+                stored_scores: dict[int, float] = {
+                    a["attempt_id"]: float(a["raw_score"])
+                    for a in (existing.activities or [])
+                    if isinstance(a, dict)
+                }
+                scores_changed = False
+                for att in current_attempts:
+                    if att.status is not AttemptStatus.EVALUATED or att.evaluation is None:
+                        continue
+                    current_raw = float(att.evaluation.raw_score)
+                    stored_raw = stored_scores.get(att.id)
+                    if stored_raw is None or abs(current_raw - stored_raw) > 0.05:
+                        scores_changed = True
+                        break
+
+                if not scores_changed:
+                    return existing, ApplyReport(
+                        applied=False, rows_written=0, rows_skipped=0,
+                        reason="session already completed",
+                    )
+
+                logger.info(
+                    "complete_session: scorecard for session %r has stale scores, rebuilding",
+                    session_id,
                 )
 
-            # Check whether any attempt evaluation score has changed since the
-            # scorecard was built (happens when session is restarted and the
-            # learner re-submits activities with better scores).
-            current_attempts = self.attempts_repo.list_for_session(session.id)
-            stored_scores: dict[int, float] = {
-                a["attempt_id"]: float(a["raw_score"])
-                for a in (existing.activities or [])
-                if isinstance(a, dict)
-            }
-            scores_changed = False
-            for att in current_attempts:
-                if att.status is not AttemptStatus.EVALUATED or att.evaluation is None:
-                    continue
-                current_raw = float(att.evaluation.raw_score)
-                stored_raw = stored_scores.get(att.id)
-                if stored_raw is None or abs(current_raw - stored_raw) > 0.05:
-                    scores_changed = True
-                    break
-
-            if not scores_changed:
-                return existing, ApplyReport(
-                    applied=False, rows_written=0, rows_skipped=0,
-                    reason="session already completed",
-                )
-
-            # Scores changed — delete stale scorecard and rebuild below.
-            logger.info(
-                "complete_session: scorecard for session %r has stale scores, rebuilding",
-                session_id,
-            )
+            # We either have an IN_PROGRESS session that was previously completed
+            # (restarted) OR a COMPLETED session with stale scores. Delete to rebuild.
             old_points_applied = existing.points_applied
             self.db.delete(existing)
             self.db.flush()
