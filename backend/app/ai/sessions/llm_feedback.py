@@ -119,6 +119,7 @@ class LLMFeedbackGenerator:
 
         widget_key = normalize_widget_key(archetype.ui_widget)
         confirmed_mistakes: list[dict] | None = None
+        use_mcq_mistake_normalization = False
         if widget_key == "error_spotting" and task_content and user_response:
             confirmed_mistakes = compute_error_spotting_wrong_items(
                 task_content,
@@ -126,6 +127,9 @@ class LLMFeedbackGenerator:
             )
         elif widget_key in _DETERMINISTIC_WIDGET_KEYS and task_content and user_response:
             confirmed_mistakes = compute_wrong_items(task_content, user_response)
+        elif widget_key == "mcq" and task_content and user_response:
+            confirmed_mistakes = compute_mcq_wrong_items(task_content, user_response)
+            use_mcq_mistake_normalization = True
         elif widget_key in _MCQ_INNER_WIDGET_KEYS and task_content and user_response:
             if task_content.get("inner_widget") == "fill_in_blanks":
                 confirmed_mistakes = compute_listen_cloze_wrong_items(
@@ -134,6 +138,7 @@ class LLMFeedbackGenerator:
                 )
             else:
                 confirmed_mistakes = compute_mcq_wrong_items(task_content, user_response)
+                use_mcq_mistake_normalization = True
 
         try:
             output = await self.llm.generate_structured(
@@ -169,7 +174,12 @@ class LLMFeedbackGenerator:
             )
 
         mistakes = output.mistakes
-        if widget_key == "error_spotting" and confirmed_mistakes is not None:
+        if use_mcq_mistake_normalization:
+            mistakes = _normalize_mcq_mistakes(
+                confirmed_mistakes or [],
+                task_content or {},
+            )
+        elif widget_key == "error_spotting" and confirmed_mistakes is not None:
             mistakes = _normalize_error_spotting_mistakes(confirmed_mistakes)
         elif widget_key in _OPEN_ENDED_WIDGET_KEYS:
             mistakes = _filter_open_ended_mistakes(mistakes)
@@ -200,6 +210,41 @@ class LLMFeedbackGenerator:
             next_tip=output.next_tip,
             sub_skill_breakdown=breakdown,
         )
+
+
+def _normalize_mcq_mistakes(
+    confirmed_mistakes: list[dict],
+    task_content: dict,
+) -> list[MistakeOutSchema]:
+    """Map deterministic MCQ wrong-answer rows to learner-facing mistake labels."""
+    prompt_by_id = {
+        str(item.get("item_id") or ""): str(item.get("prompt") or "").strip()
+        for item in (task_content.get("items") or [])
+        if isinstance(item, dict)
+    }
+    mistakes: list[MistakeOutSchema] = []
+    for item in confirmed_mistakes:
+        item_id = str(item.get("item_id") or "")
+        prompt = str(item.get("prompt") or prompt_by_id.get(item_id) or item_id).strip()
+        user_wrote = str(
+            item.get("user_wrote") or item.get("user_selected") or ""
+        ).strip()
+        correction = str(
+            item.get("correction") or item.get("correct_answer") or ""
+        ).strip()
+        rule = str(item.get("explanation") or item.get("rule") or "").strip()
+        if not user_wrote or not correction:
+            continue
+        issue = f"'{prompt}'" if prompt else "Incorrect answer"
+        mistakes.append(
+            MistakeOutSchema(
+                issue=issue,
+                user_wrote=user_wrote,
+                correction=correction,
+                rule=rule or None,
+            )
+        )
+    return mistakes
 
 
 def _normalize_error_spotting_mistakes(

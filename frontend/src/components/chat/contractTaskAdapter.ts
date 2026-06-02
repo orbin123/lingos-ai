@@ -560,11 +560,13 @@ function dialogueTurns(payload: AnyTaskPayload): { role: string; text: string; s
 }
 
 function adaptSpeakPicDesc(payload: AnyTaskPayload): SpeakPicDescTask {
+  const imageError = textValue(payload.image_error);
   return {
     ...baseFields(payload),
     widget: "speak_pic_desc",
     imageUrl: textValue(payload.image_url),
     imageAlt: textValue(payload.image_alt),
+    ...(imageError ? { imageError } : {}),
     grammarRule: grammarRule(payload),
     speakingDurationSeconds: speakingDuration(payload, 45),
     prompts: speakingPrompts(payload),
@@ -688,7 +690,10 @@ function adaptReadAloud(payload: AnyTaskPayload): ReadAloudTask {
   return {
     ...baseFields(payload),
     widget: "read_aloud",
-    textToReadAloud: textValue(payload.text_to_read_aloud) || textValue(payload.passage),
+    textToReadAloud:
+      textValue(payload.text_to_read_aloud) ||
+      textValue(payload.passage) ||
+      textValue(payload.primary_text),
     grammarRule: grammarRule(payload),
     targetWords: stringArray(payload.target_words),
     speakingDurationSeconds: numberValue(payload.speaking_duration_seconds) || 45,
@@ -799,11 +804,31 @@ function adaptErrorSpotting(payload: AnyTaskPayload): ErrorSpottingTask {
 }
 
 // ── Dictation family ────────────────────────────────────────────────────────
+function dictationCorrectAnswer(
+  raw: Record<string, unknown>,
+  index: number,
+  targetWords: string[],
+): string {
+  const prompt = textValue(raw.prompt);
+  let answer = textValue(raw.correct_answer) || textValue(raw.sample_answer);
+  if (!answer && index < targetWords.length) {
+    answer = targetWords[index] ?? "";
+  }
+  if (!answer) return "";
+  if (!prompt.includes("___")) return answer;
+  const parts = prompt.split("___").map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 0 && parts.every((part) => answer.toLowerCase().includes(part.toLowerCase()))) {
+    return answer;
+  }
+  return prompt.replace("___", answer.trim()).trim();
+}
+
 function adaptListenDictation(payload: AnyTaskPayload): ListenDictationTask {
+  const targetWords = stringArray(payload.target_words);
   const items = arrayValue(payload.items).map((raw, index) => ({
     itemId: textValue(raw.item_id) || `item_${index + 1}`,
     prompt: textValue(raw.prompt),
-    correctAnswer: textValue(raw.correct_answer),
+    correctAnswer: dictationCorrectAnswer(raw, index, targetWords),
     explanation: textValue(raw.explanation),
   }));
   return {

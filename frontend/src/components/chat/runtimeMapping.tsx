@@ -5,6 +5,10 @@ import { useEffect, useState } from "react";
 import { Check, FileText, Headphones, Mic2, PenLine, Send } from "lucide-react";
 import type { SessionTask, TaskWidgetKind } from "./tasks/source";
 import { ListeningAudioCard, RuleCallout, TaskWidgetFrame } from "./tasks/task_widgets/TaskWidgetFrame";
+import {
+  SPATIAL_NAV_ROOT_ATTR,
+  spatialFieldProps,
+} from "@/lib/spatial-field-navigation";
 
 export type WidgetKey =
   | "mcq"
@@ -128,8 +132,6 @@ function RuntimeTaskWidget({
     textValue(payload.grammar_rule) ||
     textValue(payload.grammar_rule_explained) ||
     textValue(payload.grammar_rule_to_practice);
-  const targetWords = stringArray(payload.target_words);
-
   useEffect(() => {
     if (disabled) setListeningUnlocked(true);
   }, [disabled]);
@@ -140,15 +142,6 @@ function RuntimeTaskWidget({
   return (
     <TaskWidgetFrame task={frameTask} icon={runtimeTaskIcon(frameTask.widget)}>
       {showTeachingAids && grammarRule && <RuleCallout label="Focus rule">{grammarRule}</RuleCallout>}
-      {showTeachingAids && targetWords.length > 0 && (
-        <div className="tw-target-chip-row" style={{ marginBottom: 14 }}>
-          {targetWords.map((word) => (
-            <span className="tw-target-chip used" key={word}>
-              {word}
-            </span>
-          ))}
-        </div>
-      )}
 
       <WidgetBody
         payload={payload}
@@ -394,7 +387,7 @@ function FillBlankInputs({
   const items = arrayValue(payload.blanks).length ? arrayValue(payload.blanks) : arrayValue(payload.items);
   const passage = textValue(payload.passage);
   return (
-    <>
+    <div {...{ [SPATIAL_NAV_ROOT_ATTR]: "" }}>
       {passage && (
         <div className="tw-passage">
           <div className="tw-passage-label">{textValue(payload.passage_title) || "Passage"}</div>
@@ -415,11 +408,12 @@ function FillBlankInputs({
               value={String(answers[id] ?? "")}
               onChange={(event) => setAnswers({ ...answers, [id]: event.target.value })}
               style={{ width: "100%", textAlign: "left", minHeight: 38 }}
+              {...spatialFieldProps(index)}
             />
           </div>
         );
       })}
-    </>
+    </div>
   );
 }
 
@@ -487,7 +481,7 @@ function OpenResponse({
     ? items
     : [{ item_id: "response", prompt: textValue(payload.speaking_prompt) || textValue(payload.writing_prompt) || textValue(payload.prompt) || "Your response" }];
   return (
-    <>
+    <div {...{ [SPATIAL_NAV_ROOT_ATTR]: "" }}>
       {prompts.map((item, index) => {
         const id = itemId(item, index);
         return (
@@ -502,11 +496,12 @@ function OpenResponse({
               value={String(answers[id] ?? "")}
               onChange={(event) => setAnswers({ ...answers, [id]: event.target.value })}
               placeholder="Write your response here..."
+              {...spatialFieldProps(index)}
             />
           </div>
         );
       })}
-    </>
+    </div>
   );
 }
 

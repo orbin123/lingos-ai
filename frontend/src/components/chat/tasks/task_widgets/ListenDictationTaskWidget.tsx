@@ -13,7 +13,6 @@ import {
   roundIconButton,
   RuleCallout,
   StatusDot,
-  TargetWordsRow,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
@@ -32,7 +31,6 @@ function LiveDictation({ task, live }: { task: ListenDictationTask; live: LiveTa
         onComplete={() => setAudioComplete(true)}
       />
       {unlocked && task.grammarRule && <RuleCallout label="Listening focus">{task.grammarRule}</RuleCallout>}
-      {unlocked && <TargetWordsRow words={task.targetWords} label="Target words" />}
       {unlocked && (
         <LiveTextItems
           items={task.items.map((item) => ({
@@ -102,13 +100,6 @@ export function ListenDictationTaskWidget({
       </div>
 
       <RuleCallout label="Listening focus">{task.grammarRule}</RuleCallout>
-      <div className="tw-target-chip-row" style={{ marginBottom: 14 }}>
-        {task.targetWords.map((word) => (
-          <span className="tw-target-chip used" key={word}>
-            {word}
-          </span>
-        ))}
-      </div>
 
       {!isDefault && (
         <ResultBanner

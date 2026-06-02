@@ -168,11 +168,12 @@ WEEKS_24: tuple[WeekSource, ...] = (
                 task_widget="fill_blanks",
                 topic_override="Simple present routines",
                 generation_instructions=(
-                    "Write a 5-7 sentence passage about a daily routine. "
+                    "Write a 4-5 blank connected passage about a daily routine. "
                     "Focus on simple present and third-person -s."
                 ),
                 widget_requirements=(
-                    "Always include base_verb for every blank."
+                    "Always include base_verb for every blank. "
+                    "Do not repeat base_verb inline in the passage after each ___ — the UI shows it separately."
                 ),
             ),
             evaluation=EvaluationBlueprint(

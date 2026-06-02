@@ -157,7 +157,7 @@ export function PronunciationFeedbackCard({ feedback, evaluation, taskContent, o
             >
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 10, height: 10, borderRadius: "50%", background: "oklch(48% 0.18 155)" }} />
-                <span>Good (≥80%)</span>
+                <span>Good</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <span style={{ width: 10, height: 10, borderRadius: "50%", background: "oklch(60% 0.13 80)" }} />

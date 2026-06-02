@@ -142,6 +142,47 @@ export interface AdvanceDayResponse {
   day_in_week: number;
 }
 
+// ── Learning (chat) session hydrate state ──────────────────────────
+
+export interface CompletedActivitySummary {
+  sequence: number;
+  archetype_id: string;
+  label: string;
+  archetype_label: string;
+  widget: string;
+  raw_score: number;
+}
+
+export interface LearningSessionState {
+  session_id: string;
+  daily_session_id: number;
+  topic: string;
+  skill_name: string;
+  task_type: string;
+  phase: string;
+  messages: Array<Record<string, unknown>>;
+  task_queue: Array<Record<string, unknown>>;
+  current_task: Record<string, unknown> | null;
+  current_sequence: number | null;
+  last_evaluation: Record<string, unknown> | null;
+  last_feedback: Record<string, unknown> | null;
+  completed_sequences: number[];
+  completed_activities: CompletedActivitySummary[];
+  teaching_completed: boolean;
+  last_resumable_phase: string;
+  daily_completed: boolean;
+  blueprint: Record<string, unknown> | null;
+}
+
+export interface LearningRestartResponse {
+  session_id: string;
+  daily_session_id: number;
+  topic: string;
+  skill_name: string;
+  task_type: string;
+  message: string;
+}
+
 export interface PronunciationResult {
   overall_score: number;
   accuracy_score: number;
@@ -221,4 +262,20 @@ export const sessionsApi = {
       })
       .then((r) => r.data);
   },
+};
+
+// ── Learning (chat) session endpoints (mounted under /api/learning) ──
+
+export const learningSessionApi = {
+  getState: (sessionId: string) =>
+    api
+      .get<LearningSessionState>(`/api/learning/sessions/${sessionId}/state`)
+      .then((r) => r.data),
+
+  resetActivity: (sessionId: string, sequence: number) =>
+    api
+      .post<LearningRestartResponse>(
+        `/api/learning/sessions/${sessionId}/activities/${sequence}/reset`,
+      )
+      .then((r) => r.data),
 };

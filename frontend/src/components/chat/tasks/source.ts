@@ -353,6 +353,7 @@ export interface SpeakPicDescTask extends BaseTask {
   widget: "speak_pic_desc";
   imageUrl: string;
   imageAlt: string;
+  imageError?: string;
   grammarRule: string;
   speakingDurationSeconds: number;
   prompts?: string[];

@@ -27,6 +27,37 @@ class LearningSessionSnapshotRead(BaseModel):
     created_at: datetime
 
 
+class LearningSessionStateRead(BaseModel):
+    """REST hydrate snapshot the chat UI renders before/without the WebSocket.
+
+    Unlike ``LearningSessionSnapshotRead`` (raw row dump for history views) this
+    carries the derived resume checkpoint so the client can land on the correct
+    actionable step and show compact summaries for completed activities.
+    """
+
+    session_id: str
+    daily_session_id: int
+    topic: str
+    skill_name: str
+    task_type: str
+    phase: str
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    task_queue: list[dict[str, Any]] = Field(default_factory=list)
+    current_task: dict[str, Any] | None = None
+    current_sequence: int | None = None
+    last_evaluation: dict[str, Any] | None = None
+    last_feedback: dict[str, Any] | None = None
+    completed_sequences: list[int] = Field(default_factory=list)
+    # Compact, read-only summary per completed activity (sequence, label,
+    # widget, raw_score) so a returning learner sees what they finished without
+    # the full evaluation/feedback widgets being replayed.
+    completed_activities: list[dict[str, Any]] = Field(default_factory=list)
+    teaching_completed: bool = False
+    last_resumable_phase: str = "teaching"
+    daily_completed: bool = False
+    blueprint: dict[str, Any] | None = None
+
+
 class StartSessionRequest(BaseModel):
     """Start a chat session.
 

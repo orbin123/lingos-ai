@@ -1,6 +1,7 @@
 "use client";
 
-import { Mic2, Image as ImageIcon } from "lucide-react";
+import { AlertCircle, Mic2 } from "lucide-react";
+import { useState } from "react";
 import type { SessionPreviewState } from "../../teaching/source";
 import type { LiveTaskController, SpeakPicDescTask } from "../source";
 import { LiveSpeakingRecorder } from "./LiveSpeakingRecorder";
@@ -11,6 +12,84 @@ import {
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
+function resolveImageUrl(imageUrl?: string | null): string | null {
+  if (!imageUrl) return null;
+  if (/^(https?:|blob:|data:)/i.test(imageUrl)) return imageUrl;
+  if (imageUrl.startsWith("/")) {
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+    return `${apiBase.replace(/\/$/, "")}${imageUrl}`;
+  }
+  return imageUrl;
+}
+
+function PicturePanel({
+  imageUrl,
+  imageAlt,
+  imageError,
+}: {
+  imageUrl: string | null;
+  imageAlt: string;
+  imageError?: string;
+}) {
+  const resolvedUrl = resolveImageUrl(imageUrl);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const showError = Boolean(imageError) || !resolvedUrl || loadFailed;
+
+  return (
+    <div
+      style={{
+        width: "100%",
+        aspectRatio: "16 / 9",
+        minHeight: 160,
+        borderRadius: 14,
+        marginBottom: 12,
+        border: showError ? "1px solid oklch(85% 0.08 25)" : "1px solid var(--tw-border)",
+        backgroundColor: showError ? "oklch(97% 0.03 25)" : "oklch(97% 0.02 245)",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+      role={showError ? undefined : "img"}
+      aria-label={showError ? undefined : imageAlt || "Picture to describe"}
+    >
+      {showError ? (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 8,
+            padding: "16px 20px",
+            textAlign: "center",
+          }}
+        >
+          <AlertCircle size={28} strokeWidth={2} color="oklch(55% 0.14 25)" />
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: "oklch(45% 0.12 25)" }}>
+            Picture could not be loaded
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--tw-ink-muted)", lineHeight: 1.45, maxWidth: 320 }}>
+            {imageError || "The scene image is unavailable. You can still record your description using the prompt below."}
+          </div>
+        </div>
+      ) : (
+        <img
+          src={resolvedUrl!}
+          alt={imageAlt || "Picture to describe"}
+          onError={() => setLoadFailed(true)}
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            display: "block",
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 export function SpeakPicDescTaskWidget({
   task,
   previewState,
@@ -20,6 +99,14 @@ export function SpeakPicDescTaskWidget({
   previewState: SessionPreviewState;
   live?: LiveTaskController;
 }) {
+  const picturePanel = (
+    <PicturePanel
+      imageUrl={task.imageUrl}
+      imageAlt={task.imageAlt}
+      imageError={task.imageError}
+    />
+  );
+
   if (live) {
     return (
       <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
@@ -32,22 +119,7 @@ export function SpeakPicDescTaskWidget({
               id: "prompt_1",
               prompt: task.prompts?.[0] || "Describe what you see in the picture using full sentences.",
               sampleResponse: task.sampleResponses?.[0] || "",
-              context: task.imageUrl ? (
-                <div
-                  role="img"
-                  aria-label={task.imageAlt || "Picture to describe"}
-                  style={{
-                    width: "100%",
-                    aspectRatio: "16 / 9",
-                    borderRadius: 14,
-                    marginBottom: 12,
-                    backgroundImage: `url(${task.imageUrl})`,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                    border: "1px solid var(--tw-border)",
-                  }}
-                />
-              ) : undefined,
+              context: picturePanel,
             },
           ]}
         />
@@ -62,44 +134,7 @@ export function SpeakPicDescTaskWidget({
   return (
     <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Speaking pattern">{task.grammarRule}</RuleCallout>
-      
-      <div style={{
-        width: "100%",
-        minHeight: 180,
-        backgroundColor: "oklch(97% 0.02 245)",
-        borderRadius: 12,
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "var(--tw-ink-muted)",
-        marginBottom: 16,
-        border: "1px solid var(--tw-border-light)",
-        overflow: "hidden",
-      }}>
-        {task.imageUrl ? (
-          <div
-            role="img"
-            aria-label={task.imageAlt}
-            style={{
-              width: "100%",
-              aspectRatio: "2 / 1",
-              minHeight: 180,
-              backgroundImage: `url("${task.imageUrl}")`,
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-              backgroundSize: "cover",
-            }}
-          />
-        ) : (
-          <>
-            <ImageIcon size={32} style={{ marginBottom: 8, opacity: 0.5 }} />
-            <div style={{ fontSize: 13, fontWeight: 500 }}>
-              {task.imageAlt || "Image placeholder"}
-            </div>
-          </>
-        )}
-      </div>
+      {picturePanel}
 
       {!isDefault && (
         <ResultBanner
@@ -108,7 +143,7 @@ export function SpeakPicDescTaskWidget({
           label={`${correctCount} of 1 recording clear`}
         />
       )}
-      
+
       <div className="tw-card" style={{ marginBottom: 0 }}>
         {isDefault ? (
           <div className="tw-card" style={{ background: "oklch(97% 0.02 245)", marginBottom: 0 }}>

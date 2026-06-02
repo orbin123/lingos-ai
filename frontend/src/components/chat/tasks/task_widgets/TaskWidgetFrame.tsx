@@ -4,6 +4,10 @@ import { Check, Play, Send, Sparkles, X } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveTaskController, SessionTask } from "../source";
+import {
+  SPATIAL_NAV_ROOT_ATTR,
+  spatialFieldProps,
+} from "@/lib/spatial-field-navigation";
 
 /** Shared submit button for live interactive task widgets (M4). */
 export function SubmitButton({
@@ -38,6 +42,7 @@ export function TaskWidgetFrame({
   return (
     <section
       className="tw-root"
+      {...{ [SPATIAL_NAV_ROOT_ATTR]: "" }}
       style={{
         background: "rgba(255,255,255,0.96)",
         border: "1.5px solid rgba(255,255,255,0.9)",
@@ -450,6 +455,13 @@ export function normalizeAnswer(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
+/** Remove `(baseVerb)` hints from passage text — the UI renders them from `baseVerb`. */
+export function stripInlineVerbHint(text: string, baseVerb?: string): string {
+  if (!baseVerb?.trim()) return text;
+  const escaped = baseVerb.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`\\(\\s*${escaped}\\s*\\)`, "gi"), "").replace(/^\s+/, "");
+}
+
 /** Coerce a live answers map to string values (fill-in / text widgets). */
 export function liveStringRecord(
   answers: Record<string, unknown>,
@@ -587,33 +599,6 @@ export function McqOptionList({
   );
 }
 
-/** Uppercase label + chip row of target vocabulary for write/speak widgets. */
-export function TargetWordsRow({ words, label }: { words: string[]; label: string }) {
-  if (words.length === 0) return null;
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 800,
-          color: "oklch(45% 0.07 240)",
-          marginBottom: 6,
-          textTransform: "uppercase",
-        }}
-      >
-        {label}
-      </div>
-      <div className="tw-target-chip-row">
-        {words.map((word) => (
-          <span className="tw-target-chip used" key={word}>
-            {word}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export interface LiveTextItem {
   itemId: string;
   prompt?: string;
@@ -668,6 +653,7 @@ export function LiveTextItems({
               onChange={(event) => setAnswer(item.itemId, event.target.value)}
               placeholder={item.placeholder ?? "Write your answer here..."}
               style={{ minHeight: item.minHeight ?? 92 }}
+              {...spatialFieldProps(index)}
             />
           ) : (
             <div className="tw-compare-grid">
@@ -675,13 +661,15 @@ export function LiveTextItems({
                 <div className="tw-compare-label">{yourLabel}</div>
                 <div className="tw-compare-body">{answers[item.itemId]}</div>
               </div>
-              <div className="tw-compare-card sample">
-                <div className="tw-compare-label">
-                  <Sparkles size={12} />
-                  {sampleLabel}
+              {item.sampleAnswer.trim().length > 0 && (
+                <div className="tw-compare-card sample">
+                  <div className="tw-compare-label">
+                    <Sparkles size={12} />
+                    {sampleLabel}
+                  </div>
+                  <div className="tw-compare-body">{item.sampleAnswer}</div>
                 </div>
-                <div className="tw-compare-body">{item.sampleAnswer}</div>
-              </div>
+              )}
             </div>
           )}
           {item.hints && item.hints.length > 0 && (

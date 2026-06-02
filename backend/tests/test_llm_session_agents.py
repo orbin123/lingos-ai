@@ -22,12 +22,15 @@ from app.ai.sessions.prompts import compute_mcq_wrong_items
 from app.ai.sessions.exceptions import TaskGenerationFailed
 from app.ai.sessions.llm_task_generator import (
     ErrorSpottingTask,
+    ErrorSpottingTaskLLM,
     ErrorCorrectionTask,
     LLMTaskGenerator,
     TaskGenOutput,
 )
+from app.modules.sessions.task_generator import normalize_error_spotting_payload
 from app.scoring import ARCHETYPE_REGISTRY, get_archetype
 from app.tasks.schemas import FillInBlanksTask
+from app.tasks.schemas.llm_output_schemas import FillInBlanksTaskLLM
 
 
 # ── Fake LLM client ────────────────────────────────────────────────
@@ -85,6 +88,23 @@ class FakeTTSService:
         return {
             "audio_url": "/audio/fake-listening.mp3",
             "duration_seconds": 12.4,
+        }
+
+
+class FakeImageGenService:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[dict] = []
+
+    async def generate(self, *, prompt: str, **kwargs):
+        self.calls.append({"prompt": prompt, **kwargs})
+        if self.fail:
+            raise RuntimeError("imagegen down")
+        return {
+            "image_url": "/images/ab/fake-scene.png",
+            "width": 1536,
+            "height": 1024,
+            "cache_hit": False,
         }
 
 
@@ -352,8 +372,11 @@ class TestLLMEvaluator:
         assert wrong == [
             {
                 "item_id": "q1",
+                "prompt": "",
                 "user_selected": "Morning",
                 "correct_answer": "Evening",
+                "user_wrote": "Morning",
+                "correction": "Evening",
                 "explanation": "The speaker says evening.",
             }
         ]
@@ -746,6 +769,25 @@ class TestErrorSpottingSchema:
         with pytest.raises(ValidationError):
             ErrorSpottingTask.model_validate(payload)
 
+    def test_normalize_syncs_is_error_flags_before_strict_validation(self):
+        payload = _error_spotting_content()
+        sentence = payload["passage_sentences"][2]
+        for token in sentence["tokens"]:
+            token["is_error"] = False
+        sentence["tokens"][0]["is_error"] = True
+        sentence["tokens"][1]["is_error"] = True
+
+        normalized = normalize_error_spotting_payload(payload)
+        strict_payload = {key: value for key, value in normalized.items() if key != "widget"}
+        task = ErrorSpottingTask.model_validate(strict_payload)
+
+        error_tokens = [
+            token.token_id
+            for token in task.passage_sentences[2].tokens
+            if token.is_error
+        ]
+        assert error_tokens == ["s3_t4"]
+
 
 class TestLLMTaskGenerator:
     @pytest.mark.asyncio
@@ -829,7 +871,7 @@ class TestLLMTaskGenerator:
             sub_level=1,
         )
 
-        assert fake.calls[0]["output_model"] is FillInBlanksTask
+        assert fake.calls[0]["output_model"] is FillInBlanksTaskLLM
         assert generated.content["widget"] == "fill_in_blanks"
         assert generated.content["ui_widget"] == "FillInBlanks"
         assert generated.content["items"][0]["correct_answer"] == "walks"
@@ -849,13 +891,39 @@ class TestLLMTaskGenerator:
             sub_level=1,
         )
 
-        assert fake.calls[0]["output_model"] is ErrorSpottingTask
+        assert fake.calls[0]["output_model"] is ErrorSpottingTaskLLM
         content = generated.content
         assert content["phase"] == "live"
         assert content["widget"] == "error_spotting"
         assert content["ui_widget"] == "ErrorSpotting"
         assert content["total_errors"] == 5
         assert len(content["passage_sentences"]) == 5
+
+    @pytest.mark.asyncio
+    async def test_error_spotting_normalizes_mismatched_is_error_flags(self):
+        spec = get_archetype("READ_ERROR_SPOT")
+        payload = _error_spotting_content()
+        sentence = payload["passage_sentences"][2]
+        for token in sentence["tokens"]:
+            token["is_error"] = False
+        canned = ErrorSpottingTaskLLM.model_validate(payload)
+        fake = FakeLLMClient([canned])
+        agent = LLMTaskGenerator(fake)
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic="Spot past tense errors",
+            explanation_brief="Past tense error spotting.",
+            cefr_level="A1",
+            sub_level=1,
+        )
+
+        error_tokens = [
+            token["token_id"]
+            for token in generated.content["passage_sentences"][2]["tokens"]
+            if token.get("is_error")
+        ]
+        assert error_tokens == ["s3_t4"]
 
     @pytest.mark.asyncio
     async def test_error_spotting_failure_retries_then_raises(self):
@@ -1169,6 +1237,96 @@ class TestLLMTaskGenerator:
             )
         assert exc_info.value.archetype_id == "SPEAK_TIMED"
         assert len(fake.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_speak_pic_desc_generates_required_image(self, monkeypatch):
+        from app.ai import imagegen as imagegen_module
+
+        spec = get_archetype("SPEAK_PIC_DESC")
+        fake_imagegen = FakeImageGenService()
+        monkeypatch.setattr(
+            imagegen_module,
+            "get_default_imagegen_service",
+            lambda: fake_imagegen,
+        )
+        canned = TaskGenOutput(
+            topic="Describe a picture using articles",
+            instructions="Describe the picture aloud using a/an and the correctly.",
+            task_intro="Record your description of the scene.",
+            image_alt="A cat sleeping on a sofa next to an open book.",
+            speaking_prompts=["Describe the cat using 'a' or 'the'."],
+            sample_responses=[
+                "I can see a cat on the sofa. The book is open next to the cat.",
+            ],
+            grammar_rule_to_practice=(
+                "Use 'a' before consonant sounds, 'an' before vowel sounds, "
+                "and 'the' for specific nouns."
+            ),
+            speaking_duration_seconds=45,
+        )
+        fake = FakeLLMClient([canned])
+        agent = LLMTaskGenerator(fake)
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic="Articles in scene description",
+            explanation_brief="Picture description with articles.",
+            cefr_level="A1",
+            sub_level=1,
+            task_spec={
+                "task_widget": "speak_pic_desc",
+                "widget_requirements": (
+                    "Target widget 'speak_pic_desc'. Provide image_alt describing "
+                    "a simple scene."
+                ),
+            },
+        )
+
+        content = generated.content
+        assert content["phase"] == "live"
+        assert content["image_url"] == "/images/ab/fake-scene.png"
+        assert content["image_alt"] == canned.image_alt
+        assert content["speaking_prompts"] == ["Describe the cat using 'a' or 'the'."]
+        assert len(fake_imagegen.calls) == 1
+        assert fake_imagegen.calls[0]["prompt"] == canned.image_alt
+        assert fake_imagegen.calls[0]["aspect_ratio"] == "landscape"
+
+    @pytest.mark.asyncio
+    async def test_speak_pic_desc_image_failure_sets_error(self, monkeypatch):
+        from app.ai import imagegen as imagegen_module
+
+        spec = get_archetype("SPEAK_PIC_DESC")
+        fake_imagegen = FakeImageGenService(fail=True)
+        monkeypatch.setattr(
+            imagegen_module,
+            "get_default_imagegen_service",
+            lambda: fake_imagegen,
+        )
+        canned = TaskGenOutput(
+            topic="Describe a picture using articles",
+            instructions="Describe the picture aloud.",
+            task_intro="Record your description of the scene.",
+            image_alt="A cat on a sofa.",
+            speaking_prompts=["Describe what you see."],
+            sample_responses=["I see a cat on the sofa."],
+            grammar_rule_to_practice="Use articles correctly.",
+            speaking_duration_seconds=45,
+        )
+        fake = FakeLLMClient([canned])
+        agent = LLMTaskGenerator(fake)
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic="Articles",
+            explanation_brief="Picture description.",
+            cefr_level="A1",
+            sub_level=1,
+        )
+
+        content = generated.content
+        assert content.get("image_url") is None
+        assert "image_error" in content
+        assert "SPEAK_PIC_DESC" in content["image_error"]
 
     @pytest.mark.asyncio
     async def test_listen_mcq_synthesizes_required_audio(self, monkeypatch):
@@ -1593,6 +1751,51 @@ class TestFeedbackConfirmedMistakes:
         )[1]
         assert '"b2"' in confirmed_section
         assert '"b1"' not in confirmed_section
+
+    @pytest.mark.asyncio
+    async def test_read_word_match_mcq_feedback_uses_option_labels_not_indices(self):
+        """Standalone MCQ widgets (e.g. READ_WORD_MATCH) must show option text."""
+        spec = get_archetype("READ_WORD_MATCH")
+        fake = FakeLLMClient([
+            FeedbackOutput(
+                score=8,
+                summary="Good effort on articles.",
+                mistakes=[
+                    MistakeOutSchema(
+                        issue="Wrong pick for hour",
+                        user_wrote="0",
+                        correction="1",
+                        rule="Use an before vowel sounds.",
+                    )
+                ],
+            )
+        ])
+        agent = LLMFeedbackGenerator(fake)
+
+        task_content = {
+            "items": [
+                {
+                    "item_id": "hour",
+                    "prompt": "hour",
+                    "options": ["a", "an", "the"],
+                    "correct_index": 1,
+                    "explanation": "Use 'an' before vowel sounds, like 'hour'.",
+                }
+            ]
+        }
+        user_response = {"hour": 0, "inner_response": {"widget": "mcq", "answers": [{"item_id": "hour", "selected_index": 0}]}}
+
+        result = await agent.generate(
+            archetype=spec,
+            evaluation=self._eval(),
+            user_response=user_response,
+            task_content=task_content,
+        )
+
+        assert len(result.mistakes) == 1
+        assert result.mistakes[0].user_wrote == "a"
+        assert result.mistakes[0].correction == "an"
+        assert result.mistakes[0].issue == "'hour'"
 
 
 # ── Registry sanity (Phase 4: every archetype must be invokable) ───

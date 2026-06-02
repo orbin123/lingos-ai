@@ -60,14 +60,12 @@ function TaskHeader({
   sub_skill,
   activity,
   time,
-  target_words,
 }: {
   topic: string;
   intro: { title: string; body: string };
   sub_skill: string;
   activity: string;
   time: number;
-  target_words?: Array<{ word: string; used: boolean }>;
 }) {
   return (
     <div className="tw-task-header">
@@ -79,15 +77,6 @@ function TaskHeader({
         {activity && <span className="tw-task-pill activity"><span className="tw-dot" />{activity}</span>}
         {time > 0 && <span className="tw-task-pill time"><span className="tw-dot" />{time} min</span>}
       </div>
-      {target_words && target_words.length > 0 && (
-        <div className="tw-target-chip-row">
-          {target_words.map((item) => (
-            <span className={`tw-target-chip${item.used ? " used" : ""}`} key={item.word}>
-              {item.word}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -125,7 +114,7 @@ type Mode = "list" | "single" | "read" | "retell" | "role";
 function detectMode(p: SpeakAndRecordPayload): Mode {
   if (p.turns && p.turns.length > 0) return "role";
   if (p.source_audio_url || p.source_audio_script) return "retell";
-  if (p.text_to_read_aloud || p.passage) return "read";
+  if (p.text_to_read_aloud || p.passage || p.primary_text) return "read";
   if (
     (p.speaking_prompts && p.speaking_prompts.length > 0) ||
     (p.speaking_items && p.speaking_items.length > 0)
@@ -217,7 +206,7 @@ export function SessionSpeakRecordWidget({ taskContent, disabled, onSubmit }: Se
       return [
         {
           id: "read_aloud",
-          label: payload.text_to_read_aloud || payload.passage || "",
+          label: payload.text_to_read_aloud || payload.passage || payload.primary_text || "",
           kind: "prompt" as const,
           sampleResponse: payload.sample_response ?? null,
         },
@@ -325,7 +314,7 @@ export function SessionSpeakRecordWidget({ taskContent, disabled, onSubmit }: Se
           let audioUrl = "";
 
           if (mode === "read") {
-            const refText = payload.text_to_read_aloud || payload.passage || "Empty";
+            const refText = payload.text_to_read_aloud || payload.passage || payload.primary_text || "Empty";
             const wavBlob = await blobToWav(blob);
             const pronunResult = await sessionsApi.scorePronunciation(wavBlob, refText);
             setPronunciation(pronunResult);
@@ -377,18 +366,6 @@ export function SessionSpeakRecordWidget({ taskContent, disabled, onSubmit }: Se
     !submitted && !missingSpeakingPrompt && allRecorded && !activeItemId && !uploadingItemId
   );
 
-  const targetWordsHit = (() => {
-    if (!payload.target_words || payload.target_words.length === 0) return [];
-    const allText = Object.values(recordings)
-      .map((r) => r.transcript)
-      .join(" ")
-      .toLowerCase();
-    return payload.target_words.map((w) => ({
-      word: w,
-      used: new RegExp(`\\b${w.toLowerCase()}\\b`).test(allText),
-    }));
-  })();
-
   const cap = payload.speaking_duration_seconds || 60;
 
   return (
@@ -402,7 +379,6 @@ export function SessionSpeakRecordWidget({ taskContent, disabled, onSubmit }: Se
         sub_skill={payload.sub_skill || ""}
         activity={payload.activity || "Speak & Record"}
         time={payload.estimated_time_minutes ?? 0}
-        target_words={targetWordsHit.length > 0 ? targetWordsHit : undefined}
       />
 
       {payload.grammar_rule_to_practice && (
@@ -506,7 +482,7 @@ export function SessionSpeakRecordWidget({ taskContent, disabled, onSubmit }: Se
 
       {mode === "read" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 20, marginBottom: 18 }}>
-          {(payload.text_to_read_aloud || payload.passage) && (
+          {(payload.text_to_read_aloud || payload.passage || payload.primary_text) && (
             <div
               style={{
                 background: "oklch(97% 0.02 245)",
@@ -529,9 +505,9 @@ export function SessionSpeakRecordWidget({ taskContent, disabled, onSubmit }: Se
                   lineHeight: 1,
                 }}
               >
-                PASSAGE • {(payload.text_to_read_aloud || payload.passage || "").split(/\s+/).filter(Boolean).length} WORDS
+                PASSAGE • {(payload.text_to_read_aloud || payload.passage || payload.primary_text || "").split(/\s+/).filter(Boolean).length} WORDS
               </div>
-              <div>{payload.text_to_read_aloud || payload.passage}</div>
+              <div>{payload.text_to_read_aloud || payload.passage || payload.primary_text}</div>
             </div>
           )}
 

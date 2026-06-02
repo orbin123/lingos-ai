@@ -85,9 +85,10 @@ Hard rules:
     transforms, listens to, or responds to.
   - `target_words` (optional) lists 0–10 vocabulary items the activity
     centres on. Use for vocabulary-themed archetypes; leave empty otherwise.
-  - For fill_in_blanks, include `items` (or `blanks`) with
+  - For fill_in_blanks, include exactly 4 or 5 `items` (or `blanks`) with
     sentence_with_blank, correct_answer, explanation, and optional
-    distractors/base_verb.
+    distractors/base_verb. Put `base_verb` only in each item — never
+    inline in the `passage` after a `___` blank (the UI shows it separately).
   - For mcq, include `items` with item_id, prompt, options, correct_index,
     and explanation.
   - For listen_and_respond, include `audio_script`, `audio_url: null`,
@@ -96,6 +97,10 @@ Hard rules:
     and answer_hints.
   - For error_correction, include `items` with item_id, incorrect_sentence,
     sample_answer, and watch_hints.
+  - For sentence_transform, include exactly 3 `items`. Each item MUST include
+    item_id, source_sentence (the original sentence to rewrite), sample_answer,
+    and watch_hints (short grammar hints like "she -> is", "walk -> walking").
+    Do NOT put the source sentence only in `prompt` or `primary_text`.
   - For error_spotting, include `passage_sentences`: exactly 5 sentence
     objects. Each sentence must include tokenized `tokens` and exactly one
     `error` object whose token_id points at the single token where the
@@ -116,6 +121,9 @@ Hard rules:
         rule under test.
     Do NOT emit a bare `speaking_prompt` (singular) — always use the
     list form so the widget renders one item per prompt.
+  - For picture-description (speak_pic_desc), include `image_alt` (a vivid
+    scene description for image generation — no text or labels in the image).
+    Do NOT set `image_url`; the backend generates it from `image_alt`.
   - Include answer keys/sample answers inside the payload so the evaluator
     can score the response from this task alone.
 """
@@ -225,10 +233,23 @@ def compute_mcq_wrong_items(task_content: dict, user_response: dict) -> list[dic
             continue
         if selected_idx != correct_idx:
             options = item.get("options") or []
+            user_label = (
+                options[selected_idx]
+                if selected_idx < len(options)
+                else str(selected_idx)
+            )
+            correct_label = (
+                options[correct_idx]
+                if correct_idx < len(options)
+                else str(correct_idx)
+            )
             wrong.append({
                 "item_id": item_id,
-                "user_selected": options[selected_idx] if selected_idx < len(options) else str(selected_idx),
-                "correct_answer": options[correct_idx] if correct_idx < len(options) else str(correct_idx),
+                "prompt": item.get("prompt", ""),
+                "user_selected": user_label,
+                "correct_answer": correct_label,
+                "user_wrote": user_label,
+                "correction": correct_label,
                 "explanation": item.get("explanation", ""),
             })
     return wrong
@@ -440,12 +461,13 @@ def build_task_gen_user_prompt(
     if widget_key == "fill_in_blanks":
         parts.extend([
             "FillInBlanks requirements:",
-            "- Create 5–7 sentences that form a SHORT connected narrative about a routine or daily activity.",
+            "- Create exactly 4 or 5 blanks that form a SHORT connected narrative about a routine or daily activity.",
             "- Base the story's topic and characters on the learner's interests listed above.",
             "  Example: learner loves football → write about a footballer's morning routine;",
             "  learner loves movies → write about a film director's day.",
             "  If no specific interests are given, use a relatable everyday routine.",
             "- EVERY BlankItem MUST include `base_verb` (the bare infinitive, e.g. 'wake', 'prepare', 'eat').",
+            "- Do NOT repeat the base verb in the `passage` text after each `___` — the UI renders it from `base_verb`.",
             "- Mix subjects deliberately: include at least one each of I / he or she / a proper name / they.",
             "- `correct_answer` is the correctly inflected simple-present form (base verb or +s/+es).",
             "- Include exactly 2 distractors per item (wrong inflections, e.g. 'wakes'/'waking' when correct is 'wake').",
@@ -457,8 +479,17 @@ def build_task_gen_user_prompt(
             "- `audio_script` must be a natural-sounding spoken passage (60-120 words) at the target CEFR level.",
             "- `inner_widget` must be 'mcq' unless widget_requirements specifies otherwise.",
             "- For MCQ: `items` list with item_id (q1, q2…), prompt, options (list of 4 strings), correct_index (0-based int), explanation.",
-            "- For fill_in_blanks: include a `passage` with ___ markers and `items` with item_id, sentence_with_blank, base_verb, correct_answer, grammar_rule, and explanation.",
+            "- For fill_in_blanks: include exactly 4 or 5 blanks — a `passage` with ___ markers (no inline verb hints) and `items` with item_id, sentence_with_blank, base_verb, correct_answer, grammar_rule, and explanation.",
             "- Set `audio_url: null` — the backend synthesizes the audio from audio_script.",
+        ])
+    if archetype.archetype_id == "LISTEN_DICTATION":
+        parts.extend([
+            "ListenDictation requirements:",
+            "- `audio_script` must contain 3–4 short spoken sentences at the target CEFR level.",
+            "- Generate one dictation item per sentence in `items`.",
+            "- Each item MUST include item_id, prompt, correct_answer (the full sentence exactly as spoken), and explanation.",
+            "- Do NOT use cloze-style prompts with `___` unless `correct_answer` is still the full spoken sentence.",
+            "- Do NOT put the answers only in `target_words`; `correct_answer` is required on every item.",
         ])
     if archetype.archetype_id == "WRITE_OPEN_SENT":
         parts.extend([
@@ -469,6 +500,19 @@ def build_task_gen_user_prompt(
             "- Item 3 asks for one affirmative routine sentence with she and a frequency adverb.",
             "- Each item must include item_id, prompt, sample_answer, and answer_hints.",
             "- Include grammar_rule_explained, common_mistakes, and target_words with frequency adverbs.",
+        ])
+    if (
+        archetype.archetype_id == "WRITE_SENT_TRANS"
+        or archetype.ui_widget == "SentenceTransform"
+    ):
+        parts.extend([
+            "SentenceTransform writing requirements:",
+            "- Generate exactly 3 items.",
+            "- Each item MUST include item_id, source_sentence, sample_answer, and watch_hints.",
+            "- source_sentence is the simple-present (or other source-form) sentence the learner rewrites.",
+            "- sample_answer is the correctly transformed target sentence.",
+            "- watch_hints is a list of 1-3 short labels (for example 'they -> are', 'play -> playing').",
+            "- Vary subjects across items (for example she, they, I).",
         ])
     if archetype.archetype_id == "WRITE_ERROR_CORR" or archetype.ui_widget == "ErrorCorrection":
         parts.extend([
@@ -490,16 +534,31 @@ def build_task_gen_user_prompt(
             "- Keep all mistakes connected to simple past meaning, but do not make them all regular verb + -ed errors.",
             "- Include diverse mistakes such as irregular past forms, did + base verb, passive helper missing, past time marker mismatch, and object/complement mismatch.",
         ])
+    if archetype.archetype_id == "SPEAK_PIC_DESC":
+        parts.extend([
+            "PictureDescription speaking requirements:",
+            "- REQUIRED: `image_alt` — one vivid scene description for image "
+            "generation (e.g. a cat sleeping on a sofa next to an open book). "
+            "No text, labels, or words in the image.",
+            "- Do NOT set `image_url` — the backend generates it from `image_alt`.",
+            "- `speaking_prompts` — exactly ONE prompt asking the learner to "
+            "describe the picture aloud (match the day's grammar focus).",
+            "- `sample_responses` — exactly ONE model spoken answer.",
+            "- `speaking_duration_seconds` — 45.",
+            "- `grammar_rule_to_practice` — one short sentence for the rule under test.",
+            "- `task_intro` — short imperative (e.g. 'Record your description of the scene.').",
+        ])
     if archetype.archetype_id == "SPEAK_READ_ALOUD":
         parts.extend([
             "ReadAloud speaking requirements:",
-            "- Generate a single connected narrative passage of 50-60 words in simple past tense (focusing on regular -ed verbs and irregular verbs).",
-            "- Do NOT generate separate sentences or multiple items.",
-            "- Populate `text_to_read_aloud` with this connected passage.",
+            "- Generate a single connected narrative passage of 50-60 words at the target CEFR level.",
+            "- Do NOT generate separate sentences, `items`, or `speaking_prompts`.",
+            "- REQUIRED: set `text_to_read_aloud` to the full passage (50-60 words).",
+            "- Also set `primary_text` to the same passage so the schema always carries the text.",
             "- Set `task_intro` to 'Read the passage above out loud.'",
             "- Set `instructions` to 'Read the connected passage aloud clearly.'",
             "- Set `speaking_duration_seconds` to 45.",
-            "- Do NOT generate `speaking_prompts` or multiple items - only use `text_to_read_aloud` for the passage.",
+            "- Include `grammar_rule_to_practice` and 6-10 `target_words` from the passage.",
         ])
     parts.extend([
         f"Generate one {archetype.core_activity} task on this topic at the "

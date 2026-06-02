@@ -48,27 +48,6 @@ export function SpeakDebateTaskWidget({
     <TaskWidgetFrame task={task} icon={<Trophy size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Speaking Focus">{task.grammarRule}</RuleCallout>
 
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: "oklch(45% 0.07 240)", marginBottom: 6, textTransform: "uppercase" }}>
-          Target Debate Vocabulary
-        </div>
-        <div className="tw-target-chip-row">
-          {task.targetWords.map((word) => (
-            <span 
-              className="tw-target-chip used" 
-              key={word}
-              style={{
-                background: "oklch(93% 0.04 155)",
-                color: "oklch(42% 0.16 155)",
-                border: "1px solid oklch(85% 0.06 155)"
-              }}
-            >
-              {word}
-            </span>
-          ))}
-        </div>
-      </div>
-
       {!isDefault && (
         <ResultBanner
           total={1}

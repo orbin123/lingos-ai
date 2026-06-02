@@ -9,16 +9,13 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
-    Query,
     WebSocket,
     WebSocketDisconnect,
     status,
 )
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.modules.auth.dependencies import get_current_user
@@ -26,6 +23,7 @@ from app.modules.auth.models import User
 from app.modules.auth.repository import UserRepository
 from app.modules.learning_session.schemas import (
     LearningSessionSnapshotRead,
+    LearningSessionStateRead,
     StartSessionRequest,
     StartSessionResponse,
     WSIncomingMessage,
@@ -36,7 +34,10 @@ from app.modules.learning_session.service import (
     LearningSessionService,
     LearningSessionTaskUnavailable,
 )
-from app.modules.sessions.exceptions import DayNotFound
+from app.modules.sessions.exceptions import (
+    AttemptNotFound,
+    SessionNotFound,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,73 @@ async def restart_session(
             "restart_session failed session_id=%s user_id=%s",
             session_id,
             current_user.id,
+        )
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@rest_router.get(
+    "/sessions/{session_id}/state",
+    response_model=LearningSessionStateRead,
+    status_code=status.HTTP_200_OK,
+)
+async def get_session_state(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LearningSessionStateRead:
+    """Return everything the chat UI needs to render without the WebSocket.
+
+    Used on mount to hydrate phase/messages/task_queue, the current actionable
+    task, completed-activity summaries, and the resume checkpoint.
+
+    Errors:
+      404 — no chat session with this id belonging to the user
+      403 — session belongs to another user
+    """
+    service = LearningSessionService(db)
+    try:
+        snapshot = await service.get_state_snapshot(
+            session_id=session_id, user_id=current_user.id,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return LearningSessionStateRead(**snapshot)
+
+
+@rest_router.post(
+    "/sessions/{session_id}/activities/{sequence}/reset",
+    response_model=StartSessionResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def reset_activity(
+    session_id: str,
+    sequence: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StartSessionResponse:
+    """Reset a single activity so the learner can retry it without restarting.
+
+    Errors:
+      404 — chat session or attempt not found
+      403 — session belongs to another user
+    """
+    service = LearningSessionService(db)
+    try:
+        return await service.reset_activity(
+            session_id=session_id,
+            user_id=current_user.id,
+            sequence=sequence,
+        )
+    except (LookupError, AttemptNotFound, SessionNotFound) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover — unexpected
+        logger.exception(
+            "reset_activity failed session_id=%s sequence=%s user_id=%s",
+            session_id, sequence, current_user.id,
         )
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -225,6 +293,16 @@ async def get_scorecard_for_chat_session(
             # Unexpected error — roll back so the DB session is clean for the
             # get_scorecard() query below (avoids PendingRollbackError).
             db.rollback()
+
+    # Defense-in-depth: a scorecard only describes a COMPLETED day. If the day
+    # is in-progress (e.g. an activity was reset/retried after completion, which
+    # reopens it and drops the scorecard) there is nothing to return yet. The
+    # orphan scorecard is already deleted on restart/reset, but guard here too.
+    if daily.status != _SessionStatus.COMPLETED:
+        raise HTTPException(
+            status_code=404,
+            detail="session has no scorecard yet",
+        )
 
     scorecard = service.get_scorecard(
         session_id=daily.session_id, user_id=current_user.id,

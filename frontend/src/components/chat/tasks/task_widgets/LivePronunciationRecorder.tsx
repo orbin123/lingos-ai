@@ -6,15 +6,14 @@ import { sessionsApi, type PronunciationResult } from "@/lib/sessions-api";
 import { Loader2, Mic2, RotateCcw, Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { LiveTaskController } from "../source";
-import { StatusDot, SubmitButton } from "./TaskWidgetFrame";
+import { SubmitButton } from "./TaskWidgetFrame";
 
 /**
  * Live recorder for the speaking-pronunciation family (read_aloud, listen_shadow).
  * Records the learner reading the reference text, runs Azure pronunciation
  * scoring (`POST /api/sessions/pronunciation-score`), and submits the
  * `{ pronunciation, transcript }` shape the speak evaluator routes to the Azure
- * branch (`_evaluate_speak_and_record`). The detailed result then renders via the
- * backend `pronunciation_result` event.
+ * branch. Scores are not shown here; the pronunciation assessment widget shows them.
  */
 function pronunciationFromAnswers(answers: Record<string, unknown>): PronunciationResult | null {
   const p = answers.pronunciation;
@@ -82,11 +81,8 @@ export function LivePronunciationRecorder({
 
   if (!interactive) {
     return (
-      <div className="tw-compare-card" style={{ marginTop: 12 }}>
-        <div className="tw-compare-label">
-          <StatusDot ok={Boolean(pronunciation)} />
-          Pronunciation submitted
-        </div>
+      <div className="tw-write-helper" style={{ marginTop: 12, fontWeight: 700 }}>
+        The audio has been submitted.
       </div>
     );
   }
@@ -135,19 +131,6 @@ export function LivePronunciationRecorder({
       {recorder.errorMessage && (
         <div className="tw-fb-explain" style={{ color: "var(--tw-red)", fontWeight: 800 }}>
           {recorder.errorMessage}
-        </div>
-      )}
-      {pronunciation && (
-        <div className="tw-compare-card" style={{ marginTop: 12 }}>
-          <div className="tw-compare-label">
-            <StatusDot ok />
-            Pronunciation score
-          </div>
-          <div className="tw-compare-body">
-            Overall {Math.round(pronunciation.overall_score)}/100 · Accuracy{" "}
-            {Math.round(pronunciation.accuracy_score)} · Fluency {Math.round(pronunciation.fluency_score)} ·
-            Completeness {Math.round(pronunciation.completeness_score)}
-          </div>
         </div>
       )}
       <SubmitButton disabled={!pronunciation || busy} onClick={submit} />

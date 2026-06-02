@@ -119,6 +119,7 @@ async def test_resume_auto_completes_all_evaluated_daily_session(monkeypatch) ->
     service._load_session = MagicMock(return_value=chat)
     service._state_from_row = MagicMock(return_value={})
     service._enrich_state_with_profile = MagicMock()
+    service._sync_task_queue_from_attempts = MagicMock()
 
     v2_service = MagicMock()
     v2_service.complete_session = AsyncMock()
@@ -165,6 +166,7 @@ async def test_initial_open_auto_completes_all_evaluated_daily_session(monkeypat
     service._load_session = MagicMock(return_value=chat)
     service._state_from_row = MagicMock(return_value={})
     service._enrich_state_with_profile = MagicMock()
+    service._sync_task_queue_from_attempts = MagicMock()
     service._stream_teaching_turn = MagicMock()
 
     v2_service = MagicMock()
@@ -210,6 +212,7 @@ async def test_resume_keeps_next_activity_when_attempt_is_pending(monkeypatch) -
     service._load_session = MagicMock(return_value=chat)
     service._state_from_row = MagicMock(return_value={})
     service._enrich_state_with_profile = MagicMock()
+    service._sync_task_queue_from_attempts = MagicMock()
 
     make_v2 = MagicMock()
     monkeypatch.setattr(
@@ -403,6 +406,7 @@ async def test_resume_stream_emits_session_blueprint_before_replay() -> None:
     service._load_session = MagicMock(return_value=chat)
     service._state_from_row = MagicMock()
     service._enrich_state_with_profile = MagicMock()
+    service._sync_task_queue_from_attempts = MagicMock()
     service._auto_complete_daily_if_ready = AsyncMock(return_value=_w1d1_daily())
     service.db.get.return_value = _w1d1_daily()
     service._state_from_row.return_value = {
@@ -691,6 +695,7 @@ async def test_restart_session_refreshes_w1d2_chat_persona() -> None:
     daily.status = SessionStatus.IN_PROGRESS
 
     service._load_session = MagicMock(return_value=session)
+    service._sync_task_queue_from_attempts = MagicMock()
     service.db.get.return_value = daily
     service.db.execute.return_value.scalars.return_value = []
     service.curriculum_day_repo.get_by_day_id.return_value = None
@@ -718,6 +723,13 @@ async def test_read_cloze_submission_emits_validated_contract_payloads(
     service.db = MagicMock()
     service.session_repo = MagicMock()
     service._next_pending_attempt = MagicMock(return_value=None)
+    service._sync_task_queue_from_attempts = MagicMock()
+
+    async def _noop_complete(_session, _state):
+        return
+        yield  # pragma: no cover
+
+    service._complete_and_announce = _noop_complete
 
     chat = MagicMock()
     chat.session_id = "chat-w1d1"
@@ -816,6 +828,13 @@ async def test_task_submission_events_expose_activity_contract(monkeypatch) -> N
     service.db = MagicMock()
     service.session_repo = MagicMock()
     service._next_pending_attempt = MagicMock(return_value=None)
+    service._sync_task_queue_from_attempts = MagicMock()
+
+    async def _noop_complete(_session, _state):
+        return
+        yield  # pragma: no cover
+
+    service._complete_and_announce = _noop_complete
 
     chat = MagicMock()
     chat.session_id = "chat-w1d1"
@@ -1186,3 +1205,116 @@ def test_turn_ceiling_force_transition_after_authored_plan() -> None:
         messages=no_mention,
         state=state,
     )
+
+
+# ── Phase 1: task_queue sync, resume checkpoint, restart scorecard ──────────
+
+
+@pytest.mark.asyncio
+async def test_sync_task_queue_from_attempts_reflects_attempt_statuses() -> None:
+    """The cached chat task_queue is rebuilt to match V2 attempt statuses."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.attempts_repo = MagicMock()
+
+    a1 = _fake_attempt(archetype_id="READ_CLOZE", sequence=1)
+    a1.status = AttemptStatus.EVALUATED
+    a2 = _fake_attempt(archetype_id="WRITE_SENT_TRANS", sequence=2)
+    a2.status = AttemptStatus.PENDING
+    service.attempts_repo.list_for_session.return_value = [a1, a2]
+
+    chat = MagicMock()
+    chat.daily_session_id = 42
+    # Stale cache: both still "pending" even though seq 1 is evaluated.
+    chat.task_queue = [{"status": "pending"}, {"status": "pending"}]
+
+    service._sync_task_queue_from_attempts(chat)
+
+    service.attempts_repo.list_for_session.assert_called_once_with(42)
+    assert [item["sequence"] for item in chat.task_queue] == [1, 2]
+    assert [item["status"] for item in chat.task_queue] == ["evaluated", "pending"]
+
+
+@pytest.mark.asyncio
+async def test_resume_lands_on_pending_activity_without_replaying_feedback(
+    monkeypatch,
+) -> None:
+    """After completing activity 1, resume jumps to the pending activity 2 and
+    never re-emits the completed activity's evaluation/feedback widgets."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+    service.attempts_repo = MagicMock()
+
+    chat = _w1d1_chat(phase="practice_task")
+    chat.understanding_confirmed = True
+    chat.current_task_index = 1
+
+    daily = _w1d1_daily()
+    service._load_session = MagicMock(return_value=chat)
+    service._state_from_row = MagicMock(return_value={"task_queue": chat.task_queue})
+    service._enrich_state_with_profile = MagicMock()
+    service._sync_task_queue_from_attempts = MagicMock()
+    service._auto_complete_daily_if_ready = AsyncMock(return_value=daily)
+    service._session_blueprint_message = MagicMock(
+        return_value=WSOutgoingMessage(type="ui_event", widget="session_blueprint")
+    )
+
+    pending = _fake_attempt(archetype_id="WRITE_SENT_TRANS", sequence=2)
+    service._next_pending_attempt = MagicMock(return_value=pending)
+    service._prepare_attempt_for_delivery = AsyncMock(return_value=pending)
+
+    messages = [
+        msg async for msg in service.resume_messages_stream("chat-w1d1")
+    ]
+
+    widgets = {m.widget for m in messages if m.widget}
+    assert "scorecard" not in widgets
+    assert "feedback_card" not in widgets
+    assert "pronunciation_result" not in widgets
+    # Resume lands on the pending activity's task widget.
+    assert any(m.payload_kind == "task" for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_restart_session_clears_scorecard_and_reopens_day() -> None:
+    """Restart deletes the V2 scorecard, clears completed_at, and re-syncs the
+    chat queue so a restarted day starts clean."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+    service.curriculum_day_repo = MagicMock()
+    service.archetype_repo = MagicMock()
+    service._sync_task_queue_from_attempts = MagicMock()
+    service._maybe_refresh_file_persona = MagicMock(return_value=False)
+
+    session = MagicMock()
+    session.session_id = "chat-restart"
+    session.daily_session_id = 43
+    session.user_id = 7
+    session.topic = "T"
+    session.skill_name = "grammar"
+    session.task_type = "read"
+    session.task_queue = []
+
+    daily = MagicMock()
+    daily.id = 43
+    daily.day_id = "day_24_05_03"
+    daily.status = SessionStatus.COMPLETED
+
+    service._load_session = MagicMock(return_value=session)
+    service.db.get.return_value = daily
+    # No attempts to reset → empty scalars list.
+    service.db.execute.return_value.scalars.return_value = []
+    service.curriculum_day_repo.get_by_day_id.return_value = None
+
+    await service.restart_session(session_id="chat-restart", user_id=7)
+
+    # A DELETE was issued against SessionScorecard for this daily session.
+    executed = [str(call.args[0]) for call in service.db.execute.call_args_list if call.args]
+    assert any("session_scorecards" in sql.lower() for sql in executed)
+    # The day is reopened and its completion timestamp cleared.
+    assert daily.status is SessionStatus.IN_PROGRESS
+    assert daily.completed_at is None
+    # The chat queue is rebuilt from the (now reset) attempts.
+    service._sync_task_queue_from_attempts.assert_called_once_with(session)
+    service.db.commit.assert_called_once()

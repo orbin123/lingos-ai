@@ -61,27 +61,6 @@ export function ListenRetellTaskWidget({
     <TaskWidgetFrame task={task} icon={<Volume2 size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Retelling focus">{task.grammarRule}</RuleCallout>
 
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: "oklch(45% 0.07 240)", marginBottom: 6, textTransform: "uppercase" }}>
-          Target phrases
-        </div>
-        <div className="tw-target-chip-row">
-          {task.targetWords.map((word) => (
-            <span 
-              className="tw-target-chip used" 
-              key={word}
-              style={{
-                background: "oklch(93% 0.04 155)",
-                color: "oklch(42% 0.16 155)",
-                border: "1px solid oklch(85% 0.06 155)"
-              }}
-            >
-              {word}
-            </span>
-          ))}
-        </div>
-      </div>
-
       <div 
         style={{
           border: "1.5px solid oklch(90% 0.02 240)",

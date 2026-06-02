@@ -144,6 +144,20 @@ class SkillPointsLogRepository:
             q = q.filter(SkillPointsLog.skill_id == skill_id)
         return q.limit(limit).all()
 
+    def has_for_session(self, session_id: int) -> bool:
+        """True if any points were ever logged for this DailySession.
+
+        Survives scorecard deletion (reset/restart drop the scorecard but never
+        the append-only log), so the completion path can tell that points were
+        already awarded for this session and avoid double-counting on re-complete.
+        """
+        return (
+            self.db.query(SkillPointsLog.id)
+            .filter(SkillPointsLog.session_id == session_id)
+            .first()
+            is not None
+        )
+
     # Writes
     def create(
         self,

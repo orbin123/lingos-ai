@@ -40,7 +40,10 @@ from app.modules.curriculum.repository import (
     TaskArchetypeRepository,
 )
 from app.modules.preferences.repository import UserCoursePreferenceRepository
-from app.modules.progress.repository import SkillPointsRepository
+from app.modules.progress.repository import (
+    SkillPointsLogRepository,
+    SkillPointsRepository,
+)
 from app.modules.sessions.evaluator import Evaluator, EvaluationResult, StubEvaluator
 from app.modules.sessions.exceptions import (
     AttemptAlreadySubmitted,
@@ -81,7 +84,13 @@ from app.modules.sessions.task_generator import (
     TaskGenerator,
     is_valid_listening_payload,
     is_valid_open_text_payload,
+    is_valid_read_aloud_payload,
+    is_valid_sentence_transform_payload,
     is_valid_speak_and_record_payload,
+    is_valid_speak_pic_desc_payload,
+    normalize_read_aloud_payload,
+    normalize_sentence_transform_payload,
+    normalize_speak_pic_desc_payload,
 )
 from app.modules.skills.repository import SkillRepository
 from app.scoring import (
@@ -145,6 +154,7 @@ class SessionService:
         self.archetypes_repo = TaskArchetypeRepository(db)
         self.skills_repo = SkillRepository(db)
         self.points_repo = SkillPointsRepository(db)
+        self.points_log_repo = SkillPointsLogRepository(db)
         self.preferences_repo = UserCoursePreferenceRepository(db)
 
         # RAG memory service — optional. When absent (tests, early phases),
@@ -316,6 +326,36 @@ class SessionService:
         """
         spec = get_archetype(attempt.archetype_id)
         content = dict(attempt.task_content or {})
+        if spec.archetype_id == "SPEAK_READ_ALOUD":
+            healed = normalize_read_aloud_payload(content)
+            if healed != content:
+                attempt.task_content = healed
+                self.db.commit()
+                self.db.refresh(attempt)
+                content = healed
+        if spec.ui_widget == "SentenceTransform":
+            healed = normalize_sentence_transform_payload(content)
+            if healed != content:
+                attempt.task_content = healed
+                self.db.commit()
+                self.db.refresh(attempt)
+                content = healed
+        if spec.archetype_id == "SPEAK_PIC_DESC":
+            from app.ai.sessions.llm_task_generator import LLMTaskGenerator
+
+            healed = normalize_speak_pic_desc_payload(content)
+            image_alt = str(healed.get("image_alt") or "").strip()
+            image_url = str(healed.get("image_url") or "").strip()
+            if image_alt and not image_url and not healed.get("image_error"):
+                healed = await LLMTaskGenerator._attach_required_image(
+                    content=healed,
+                    archetype=spec,
+                )
+            if healed != content:
+                attempt.task_content = healed
+                self.db.commit()
+                self.db.refresh(attempt)
+                content = healed
         if self._is_attempt_content_valid(content, spec):
             return attempt
 
@@ -347,8 +387,14 @@ class SessionService:
             return bool(audio_url or audio_script)
         if spec.archetype_id == "WRITE_OPEN_SENT":
             return is_valid_open_text_payload(content, expected_items=3)
-        if spec.archetype_id == "SPEAK_TIMED" or spec.ui_widget == "SpeakAndRecord":
+        if spec.archetype_id == "SPEAK_READ_ALOUD":
+            return is_valid_read_aloud_payload(content)
+        if spec.archetype_id == "SPEAK_TIMED":
             return is_valid_speak_and_record_payload(content)
+        if spec.archetype_id == "SPEAK_PIC_DESC":
+            return is_valid_speak_pic_desc_payload(content)
+        if spec.ui_widget == "SentenceTransform":
+            return is_valid_sentence_transform_payload(content, expected_items=3)
         return True
 
     async def _regenerate_task_content(
@@ -643,6 +689,17 @@ class SessionService:
             # Re-open the session so it can be completed again.
             session.status = SessionStatus.IN_PROGRESS
 
+        # If the prior scorecard was already deleted on a reopen (per-activity
+        # reset or full restart drop the scorecard, not the append-only points
+        # log), the `existing` row is gone but the log still proves points were
+        # awarded for this session. Treat that as already-applied so a
+        # re-completion rebuilds the scorecard with the new scores WITHOUT
+        # awarding a second batch of points.
+        if not old_points_applied and self.points_log_repo.has_for_session(
+            session.id
+        ):
+            old_points_applied = True
+
         # Build ActivityScore list from every EVALUATED attempt.
         attempts = self.attempts_repo.list_for_session(session.id)
         scored: list[ActivityScore] = []
@@ -741,6 +798,48 @@ class SessionService:
 
     def get_session(self, *, session_id: str, user_id: int) -> DailySession:
         return self._load_owned(session_id=session_id, user_id=user_id)
+
+    # ── reset ──────────────────────────────────────────────────────
+
+    def reset_activity(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+        sequence: int,
+    ) -> ActivityAttempt:
+        """Reset a single activity so it can be re-attempted.
+
+        Deletes the attempt's evaluation + feedback and flips it back to
+        PENDING (clearing the stored response). If the daily session was
+        already COMPLETED, it is reopened (status → IN_PROGRESS, completed_at
+        cleared) and its now-stale scorecard is deleted; the scorecard is
+        rebuilt the next time the session is completed.
+
+        Synchronous: a single transaction, no LLM calls.
+        """
+        session = self._load_owned(session_id=session_id, user_id=user_id)
+        if session.status is SessionStatus.ABANDONED:
+            raise SessionAbandoned(f"session {session_id!r} was abandoned")
+
+        attempt = self.attempts_repo.get(session_pk=session.id, sequence=sequence)
+        if attempt is None:
+            raise AttemptNotFound(
+                f"session {session_id!r}: no attempt at sequence {sequence}"
+            )
+
+        self.evaluations_repo.delete_for_attempt(attempt.id)
+        self.feedback_repo.delete_for_attempt(attempt.id)
+        self.attempts_repo.reset_to_pending(attempt)
+
+        if session.status is SessionStatus.COMPLETED:
+            self.scorecards_repo.delete_for_session(session.id)
+            session.status = SessionStatus.IN_PROGRESS
+            session.completed_at = None
+
+        self.db.commit()
+        self.db.refresh(attempt)
+        return attempt
 
     # ── advance day ────────────────────────────────────────────────
 
