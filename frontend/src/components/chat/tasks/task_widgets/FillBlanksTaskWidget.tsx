@@ -3,13 +3,16 @@
 import { FileText } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
 import type { FillBlanksTask, LiveTaskController } from "../source";
+import { spatialFieldProps } from "@/lib/spatial-field-navigation";
 import {
   FeedbackRow,
+  blankNeedsBaseVerbHint,
   liveStringRecord,
   normalizeAnswer,
   ResultBanner,
   RuleCallout,
   StatusDot,
+  stripLeadingParentheticalHints,
   SubmitButton,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
@@ -68,9 +71,11 @@ export function FillBlanksTaskWidget({
         {passageAligned
           ? parts.map((part, index) => {
               const item = task.items[index];
+              const displayPart =
+                index > 0 ? stripLeadingParentheticalHints(part) : part;
               return (
                 <span key={`part-${index}`}>
-                  {part}
+                  {displayPart}
                   {item ? (
                     <InlineBlank
                       item={item}
@@ -90,9 +95,12 @@ export function FillBlanksTaskWidget({
                 : [`${item.sentenceWithBlank} `, ""];
               return (
                 <div key={item.itemId} style={{ marginBottom: 6 }}>
-                  {segments.map((segment, segIndex) => (
+                  {segments.map((segment, segIndex) => {
+                    const displaySegment =
+                      segIndex > 0 ? stripLeadingParentheticalHints(segment) : segment;
+                    return (
                     <span key={`${item.itemId}-seg-${segIndex}`}>
-                      {segment}
+                      {displaySegment}
                       {segIndex < segments.length - 1 ? (
                         <InlineBlank
                           item={item}
@@ -104,7 +112,8 @@ export function FillBlanksTaskWidget({
                         />
                       ) : null}
                     </span>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })}
@@ -188,8 +197,9 @@ function InlineBlank({
           onChange={(event) => onChange(event.target.value)}
           aria-label={`Blank ${index + 1}`}
           style={{ width: "clamp(96px, 18vw, 160px)", textAlign: "left" }}
+          {...spatialFieldProps(index)}
         />
-        {item.baseVerb && (
+        {blankNeedsBaseVerbHint(item) && (
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tw-primary)", fontStyle: "italic" }}>
             ({item.baseVerb})
           </span>
@@ -226,7 +236,7 @@ function InlineBlank({
         >
           answer
         </span>
-        {item.baseVerb && (
+        {blankNeedsBaseVerbHint(item) && (
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tw-primary)", fontStyle: "italic" }}>
             ({item.baseVerb})
           </span>

@@ -507,9 +507,9 @@ function adaptWriteBulletsToPara(payload: AnyTaskPayload): WriteBulletsToParaTas
 function adaptWriteParaphrase(payload: AnyTaskPayload): WriteParaphraseTask {
   const items = arrayValue(payload.items).map((raw, index) => ({
     itemId: textValue(raw.item_id) || `item_${index + 1}`,
-    incorrectSentence: textValue(raw.prompt) || textValue(raw.source_sentence),
+    incorrectSentence: textValue(raw.incorrect_sentence) || textValue(raw.prompt) || textValue(raw.source_sentence),
     sampleAnswer: textValue(raw.sample_answer),
-    watchHints: stringArray(raw.answer_hints),
+    watchHints: firstStringArray(raw.watch_hints, raw.answer_hints),
   }));
   return {
     ...baseFields(payload),
@@ -560,11 +560,13 @@ function dialogueTurns(payload: AnyTaskPayload): { role: string; text: string; s
 }
 
 function adaptSpeakPicDesc(payload: AnyTaskPayload): SpeakPicDescTask {
+  const imageError = textValue(payload.image_error);
   return {
     ...baseFields(payload),
     widget: "speak_pic_desc",
     imageUrl: textValue(payload.image_url),
     imageAlt: textValue(payload.image_alt),
+    ...(imageError ? { imageError } : {}),
     grammarRule: grammarRule(payload),
     speakingDurationSeconds: speakingDuration(payload, 45),
     prompts: speakingPrompts(payload),
@@ -665,7 +667,25 @@ function adaptSpeakDebate(payload: AnyTaskPayload): SpeakDebateTask {
   };
 }
 
+/** Reference retell shown as "Model response" after submit (mirrors backend contract fields). */
+export function resolveListenRetellModelAnswer(payload: AnyTaskPayload): string {
+  const audioScript = textValue(payload.audio_script);
+  const samples = firstStringArray(payload.sample_responses, payload.sample_answers);
+  const fallbackSample = textValue(payload.sample_response);
+  const allSamples = samples.length > 0 ? samples : fallbackSample ? [fallbackSample] : [];
+  const passage = textValue(payload.passage_to_retell);
+  const readAloud = textValue(payload.text_to_read_aloud);
+  const distinctReadAloud =
+    readAloud && readAloud !== audioScript ? readAloud : "";
+  return passage || allSamples[0] || distinctReadAloud || "";
+}
+
 function adaptListenRetell(payload: AnyTaskPayload): ListenRetellTask {
+  const modelAnswer = resolveListenRetellModelAnswer(payload);
+  const fallbackPrompt = textValue(payload.speaking_prompt) || textValue(payload.prompt);
+  const prompts = speakingPrompts(payload);
+  const allPrompts =
+    prompts.length > 0 ? prompts : fallbackPrompt ? [fallbackPrompt] : [];
   return {
     ...baseFields(payload),
     widget: "listen_retell",
@@ -676,9 +696,9 @@ function adaptListenRetell(payload: AnyTaskPayload): ListenRetellTask {
     audioDurationSeconds: numberValue(payload.audio_duration_seconds),
     grammarRule: grammarRule(payload),
     targetWords: stringArray(payload.target_words),
-    passageToRetell: textValue(payload.passage_to_retell),
-    prompts: speakingPrompts(payload),
-    sampleResponses: speakingSamples(payload),
+    passageToRetell: modelAnswer,
+    prompts: allPrompts,
+    sampleResponses: modelAnswer ? [modelAnswer] : speakingSamples(payload),
     answers: { correct: [], wrong: [] },
   };
 }
@@ -688,7 +708,10 @@ function adaptReadAloud(payload: AnyTaskPayload): ReadAloudTask {
   return {
     ...baseFields(payload),
     widget: "read_aloud",
-    textToReadAloud: textValue(payload.text_to_read_aloud) || textValue(payload.passage),
+    textToReadAloud:
+      textValue(payload.text_to_read_aloud) ||
+      textValue(payload.passage) ||
+      textValue(payload.primary_text),
     grammarRule: grammarRule(payload),
     targetWords: stringArray(payload.target_words),
     speakingDurationSeconds: numberValue(payload.speaking_duration_seconds) || 45,
@@ -799,11 +822,31 @@ function adaptErrorSpotting(payload: AnyTaskPayload): ErrorSpottingTask {
 }
 
 // ── Dictation family ────────────────────────────────────────────────────────
+function dictationCorrectAnswer(
+  raw: Record<string, unknown>,
+  index: number,
+  targetWords: string[],
+): string {
+  const prompt = textValue(raw.prompt);
+  let answer = textValue(raw.correct_answer) || textValue(raw.sample_answer);
+  if (!answer && index < targetWords.length) {
+    answer = targetWords[index] ?? "";
+  }
+  if (!answer) return "";
+  if (!prompt.includes("___")) return answer;
+  const parts = prompt.split("___").map((part) => part.trim()).filter(Boolean);
+  if (parts.length > 0 && parts.every((part) => answer.toLowerCase().includes(part.toLowerCase()))) {
+    return answer;
+  }
+  return prompt.replace("___", answer.trim()).trim();
+}
+
 function adaptListenDictation(payload: AnyTaskPayload): ListenDictationTask {
+  const targetWords = stringArray(payload.target_words);
   const items = arrayValue(payload.items).map((raw, index) => ({
     itemId: textValue(raw.item_id) || `item_${index + 1}`,
     prompt: textValue(raw.prompt),
-    correctAnswer: textValue(raw.correct_answer),
+    correctAnswer: dictationCorrectAnswer(raw, index, targetWords),
     explanation: textValue(raw.explanation),
   }));
   return {

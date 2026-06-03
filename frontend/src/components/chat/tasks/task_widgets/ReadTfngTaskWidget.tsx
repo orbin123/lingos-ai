@@ -4,6 +4,7 @@ import { Check, FileText, X } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
 import type { LiveTaskController, ReadTfngTask } from "../source";
 import { liveStringRecord, ResultBanner, RuleCallout, SubmitButton, TaskWidgetFrame } from "./TaskWidgetFrame";
+import { PassageBlock } from "./PassageBlock";
 
 const TFNG_OPTIONS: ("True" | "False" | "Not Given")[] = ["True", "False", "Not Given"];
 
@@ -20,10 +21,7 @@ function LiveTfng({ task, live }: { task: ReadTfngTask; live: LiveTaskController
   return (
     <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Reading focus">{task.grammarRule}</RuleCallout>
-      <div className="tw-passage">
-        <div className="tw-passage-label">{task.passageTitle}</div>
-        {task.passage}
-      </div>
+      <PassageBlock title={task.passageTitle}>{task.passage}</PassageBlock>
 
       {task.items.map((item, index) => {
         const selected = answers[item.itemId];
@@ -122,10 +120,7 @@ export function ReadTfngTaskWidget({
     <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Reading focus">{task.grammarRule}</RuleCallout>
       
-      <div className="tw-passage">
-        <div className="tw-passage-label">{task.passageTitle}</div>
-        {task.passage}
-      </div>
+      <PassageBlock title={task.passageTitle}>{task.passage}</PassageBlock>
 
       {!isDefault && (
         <ResultBanner

@@ -250,7 +250,7 @@ function WordReviewRow({ word }: { word: PronunciationWordScore }) {
 function Legend() {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 16px", fontSize: 11.5, color: "oklch(45% 0.07 240)", marginTop: 8, paddingLeft: 2 }}>
-      <LegendItem color="oklch(48% 0.18 155)" label="Good (>=80%)" />
+      <LegendItem color="oklch(48% 0.18 155)" label="Good" />
       <LegendItem color="oklch(60% 0.13 80)" label="Needs work" />
       <LegendItem color="oklch(50% 0.15 25)" label="Mispronounced" />
       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>

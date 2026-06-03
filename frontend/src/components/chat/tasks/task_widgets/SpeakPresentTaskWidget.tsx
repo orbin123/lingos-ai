@@ -4,7 +4,7 @@ import { Mic2, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
 import type { LiveTaskController, SpeakPresentTask } from "../source";
 import { LiveSpeakingRecorder } from "./LiveSpeakingRecorder";
-import { ResultBanner, RuleCallout, StatusDot, TargetWordsRow, TaskWidgetFrame } from "./TaskWidgetFrame";
+import { ResultBanner, RuleCallout, StatusDot, TaskWidgetFrame } from "./TaskWidgetFrame";
 
 export function SpeakPresentTaskWidget({
   task,
@@ -19,20 +19,22 @@ export function SpeakPresentTaskWidget({
     return (
       <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
         <RuleCallout label="Speaking focus">{task.grammarRule}</RuleCallout>
-        <TargetWordsRow words={task.targetWords} label="Target speaking cues" />
         <LiveSpeakingRecorder
           live={live}
           durationSeconds={task.speakingDurationSeconds}
           slots={[
             {
               id: "prompt_1",
-              prompt: task.prompts?.[0] || "Give your short presentation using the cues above.",
+              prompt: task.prompts?.[0] || "Give your short presentation.",
               sampleResponse: task.modelPresentation || task.sampleResponses?.[0] || "",
               context: task.visualPromptDescription ? (
                 <div
                   className="tw-card"
                   style={{ background: "oklch(98% 0.01 245)", marginBottom: 12 }}
                 >
+                  <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", color: "oklch(50% 0.1 240)", marginBottom: 6 }}>
+                    Sample answer
+                  </div>
                   {task.visualPromptDescription}
                 </div>
               ) : undefined,
@@ -54,19 +56,6 @@ export function SpeakPresentTaskWidget({
   return (
     <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Speaking focus">{task.grammarRule}</RuleCallout>
-
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: "oklch(45% 0.07 240)", marginBottom: 6, textTransform: "uppercase" }}>
-          Target speaking cues
-        </div>
-        <div className="tw-target-chip-row">
-          {task.targetWords.map((word) => (
-            <span className="tw-target-chip used" key={word}>
-              {word}
-            </span>
-          ))}
-        </div>
-      </div>
 
       <div
         style={{

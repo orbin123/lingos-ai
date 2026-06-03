@@ -92,39 +92,6 @@ export function WriteTimedTaskWidget({
     <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Writing pressure">{task.grammarRule}</RuleCallout>
 
-      <div style={{ marginBottom: 16 }}>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: "oklch(45% 0.07 240)",
-            marginBottom: 8,
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          Target writing cues
-        </div>
-        <div className="tw-target-chip-row">
-          {task.targetWords.map((word) => {
-            const isUsed = !isDefault && currentText.toLowerCase().includes(word.toLowerCase());
-            return (
-              <span
-                className={`tw-target-chip ${isUsed ? "used" : ""}`}
-                key={word}
-                style={{
-                  background: isUsed ? "oklch(93% 0.04 155)" : "oklch(96% 0.015 240)",
-                  color: isUsed ? "oklch(42% 0.16 155)" : "oklch(35% 0.05 240)",
-                  border: isUsed ? "1px solid oklch(85% 0.06 155)" : "1px solid oklch(90% 0.02 240)",
-                }}
-              >
-                {word}
-              </span>
-            );
-          })}
-        </div>
-      </div>
-
       {!isDefault && (
         <ResultBanner
           total={1}

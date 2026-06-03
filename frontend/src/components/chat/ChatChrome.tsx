@@ -1,7 +1,9 @@
 "use client";
 
 import type React from "react";
-import { ChevronLeft } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronLeft, Copy, RotateCcw } from "lucide-react";
+import type { CSSProperties } from "react";
 
 export type ChatSectionTone = "intro" | "task" | "score" | "feedback";
 
@@ -145,11 +147,11 @@ export function ChatTopbar({
       >
         <button
           type="button"
+          className="chat-round-icon-btn"
           aria-label="Back"
           title="Back"
           onClick={onBack}
           style={{
-            ...roundIconButton,
             cursor: onBack ? "pointer" : "default",
           }}
         >
@@ -286,6 +288,77 @@ export function SectionMarker({
   );
 }
 
+const bubbleActionButtonStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 6,
+  borderRadius: 999,
+  border: "1px solid oklch(88% 0.02 245)",
+  background: "white",
+  fontFamily: "inherit",
+  cursor: "pointer",
+};
+
+function CopyMessageButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard unavailable — silently ignore */
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label={copied ? "Copied" : "Copy message"}
+      title={copied ? "Copied" : "Copy message"}
+      className="chat-bubble-copy"
+      style={{
+        ...bubbleActionButtonStyle,
+        color: copied ? "oklch(48% 0.16 155)" : "oklch(45% 0.07 240)",
+      }}
+    >
+      {copied ? <Check size={13} /> : <Copy size={13} />}
+    </button>
+  );
+}
+
+function RetryActivityButton({
+  onClick,
+  disabled,
+  loading,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={loading ? "Resetting activity" : "Retry this activity"}
+      title={loading ? "Resetting…" : "Retry this activity"}
+      className="chat-bubble-retry"
+      style={{
+        ...bubbleActionButtonStyle,
+        color: "oklch(45% 0.07 240)",
+        opacity: disabled ? 0.55 : 1,
+        cursor: disabled ? "default" : "pointer",
+      }}
+    >
+      <RotateCcw size={13} />
+    </button>
+  );
+}
+
 export function ChatBubble({
   role,
   name,
@@ -293,6 +366,9 @@ export function ChatBubble({
   actions,
   streaming,
   onAction,
+  copyText,
+  onRetry,
+  retrying,
 }: {
   role: "ai" | "you";
   name?: string;
@@ -300,8 +376,14 @@ export function ChatBubble({
   actions?: string[];
   streaming?: boolean;
   onAction?: (label: string) => void;
+  copyText?: string;
+  onRetry?: () => void;
+  retrying?: boolean;
 }) {
   const isAi = role === "ai";
+  const showCopy = isAi && !streaming && Boolean(copyText && copyText.trim());
+  const showRetry = isAi && !streaming && Boolean(onRetry);
+  const showBubbleActions = showCopy || showRetry;
 
   return (
     <div
@@ -415,6 +497,18 @@ export function ChatBubble({
             </div>
           )}
         </div>
+        {showBubbleActions && (
+          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+            {showCopy && <CopyMessageButton text={copyText as string} />}
+            {showRetry && (
+              <RetryActivityButton
+                onClick={onRetry as () => void}
+                disabled={retrying}
+                loading={retrying}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

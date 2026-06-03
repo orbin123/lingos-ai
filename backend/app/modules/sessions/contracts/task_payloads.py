@@ -85,8 +85,8 @@ class DictationPayload(AudioMixin, TaskPayloadBase):
 class OpenTextPayload(TaskPayloadBase):
     """Free-writing tasks driven by prompts.
 
-    WRITE_OPEN_SENT, WRITE_PARA, WRITE_EMAIL, WRITE_PARAPHRASE,
-    WRITE_WORD_UPGRADE, WRITE_BULLETS_TO_PARA, WRITE_IDEA_PARA, WRITE_TIMED.
+    WRITE_OPEN_SENT, WRITE_PARA, WRITE_EMAIL, WRITE_WORD_UPGRADE,
+    WRITE_BULLETS_TO_PARA, WRITE_IDEA_PARA, WRITE_TIMED.
     """
 
     items: tuple[OpenTextItem, ...] = Field(min_length=1)
@@ -134,6 +134,7 @@ class SpeakingPayload(TaskPayloadBase):
     image_url: str = ""                    # pic_desc / present
     image_alt: str = ""
     dialogue_context: tuple[DialogueTurn, ...] = ()   # roleplay / smalltalk / debate
+    interview_context: str = ""                        # interview
     questions: tuple[InterviewQuestion, ...] = ()      # interview
     # Present for LISTEN_RETELL / LISTEN_SHADOW (listen-then-speak).
     audio_genre: str = ""

@@ -40,7 +40,10 @@ from app.modules.curriculum.repository import (
     TaskArchetypeRepository,
 )
 from app.modules.preferences.repository import UserCoursePreferenceRepository
-from app.modules.progress.repository import SkillPointsRepository
+from app.modules.progress.repository import (
+    SkillPointsLogRepository,
+    SkillPointsRepository,
+)
 from app.modules.sessions.evaluator import Evaluator, EvaluationResult, StubEvaluator
 from app.modules.sessions.exceptions import (
     AttemptAlreadySubmitted,
@@ -79,9 +82,19 @@ from app.modules.sessions.scoring_writer import ApplyReport, apply_session_score
 from app.modules.sessions.task_generator import (
     StubTaskGenerator,
     TaskGenerator,
+    is_valid_dialogue_speaking_payload,
+    is_valid_interview_speaking_payload,
     is_valid_listening_payload,
     is_valid_open_text_payload,
+    is_valid_read_aloud_payload,
+    is_valid_read_structure_payload,
+    is_valid_sentence_transform_payload,
     is_valid_speak_and_record_payload,
+    is_valid_speak_pic_desc_payload,
+    normalize_read_aloud_payload,
+    normalize_read_structure_payload,
+    normalize_sentence_transform_payload,
+    normalize_speak_pic_desc_payload,
 )
 from app.modules.skills.repository import SkillRepository
 from app.scoring import (
@@ -145,12 +158,14 @@ class SessionService:
         self.archetypes_repo = TaskArchetypeRepository(db)
         self.skills_repo = SkillRepository(db)
         self.points_repo = SkillPointsRepository(db)
+        self.points_log_repo = SkillPointsLogRepository(db)
         self.preferences_repo = UserCoursePreferenceRepository(db)
 
         # RAG memory service — optional. When absent (tests, early phases),
         # activity memory storage and mentor note generation are skipped.
         self._rag_service: Any | None = None
         self._mentor_generator: Any | None = None
+        self._pending_rag_tasks: list[asyncio.Task[None]] = []
 
     # ── start ──────────────────────────────────────────────────────
 
@@ -316,6 +331,43 @@ class SessionService:
         """
         spec = get_archetype(attempt.archetype_id)
         content = dict(attempt.task_content or {})
+        if spec.archetype_id == "SPEAK_READ_ALOUD":
+            healed = normalize_read_aloud_payload(content)
+            if healed != content:
+                attempt.task_content = healed
+                self.db.commit()
+                self.db.refresh(attempt)
+                content = healed
+        if spec.ui_widget == "SentenceTransform":
+            healed = normalize_sentence_transform_payload(content)
+            if healed != content:
+                attempt.task_content = healed
+                self.db.commit()
+                self.db.refresh(attempt)
+                content = healed
+        if spec.archetype_id == "READ_STRUCTURE_ID":
+            healed = normalize_read_structure_payload(content)
+            if healed != content:
+                attempt.task_content = healed
+                self.db.commit()
+                self.db.refresh(attempt)
+                content = healed
+        if spec.archetype_id == "SPEAK_PIC_DESC":
+            from app.ai.sessions.llm_task_generator import LLMTaskGenerator
+
+            healed = normalize_speak_pic_desc_payload(content)
+            image_alt = str(healed.get("image_alt") or "").strip()
+            image_url = str(healed.get("image_url") or "").strip()
+            if image_alt and not image_url and not healed.get("image_error"):
+                healed = await LLMTaskGenerator._attach_required_image(
+                    content=healed,
+                    archetype=spec,
+                )
+            if healed != content:
+                attempt.task_content = healed
+                self.db.commit()
+                self.db.refresh(attempt)
+                content = healed
         if self._is_attempt_content_valid(content, spec):
             return attempt
 
@@ -347,8 +399,20 @@ class SessionService:
             return bool(audio_url or audio_script)
         if spec.archetype_id == "WRITE_OPEN_SENT":
             return is_valid_open_text_payload(content, expected_items=3)
-        if spec.archetype_id == "SPEAK_TIMED" or spec.ui_widget == "SpeakAndRecord":
+        if spec.archetype_id == "SPEAK_READ_ALOUD":
+            return is_valid_read_aloud_payload(content)
+        if spec.archetype_id == "SPEAK_TIMED":
             return is_valid_speak_and_record_payload(content)
+        if spec.archetype_id == "SPEAK_PIC_DESC":
+            return is_valid_speak_pic_desc_payload(content)
+        if spec.archetype_id == "SPEAK_INTERVIEW":
+            return is_valid_interview_speaking_payload(content)
+        if spec.archetype_id in {"SPEAK_ROLEPLAY", "SPEAK_SMALLTALK"}:
+            return is_valid_dialogue_speaking_payload(content)
+        if spec.ui_widget == "SentenceTransform":
+            return is_valid_sentence_transform_payload(content, expected_items=3)
+        if spec.archetype_id == "READ_STRUCTURE_ID":
+            return is_valid_read_structure_payload(content)
         return True
 
     async def _regenerate_task_content(
@@ -515,12 +579,35 @@ class SessionService:
             },
             user_response=user_response or {},
         )
+        # Phase 2 (flagged): make feedback memory-aware. Advisory only —
+        # never changes the score. No-op when the flag is off or RAG is
+        # unavailable.
+        learner_history: str | None = None
+        if settings.RAG_PER_ACTIVITY_FEEDBACK and self._rag_service is not None:
+            try:
+                learner_history = await asyncio.wait_for(
+                    self._rag_service.retrieve_context_for_activity(
+                        user_id=session.user_id,
+                        archetype_id=attempt.archetype_id,
+                        query_text=f"{spec.name}: {eval_result.evaluator_notes or ''}",
+                    ),
+                    timeout=settings.RAG_PER_ACTIVITY_TIMEOUT_S,
+                )
+            except Exception:
+                # Best-effort: a slow/failed lookup must never block feedback.
+                logger.warning(
+                    "Per-activity RAG retrieval skipped (timeout/error) for attempt=%d",
+                    attempt.id, exc_info=True,
+                )
+                learner_history = None
+
         fb: FeedbackResult = await self.feedback_generator.generate(
             archetype=spec,
             evaluation=eval_result,
             user_response=user_response,
             task_content=attempt.task_content,
             feedback_overrides=file_overrides.get("feedback") or None,
+            learner_history=learner_history,
         )
         feedback = ActivityFeedback(
             attempt_id=attempt.id,
@@ -558,20 +645,12 @@ class SessionService:
         self.db.refresh(evaluation)
         self.db.refresh(feedback)
 
-        # Fire-and-forget: store activity feedback in RAG memory.
-        # Failures are logged, never block the user.
-        if self._rag_service is not None:
-            asyncio.create_task(
-                self._store_activity_memory_safe(
-                    user_id=session.user_id,
-                    session_id=session.id,
-                    attempt_id=attempt.id,
-                    archetype_id=attempt.archetype_id,
-                    day_id=session.day_id,
-                    feedback=feedback,
-                    spec=spec,
-                )
-            )
+        # NOTE: activity feedback is NOT indexed to the vector store here.
+        # Doing so on `self.db` (the request/WebSocket-scoped session) from a
+        # background task races the live chat flow — a SQLAlchemy Session is
+        # not safe for concurrent use. Indexing happens in the post-completion
+        # background worker (`run_post_completion_rag`), which opens its own
+        # session and re-indexes every evaluated activity idempotently.
 
         return attempt, evaluation, feedback
 
@@ -643,6 +722,17 @@ class SessionService:
             # Re-open the session so it can be completed again.
             session.status = SessionStatus.IN_PROGRESS
 
+        # If the prior scorecard was already deleted on a reopen (per-activity
+        # reset or full restart drop the scorecard, not the append-only points
+        # log), the `existing` row is gone but the log still proves points were
+        # awarded for this session. Treat that as already-applied so a
+        # re-completion rebuilds the scorecard with the new scores WITHOUT
+        # awarding a second batch of points.
+        if not old_points_applied and self.points_log_repo.has_for_session(
+            session.id
+        ):
+            old_points_applied = True
+
         # Build ActivityScore list from every EVALUATED attempt.
         attempts = self.attempts_repo.list_for_session(session.id)
         scored: list[ActivityScore] = []
@@ -705,33 +795,185 @@ class SessionService:
             report = apply_session_scorecard(self.db, session=session, scorecard=scorecard)
             scorecard.points_applied = report.applied
 
-        # Generate mentor note via RAG (additive, never blocks).
-        mentor_note = await self._generate_mentor_note_safe(
-            session=session,
-            activities_breakdown=activities_breakdown,
-        )
-        scorecard.mentor_note = mentor_note
-
+        # The Coach's Note is NOT generated here. Completion stays fast and the
+        # scorecard is committed with mentor_note=None; the note is produced by
+        # the explicit, awaited ``ensure_mentor_note`` step (owned by the chat WS
+        # / REST completion path) so it can be delivered to the client in-band
+        # instead of racing a hard inline timeout. See ensure_mentor_note.
         session.status = SessionStatus.COMPLETED
         session.completed_at = now
 
         self.db.commit()
         self.db.refresh(scorecard)
 
-        # Fire-and-forget: store session summary in RAG memory.
-        if self._rag_service is not None and mentor_note:
-            asyncio.create_task(
-                self._store_session_memory_safe(
-                    user_id=session.user_id,
-                    session_id=session.id,
-                    day_id=session.day_id,
-                    activities_summary=activities_breakdown,
-                    points_earned=dict(aggregation.points_earned),
-                    mentor_note=mentor_note,
-                )
+        # Background (own DB session): index per-activity vectors only. The note
+        # and the day-level summary vector are handled by ensure_mentor_note.
+        if self._rag_service is not None:
+            self._schedule_post_completion_rag(
+                session_id=session.session_id,
+                user_id=session.user_id,
             )
 
         return scorecard, report
+
+    async def run_post_completion_rag(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+    ) -> None:
+        """Index per-activity feedback vectors after completion.
+
+        Runs after ``complete_session`` has committed. The mentor note and the
+        day-level session-summary vector are NOT produced here — they belong to
+        ``ensure_mentor_note`` (the awaited, in-band delivery path). Never raises.
+        """
+        try:
+            session = self._load_owned(session_id=session_id, user_id=user_id)
+            scorecard = self.scorecards_repo.get_for_session(session.id)
+            if scorecard is None:
+                return
+
+            attempts = self.attempts_repo.list_for_session(session.id)
+
+            if self._rag_service is not None:
+                for attempt in attempts:
+                    if attempt.status is not AttemptStatus.EVALUATED:
+                        continue
+                    if attempt.feedback is None:
+                        continue
+                    await self._store_activity_memory_safe(
+                        user_id=session.user_id,
+                        session_id=session.id,
+                        attempt_id=attempt.id,
+                        archetype_id=attempt.archetype_id,
+                        day_id=session.day_id,
+                        feedback=attempt.feedback,
+                        spec=get_archetype(attempt.archetype_id),
+                    )
+
+            self.db.commit()
+        except Exception:
+            logger.warning(
+                "Post-completion RAG pipeline failed for session=%s",
+                session_id,
+                exc_info=True,
+            )
+            self.db.rollback()
+
+    async def ensure_mentor_note(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+    ) -> str | None:
+        """Generate (if needed) and persist the Coach's Note for a session.
+
+        Idempotent: if the scorecard already carries a note it is returned
+        without re-invoking the LLM. Otherwise the note is generated, persisted
+        alongside the day-level session-summary vector, committed, and returned.
+        Safe to call from the awaited completion path (chat WS / REST) and from a
+        write-only background fallback. Never raises.
+        """
+        try:
+            session = self._load_owned(session_id=session_id, user_id=user_id)
+            scorecard = self.scorecards_repo.get_for_session(session.id)
+            if scorecard is None:
+                return None
+            if scorecard.mentor_note:
+                return scorecard.mentor_note
+            if self._rag_service is None or self._mentor_generator is None:
+                return None
+
+            activities_breakdown = [
+                dict(item)
+                for item in (scorecard.activities or [])
+                if isinstance(item, dict)
+            ]
+            mentor_note = await self._generate_mentor_note_safe(
+                session=session,
+                activities_breakdown=activities_breakdown,
+            )
+            if not mentor_note:
+                return None
+
+            scorecard.mentor_note = mentor_note
+            # Day-level summary vector depends on the note, so it is stored here
+            # rather than in the activity-indexing worker. Idempotent.
+            await self._store_session_memory_safe(
+                user_id=session.user_id,
+                session_id=session.id,
+                day_id=session.day_id,
+                activities_summary=activities_breakdown,
+                points_earned={
+                    k: int(v)
+                    for k, v in dict(scorecard.points_earned or {}).items()
+                },
+                mentor_note=mentor_note,
+            )
+            self.db.commit()
+            return mentor_note
+        except Exception:
+            logger.warning(
+                "ensure_mentor_note failed for session=%s",
+                session_id,
+                exc_info=True,
+            )
+            self.db.rollback()
+            return None
+
+    def _schedule_post_completion_rag(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+    ) -> None:
+        """Fire-and-forget mentor note + RAG indexing after completion commit."""
+        task = asyncio.create_task(
+            _run_post_completion_rag_worker(
+                session_id=session_id,
+                user_id=user_id,
+            )
+        )
+        self._pending_rag_tasks.append(task)
+        task.add_done_callback(self._discard_pending_rag_task)
+
+    def _schedule_rag_delete(
+        self,
+        *,
+        attempt_ids: list[int],
+        session_pk: int,
+        delete_summary: bool,
+    ) -> None:
+        """Fire-and-forget Pinecone/Postgres-mirror vector cleanup after a reset.
+
+        Runs on its own DB session (the delete also touches the Postgres mirror),
+        so it never shares the request-scoped ``self.db`` and never blocks the
+        reset/restart commit. Best-effort: failures are logged, never raised.
+        """
+        task = asyncio.create_task(
+            _run_rag_delete_worker(
+                attempt_ids=list(attempt_ids),
+                session_pk=session_pk,
+                delete_summary=delete_summary,
+            )
+        )
+        self._pending_rag_tasks.append(task)
+        task.add_done_callback(self._discard_pending_rag_task)
+
+    def _discard_pending_rag_task(self, task: asyncio.Task[None]) -> None:
+        try:
+            self._pending_rag_tasks.remove(task)
+        except ValueError:
+            pass
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.warning(
+                "Post-completion RAG background task failed",
+                exc_info=exc,
+            )
 
     # ── read ───────────────────────────────────────────────────────
 
@@ -741,6 +983,113 @@ class SessionService:
 
     def get_session(self, *, session_id: str, user_id: int) -> DailySession:
         return self._load_owned(session_id=session_id, user_id=user_id)
+
+    # ── reset ──────────────────────────────────────────────────────
+
+    async def reset_activity(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+        sequence: int,
+    ) -> ActivityAttempt:
+        """Reset a single activity so it can be re-attempted.
+
+        Deletes the attempt's evaluation + feedback and flips it back to
+        PENDING (clearing the stored response). If the daily session was
+        already COMPLETED, it is reopened (status → IN_PROGRESS, completed_at
+        cleared) and its now-stale scorecard is deleted; the scorecard is
+        rebuilt the next time the session is completed.
+
+        Also purges the attempt's RAG memory vector (and the now-stale
+        session-summary vector if the session was completed) so Pinecone
+        stays in sync with Postgres. The RAG cleanup is additive and never
+        blocks the reset.
+        """
+        session = self._load_owned(session_id=session_id, user_id=user_id)
+        if session.status is SessionStatus.ABANDONED:
+            raise SessionAbandoned(f"session {session_id!r} was abandoned")
+
+        attempt = self.attempts_repo.get(session_pk=session.id, sequence=sequence)
+        if attempt is None:
+            raise AttemptNotFound(
+                f"session {session_id!r}: no attempt at sequence {sequence}"
+            )
+
+        was_completed = session.status is SessionStatus.COMPLETED
+        attempt_id = attempt.id
+        session_pk = session.id
+
+        self.evaluations_repo.delete_for_attempt(attempt.id)
+        self.feedback_repo.delete_for_attempt(attempt.id)
+        self.attempts_repo.reset_to_pending(attempt)
+
+        if was_completed:
+            self.scorecards_repo.delete_for_session(session.id)
+            session.status = SessionStatus.IN_PROGRESS
+            session.completed_at = None
+
+        # Commit the V2 reset immediately so per-activity retry never waits on
+        # Pinecone. Vector cleanup (which also touches the Postgres mirror) is
+        # scheduled fire-and-forget on its own DB session afterwards.
+        self.db.commit()
+        self.db.refresh(attempt)
+
+        if self._rag_service is not None:
+            self._schedule_rag_delete(
+                attempt_ids=[attempt_id],
+                session_pk=session_pk,
+                delete_summary=was_completed,
+            )
+
+        return attempt
+
+    async def reset_session_full(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+    ) -> DailySession:
+        """Reset every activity in the day so it can be re-attempted from scratch.
+
+        Deletes each attempt's evaluation + feedback, flips all attempts back to
+        PENDING (clearing stored responses), deletes the SessionScorecard, and
+        reopens the DailySession (status → IN_PROGRESS, completed_at cleared).
+        The scorecard is rebuilt the next time the day is completed.
+
+        Owns its commit so callers (e.g. the chat-layer ``restart_session``)
+        don't have to duplicate V2 deletes. RAG vector cleanup is additive,
+        runs in the background, and never blocks the restart.
+        """
+        session = self._load_owned(session_id=session_id, user_id=user_id)
+        if session.status is SessionStatus.ABANDONED:
+            raise SessionAbandoned(f"session {session_id!r} was abandoned")
+
+        session_pk = session.id
+        attempts = self.attempts_repo.list_for_session(session.id)
+        attempt_ids = [attempt.id for attempt in attempts]
+
+        for attempt in attempts:
+            self.evaluations_repo.delete_for_attempt(attempt.id)
+            self.feedback_repo.delete_for_attempt(attempt.id)
+            self.attempts_repo.reset_to_pending(attempt)
+
+        self.scorecards_repo.delete_for_session(session.id)
+        session.status = SessionStatus.IN_PROGRESS
+        session.completed_at = None
+
+        # Commit the V2 reset immediately so restart never waits on Pinecone.
+        self.db.commit()
+        self.db.refresh(session)
+
+        if self._rag_service is not None and attempt_ids:
+            self._schedule_rag_delete(
+                attempt_ids=attempt_ids,
+                session_pk=session_pk,
+                delete_summary=True,
+            )
+
+        return session
 
     # ── advance day ────────────────────────────────────────────────
 
@@ -777,13 +1126,35 @@ class SessionService:
             )
 
         weeks = self.weeks_repo.list_for_course(pref.course_length)
-        max_week = max((w.week_number for w in weeks), default=0)
+        course_cap = 24 if pref.course_length == "24w" else 48
+        max_week = min(max((w.week_number for w in weeks), default=0), course_cap)
         if max_week <= 0:
             raise DayNotFound(
                 f"No curriculum weeks for course_length={pref.course_length!r}"
             )
         if pref.current_week >= max_week and pref.current_day_in_week >= 7:
             raise SessionAdvanceBlocked("You are already at the final course day.")
+
+        # Pre-flight: verify the target position exists before committing.
+        if pref.current_day_in_week >= 7:
+            next_week_num = pref.current_week + 1
+            next_week_row = self.weeks_repo.get_by_number(
+                course_length=pref.course_length,
+                week_number=next_week_num,
+            )
+            if next_week_row is None:
+                raise DayNotFound(
+                    f"Cannot advance: week {next_week_num} is not seeded for "
+                    f"course_length={pref.course_length!r}"
+                )
+            next_day_row = self.days_repo.get_for_week(
+                week_pk=next_week_row.id,
+                day_number=1,
+            )
+            if next_day_row is None:
+                raise DayNotFound(
+                    f"Cannot advance: day 1 not seeded for week {next_week_num}"
+                )
 
         now = datetime.now(timezone.utc)
         if pref.current_day_in_week >= 7:
@@ -1028,6 +1399,7 @@ class SessionService:
                 user_id=session.user_id,
                 current_mistakes=today_mistakes,
                 current_day_id=session.day_id,
+                current_session_id=session.id,
             )
 
             # Collect points earned from activities_breakdown
@@ -1051,3 +1423,103 @@ class SessionService:
                 session.session_id, exc_info=True,
             )
             return None
+
+
+async def _run_post_completion_rag_worker(
+    *,
+    session_id: str,
+    user_id: int,
+) -> None:
+    """Background worker with its own DB session for post-completion RAG."""
+    from app.core.database import SessionLocal
+    from app.modules.sessions.routes import _make_session_service
+
+    db = SessionLocal()
+    try:
+        service = _make_session_service(db)
+        await service.run_post_completion_rag(
+            session_id=session_id,
+            user_id=user_id,
+        )
+    except Exception:
+        logger.warning(
+            "Post-completion RAG worker failed for session=%s",
+            session_id,
+            exc_info=True,
+        )
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def generate_mentor_note_async(
+    *,
+    session_id: str,
+    user_id: int,
+) -> str | None:
+    """Ensure the Coach's Note on a dedicated DB session, off the request loop.
+
+    Used both as the chat WS in-band generator (awaited under a ceiling via
+    ``asyncio.shield`` so a timeout never cancels the DB work) and as the
+    write-only fallback when that await times out — in either case the note is
+    persisted for later scorecard/dashboard reads. Never raises.
+    """
+    from app.core.database import SessionLocal
+    from app.modules.sessions.routes import _make_session_service
+
+    db = SessionLocal()
+    try:
+        service = _make_session_service(db)
+        return await service.ensure_mentor_note(
+            session_id=session_id,
+            user_id=user_id,
+        )
+    except Exception:
+        logger.warning(
+            "Mentor note worker failed for session=%s",
+            session_id,
+            exc_info=True,
+        )
+        db.rollback()
+        return None
+    finally:
+        db.close()
+
+
+async def _run_rag_delete_worker(
+    *,
+    attempt_ids: list[int],
+    session_pk: int,
+    delete_summary: bool,
+) -> None:
+    """Background worker (own DB session) that purges stale RAG vectors.
+
+    Called fire-and-forget after a per-activity or full-session reset has
+    committed. Removes the activity-feedback vector(s) for each reset attempt
+    and, when the day was reopened, the now-stale session-summary vector.
+    The underlying delete also writes the Postgres mirror, so it must run on a
+    dedicated session rather than the request-scoped one. Never raises.
+    """
+    from app.core.database import SessionLocal
+    from app.modules.sessions.routes import _make_session_service
+
+    db = SessionLocal()
+    try:
+        service = _make_session_service(db)
+        rag = service._rag_service
+        if rag is None:
+            return
+        for attempt_id in attempt_ids:
+            await rag.delete_for_attempt(attempt_id)
+        if delete_summary:
+            await rag.delete_session_summary(session_pk)
+    except Exception:
+        logger.warning(
+            "rag.delete.worker failed for session_pk=%s attempts=%s",
+            session_pk,
+            attempt_ids,
+            exc_info=True,
+        )
+        db.rollback()
+    finally:
+        db.close()

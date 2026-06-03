@@ -15,8 +15,8 @@ calls are made. Tests verify:
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -294,6 +294,200 @@ class TestEmptyHistoryFallback:
 
         assert result["similar_past_mistakes"] == []
         assert result["previous_session_summaries"] == []
+
+
+# ── Summary inclusion in activity doc ─────────────────────────────
+
+
+def test_activity_memory_includes_summary():
+    doc = build_activity_memory(
+        archetype_id="READ_FIB",
+        archetype_name="Fill in the Blanks",
+        day_id="day_24_01_03",
+        score=6,
+        mistakes=[],
+        did_well=[],
+        next_tip=None,
+        summary="Strong vocabulary but shaky prepositions.",
+    )
+    assert "Summary: Strong vocabulary but shaky prepositions." in doc
+
+
+# ── Deterministic / idempotent vector ids ─────────────────────────
+
+
+def _rag_service(embedder=None, store=None):
+    """Build a FeedbackRAGService with a mocked repo + Pinecone."""
+    from app.modules.feedback_memory.rag_service import FeedbackRAGService
+
+    embedder = embedder or AsyncMock()
+    if not hasattr(embedder, "embed"):
+        embedder.embed = AsyncMock(return_value=[0.1] * 1024)
+    store = store or AsyncMock()
+    service = FeedbackRAGService(
+        MagicMock(), embedding_generator=embedder, embedding_service=store,
+    )
+    service._repo = MagicMock()
+    return service, embedder, store
+
+
+class TestDeterministicVectorIds:
+    @pytest.mark.asyncio
+    async def test_activity_vector_id_is_stable(self):
+        service, _embedder, store = _rag_service()
+
+        vid = await service.store_activity_feedback(
+            user_id=7,
+            session_id=3,
+            attempt_id=99,
+            archetype_id="READ_FIB",
+            archetype_name="Fill in the Blanks",
+            day_id="day_24_01_03",
+            score=6,
+            mistakes=[{"issue": "x", "rule": "r", "correction": "c"}],
+            did_well=[],
+            next_tip=None,
+            summary="ok",
+        )
+
+        assert vid == "act_7_99"  # no random suffix
+        assert store.store.await_args.kwargs["vector_id"] == "act_7_99"
+        # Postgres mirror upserted (not blind-added) and carries structured mistakes
+        service._repo.upsert_by_vector_id.assert_called_once()
+        log_meta = service._repo.upsert_by_vector_id.call_args.kwargs["metadata_json"]
+        assert log_meta["mistakes"] == [{"issue": "x", "rule": "r", "correction": "c"}]
+
+    @pytest.mark.asyncio
+    async def test_session_vector_id_is_stable(self):
+        service, _embedder, store = _rag_service()
+
+        vid = await service.store_session_summary(
+            user_id=7,
+            session_id=3,
+            day_id="day_24_01_03",
+            activities_summary=[],
+            points_earned={},
+            mentor_note="note",
+        )
+
+        assert vid == "sess_7_3"
+        assert store.store.await_args.kwargs["vector_id"] == "sess_7_3"
+
+
+# ── Delete sync ───────────────────────────────────────────────────
+
+
+class TestDeleteSync:
+    @pytest.mark.asyncio
+    async def test_delete_for_attempt_purges_pinecone_and_postgres(self):
+        service, _embedder, store = _rag_service()
+        service._repo.list_for_attempt.return_value = [
+            SimpleNamespace(vector_id="act_7_99")
+        ]
+
+        await service.delete_for_attempt(99)
+
+        store.delete.assert_awaited_once()
+        assert store.delete.await_args.kwargs["vector_ids"] == ["act_7_99"]
+        service._repo.delete_by_vector_ids.assert_called_once_with(["act_7_99"])
+
+    @pytest.mark.asyncio
+    async def test_delete_session_summary(self):
+        service, _embedder, store = _rag_service()
+        service._repo.get_session_summary_for_session.return_value = (
+            SimpleNamespace(vector_id="sess_7_3")
+        )
+
+        await service.delete_session_summary(3)
+
+        assert store.delete.await_args.kwargs["vector_ids"] == ["sess_7_3"]
+
+
+# ── Recurrence analytics ──────────────────────────────────────────
+
+
+class TestRecurrence:
+    def test_recurring_pattern_detected_one_off_excluded(self):
+        service, _embedder, _store = _rag_service()
+        recurring = {"issue": "third-person -s", "rule": "sv-agreement", "correction": "eats"}
+        one_off = {"issue": "spelling", "rule": "", "correction": "definitely"}
+        service._repo.list_for_user.return_value = [
+            SimpleNamespace(memory_type="activity_feedback", metadata_json={"mistakes": [recurring]}),
+            SimpleNamespace(memory_type="activity_feedback", metadata_json={"mistakes": [dict(recurring)]}),
+            SimpleNamespace(memory_type="activity_feedback", metadata_json={"mistakes": [one_off]}),
+        ]
+
+        patterns = service._compute_recurring_patterns(1)
+
+        issues = {p["issue"] for p in patterns}
+        assert "third-person -s" in issues       # count 2 >= threshold
+        assert "spelling" not in issues          # one-off excluded
+        recurring_pattern = next(p for p in patterns if p["issue"] == "third-person -s")
+        assert recurring_pattern["count"] == 2
+
+    def test_same_mistake_twice_in_one_activity_counts_once(self):
+        service, _embedder, _store = _rag_service()
+        m = {"issue": "tense", "rule": "past", "correction": "went"}
+        service._repo.list_for_user.return_value = [
+            SimpleNamespace(memory_type="activity_feedback", metadata_json={"mistakes": [m, dict(m)]}),
+        ]
+
+        patterns = service._compute_recurring_patterns(1, min_count=2)
+
+        assert patterns == []  # only one activity → not recurring
+
+
+# ── Per-activity feedback RAG ─────────────────────────────────────
+
+
+class TestPerActivityRetrieval:
+    @pytest.mark.asyncio
+    async def test_returns_history_block(self):
+        store = AsyncMock()
+        store.query = AsyncMock(
+            return_value=[{"metadata": {"document_text": "past: confused tenses"}}]
+        )
+        service, _embedder, _store = _rag_service(store=store)
+
+        hist = await service.retrieve_context_for_activity(
+            user_id=1, archetype_id="READ_FIB", query_text="tense errors",
+        )
+
+        assert hist is not None
+        assert "confused tenses" in hist
+
+    @pytest.mark.asyncio
+    async def test_blank_query_returns_none(self):
+        service, _embedder, _store = _rag_service()
+
+        hist = await service.retrieve_context_for_activity(
+            user_id=1, archetype_id="X", query_text="   ",
+        )
+
+        assert hist is None
+
+
+# ── Mentor prompt ordering ────────────────────────────────────────
+
+
+class TestMentorPromptOrdering:
+    def test_today_block_before_history(self):
+        prompt = MentorNoteGenerator._build_user_prompt(
+            today_activities=[{"archetype_label": "Read", "raw_score": 6}],
+            today_mistakes=[{"issue": "wrong tense"}],
+            rag_context={
+                "recurring_patterns": [
+                    {"issue": "third-person -s", "rule": "sv-agr", "count": 3}
+                ],
+                "previous_session_summaries": [],
+            },
+        )
+
+        today_idx = prompt.index("=== TODAY (primary) ===")
+        recurring_idx = prompt.index("=== RECURRING FROM HISTORY ===")
+        assert today_idx < recurring_idx
+        assert "third-person -s" in prompt
+        assert "seen in 3 activities" in prompt
 
 
 # ── No scoring mutation test ─────────────────────────────────────

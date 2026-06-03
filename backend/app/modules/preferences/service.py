@@ -1,12 +1,11 @@
-"""PreferenceService — orchestrates reads, partial updates, and the
-single-day advance triggered when a session is completed.
+"""PreferenceService — orchestrates reads and partial updates.
 
 The service owns commit boundaries. Repository methods only flush.
+Day advancement is handled exclusively by SessionService.advance_day().
 """
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -42,15 +41,3 @@ class PreferenceService:
         self.db.refresh(pref)
         return pref
 
-    def advance_after_session_complete(
-        self,
-        user_id: int,
-        *,
-        now: datetime | None = None,
-    ) -> UserCoursePreference:
-        """Bump the day pointer after a successful session completion."""
-        pref = self.repo.get_or_create_for_user(user_id)
-        self.repo.advance_day(pref, now=now)
-        self.db.commit()
-        self.db.refresh(pref)
-        return pref

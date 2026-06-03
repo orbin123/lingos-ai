@@ -39,10 +39,13 @@ class OpenAIEmbeddingGenerator:
 
     async def embed(self, text: str) -> list[float]:
         """Return an embedding vector for a single text string."""
-        response = await self._client.embeddings.create(
-            input=text,
-            model=self._model,
-            dimensions=self._dimensions,
+        response = await asyncio.wait_for(
+            self._client.embeddings.create(
+                input=text,
+                model=self._model,
+                dimensions=self._dimensions,
+            ),
+            timeout=settings.OPENAI_EMBEDDING_TIMEOUT_S,
         )
         return response.data[0].embedding
 
@@ -50,10 +53,13 @@ class OpenAIEmbeddingGenerator:
         """Embed multiple texts in a single API call for efficiency."""
         if not texts:
             return []
-        response = await self._client.embeddings.create(
-            input=texts,
-            model=self._model,
-            dimensions=self._dimensions,
+        response = await asyncio.wait_for(
+            self._client.embeddings.create(
+                input=texts,
+                model=self._model,
+                dimensions=self._dimensions,
+            ),
+            timeout=settings.OPENAI_EMBEDDING_TIMEOUT_S,
         )
         # Sort by index to preserve input order.
         sorted_data = sorted(response.data, key=lambda d: d.index)

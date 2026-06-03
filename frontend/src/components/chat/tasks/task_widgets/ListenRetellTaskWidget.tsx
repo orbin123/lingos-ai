@@ -10,6 +10,7 @@ import { ListeningAudioCard, ResultBanner, RuleCallout, TaskWidgetFrame, StatusD
 function LiveListenRetell({ task, live }: { task: ListenRetellTask; live: LiveTaskController }) {
   const [audioComplete, setAudioComplete] = useState(false);
   const unlocked = live.submitted || audioComplete;
+  const modelAnswer = task.passageToRetell || task.sampleResponses?.[0] || "";
   return (
     <TaskWidgetFrame task={task} icon={<Volume2 size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Retelling focus">{task.grammarRule}</RuleCallout>
@@ -23,17 +24,27 @@ function LiveListenRetell({ task, live }: { task: ListenRetellTask; live: LiveTa
         onComplete={() => setAudioComplete(true)}
       />
       {unlocked && (
-        <LiveSpeakingRecorder
-          live={live}
-          durationSeconds={60}
-          slots={[
-            {
-              id: "prompt_1",
-              prompt: task.prompts?.[0] || "Retell what you heard in your own words.",
-              sampleResponse: task.passageToRetell || task.sampleResponses?.[0] || "",
-            },
-          ]}
-        />
+        <>
+          <LiveSpeakingRecorder
+            live={live}
+            durationSeconds={60}
+            slots={[
+              {
+                id: "prompt_1",
+                prompt: task.prompts?.[0] || "Retell what you heard in your own words.",
+                sampleResponse: modelAnswer,
+              },
+            ]}
+          />
+          {live.submitted && !modelAnswer && (
+            <div
+              className="tw-fb-explain"
+              style={{ marginTop: 8, color: "var(--tw-ink-muted)", fontWeight: 700 }}
+            >
+              Reference retell is unavailable for this task.
+            </div>
+          )}
+        </>
       )}
     </TaskWidgetFrame>
   );
@@ -60,27 +71,6 @@ export function ListenRetellTaskWidget({
   return (
     <TaskWidgetFrame task={task} icon={<Volume2 size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Retelling focus">{task.grammarRule}</RuleCallout>
-
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: "oklch(45% 0.07 240)", marginBottom: 6, textTransform: "uppercase" }}>
-          Target phrases
-        </div>
-        <div className="tw-target-chip-row">
-          {task.targetWords.map((word) => (
-            <span 
-              className="tw-target-chip used" 
-              key={word}
-              style={{
-                background: "oklch(93% 0.04 155)",
-                color: "oklch(42% 0.16 155)",
-                border: "1px solid oklch(85% 0.06 155)"
-              }}
-            >
-              {word}
-            </span>
-          ))}
-        </div>
-      </div>
 
       <div 
         style={{

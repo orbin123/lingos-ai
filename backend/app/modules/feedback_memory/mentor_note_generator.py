@@ -37,21 +37,26 @@ class MentorNoteOutput(BaseModel):
 
 _SYSTEM_PROMPT = """\
 You are a strict but caring English language coach writing a post-session \
-note to your student. You have access to their complete learning history.
+note to your student. The prompt is organised into sections by priority.
 
 Your note must be:
 - 2-4 sentences maximum. Concise and digestible.
+- MAJORITY about TODAY. The "TODAY (primary)" section is what matters most; \
+  ground the note in today's actual mistakes.
 - Specific about mistakes. Name exact error patterns you see.
-- If they keep making the same mistake across sessions, call it out directly \
-  ("This is the third session where you've confused 'their' and 'there'").
+- Mention history ONLY for items listed under "RECURRING FROM HISTORY". When \
+  one is present, call it out directly ("Again today you confused 'their' and \
+  'there' — this keeps coming up"). NEVER invent a recurring pattern that is \
+  not in that section, and do NOT harp on a one-off quirk from a single past \
+  session.
+- "PREVIOUS DAY NOTES" are reference/background only — do not quote them.
 - Include one concrete action item for their next session.
 - Mixed tone: acknowledge genuine improvement briefly, but lean corrective. \
   Do NOT give generic praise like "Great job!" or "Keep it up!" or \
   "Well done!". If you mention something positive, be specific about what \
   improved.
 - Write as a direct, no-nonsense mentor speaking TO the student (use "you").
-- If this is their first session (no history provided), focus only on \
-  today's mistakes and give targeted advice.
+- If no history is provided, focus only on today's mistakes.
 - Do NOT mention scores, points, or numbers. Focus on language skills.
 
 Write the note as a single flowing paragraph, not bullet points."""
@@ -109,11 +114,15 @@ class MentorNoteGenerator:
         today_mistakes: list[dict],
         rag_context: dict,
     ) -> str:
-        """Assemble the user prompt from today's data + RAG context."""
+        """Assemble the user prompt from today's data + RAG context.
+
+        Sections are ordered by priority so the model leans on today first,
+        recurrence second, and prior notes only as background.
+        """
         sections: list[str] = []
 
-        # Today's session
-        sections.append("=== TODAY'S SESSION ===")
+        # ── TODAY (primary) ──────────────────────────────────────────
+        sections.append("=== TODAY (primary) ===")
         if today_activities:
             for act in today_activities:
                 label = act.get("archetype_label", act.get("archetype_id", "?"))
@@ -130,22 +139,31 @@ class MentorNoteGenerator:
                 if user_wrote and correction:
                     line += f" (wrote '{user_wrote}' → '{correction}')"
                 sections.append(line)
+        else:
+            sections.append("(No specific mistakes flagged today.)")
 
-        # RAG context — past patterns
-        similar_mistakes = rag_context.get("similar_past_mistakes", [])
+        # ── RECURRING FROM HISTORY (only count >= threshold) ─────────
+        recurring = rag_context.get("recurring_patterns", [])
+        if recurring:
+            sections.append("\n=== RECURRING FROM HISTORY ===")
+            sections.append(
+                "These mistakes recur across multiple past activities — "
+                "safe to call out as patterns:"
+            )
+            for p in recurring[:5]:
+                issue = p.get("issue", "")
+                rule = p.get("rule") or ""
+                count = p.get("count", "?")
+                line = f"  • {issue}"
+                if rule:
+                    line += f" [{rule}]"
+                line += f" — seen in {count} activities"
+                sections.append(line)
+
+        # ── PREVIOUS DAY NOTES (reference only) ──────────────────────
         previous_summaries = rag_context.get("previous_session_summaries", [])
-
-        if similar_mistakes:
-            sections.append("\n=== SIMILAR PAST MISTAKES ===")
-            for doc in similar_mistakes[:5]:
-                text = doc.get("document_text") or doc.get("metadata", {}).get(
-                    "document_text", ""
-                )
-                if text:
-                    sections.append(f"- {text[:300]}")
-
         if previous_summaries:
-            sections.append("\n=== PREVIOUS SESSION NOTES ===")
+            sections.append("\n=== PREVIOUS DAY NOTES (reference only) ===")
             for doc in previous_summaries[:3]:
                 text = doc.get("document_text") or doc.get("metadata", {}).get(
                     "document_text", ""
@@ -153,14 +171,16 @@ class MentorNoteGenerator:
                 if text:
                     sections.append(f"- {text[:300]}")
 
-        if not similar_mistakes and not previous_summaries:
+        if not recurring and not previous_summaries:
             sections.append(
-                "\n(This is the student's first session — no history available.)"
+                "\n(No history available — likely the student's first session; "
+                "focus on today only.)"
             )
 
         sections.append(
-            "\nWrite a concise mentor note (2-4 sentences) addressing "
-            "the patterns you see."
+            "\nWrite a concise mentor note (2-4 sentences), mostly about "
+            "today, mentioning history only where the RECURRING section "
+            "supports it."
         )
 
         return "\n".join(sections)

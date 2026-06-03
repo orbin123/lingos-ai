@@ -8,7 +8,6 @@ import {
   ResultBanner,
   RuleCallout,
   StatusDot,
-  TargetWordsRow,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
@@ -25,7 +24,6 @@ export function ReadAloudTaskWidget({
     return (
       <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
         <RuleCallout label="Read-aloud focus">{task.grammarRule}</RuleCallout>
-        <TargetWordsRow words={task.targetWords} label="Target words" />
         <div className="tw-passage">
           <div className="tw-passage-label">Text to read aloud</div>
           {task.textToReadAloud}
@@ -45,13 +43,6 @@ export function ReadAloudTaskWidget({
   return (
     <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Read-aloud focus">{task.grammarRule}</RuleCallout>
-      <div className="tw-target-chip-row" style={{ marginBottom: 14 }}>
-        {task.targetWords.map((word) => (
-          <span className="tw-target-chip used" key={word}>
-            {word}
-          </span>
-        ))}
-      </div>
 
       <div className="tw-passage">
         <div className="tw-passage-label">Text to read aloud</div>

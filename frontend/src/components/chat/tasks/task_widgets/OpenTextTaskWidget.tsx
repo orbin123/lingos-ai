@@ -3,6 +3,7 @@
 import { FileText, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
 import type { LiveTaskController, OpenTextTask } from "../source";
+import { spatialFieldProps } from "@/lib/spatial-field-navigation";
 import {
   liveStringRecord,
   ResultBanner,
@@ -35,13 +36,6 @@ export function OpenTextTaskWidget({
   return (
     <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Rule">{task.grammarRule}</RuleCallout>
-      <div className="tw-target-chip-row" style={{ marginBottom: 14 }}>
-        {task.targetWords.map((word) => (
-          <span className="tw-target-chip used" key={word}>
-            {word}
-          </span>
-        ))}
-      </div>
       {previewAnswers && (
         <ResultBanner
           total={task.items.length}
@@ -65,6 +59,7 @@ export function OpenTextTaskWidget({
                 onChange={(event) => setAnswer(item.itemId, event.target.value)}
                 placeholder="Write your answer here..."
                 style={{ minHeight: 92 }}
+                {...spatialFieldProps(index)}
               />
             ) : live ? (
               <div className="tw-compare-grid">

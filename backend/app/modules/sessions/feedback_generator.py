@@ -47,6 +47,7 @@ class FeedbackGenerator(Protocol):
         user_response: dict | None,
         task_content: dict | None = None,
         feedback_overrides: dict | None = None,
+        learner_history: str | None = None,
     ) -> FeedbackResult: ...
 
 
@@ -66,6 +67,7 @@ class StubFeedbackGenerator:
         user_response: dict | None,
         task_content: dict | None = None,
         feedback_overrides: dict | None = None,
+        learner_history: str | None = None,  # ignored by the stub
     ) -> FeedbackResult:
         rounded = int(round(evaluation.raw_score))
         if user_response is None:

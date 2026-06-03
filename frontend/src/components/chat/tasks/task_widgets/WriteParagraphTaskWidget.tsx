@@ -8,7 +8,6 @@ import {
   ResultBanner,
   RuleCallout,
   StatusDot,
-  TargetWordsRow,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
 
@@ -25,7 +24,6 @@ export function WriteParagraphTaskWidget({
     return (
       <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
         <RuleCallout label="Grammar Rule">{task.grammarRule}</RuleCallout>
-        <TargetWordsRow words={task.targetWords} label="Target words to use" />
         <LiveTextItems
           items={[
             {
@@ -62,31 +60,6 @@ export function WriteParagraphTaskWidget({
   return (
     <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Grammar Rule">{task.grammarRule}</RuleCallout>
-
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: "oklch(45% 0.07 240)", marginBottom: 6, textTransform: "uppercase" }}>
-          Target words to use
-        </div>
-        <div className="tw-target-chip-row">
-          {task.targetWords.map((word) => {
-            // Check if the word is used in the answer
-            const isUsed = !isDefault && currentText.toLowerCase().includes(word.toLowerCase());
-            return (
-              <span 
-                className={`tw-target-chip ${isUsed ? "used" : ""}`} 
-                key={word}
-                style={{
-                  background: isUsed ? "oklch(93% 0.04 155)" : "oklch(96% 0.015 240)",
-                  color: isUsed ? "oklch(42% 0.16 155)" : "oklch(35% 0.05 240)",
-                  border: isUsed ? "1px solid oklch(85% 0.06 155)" : "1px solid oklch(90% 0.02 240)",
-                }}
-              >
-                {word}
-              </span>
-            );
-          })}
-        </div>
-      </div>
 
       {!isDefault && (
         <ResultBanner

@@ -11,3 +11,7 @@ class PineconeUpsertFailed(EmbeddingError):
 
 class PineconeQueryFailed(EmbeddingError):
     """Pinecone query failed."""
+
+
+class PineconeDeleteFailed(EmbeddingError):
+    """Pinecone rejected the delete."""

@@ -8,7 +8,10 @@ import type {
   OverallScorecard,
 } from "./evaluation/source";
 import { FeedbackWidgetRenderer } from "./feedback/feedback_widgets/FeedbackWidgetRenderer";
-import { RagFeedbackCard } from "./feedback/feedback_widgets/RagFeedbackCard";
+import {
+  RagFeedbackCard,
+  type RagFeedbackState,
+} from "./feedback/feedback_widgets/RagFeedbackCard";
 import type { ActivityFeedback, RagFeedback } from "./feedback/source";
 import type { AnswerView } from "./teaching/source";
 import {
@@ -70,6 +73,8 @@ type RuntimeFinalScorecardPayload = {
 
 type RuntimeRagFeedbackPayload = {
   mentor_note?: string | null;
+  available?: boolean;
+  pending?: boolean;
 };
 
 export function RuntimeEvaluationCard({
@@ -130,10 +135,17 @@ export function RuntimeRagFeedback({
 }: {
   payload: RuntimeRagFeedbackPayload;
 }) {
+  const note = nullableText(payload.mentor_note).trim();
+  const state: RagFeedbackState = payload.pending
+    ? "pending"
+    : note
+      ? "ready"
+      : "unavailable";
   return (
     <RagFeedbackCard
       ragFeedback={buildRagFeedback(payload)}
       answerView={RUNTIME_ANSWER_VIEW}
+      state={state}
     />
   );
 }
@@ -265,9 +277,10 @@ function buildOverallScorecard(payload: RuntimeFinalScorecardPayload): OverallSc
 }
 
 function buildRagFeedback(payload: RuntimeRagFeedbackPayload): RagFeedback {
-  const note =
-    nullableText(payload.mentor_note) ||
-    "Nice work today. Keep practising this pattern in short daily sentences.";
+  // The real note only. Pending/unavailable states are rendered by the card
+  // from its `state` prop and never read these outputs, so there is no generic
+  // auto-fallback masking a missing note.
+  const note = nullableText(payload.mentor_note);
 
   return {
     dayId: "runtime-session",

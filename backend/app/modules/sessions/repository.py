@@ -6,7 +6,7 @@ in `service.py` and `scoring_writer.py`.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.sessions.models import (
@@ -111,6 +111,14 @@ class ActivityAttemptRepository:
             .limit(1)
         ).scalar_one_or_none()
 
+    def reset_to_pending(self, attempt: ActivityAttempt) -> ActivityAttempt:
+        """Clear a submitted/evaluated attempt's response so it can be retried."""
+        attempt.status = AttemptStatus.PENDING
+        attempt.user_response = None
+        attempt.submitted_at = None
+        self.db.flush()
+        return attempt
+
 
 class EvaluationRepository:
     def __init__(self, db: Session) -> None:
@@ -121,6 +129,13 @@ class EvaluationRepository:
         self.db.flush()
         return evaluation
 
+    def delete_for_attempt(self, attempt_id: int) -> None:
+        self.db.execute(
+            delete(ActivityEvaluation).where(
+                ActivityEvaluation.attempt_id == attempt_id
+            )
+        )
+
 
 class FeedbackRepository:
     def __init__(self, db: Session) -> None:
@@ -130,6 +145,13 @@ class FeedbackRepository:
         self.db.add(feedback)
         self.db.flush()
         return feedback
+
+    def delete_for_attempt(self, attempt_id: int) -> None:
+        self.db.execute(
+            delete(ActivityFeedback).where(
+                ActivityFeedback.attempt_id == attempt_id
+            )
+        )
 
 
 class ScorecardRepository:
@@ -145,3 +167,10 @@ class ScorecardRepository:
         return self.db.execute(
             select(SessionScorecard).where(SessionScorecard.session_id == session_pk)
         ).scalar_one_or_none()
+
+    def delete_for_session(self, session_pk: int) -> None:
+        self.db.execute(
+            delete(SessionScorecard).where(
+                SessionScorecard.session_id == session_pk
+            )
+        )

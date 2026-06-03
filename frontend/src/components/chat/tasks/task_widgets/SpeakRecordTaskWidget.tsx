@@ -24,13 +24,6 @@ export function SpeakRecordTaskWidget({
   return (
     <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Speaking pattern">{task.grammarRule}</RuleCallout>
-      <div className="tw-target-chip-row" style={{ marginBottom: 14 }}>
-        {task.targetWords.map((word) => (
-          <span className="tw-target-chip used" key={word}>
-            {word}
-          </span>
-        ))}
-      </div>
       {!isDefault && (
         <ResultBanner
           total={task.prompts.length}

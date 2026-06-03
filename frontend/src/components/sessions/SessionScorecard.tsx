@@ -146,6 +146,29 @@ export function SessionScorecard({ scorecard, onGoToDashboard }: Props) {
       <div style={{ marginTop: 16 }}>
         <MentorNote note={mentor_note} />
       </div>
+
+      {onGoToDashboard && (
+        <button
+          type="button"
+          onClick={onGoToDashboard}
+          style={{
+            marginTop: 20,
+            width: "100%",
+            padding: "13px 18px",
+            borderRadius: 14,
+            border: "none",
+            background: "#0070C4",
+            color: "white",
+            fontFamily: "inherit",
+            fontSize: 14,
+            fontWeight: 800,
+            cursor: "pointer",
+            boxShadow: "0 6px 18px rgba(0,112,196,0.22)",
+          }}
+        >
+          Go to dashboard
+        </button>
+      )}
     </div>
   );
 }

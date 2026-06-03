@@ -28,7 +28,6 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
-from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.ai.agents.planner import PlannerAgent
@@ -77,15 +76,15 @@ from app.modules.sessions.exceptions import (
 )
 from app.modules.sessions.models import (
     ActivityAttempt,
-    ActivityEvaluation,
-    ActivityFeedback,
     AttemptStatus,
     DailySession,
+    SessionScorecard,
     SessionStatus,
 )
 from app.modules.sessions.repository import (
     ActivityAttemptRepository,
     DailySessionRepository,
+    ScorecardRepository,
 )
 from app.modules.sessions.contracts import (
     ContractValidationError,
@@ -98,12 +97,34 @@ from app.modules.sessions.contracts import (
 )
 from app.modules.sessions.evaluator import EvaluationResult
 from app.modules.sessions.feedback_generator import FeedbackResult, MistakeOut
-from app.modules.sessions.service import SessionService
+from app.modules.sessions.service import SessionService, generate_mentor_note_async
 from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.modules.skills.repository import SkillRepository
-from app.scoring import CourseLength
+from app.scoring import CourseLength, get_archetype
 
 logger = logging.getLogger(__name__)
+
+# Guard against concurrent complete_session calls (e.g. WS submit + resume).
+_completing_daily_uuids: set[str] = set()
+
+# Strong refs to in-flight Coach's Note workers so a timed-out (shielded) task
+# is not garbage-collected before it finishes persisting the note.
+_pending_note_tasks: set[asyncio.Task[str | None]] = set()
+
+# Friendly labels for the four core activities, used in the compact
+# completed-activity summary rows the chat UI renders on resume.
+_CORE_ACTIVITY_LABELS = {
+    "read": "Reading",
+    "write": "Writing",
+    "listen": "Listening",
+    "speak": "Speaking",
+}
+
+# Single farewell shown when the learner finishes all daily activities.
+_DAILY_COMPLETE_MESSAGE = (
+    "Today's activities are complete. Go back to the dashboard "
+    "to review the day and advance when you're ready."
+)
 
 
 def _validate_teacher_input(**fields) -> None:
@@ -771,16 +792,32 @@ class LearningSessionService:
             )
         return queue
 
+    def _sync_task_queue_from_attempts(self, session: LearningSession) -> None:
+        """Rebuild ``session.task_queue`` from the authoritative V2 attempts.
+
+        The chat ``task_queue`` JSON caches each activity's status; it drifts
+        whenever the V2 attempts change (submit, reset, restart). Calling this
+        after any such mutation keeps the queue consistent with V2 truth. Only
+        the field is reassigned here — the caller owns the save/commit.
+        """
+        attempts = self.attempts_repo.list_for_session(session.daily_session_id)
+        session.task_queue = self._queue_from_attempts(attempts)
+
     async def restart_session(
         self,
         *,
         session_id: str,
         user_id: int,
     ) -> StartSessionResponse:
-        """Restart the chat conversation without resetting V2 progress.
+        """Restart the whole day: full wipe of chat + V2 progress.
 
-        Re-runs the PlannerAgent so teacher_instructions reflect any
-        curriculum content changes made since the session was first created.
+        Deletes every attempt's evaluation/feedback, resets all attempts to
+        PENDING (clearing user_response/submitted_at), deletes the
+        SessionScorecard, reopens the DailySession (IN_PROGRESS,
+        completed_at=None), and resets the chat envelope (messages, phase,
+        index, understanding_confirmed) with the task_queue rebuilt from the
+        now-pending attempts. Also re-runs the PlannerAgent so
+        teacher_instructions reflect any curriculum changes since creation.
         """
         session = self._load_session(session_id)
         if session.user_id != user_id:
@@ -788,12 +825,15 @@ class LearningSessionService:
                 f"User {user_id} cannot restart session {session_id}"
             )
 
+        # Load the linked daily session up-front so it is always bound, even if
+        # the best-effort teacher-instructions refresh below raises.
+        daily = self.db.get(DailySession, session.daily_session_id)
+
         # Refresh teacher instructions against current curriculum data so
         # content edits in source_24w.py or curriculum_days take effect on
         # the next teaching turn.  Try file persona first, fall back to
         # DB-driven planner.
         try:
-            daily = self.db.get(DailySession, session.daily_session_id)
             if daily is not None:
                 teacher_instructions = None
                 if self._maybe_refresh_file_persona(
@@ -838,34 +878,19 @@ class LearningSessionService:
         session.pre_generated_tasks = None
 
         # Reset all activity attempts for this daily session so the full
-        # activity queue becomes available again from the beginning.
+        # activity queue becomes available again from the beginning. Delegate to
+        # SessionService so the chat layer no longer writes V2 scoring tables
+        # directly; it resets every attempt to PENDING, drops the scorecard,
+        # reopens the day (committing immediately), and schedules best-effort
+        # background RAG vector cleanup.
         if daily is not None:
-            attempt_ids = list(
-                self.db.execute(
-                    select(ActivityAttempt.id).where(
-                        ActivityAttempt.session_id == daily.id
-                    )
-                ).scalars()
+            await _make_v2_session_service(self.db).reset_session_full(
+                session_id=daily.session_id,
+                user_id=user_id,
             )
-            if attempt_ids:
-                self.db.execute(
-                    delete(ActivityFeedback).where(
-                        ActivityFeedback.attempt_id.in_(attempt_ids)
-                    )
-                )
-                self.db.execute(
-                    delete(ActivityEvaluation).where(
-                        ActivityEvaluation.attempt_id.in_(attempt_ids)
-                    )
-                )
-                self.db.execute(
-                    ActivityAttempt.__table__.update()
-                    .where(ActivityAttempt.id.in_(attempt_ids))
-                    .values(status=AttemptStatus.PENDING)
-                )
-            if daily.status == SessionStatus.COMPLETED:
-                daily.status = SessionStatus.IN_PROGRESS
 
+        # Rebuild the chat task_queue so every entry reflects PENDING again.
+        self._sync_task_queue_from_attempts(session)
         self.session_repo.save(session)
         self.db.commit()
 
@@ -876,6 +901,58 @@ class LearningSessionService:
             skill_name=session.skill_name,
             task_type=session.task_type,
             message="Session restarted",
+        )
+
+    async def reset_activity(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+        sequence: int,
+    ) -> StartSessionResponse:
+        """Reset a single activity so the learner can retry it.
+
+        Delegates the authoritative reset (clear evaluation/feedback, flip the
+        attempt back to PENDING, reopen the day + drop the stale scorecard) to
+        the V2 ``SessionService``, then points the chat envelope back at that
+        activity and rebuilds the task_queue from the refreshed attempts.
+        """
+        session = self._load_session(session_id)
+        if session.user_id != user_id:
+            raise PermissionError(
+                f"User {user_id} cannot reset activity on session {session_id}"
+            )
+        daily = self.db.get(DailySession, session.daily_session_id)
+        if daily is None:
+            raise LookupError(
+                f"DailySession id={session.daily_session_id} not found"
+            )
+
+        await _make_v2_session_service(self.db).reset_activity(
+            session_id=daily.session_id,
+            user_id=user_id,
+            sequence=int(sequence),
+        )
+
+        session.phase = "practice_task"
+        session.current_task_index = max(int(sequence) - 1, 0)
+        session.user_submission = None
+        session.evaluation = None
+        session.feedback = None
+        # Clear the cached task content; resume/state re-read it from the live
+        # attempt. Empty dict (not None) honours the non-nullable column.
+        session.pre_generated_tasks = {}
+        self._sync_task_queue_from_attempts(session)
+        self.session_repo.save(session)
+        self.db.commit()
+
+        return StartSessionResponse(
+            session_id=session.session_id,
+            daily_session_id=session.daily_session_id,
+            topic=session.topic,
+            skill_name=session.skill_name,
+            task_type=session.task_type,
+            message="Activity reset",
         )
 
     # ------------------------------------------------------------------
@@ -901,12 +978,21 @@ class LearningSessionService:
     async def resume_messages_stream(
         self, session_id: str
     ) -> AsyncIterator[WSOutgoingMessage]:
-        """Replay enough state for a previously-started chat to continue."""
+        """Replay enough state for a previously-started chat to continue.
+
+        Resume keys off V2 attempt truth, not just the stored ``phase``:
+        if teaching is confirmed and an activity is still pending we resume
+        at that activity even when ``phase`` is stale. Evaluation/feedback
+        widgets for already-completed activities are never re-emitted here;
+        the ``/state`` snapshot carries their summaries for the UI.
+        """
         session = self._load_session(session_id)
+        # Reconcile the cached queue with the V2 attempts first — every resume
+        # decision below depends on attempt status.
+        self._sync_task_queue_from_attempts(session)
+        self.db.commit()
         state = self._state_from_row(session)
         self._enrich_state_with_profile(state, session.user_id)
-        total = len(session.task_queue or []) or 1
-        current = int(session.current_task_index or 0)
 
         # If the V2 DailySession is already complete, end the chat.
         daily = await self._auto_complete_daily_if_ready(session)
@@ -917,7 +1003,8 @@ class LearningSessionService:
 
         yield self._session_blueprint_message(session, state)
 
-        if session.phase == "teaching":
+        # Teaching not yet confirmed → replay the last tutor turn (or welcome).
+        if session.phase == "teaching" and not session.understanding_confirmed:
             previous = _last_tutor_message(session.messages or [])
             message = previous or (
                 f"Welcome back. We are learning {session.topic}. "
@@ -927,58 +1014,218 @@ class LearningSessionService:
                 yield msg
             return
 
-        if session.phase == "practice_task":
-            message = f"Welcome back. Continue with activity {current + 1} of {total}."
-            yield WSOutgoingMessage(
-                type="chat_message", role="assistant", content=message,
-            )
-            # Self-heal stale snapshots: a `pre_generated_tasks` cached by
-            # an older code path may be missing listening fields entirely.
-            # Pull the live attempt, repair its content if needed, and
-            # write the result back to the chat row so the widget renders.
-            task_content_payload: dict[str, Any] = dict(
-                session.pre_generated_tasks or {}
-            )
-            attempt = self._next_pending_attempt(session)
-            if attempt is not None:
-                attempt = await self._prepare_attempt_for_delivery(attempt)
-                task_content_payload = dict(attempt.task_content or {})
-                if task_content_payload != (session.pre_generated_tasks or {}):
-                    session.pre_generated_tasks = task_content_payload
-                    self.db.commit()
-
-            payload = {
-                **task_content_payload,
-                "_session": {
-                    "current_task_index": current,
-                    "total_tasks": total,
-                    "daily_session_id": session.daily_session_id,
-                },
-            }
-            widget = normalize_widget_key(
-                str(payload.get("widget") or payload.get("ui_widget") or session.task_type)
-            )
-            yield self._event_orchestrator().task_event(
-                widget=widget,
-                task_payload={**payload, "widget": widget},
-                session_meta=payload.get("_session"),
-            )
-            return
-
-        if session.phase in ("feedback", "scorecard", "follow_up"):
-            message = "Ready for the next step?"
-            async for msg in self._stream_chat_text(
-                message, actions=self._post_feedback_actions(session),
-            ):
-                yield msg
-            return
+        # Mid-activity, or teaching already confirmed with a stale "teaching"
+        # phase → resume directly at the first pending activity (don't replay
+        # teaching, don't re-emit completed activities' eval/feedback).
+        if session.phase in ("teaching", "practice_task"):
+            if self._next_pending_attempt(session) is not None:
+                async for msg in self._resume_practice_task(session):
+                    yield msg
+                return
 
         if session.phase == "ended":
-            message = "This chat is finished. Go back to the dashboard when you're ready."
+            message = (
+                "This chat is finished. Go back to the dashboard when you're ready."
+            )
             async for msg in self._stream_chat_text(
                 message, actions=["Go to dashboard"],
             ):
                 yield msg
+            return
+
+        # Sitting on an activity's feedback → replay the result widgets the
+        # transcript may have lost (reconnect/retry), then offer next steps.
+        if session.phase in ("feedback", "follow_up", "scorecard") and (
+            session.evaluation is not None and session.feedback is not None
+        ):
+            async for msg in self._replay_last_activity_results(session, state):
+                yield msg
+            summary_text = str(session.feedback.get("summary") or "Good effort.")
+            next_tip = session.feedback.get("next_tip")
+            if next_tip:
+                summary_text = f"{summary_text} {next_tip}"
+            actions = self._post_feedback_actions(session)
+            async for msg in self._stream_chat_text(summary_text, actions=actions):
+                yield msg
+            return
+
+        message = "Ready for the next step?"
+        async for msg in self._stream_chat_text(
+            message, actions=self._post_feedback_actions(session),
+        ):
+            yield msg
+
+    async def _resume_practice_task(
+        self, session: LearningSession
+    ) -> AsyncIterator[WSOutgoingMessage]:
+        """Emit the chat + task event needed to resume the pending activity."""
+        attempt = self._next_pending_attempt(session)
+        if attempt is None:
+            return
+        total = len(session.task_queue or []) or 1
+        current = max(int(attempt.sequence) - 1, 0)
+        message = f"Welcome back. Continue with activity {current + 1} of {total}."
+        yield WSOutgoingMessage(
+            type="chat_message", role="assistant", content=message,
+        )
+        # Self-heal stale snapshots: a `pre_generated_tasks` cached by an older
+        # code path may be missing listening fields. Pull the live attempt,
+        # repair its content, and write it back so the widget renders.
+        attempt = await self._prepare_attempt_for_delivery(attempt)
+        task_content_payload = dict(attempt.task_content or {})
+        session.pre_generated_tasks = task_content_payload
+        session.current_task_index = current
+        self.session_repo.save(session)
+        self.db.commit()
+
+        payload = {
+            **task_content_payload,
+            "_session": {
+                "current_task_index": current,
+                "total_tasks": total,
+                "daily_session_id": session.daily_session_id,
+            },
+        }
+        widget = normalize_widget_key(
+            str(payload.get("widget") or payload.get("ui_widget") or session.task_type)
+        )
+        yield self._event_orchestrator().task_event(
+            widget=widget,
+            task_payload={**payload, "widget": widget},
+            session_meta=payload.get("_session"),
+        )
+
+    def _resume_checkpoint(self, session: LearningSession) -> dict[str, Any]:
+        """Derive the resume checkpoint from V2 attempts + chat envelope state.
+
+        No persisted checkpoint column — V2 attempts are the source of truth.
+        """
+        attempts = self.attempts_repo.list_for_session(session.daily_session_id)
+        completed = [
+            int(a.sequence)
+            for a in attempts
+            if a.status is AttemptStatus.EVALUATED
+        ]
+        pending = next(
+            (a for a in attempts if a.status is AttemptStatus.PENDING), None
+        )
+        teaching_completed = bool(session.understanding_confirmed)
+        if not teaching_completed:
+            last_phase = "teaching"
+        elif (
+            session.phase in ("feedback", "follow_up", "scorecard")
+            and session.evaluation is not None
+        ):
+            # Learner is reviewing results for the activity they just finished,
+            # even when another activity is still pending in the queue.
+            last_phase = "feedback"
+        elif pending is not None:
+            last_phase = "practice_task"
+        elif session.phase == "ended":
+            last_phase = "ended"
+        else:
+            last_phase = session.phase or "feedback"
+        return {
+            "teaching_completed": teaching_completed,
+            "current_sequence": int(pending.sequence) if pending is not None else None,
+            "completed_sequences": completed,
+            "last_resumable_phase": last_phase,
+        }
+
+    def _completed_activity_summaries(
+        self, session: LearningSession
+    ) -> list[dict[str, Any]]:
+        """Compact per-completed-activity summaries from V2 attempt evaluations.
+
+        One row per EVALUATED attempt with a stored evaluation:
+        ``{sequence, archetype_id, label, archetype_label, widget, raw_score}``.
+        The chat UI renders these as read-only rows on resume (with a Retry
+        button) instead of replaying the full evaluation/feedback widgets.
+        """
+        summaries: list[dict[str, Any]] = []
+        for attempt in self.attempts_repo.list_for_session(session.daily_session_id):
+            if attempt.status is not AttemptStatus.EVALUATED:
+                continue
+            evaluation = attempt.evaluation
+            if evaluation is None:
+                continue
+            spec = get_archetype(attempt.archetype_id)
+            content = dict(attempt.task_content or {})
+            widget = normalize_widget_key(
+                str(
+                    content.get("widget")
+                    or content.get("ui_widget")
+                    or spec.ui_widget
+                    or ""
+                )
+            )
+            summaries.append(
+                {
+                    "sequence": int(attempt.sequence),
+                    "archetype_id": attempt.archetype_id,
+                    "label": _CORE_ACTIVITY_LABELS.get(
+                        spec.core_activity, spec.core_activity.title()
+                    ),
+                    "archetype_label": spec.name,
+                    "widget": widget,
+                    "raw_score": float(evaluation.raw_score),
+                }
+            )
+        return summaries
+
+    async def get_state_snapshot(
+        self, session_id: str, user_id: int
+    ) -> dict[str, Any]:
+        """Build the REST hydrate payload the chat UI renders before/without WS.
+
+        Returns phase, messages, task_queue, the current actionable task, the
+        last evaluation/feedback for the current sequence, the blueprint meta,
+        and the derived resume checkpoint (completed_sequences, etc).
+        """
+        session = self._load_session(session_id)
+        if session.user_id != user_id:
+            raise PermissionError(
+                f"User {user_id} cannot read state for session {session_id}"
+            )
+        self._sync_task_queue_from_attempts(session)
+        self.db.commit()
+
+        daily = await self._auto_complete_daily_if_ready(session)
+        daily_completed = (
+            daily is not None and daily.status is SessionStatus.COMPLETED
+        )
+        checkpoint = self._resume_checkpoint(session)
+
+        current_task: dict[str, Any] | None = None
+        pending = self._next_pending_attempt(session)
+        if pending is not None and not daily_completed:
+            pending = await self._prepare_attempt_for_delivery(pending)
+            current_task = dict(pending.task_content or {})
+
+        state = self._state_from_row(session)
+        self._enrich_state_with_profile(state, session.user_id)
+        blueprint = self._session_blueprint_message(session, state)
+
+        return {
+            "session_id": session.session_id,
+            "daily_session_id": session.daily_session_id,
+            "topic": session.topic,
+            "skill_name": session.skill_name,
+            "task_type": session.task_type,
+            "phase": session.phase,
+            "messages": list(session.messages or []),
+            "task_queue": list(session.task_queue or []),
+            "current_task": current_task,
+            "current_sequence": checkpoint["current_sequence"],
+            "last_evaluation": session.evaluation,
+            "last_feedback": session.feedback,
+            "completed_sequences": checkpoint["completed_sequences"],
+            "completed_activities": self._completed_activity_summaries(session),
+            "teaching_completed": checkpoint["teaching_completed"],
+            "last_resumable_phase": checkpoint["last_resumable_phase"],
+            "daily_completed": daily_completed,
+            "blueprint": blueprint.payload,
+        }
 
     async def _auto_complete_daily_if_ready(
         self, session: LearningSession
@@ -987,27 +1234,43 @@ class LearningSessionService:
         if daily is None or daily.status is not SessionStatus.IN_PROGRESS:
             return daily
 
+        if daily.session_id in _completing_daily_uuids:
+            return daily
+
+        if ScorecardRepository(self.db).get_for_session(daily.id) is not None:
+            self.db.refresh(daily)
+            return daily
+
         attempts = self.attempts_repo.list_for_session(daily.id)
         if not attempts or any(
             attempt.status is not AttemptStatus.EVALUATED for attempt in attempts
         ):
             return daily
 
+        # Take the same completion lock the WS path uses so a concurrent
+        # complete_session can't double-award points or skip the scorecard.
+        _completing_daily_uuids.add(daily.session_id)
         try:
             await _make_v2_session_service(self.db).complete_session(
                 session_id=daily.session_id,
                 user_id=session.user_id,
             )
-            return self.db.get(DailySession, session.daily_session_id)
         except (SessionNotFound, SessionAbandoned, SessionAlreadyCompleted):
-            return self.db.get(DailySession, session.daily_session_id)
+            pass
+        except Exception:
+            logger.warning(
+                "Auto-complete failed for daily session_id=%s; leaving open",
+                daily.session_id,
+                exc_info=True,
+            )
+        finally:
+            _completing_daily_uuids.discard(daily.session_id)
+        return self.db.get(DailySession, session.daily_session_id)
 
     def _stream_completed_daily_message(self) -> AsyncIterator[WSOutgoingMessage]:
-        message = (
-            "Today's activities are complete. Go back to the dashboard "
-            "to review the day and advance when you're ready."
+        return self._stream_chat_text(
+            _DAILY_COMPLETE_MESSAGE, actions=["Go to dashboard"],
         )
-        return self._stream_chat_text(message, actions=["Go to dashboard"])
 
     def _session_blueprint_message(
         self,
@@ -1253,6 +1516,20 @@ class LearningSessionService:
         except (AttemptNotFound, SessionNotFound) as exc:
             yield WSOutgoingMessage(type="error", content=str(exc))
             return
+        except Exception:
+            # Any other failure (DB, LLM, unexpected RAG error) must not kill the
+            # WS handler — surface a recoverable error and keep the connection.
+            logger.warning(
+                "submit_activity failed for session_id=%s sequence=%s",
+                session.session_id,
+                sequence,
+                exc_info=True,
+            )
+            yield WSOutgoingMessage(
+                type="error",
+                content="Something went wrong while submitting your answer. Please try again.",
+            )
+            return
 
         evaluation_dict = {
             "raw_score": float(evaluation.raw_score),
@@ -1440,14 +1717,6 @@ class LearningSessionService:
                 session_meta=session_meta,
             )
 
-        # Stream the conversational feedback summary as a chat message.
-        summary_text = feedback.summary or "Good effort."
-        if feedback.next_tip:
-            summary_text = f"{summary_text} {feedback.next_tip}"
-        actions = self._next_actions_for_session(session)
-        async for msg in self._stream_chat_text(summary_text, actions=actions):
-            yield msg
-
         session.evaluation = evaluation_dict
         session.feedback = feedback_dict
         session.phase = "feedback"
@@ -1455,10 +1724,181 @@ class LearningSessionService:
         messages.append({"role": "ai", "content": "[pronunciation result delivered]" if pronunciation_data else "[scorecard delivered]", "type": "ui_event"})
         if pronunciation_data is None:
             messages.append({"role": "ai", "content": "[feedback card delivered]", "type": "ui_event"})
-        messages.append({"role": "ai", "content": summary_text, "type": "chat"})
         session.messages = messages
+        # Keep the cached task_queue statuses in step with the V2 attempt we
+        # just evaluated.
+        self._sync_task_queue_from_attempts(session)
         self.session_repo.save(session)
         self.db.commit()
+
+        state["evaluation"] = evaluation_dict
+        state["feedback"] = feedback_dict
+        state["phase"] = "feedback"
+        state["messages"] = messages
+
+        if self._next_pending_attempt(session) is None:
+            # Last activity — skip the per-activity summary chat (scorecard +
+            # feedback widgets are enough) and wrap up with the day scorecard.
+            async for msg in self._complete_and_announce(session, state):
+                yield msg
+            return
+
+        summary_text = feedback.summary or "Good effort."
+        if feedback.next_tip:
+            summary_text = f"{summary_text} {feedback.next_tip}"
+        actions = self._next_actions_for_session(session)
+        messages.append({"role": "ai", "content": summary_text, "type": "chat"})
+        session.messages = messages
+        state["messages"] = messages
+        self.session_repo.save(session)
+        self.db.commit()
+        async for msg in self._stream_chat_text(summary_text, actions=actions):
+            yield msg
+
+    async def _replay_last_activity_results(
+        self,
+        session: LearningSession,
+        state: LearningSessionState,
+    ) -> AsyncIterator[WSOutgoingMessage]:
+        """Re-emit scorecard/feedback widgets after a reconnect at feedback phase."""
+        evaluation_dict = dict(session.evaluation or {})
+        feedback_dict = dict(session.feedback or {})
+        if not evaluation_dict or not feedback_dict:
+            return
+
+        sequence = state.get("current_sequence")
+        if sequence is None:
+            sequence = max(int(session.current_task_index or 0), 0) + 1
+        attempt = self.attempts_repo.get(
+            session_pk=session.daily_session_id,
+            sequence=int(sequence),
+        )
+        if attempt is None or attempt.status is not AttemptStatus.EVALUATED:
+            # Fall back to the most recently evaluated attempt.
+            evaluated = [
+                a
+                for a in self.attempts_repo.list_for_session(session.daily_session_id)
+                if a.status is AttemptStatus.EVALUATED
+            ]
+            attempt = evaluated[-1] if evaluated else None
+            if attempt is None:
+                return
+            sequence = int(attempt.sequence)
+
+        session_meta = {
+            "current_task_index": max(int(sequence) - 1, 0),
+            "total_tasks": len(session.task_queue or []) or 1,
+            "sequence": int(sequence),
+            "daily_session_id": session.daily_session_id,
+        }
+        task_content = dict(attempt.task_content or {})
+        activity_contract = dict(task_content.get("activity_contract") or {})
+        task_widget = normalize_widget_key(
+            str(
+                task_content.get("widget")
+                or task_content.get("ui_widget")
+                or activity_contract.get("task_widget")
+                or session.task_type
+                or ""
+            )
+        )
+        evaluation_widget = str(
+            activity_contract.get("evaluation_widget")
+            or task_content.get("evaluation_widget")
+            or "activity_score"
+        )
+        feedback_widget_key = str(
+            activity_contract.get("feedback_widget")
+            or task_content.get("feedback_widget")
+            or "feedback_card"
+        )
+
+        pronunciation_data = None
+        evaluator_notes = evaluation_dict.get("evaluator_notes")
+        if evaluator_notes:
+            try:
+                parsed_notes = json.loads(evaluator_notes)
+                if (
+                    isinstance(parsed_notes, dict)
+                    and parsed_notes.get("task_type") == "speak_read_aloud"
+                    and isinstance(parsed_notes.get("pronunciation"), dict)
+                ):
+                    pronunciation_data = parsed_notes["pronunciation"]
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        if pronunciation_data is not None:
+            reference_text = (
+                task_content.get("text_to_read_aloud")
+                or task_content.get("passage")
+                or ""
+            )
+            pronunciation_payload = {
+                "pronunciation": pronunciation_data,
+                "raw_score": float(evaluation_dict.get("raw_score") or 0),
+                "reference_text": reference_text,
+                "feedback": feedback_dict,
+                "activity_contract": activity_contract,
+                "task_widget": task_widget,
+                "evaluation_widget": evaluation_widget,
+                "feedback_widget": feedback_widget_key,
+                "_session": session_meta,
+            }
+            yield self._event_orchestrator().evaluation_event(
+                widget="pronunciation_result",
+                evaluation_payload=pronunciation_payload,
+                evaluation={
+                    **evaluation_dict,
+                    "pronunciation": pronunciation_data,
+                    "reference_text": reference_text,
+                },
+                session_meta=session_meta,
+            )
+            return
+
+        correct_count, total = _deterministic_scorecard_counts(
+            attempt.archetype_id,
+            evaluation_dict.get("evaluator_notes"),
+        )
+        scorecard_payload = {
+            "overall_score": float(evaluation_dict.get("raw_score") or 0),
+            "skill_name": session.skill_name,
+            "topic": session.topic,
+            "rubric_scores": evaluation_dict.get("rubric_scores") or {},
+            "weighted_points": evaluation_dict.get("weighted_points") or {},
+            "activity_contract": activity_contract,
+            "task_widget": task_widget,
+            "evaluation_widget": evaluation_widget,
+            "feedback_widget": feedback_widget_key,
+            "_session": session_meta,
+        }
+        if correct_count is not None and total is not None:
+            scorecard_payload["correct_count"] = correct_count
+            scorecard_payload["total"] = total
+            scorecard_payload["answered_count"] = total
+        yield self._event_orchestrator().evaluation_event(
+            widget="scorecard",
+            evaluation_payload=scorecard_payload,
+            evaluation=evaluation_dict,
+            session_meta=session_meta,
+        )
+
+        feedback_payload = {
+            **feedback_dict,
+            "score": float(evaluation_dict.get("raw_score") or feedback_dict.get("score") or 0),
+            "widget": task_widget,
+            "activity_contract": activity_contract,
+            "task_widget": task_widget,
+            "evaluation_widget": evaluation_widget,
+            "feedback_widget": feedback_widget_key,
+            "_session": session_meta,
+        }
+        yield self._event_orchestrator().feedback_event(
+            widget="feedback_card",
+            feedback_payload=feedback_payload,
+            feedback=feedback_dict,
+            session_meta=session_meta,
+        )
 
     async def _handle_follow_up_stream(
         self,
@@ -1499,11 +1939,26 @@ class LearningSessionService:
             return
 
         if any(sig in action for sig in another_signals):
+            # Idempotent: learner already has the pending task on screen.
+            if session.phase == "practice_task":
+                return
             attempt = self._next_pending_attempt(session)
             if attempt is None:
                 async for msg in self._complete_and_announce(session, state):
                     yield msg
                 return
+            current_seq = state.get("current_sequence")
+            if (
+                current_seq is not None
+                and int(current_seq) == int(attempt.sequence)
+            ):
+                return
+            # Claim the transition before prepare/delivery so a double-click
+            # while still in feedback cannot deliver the same task twice.
+            session.phase = "practice_task"
+            state["phase"] = "practice_task"
+            self.session_repo.save(session)
+            self.db.commit()
             attempt = await self._prepare_attempt_for_delivery(attempt)
             state["task_content"] = dict(attempt.task_content or {})
             state["task_type"] = self._task_type_for_attempt(attempt)
@@ -1543,6 +1998,34 @@ class LearningSessionService:
         async for msg in self._stream_followup_answer(session, state, raw_action):
             yield msg
 
+    async def _await_scorecard_while_completing(
+        self,
+        daily: DailySession,
+        *,
+        max_wait_s: float | None = None,
+        interval_s: float = 0.1,
+    ) -> SessionScorecard | None:
+        """Wait for an in-flight ``complete_session`` to commit.
+
+        The wait window covers the inline mentor-note budget plus a buffer so an
+        in-flight completion's scorecard (and the RAG widget that follows it) is
+        observed rather than skipped.
+        """
+        if max_wait_s is None:
+            max_wait_s = settings.RAG_MENTOR_NOTE_TIMEOUT_S + 7.0
+        elapsed = 0.0
+        while elapsed < max_wait_s:
+            self.db.expire(daily)
+            self.db.refresh(daily)
+            scorecard = ScorecardRepository(self.db).get_for_session(daily.id)
+            if scorecard is not None:
+                return scorecard
+            if daily.session_id not in _completing_daily_uuids:
+                return ScorecardRepository(self.db).get_for_session(daily.id)
+            await asyncio.sleep(interval_s)
+            elapsed += interval_s
+        return ScorecardRepository(self.db).get_for_session(daily.id)
+
     async def _complete_and_announce(
         self,
         session: LearningSession,
@@ -1556,13 +2039,36 @@ class LearningSessionService:
             attempts = self.attempts_repo.list_for_session(daily.id)
             evaluated = [a for a in attempts if a.status is AttemptStatus.EVALUATED]
             if evaluated:
-                try:
-                    v2_service = _make_v2_session_service(self.db)
-                    scorecard, _report = await v2_service.complete_session(
-                        session_id=daily.session_id, user_id=session.user_id,
-                    )
-                except (SessionNotFound, SessionAbandoned, SessionAlreadyCompleted):
-                    pass
+                existing_scorecard = ScorecardRepository(self.db).get_for_session(
+                    daily.id
+                )
+                if existing_scorecard is not None:
+                    scorecard = existing_scorecard
+                    self.db.refresh(daily)
+                elif daily.session_id in _completing_daily_uuids:
+                    scorecard = await self._await_scorecard_while_completing(daily)
+                elif daily.session_id not in _completing_daily_uuids:
+                    _completing_daily_uuids.add(daily.session_id)
+                    try:
+                        v2_service = _make_v2_session_service(self.db)
+                        scorecard, _report = await v2_service.complete_session(
+                            session_id=daily.session_id,
+                            user_id=session.user_id,
+                        )
+                        self.db.refresh(daily)
+                    except (SessionNotFound, SessionAbandoned, SessionAlreadyCompleted):
+                        pass
+                    except Exception:
+                        # Any other failure (DB/LLM/RAG) must not kill the WS
+                        # handler — the farewell still streams below so the chat
+                        # degrades gracefully instead of hanging.
+                        logger.warning(
+                            "complete_session failed for daily session_id=%s",
+                            daily.session_id,
+                            exc_info=True,
+                        )
+                    finally:
+                        _completing_daily_uuids.discard(daily.session_id)
         elif daily is not None and daily.status is SessionStatus.COMPLETED:
             try:
                 scorecard = _make_v2_session_service(self.db).get_scorecard(
@@ -1589,11 +2095,36 @@ class LearningSessionService:
                 scorecard_payload=scorecard_payload,
                 session_meta=session_meta,
             )
+
+            # Coach's Note: stream the scorecard instantly, then resolve the note
+            # in-band over the still-open WS. If it was already persisted (re-open
+            # / earlier generation), use it; otherwise generate it now under a
+            # ceiling. A "pending" placeholder is shown while we wait, then the
+            # terminal event carries the real note or an explicit unavailability.
+            mentor_note = scorecard_payload.get("mentor_note")
+            if not mentor_note:
+                rag_widget = final_widgets["rag_feedback_widget"]
+                yield self._event_orchestrator().rag_feedback_event(
+                    widget=rag_widget,
+                    feedback_payload={
+                        "mentor_note": None,
+                        "available": False,
+                        "pending": True,
+                        "source": "feedback_memory",
+                        "_session": session_meta,
+                    },
+                    session_meta=session_meta,
+                )
+                mentor_note = await self._resolve_mentor_note(
+                    daily_uuid=daily.session_id,
+                    user_id=session.user_id,
+                )
             yield self._event_orchestrator().rag_feedback_event(
                 widget=final_widgets["rag_feedback_widget"],
                 feedback_payload={
-                    "mentor_note": scorecard_payload.get("mentor_note"),
-                    "available": bool(scorecard_payload.get("mentor_note")),
+                    "mentor_note": mentor_note,
+                    "available": bool(mentor_note),
+                    "pending": False,
                     "source": "feedback_memory",
                     "_session": session_meta,
                 },
@@ -1609,10 +2140,7 @@ class LearningSessionService:
                 session_meta=session_meta,
             )
 
-        farewell = (
-            "Great work. Go back to the dashboard to review today's "
-            "activities and advance when you're ready."
-        )
+        farewell = _DAILY_COMPLETE_MESSAGE
         messages = list(session.messages or [])
         messages.append({"role": "ai", "content": farewell, "type": "chat"})
         session.messages = messages
@@ -1624,6 +2152,37 @@ class LearningSessionService:
             farewell, actions=["Go to dashboard"],
         ):
             yield msg
+
+    async def _resolve_mentor_note(
+        self,
+        *,
+        daily_uuid: str,
+        user_id: int,
+    ) -> str | None:
+        """Generate the Coach's Note in-band, under a ceiling. Never raises.
+
+        Runs on a dedicated DB session (off the request session) and is
+        ``asyncio.shield``-ed so a timeout shows the user a fallback while the
+        worker keeps running and persists the note for later scorecard/dashboard
+        reads.
+        """
+        task: asyncio.Task[str | None] = asyncio.ensure_future(
+            generate_mentor_note_async(session_id=daily_uuid, user_id=user_id)
+        )
+        _pending_note_tasks.add(task)
+        task.add_done_callback(_pending_note_tasks.discard)
+        try:
+            return await asyncio.wait_for(
+                asyncio.shield(task),
+                timeout=settings.RAG_MENTOR_NOTE_TIMEOUT_S,
+            )
+        except Exception:
+            logger.warning(
+                "Coach's Note not ready in-band for session=%s; "
+                "background worker will persist it",
+                daily_uuid,
+            )
+            return None
 
     def _final_review_widgets(self, daily: DailySession) -> dict[str, str]:
         try:

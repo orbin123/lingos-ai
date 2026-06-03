@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { SessionPreviewState } from "../../teaching/source";
 import type { ListenShadowTask, LiveTaskController } from "../source";
 import { LivePronunciationRecorder } from "./LivePronunciationRecorder";
-import { ListeningAudioCard, ResultBanner, RuleCallout, TargetWordsRow, TaskWidgetFrame, StatusDot } from "./TaskWidgetFrame";
+import { ListeningAudioCard, ResultBanner, RuleCallout, TaskWidgetFrame, StatusDot } from "./TaskWidgetFrame";
 
 function LiveListenShadow({ task, live }: { task: ListenShadowTask; live: LiveTaskController }) {
   const [audioComplete, setAudioComplete] = useState(false);
@@ -13,7 +13,6 @@ function LiveListenShadow({ task, live }: { task: ListenShadowTask; live: LiveTa
   return (
     <TaskWidgetFrame task={task} icon={<Volume2 size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Shadowing focus">{task.grammarRule}</RuleCallout>
-      <TargetWordsRow words={task.targetWords} label="Target phrases" />
       <ListeningAudioCard
         title={task.audioGenre}
         script={task.audioScript}
@@ -59,28 +58,6 @@ export function ListenShadowTaskWidget({
   return (
     <TaskWidgetFrame task={task} icon={<Volume2 size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Shadowing focus">{task.grammarRule}</RuleCallout>
-
-      {/* Target phrases highlight */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: "oklch(45% 0.07 240)", marginBottom: 6, textTransform: "uppercase" }}>
-          Target fast possessives
-        </div>
-        <div className="tw-target-chip-row">
-          {task.targetWords.map((word) => (
-            <span 
-              className="tw-target-chip used" 
-              key={word}
-              style={{
-                background: "oklch(93% 0.04 155)",
-                color: "oklch(42% 0.16 155)",
-                border: "1px solid oklch(85% 0.06 155)"
-              }}
-            >
-              {word}
-            </span>
-          ))}
-        </div>
-      </div>
 
       {/* Audio player UI */}
       <div 

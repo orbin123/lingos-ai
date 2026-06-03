@@ -8,13 +8,23 @@ import { AxiosError } from "axios";
 import type { UserCoursePreferenceRead } from "@/lib/preferences-api";
 import { getApiErrorMessage } from "@/lib/errors";
 import { useTodaySessionPlan, useStartLearningSession } from "@/hooks/useSessionsFlow";
-import { sessionsApi, type DashboardPlanActivity } from "@/lib/sessions-api";
+import {
+  sessionsApi,
+  type DashboardPlanActivity,
+  type DashboardTodayPlanResponse,
+} from "@/lib/sessions-api";
 
 interface DailyTaskPanelProps {
   preference: UserCoursePreferenceRead;
 }
 
-function activitiesPerDay(preference: UserCoursePreferenceRead) {
+function activityCount(
+  preference: UserCoursePreferenceRead,
+  plan: DashboardTodayPlanResponse | undefined,
+): number {
+  if (plan?.activities.length) {
+    return plan.activities.length;
+  }
   return Math.max(2, Math.min(4, preference.tasks_per_day));
 }
 
@@ -77,6 +87,12 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
     },
   });
 
+  const weekOverride = searchParams.get("week") ? Number(searchParams.get("week")) : null;
+  const dayOverride = searchParams.get("day") ? Number(searchParams.get("day")) : null;
+  const isInOverrideMode =
+    (weekOverride !== null && weekOverride !== preference.current_week) ||
+    (dayOverride !== null && dayOverride !== preference.current_day_in_week);
+
   const handleStart = useCallback(async () => {
     const week = Number(searchParams.get("week") || preference.current_week || 1);
     const day = Number(searchParams.get("day") || preference.current_day_in_week || 1);
@@ -89,12 +105,6 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
     startMutation,
     router,
   ]);
-
-  const handleViewResults = useCallback(() => {
-    if (plan?.session_id) {
-      router.push(`/task/chat/${plan.session_id}`);
-    }
-  }, [plan?.session_id, router]);
 
   return (
     <div
@@ -111,6 +121,25 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
     >
       <PanelHeader preference={preference} />
 
+      {isInOverrideMode && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: "8px 12px",
+            borderRadius: 10,
+            background: "oklch(96% 0.06 60)",
+            border: "1px solid oklch(80% 0.12 60)",
+            fontSize: 12.5,
+            color: "oklch(40% 0.14 60)",
+            fontWeight: 600,
+          }}
+        >
+          Previewing Week {weekOverride ?? preference.current_week}, Day{" "}
+          {dayOverride ?? preference.current_day_in_week} — not your current lesson.
+          Completing this session will not advance your progress.
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <Tag bg="#d6e8f7" color="#00599e">
           Day {preference.current_day_in_week}
@@ -119,7 +148,7 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
           Week {preference.current_week}
         </Tag>
         <Tag bg="oklch(96% 0.04 60)" color="oklch(45% 0.14 60)">
-          {activitiesPerDay(preference)} activities
+          {activityCount(preference, plan)} activities
         </Tag>
       </div>
 
@@ -132,16 +161,14 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
         />
       )}
 
-      {/* Completed state: always show both "View results" and "Advance" */}
+      {/* Completed state: advance to the next day from the dashboard only */}
       {!isLoading && !isError && plan && completed && (
         <CompletedDayBlock
           week={preference.current_week}
           day={preference.current_day_in_week}
           isLastDayOfWeek={isLastDayOfWeek}
-          sessionId={plan.session_id}
           isUnlocking={unlockMutation.isPending}
           error={unlockMutation.error}
-          onViewResults={handleViewResults}
           onAdvance={() => unlockMutation.mutate()}
         />
       )}
@@ -251,8 +278,7 @@ function ActiveSessionBlock({
 
   let buttonLabel = "Start session";
   if (!isPreview) {
-    if (allDone) buttonLabel = "See results";
-    else if (sessionStatus === "in_progress") buttonLabel = "Continue session";
+    if (sessionStatus === "in_progress" || allDone) buttonLabel = "Continue session";
   }
 
   return (
@@ -284,7 +310,7 @@ function ActiveSessionBlock({
           }}
         >
           {allDone
-            ? "All activities answered — review your scorecard when you're ready."
+            ? "All activities answered — open the session to finish and see your scorecard."
             : "Today's activities run in one session."}
         </div>
       )}
@@ -469,22 +495,18 @@ function CompletedDayBlock({
   week,
   day,
   isLastDayOfWeek,
-  sessionId,
   isUnlocking,
   error,
-  onViewResults,
   onAdvance,
 }: {
   week: number;
   day: number;
   isLastDayOfWeek: boolean;
-  sessionId: string | null;
   isUnlocking: boolean;
   error: Error | null;
-  onViewResults: () => void;
   onAdvance: () => void;
 }) {
-  const advanceLabel = isLastDayOfWeek ? "Advance to next week" : "Advance to next day";
+  const advanceLabel = isLastDayOfWeek ? `Advance to Week ${week + 1}` : "Advance to next day";
 
   return (
     <div
@@ -527,7 +549,7 @@ function CompletedDayBlock({
           textAlign: "center",
         }}
       >
-        Great work! Review your results or move on when you&apos;re ready.
+        Great work! When you&apos;re ready, advance to unlock the next lesson.
       </p>
 
       {error && (
@@ -536,73 +558,31 @@ function CompletedDayBlock({
         </p>
       )}
 
-      {/* Two-button row */}
-      <div style={{ display: "flex", gap: 10, width: "100%" }}>
-        {/* View results — secondary/outline */}
-        <button
-          type="button"
-          onClick={onViewResults}
-          disabled={!sessionId}
-          style={{
-            flex: 1,
-            padding: "12px 14px",
-            borderRadius: 14,
-            border: "1.5px solid oklch(78% 0.04 240)",
-            background: "white",
-            color: "oklch(25% 0.09 245)",
-            fontFamily: "inherit",
-            fontSize: 13.5,
-            fontWeight: 700,
-            cursor: sessionId ? "pointer" : "default",
-            opacity: sessionId ? 1 : 0.45,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-            boxShadow: "0 2px 8px rgba(80,110,180,0.06)",
-            transition: "box-shadow 0.15s, background 0.15s",
-          }}
-          onMouseEnter={(e) => {
-            if (sessionId) (e.currentTarget as HTMLButtonElement).style.background = "oklch(97% 0.02 240)";
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.background = "white";
-          }}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M8 3C4.5 3 1.5 8 1.5 8S4.5 13 8 13s6.5-5 6.5-5S11.5 3 8 3Z" stroke="currentColor" strokeWidth="1.5" />
-            <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.5" />
-          </svg>
-          View results
-        </button>
-
-        {/* Advance — primary */}
-        <button
-          type="button"
-          onClick={onAdvance}
-          disabled={isUnlocking}
-          style={{
-            flex: 1,
-            padding: "12px 14px",
-            borderRadius: 14,
-            border: "none",
-            background: isUnlocking ? "oklch(68% 0.06 240)" : "#0070C4",
-            color: "white",
-            fontFamily: "inherit",
-            fontSize: 13.5,
-            fontWeight: 800,
-            cursor: isUnlocking ? "default" : "pointer",
-            boxShadow: isUnlocking ? "none" : "0 6px 18px rgba(0,112,196,0.22)",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-          }}
-        >
-          {isUnlocking ? "Advancing..." : advanceLabel}
-          {!isUnlocking && <ArrowIcon />}
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={onAdvance}
+        disabled={isUnlocking}
+        style={{
+          width: "100%",
+          padding: "13px 18px",
+          borderRadius: 14,
+          border: "none",
+          background: isUnlocking ? "oklch(68% 0.06 240)" : "#0070C4",
+          color: "white",
+          fontFamily: "inherit",
+          fontSize: 14,
+          fontWeight: 800,
+          cursor: isUnlocking ? "default" : "pointer",
+          boxShadow: isUnlocking ? "none" : "0 6px 18px rgba(0,112,196,0.22)",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+        }}
+      >
+        {isUnlocking ? "Advancing..." : advanceLabel}
+        {!isUnlocking && <ArrowIcon />}
+      </button>
     </div>
   );
 }

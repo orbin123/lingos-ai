@@ -13,6 +13,7 @@ fields are missing.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -206,6 +207,109 @@ class StubTaskGenerator:
                     },
                 ])
             content = normalize_listen_and_respond_payload(content)
+        if archetype.archetype_id == "SPEAK_READ_ALOUD":
+            content = normalize_read_aloud_payload({
+                **content,
+                "text_to_read_aloud": (
+                    "Last Saturday, Maria visited her grandparents in the countryside. "
+                    "They played cards and talked about school. She ate homemade soup, "
+                    "watched an old film, and laughed with her cousins. Maria enjoyed "
+                    "the quiet evening and went home feeling happy. She told her parents "
+                    "about the trip before she fell asleep."
+                ),
+                "grammar_rule_to_practice": (
+                    "Use the simple past tense to describe completed actions. "
+                    "Regular verbs typically end in -ed; irregular verbs change form."
+                ),
+                "target_words": [
+                    "visited", "played", "talked", "ate", "watched",
+                    "laughed", "enjoyed", "went", "told",
+                ],
+                "task_intro": "Read the passage above out loud.",
+                "instructions": "Read the connected passage aloud clearly.",
+                "speaking_duration_seconds": 45,
+            })
+        if archetype.archetype_id == "SPEAK_INTERVIEW":
+            content = normalize_interview_speaking_payload({
+                **content,
+                "interview_context": (
+                    "A friendly stranger asks you a few simple questions. "
+                    "Answer each one aloud in a short, full sentence."
+                ),
+                "grammar_rule_to_practice": (
+                    "Use simple present tense to talk about yourself "
+                    "(I am, I work, I like)."
+                ),
+                "target_words": ["My name is", "I'm a", "I like"],
+                "questions": [
+                    {
+                        "item_id": "q1",
+                        "interviewer_prompt": "What is your name?",
+                        "sample_answer": "My name is Sam.",
+                        "answer_hint": "Start with 'My name is'.",
+                    },
+                    {
+                        "item_id": "q2",
+                        "interviewer_prompt": "What do you do?",
+                        "sample_answer": "I'm a teacher.",
+                        "answer_hint": "Start with 'I'm a'.",
+                    },
+                    {
+                        "item_id": "q3",
+                        "interviewer_prompt": "What is a hobby you like?",
+                        "sample_answer": "I like reading books.",
+                        "answer_hint": "Start with 'I like'.",
+                    },
+                ],
+                "task_intro": "Answer the interview questions out loud.",
+                "speaking_duration_seconds": 30,
+            })
+        if archetype.archetype_id == "READ_STRUCTURE_ID":
+            content = normalize_read_structure_payload({
+                **content,
+                "passage_title": "My Morning Routine",
+                "items": [
+                    {
+                        "item_id": "para_1",
+                        "prompt": (
+                            "Every morning I follow the same routine because it "
+                            "helps me feel calm and ready for the day."
+                        ),
+                        "options": ["Intro", "Body", "Conclusion"],
+                        "correct_answer": "Intro",
+                        "explanation": "It states the main idea before any details.",
+                    },
+                    {
+                        "item_id": "para_2",
+                        "prompt": (
+                            "First, I wake up at six. Then I drink a glass of water. "
+                            "After that, I stretch for ten minutes, and finally I eat "
+                            "breakfast."
+                        ),
+                        "options": ["Intro", "Body", "Conclusion"],
+                        "correct_answer": "Body",
+                        "explanation": (
+                            "It gives ordered details with sequence words "
+                            "(first, then, after that, finally)."
+                        ),
+                    },
+                    {
+                        "item_id": "para_3",
+                        "prompt": (
+                            "This simple routine helps me start every day feeling "
+                            "organised and positive."
+                        ),
+                        "options": ["Intro", "Body", "Conclusion"],
+                        "correct_answer": "Conclusion",
+                        "explanation": "It closes with a final thought about the routine.",
+                    },
+                ],
+                "task_intro": "Read the passage and label each paragraph.",
+                "instructions": (
+                    "Label each paragraph as the intro, body, or conclusion."
+                ),
+                "estimated_time_minutes": 10,
+            })
         return GeneratedTask(content=content)
 
 
@@ -256,6 +360,89 @@ def authored_listen_and_respond_content(task_spec: dict | None) -> dict | None:
     return normalized if is_valid_listening_payload(normalized) else None
 
 
+_BLANK_HINT_WORDS = frozenset({
+    "i", "me", "you", "he", "him", "she", "her", "it", "we", "us", "they", "them",
+    "mine", "yours", "his", "hers", "ours", "theirs",
+    "my", "your", "our", "their", "its",
+    "a", "an", "the", "this", "that", "these", "those",
+})
+_POST_BLANK_PARENS_RE = re.compile(r"___(\s*\([^)]+\))+")
+
+
+def _blank_needs_base_verb_hint(item: dict) -> bool:
+    """Return True when the UI should show a base-verb hint beside the blank."""
+    base_verb = str(item.get("base_verb") or "").strip()
+    if not base_verb:
+        return False
+    correct = str(item.get("correct_answer") or "").strip().lower()
+    if correct in _BLANK_HINT_WORDS:
+        return False
+    if base_verb.lower() in _BLANK_HINT_WORDS:
+        return False
+    if base_verb.lower() == correct:
+        # The "hint" would just spell out the answer — suppress it.
+        return False
+    return True
+
+
+def _strip_post_blank_parentheticals(text: str) -> str:
+    """Remove inline `(hint)` groups that follow blank markers in passage text."""
+    cleaned = _POST_BLANK_PARENS_RE.sub("___", text)
+    return re.sub(r"  +", " ", cleaned)
+
+
+def _strip_inline_verb_hint(text: str, base_verb: str) -> str:
+    """Remove `(base_verb)` hints from passage text; the UI shows them from `base_verb`."""
+    verb = base_verb.strip()
+    if not verb:
+        return text
+    cleaned = re.sub(
+        rf"\(\s*{re.escape(verb)}\s*\)",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"  +", " ", cleaned)
+
+
+def _ensure_blank_marker(
+    text: str, correct_answer: str, *, skip_if_blank: bool = True
+) -> str:
+    """Replace the first whole-word occurrence of the answer with a `___` blank.
+
+    Guards against generated content that writes the answer inline instead of a
+    blank (e.g. "She wakes up" rather than "She ___ up"), which would otherwise
+    show the learner the answer. With ``skip_if_blank`` (the default) it leaves
+    text that already contains a blank untouched — right for a single-blank
+    sentence. Pass ``skip_if_blank=False`` for a multi-blank passage that is
+    missing one of its blanks but still spells out the answer elsewhere.
+    """
+    answer = correct_answer.strip()
+    if not answer:
+        return text
+    if skip_if_blank and "___" in text:
+        return text
+    cleaned, count = re.subn(
+        rf"\b{re.escape(answer)}\b",
+        "___",
+        text,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    if count == 0:
+        return text
+    return re.sub(r"  +", " ", cleaned)
+
+
+def _strip_passage_verb_hints(passage: str, items: list[dict]) -> str:
+    result = passage
+    for item in items:
+        base_verb = str(item.get("base_verb") or "").strip()
+        if base_verb:
+            result = _strip_inline_verb_hint(result, base_verb)
+    return re.sub(r"  +", " ", result)
+
+
 def normalize_fill_in_blanks_payload(content: dict) -> dict:
     """Derive widget-native fields from native or legacy cloze payloads.
 
@@ -285,6 +472,21 @@ def normalize_fill_in_blanks_payload(content: dict) -> dict:
         items = _items_from_passage(passage, normalized)
 
     if items:
+        for item in items:
+            if not _blank_needs_base_verb_hint(item):
+                item.pop("base_verb", None)
+            else:
+                base_verb = str(item.get("base_verb") or "").strip()
+                sentence = item.get("sentence_with_blank")
+                if base_verb and isinstance(sentence, str):
+                    item["sentence_with_blank"] = _strip_inline_verb_hint(sentence, base_verb)
+            sentence = item.get("sentence_with_blank")
+            if isinstance(sentence, str):
+                sentence = _strip_post_blank_parentheticals(sentence)
+                # Force a real blank in case the answer was written inline.
+                item["sentence_with_blank"] = _ensure_blank_marker(
+                    sentence, str(item.get("correct_answer") or "")
+                )
         normalized["items"] = items
         normalized.setdefault("blanks", items)
         normalized["total_blanks"] = len(items)
@@ -296,7 +498,20 @@ def normalize_fill_in_blanks_payload(content: dict) -> dict:
         normalized["instructions"] = instruction.strip()
 
     if passage is not None:
-        normalized["passage"] = _normalize_blank_markers(passage)
+        passage = _normalize_blank_markers(passage)
+        passage = _strip_post_blank_parentheticals(passage)
+        if items:
+            passage = _strip_passage_verb_hints(passage, items)
+            # When the passage spells out answers instead of blanks (fewer `___`
+            # than items), mask each answer occurrence into a blank.
+            if passage.count("___") < len(items):
+                for item in items:
+                    passage = _ensure_blank_marker(
+                        passage,
+                        str(item.get("correct_answer") or ""),
+                        skip_if_blank=False,
+                    )
+        normalized["passage"] = passage
 
     if "widget" in normalized:
         normalized["widget"] = normalize_widget_key(str(normalized["widget"]))
@@ -337,6 +552,94 @@ def normalize_listen_and_respond_payload(content: dict) -> dict:
     audio_script = normalized.get("audio_script") or normalized.get("primary_text")
     if isinstance(audio_script, str) and audio_script.strip():
         normalized["audio_script"] = audio_script.strip()
+
+    return normalized
+
+
+_DEFAULT_RETELL_PROMPT = "Retell what you heard in your own words."
+
+
+def normalize_listen_retell_payload(content: dict) -> dict:
+    """Normalize listen-then-speak payloads (retell / shadow) for the chat widgets.
+
+    Coerces speaking prompt/sample aliases, fills ``passage_to_retell`` for retell,
+    and sets ``inner_widget`` to ``speak_and_record`` so listening validation passes.
+    """
+    normalized = dict(content or {})
+    normalized = normalize_listen_and_respond_payload(normalized)
+    archetype_id = str(normalized.get("archetype_id") or "")
+
+    prompts_raw: Any = (
+        normalized.get("speaking_prompts")
+        or normalized.get("prompts")
+        or normalized.get("speaking_items")
+    )
+    prompts: list[str] = []
+    if isinstance(prompts_raw, list):
+        prompts = [str(p).strip() for p in prompts_raw if str(p).strip()]
+    if not prompts:
+        single_prompt = (
+            normalized.get("speaking_prompt")
+            or normalized.get("prompt")
+            or normalized.get("instructions")
+        )
+        if isinstance(single_prompt, str) and single_prompt.strip():
+            prompts = [single_prompt.strip()]
+    if not prompts:
+        prompts = [_DEFAULT_RETELL_PROMPT]
+    normalized["speaking_prompts"] = prompts[:1]
+
+    samples_raw: Any = (
+        normalized.get("sample_responses") or normalized.get("sample_answers")
+    )
+    samples: list[str] = []
+    if isinstance(samples_raw, list):
+        samples = [str(s).strip() for s in samples_raw if str(s).strip()]
+    if not samples:
+        single_sample = (
+            normalized.get("sample_response")
+            or normalized.get("sample_answer")
+        )
+        if isinstance(single_sample, str) and single_sample.strip():
+            samples = [single_sample.strip()]
+
+    audio_script = _first_text(normalized.get("audio_script")) or ""
+    primary_text = _first_text(normalized.get("primary_text")) or ""
+
+    if archetype_id == "LISTEN_RETELL":
+        if not samples and primary_text and primary_text != audio_script:
+            samples = [primary_text]
+        passage = _first_text(normalized.get("passage_to_retell")) or ""
+        if not passage and samples:
+            passage = samples[0]
+        if not passage and primary_text and primary_text != audio_script:
+            passage = primary_text
+        if passage:
+            normalized["passage_to_retell"] = passage
+        if samples:
+            normalized["sample_responses"] = samples[:1]
+        elif passage:
+            normalized["sample_responses"] = [passage]
+    elif archetype_id == "LISTEN_SHADOW":
+        shadow_text = _first_text(
+            normalized.get("text_to_shadow"),
+            normalized.get("text_to_read_aloud"),
+            normalized.get("passage_to_retell"),
+            audio_script,
+            primary_text,
+        ) or ""
+        if shadow_text:
+            normalized["text_to_shadow"] = shadow_text
+
+    normalized["inner_widget"] = "speak_and_record"
+
+    duration = normalized.get("speaking_duration_seconds")
+    try:
+        duration_int = int(duration) if duration is not None else 0
+    except (TypeError, ValueError):
+        duration_int = 0
+    if duration_int <= 0:
+        normalized["speaking_duration_seconds"] = 60 if archetype_id == "LISTEN_RETELL" else 45
 
     return normalized
 
@@ -425,6 +728,38 @@ def normalize_error_correction_payload(content: dict) -> dict:
     return normalized
 
 
+def normalize_sentence_transform_payload(content: dict) -> dict:
+    """Normalize generated sentence-transformation writing payloads for the chat widget."""
+    normalized = dict(content or {})
+    normalized["widget"] = "sentence_transform"
+    normalized["items"] = _normalize_sentence_transform_items(normalized.get("items"))
+
+    instructions = normalized.get("instructions") or normalized.get("instruction")
+    if isinstance(instructions, str) and instructions.strip():
+        normalized["instructions"] = instructions.strip()
+
+    return normalized
+
+
+def is_valid_sentence_transform_payload(content: dict, *, expected_items: int | None = None) -> bool:
+    """Return True when a sentence-transform payload is safe to render/evaluate."""
+    if normalize_widget_key(str(content.get("widget") or content.get("ui_widget") or "")) != "sentence_transform":
+        return False
+    items = content.get("items")
+    if not isinstance(items, list) or not items:
+        return False
+    if expected_items is not None and len(items) != expected_items:
+        return False
+    return all(
+        isinstance(item, dict)
+        and str(item.get("item_id") or "").strip()
+        and str(item.get("source_sentence") or "").strip()
+        and str(item.get("sample_answer") or "").strip()
+        and isinstance(item.get("watch_hints"), list)
+        for item in items
+    )
+
+
 def is_valid_error_correction_payload(content: dict, *, expected_items: int | None = None) -> bool:
     """Return True when an error-correction payload is safe to render/evaluate."""
     if normalize_widget_key(str(content.get("widget") or content.get("ui_widget") or "")) != "error_correction":
@@ -440,6 +775,112 @@ def is_valid_error_correction_payload(content: dict, *, expected_items: int | No
         and str(item.get("incorrect_sentence") or "").strip()
         and str(item.get("sample_answer") or "").strip()
         and isinstance(item.get("watch_hints"), list)
+        for item in items
+    )
+
+
+def normalize_read_structure_payload(content: dict) -> dict:
+    """Normalize generated paragraph-structure-labelling payloads for the widget.
+
+    The generic task-gen schema can only emit READ_STRUCTURE items in an MCQ-ish
+    shape (``prompt`` = the paragraph text, ``options`` = the candidate labels,
+    ``correct_index`` / ``correct_answer`` = the right label) — it has no
+    ``paragraph`` field or top-level ``structure_labels``. The read_structure
+    widget instead reads ``items[].paragraph``, top-level ``structure_labels``,
+    and ``items[].correct_answer``, so remap those names and derive
+    ``structure_labels`` from the per-item options (falling back to the set of
+    correct answers).
+    """
+    normalized = dict(content or {})
+    normalized["widget"] = "read_structure"
+
+    raw_items = normalized.get("items")
+    raw_items = raw_items if isinstance(raw_items, list) else []
+
+    label_pool: list[str] = []
+    items: list[dict] = []
+    for index, raw in enumerate(raw_items, start=1):
+        if not isinstance(raw, dict):
+            continue
+        paragraph = str(
+            raw.get("paragraph") or raw.get("prompt") or raw.get("text") or ""
+        ).strip()
+        options = raw.get("options")
+        options = (
+            [str(option).strip() for option in options if str(option).strip()]
+            if isinstance(options, list)
+            else []
+        )
+        correct = str(raw.get("correct_answer") or raw.get("answer") or "").strip()
+        if not correct and options:
+            idx = _coerce_correct_index(raw, options)
+            if idx is not None:
+                correct = options[idx]
+        if not paragraph or not correct:
+            continue
+        for option in options:
+            if option not in label_pool:
+                label_pool.append(option)
+        item_id = str(raw.get("item_id") or raw.get("id") or f"para_{index}").strip()
+        items.append(
+            {
+                "item_id": item_id or f"para_{index}",
+                "paragraph": paragraph,
+                "correct_answer": correct,
+                "explanation": str(raw.get("explanation") or "").strip(),
+                "label": str(raw.get("label") or "").strip(),
+            }
+        )
+
+    # Prefer explicit structure_labels; otherwise the labels offered per item;
+    # otherwise the distinct correct answers (intro / body / conclusion style).
+    existing = normalized.get("structure_labels")
+    labels = (
+        [str(label).strip() for label in existing if str(label).strip()]
+        if isinstance(existing, list)
+        else []
+    )
+    if not labels:
+        labels = label_pool
+    if not labels:
+        for item in items:
+            correct = item["correct_answer"]
+            if correct and correct not in labels:
+                labels.append(correct)
+    normalized["structure_labels"] = labels
+    normalized["items"] = items
+
+    if not str(normalized.get("passage_title") or "").strip():
+        normalized["passage_title"] = (
+            str(normalized.get("topic") or "").strip() or "Passage"
+        )
+
+    instructions = normalized.get("instructions") or normalized.get("instruction")
+    if isinstance(instructions, str) and instructions.strip():
+        normalized["instructions"] = instructions.strip()
+
+    return normalized
+
+
+def is_valid_read_structure_payload(content: dict) -> bool:
+    """Return True when a read-structure payload is safe to render/score."""
+    if normalize_widget_key(
+        str(content.get("widget") or content.get("ui_widget") or "")
+    ) != "read_structure":
+        return False
+    labels = content.get("structure_labels")
+    if not isinstance(labels, list) or len(labels) < 2:
+        return False
+    label_set = {str(label).strip().lower() for label in labels}
+    items = content.get("items")
+    if not isinstance(items, list) or not items:
+        return False
+    return all(
+        isinstance(item, dict)
+        and str(item.get("item_id") or "").strip()
+        and str(item.get("paragraph") or "").strip()
+        and str(item.get("correct_answer") or "").strip()
+        and str(item.get("correct_answer") or "").strip().lower() in label_set
         for item in items
     )
 
@@ -616,6 +1057,66 @@ def _legacy_error_sentences(sentences: object) -> list[dict]:
     return out
 
 
+def normalize_read_aloud_payload(content: dict) -> dict:
+    """Normalize read-aloud payloads so the passage is always in ``text_to_read_aloud``.
+
+    The LLM task schema exposes ``primary_text`` and ``passage``; curriculum copy
+    asks for ``text_to_read_aloud``. Coerce any of those into the canonical field.
+    """
+    normalized = dict(content or {})
+    passage = _first_text(
+        normalized.get("text_to_read_aloud"),
+        normalized.get("passage"),
+        normalized.get("primary_text"),
+        normalized.get("speaking_prompt"),
+    )
+    if passage:
+        normalized["text_to_read_aloud"] = passage
+
+    for key in ("instructions", "task_intro", "grammar_rule_to_practice"):
+        value = normalized.get(key)
+        if isinstance(value, str):
+            normalized[key] = value.strip()
+
+    if not str(normalized.get("task_intro") or "").strip():
+        normalized["task_intro"] = "Read the passage above out loud."
+    if not str(normalized.get("instructions") or "").strip():
+        normalized["instructions"] = "Read the connected passage aloud clearly."
+
+    duration = normalized.get("speaking_duration_seconds")
+    try:
+        duration_int = int(duration) if duration is not None else 0
+    except (TypeError, ValueError):
+        duration_int = 0
+    if duration_int <= 0:
+        duration_int = 45
+    normalized["speaking_duration_seconds"] = duration_int
+
+    target_words = normalized.get("target_words")
+    if isinstance(target_words, list):
+        normalized["target_words"] = [
+            str(w).strip() for w in target_words if str(w).strip()
+        ]
+
+    if not normalized.get("estimated_time_minutes"):
+        normalized["estimated_time_minutes"] = 1
+
+    return normalized
+
+
+def is_valid_read_aloud_payload(content: dict) -> bool:
+    """Return True when a read-aloud payload includes a passage to speak."""
+    passage = _first_text(
+        content.get("text_to_read_aloud"),
+        content.get("passage"),
+        content.get("primary_text"),
+    )
+    if not passage:
+        return False
+    word_count = len(passage.split())
+    return 30 <= word_count <= 80
+
+
 def normalize_speak_and_record_payload(content: dict) -> dict:
     """Normalize generated speaking payloads for the SpeakRecordWidget.
 
@@ -695,6 +1196,90 @@ def normalize_speak_and_record_payload(content: dict) -> dict:
     return normalized
 
 
+def normalize_speak_pic_desc_payload(content: dict) -> dict:
+    """Normalize generated picture-description payloads for speak_pic_desc.
+
+    Coerces speaking prompt aliases into a single prompt list and preserves
+    ``image_alt`` for downstream image generation. Does not overwrite ``widget``.
+    """
+    normalized = dict(content or {})
+
+    prompts_raw: Any = (
+        normalized.get("speaking_prompts")
+        or normalized.get("prompts")
+        or normalized.get("speaking_items")
+    )
+    prompts: list[str] = []
+    if isinstance(prompts_raw, list):
+        prompts = [str(p).strip() for p in prompts_raw if str(p).strip()]
+
+    if not prompts:
+        single = (
+            normalized.get("speaking_prompt")
+            or normalized.get("prompt")
+            or normalized.get("primary_text")
+        )
+        if isinstance(single, str) and single.strip():
+            prompts = [single.strip()]
+
+    if prompts:
+        normalized["speaking_prompts"] = prompts[:1]
+
+    samples_raw: Any = (
+        normalized.get("sample_responses") or normalized.get("sample_answers")
+    )
+    samples: list[str] = []
+    if isinstance(samples_raw, list):
+        samples = [str(s).strip() for s in samples_raw if str(s).strip()]
+    if not samples:
+        single_sample = (
+            normalized.get("sample_response") or normalized.get("sample_answer")
+        )
+        if isinstance(single_sample, str) and single_sample.strip():
+            samples = [single_sample.strip()]
+    if samples:
+        normalized["sample_responses"] = samples[:1]
+    elif normalized.get("speaking_prompts"):
+        normalized["sample_responses"] = [""]
+
+    image_alt = normalized.get("image_alt")
+    if isinstance(image_alt, str):
+        normalized["image_alt"] = image_alt.strip()
+
+    for key in ("instructions", "task_intro", "grammar_rule_to_practice"):
+        value = normalized.get(key)
+        if isinstance(value, str):
+            normalized[key] = value.strip()
+
+    duration = normalized.get("speaking_duration_seconds")
+    try:
+        duration_int = int(duration) if duration is not None else 0
+    except (TypeError, ValueError):
+        duration_int = 0
+    if duration_int <= 0:
+        duration_int = 45
+    normalized["speaking_duration_seconds"] = duration_int
+
+    if not normalized.get("estimated_time_minutes"):
+        normalized["estimated_time_minutes"] = 1
+
+    return normalized
+
+
+def is_valid_speak_pic_desc_payload(content: dict) -> bool:
+    """Return True when a picture-description payload can be shown to the learner."""
+    prompts = content.get("speaking_prompts")
+    if not isinstance(prompts, list) or not prompts:
+        return False
+    if not all(isinstance(p, str) and p.strip() for p in prompts):
+        return False
+    if not str(content.get("image_alt") or "").strip():
+        return False
+    image_url = str(content.get("image_url") or "").strip()
+    image_error = str(content.get("image_error") or "").strip()
+    return bool(image_url or image_error)
+
+
 def is_valid_speak_and_record_payload(content: dict) -> bool:
     """Return True when a speaking payload is safe to render/evaluate."""
     if normalize_widget_key(
@@ -712,6 +1297,228 @@ def is_valid_speak_and_record_payload(content: dict) -> bool:
     if not str(content.get("instructions") or "").strip():
         return False
     if not str(content.get("task_intro") or "").strip():
+        return False
+    return True
+
+
+_DIALOGUE_SPEAKING_WIDGETS = frozenset({"speak_roleplay", "speak_smalltalk", "speak_debate"})
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"\b[\w']+\b", text.strip()))
+
+
+def _dialogue_turns(content: dict) -> list[dict]:
+    raw = content.get("dialogue_context") or []
+    if not isinstance(raw, list):
+        return []
+    turns: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip()
+        text = str(item.get("text") or "").strip()
+        speaker_raw = str(item.get("speaker") or "partner").strip().lower()
+        speaker = "learner" if speaker_raw == "learner" else "partner"
+        if role and text:
+            turns.append({"role": role, "text": text, "speaker": speaker})
+    return turns
+
+
+def _longest_learner_turn(turns: list[dict]) -> str:
+    learner_texts = [
+        str(turn.get("text") or "").strip()
+        for turn in turns
+        if turn.get("speaker") == "learner"
+    ]
+    if not learner_texts:
+        return ""
+    return max(learner_texts, key=_word_count)
+
+
+def normalize_dialogue_speaking_payload(content: dict) -> dict:
+    """Normalize roleplay/smalltalk payloads for dialogue speaking widgets."""
+    normalized = dict(content or {})
+    turns = _dialogue_turns(normalized)
+    if turns:
+        normalized["dialogue_context"] = turns
+
+    learner_turns = [t for t in turns if t.get("speaker") == "learner"]
+    n_learner = max(1, len(learner_turns))
+
+    prompts: list[str] = []
+    prompts_raw = normalized.get("speaking_prompts") or normalized.get("prompts")
+    if isinstance(prompts_raw, list):
+        prompts = [str(p).strip() for p in prompts_raw if str(p).strip()]
+    if not prompts:
+        single = normalized.get("speaking_prompt") or normalized.get("prompt")
+        if isinstance(single, str) and single.strip():
+            prompts = [single.strip()]
+    if not prompts:
+        partner_lines = [
+            str(turn.get("text") or "").strip()
+            for turn in turns
+            if turn.get("speaker") == "partner"
+        ]
+        if partner_lines:
+            prompts = [
+                "Respond to your partner in 2-3 connected sentences using the "
+                "target pronouns."
+            ]
+        else:
+            prompts = ["Act out your role in the conversation out loud."]
+    while len(prompts) < n_learner:
+        prompts.append(prompts[-1])
+    normalized["speaking_prompts"] = prompts[:n_learner]
+
+    samples: list[str] = []
+    samples_raw = normalized.get("sample_responses") or normalized.get("sample_answers")
+    if isinstance(samples_raw, list):
+        samples = [str(s).strip() for s in samples_raw if str(s).strip()]
+    if not samples:
+        single_sample = normalized.get("sample_response") or normalized.get("sample_answer")
+        if isinstance(single_sample, str) and single_sample.strip():
+            samples = [single_sample.strip()]
+    if not samples:
+        samples = [str(t.get("text") or "").strip() for t in learner_turns if str(t.get("text") or "").strip()]
+    while len(samples) < n_learner:
+        samples.append(samples[-1] if samples else "")
+    normalized["sample_responses"] = samples[:n_learner] if samples else [""]
+
+    for key in ("instructions", "task_intro", "grammar_rule_to_practice"):
+        value = normalized.get(key)
+        if isinstance(value, str):
+            normalized[key] = value.strip()
+
+    duration = normalized.get("speaking_duration_seconds")
+    try:
+        duration_int = int(duration) if duration is not None else 0
+    except (TypeError, ValueError):
+        duration_int = 0
+    if duration_int <= 0:
+        duration_int = 45
+    normalized["speaking_duration_seconds"] = duration_int
+
+    if not normalized.get("estimated_time_minutes"):
+        normalized["estimated_time_minutes"] = 4
+
+    return normalized
+
+
+def is_valid_dialogue_speaking_payload(content: dict) -> bool:
+    """Return True when a roleplay/smalltalk payload is safe to render/evaluate."""
+    archetype_id = str(content.get("archetype_id") or "")
+    widget = normalize_widget_key(
+        str(
+            content.get("task_widget")
+            or content.get("widget")
+            or content.get("ui_widget")
+            or ""
+        )
+    )
+    if archetype_id not in {"SPEAK_ROLEPLAY", "SPEAK_SMALLTALK", "SPEAK_DEBATE"}:
+        if widget not in _DIALOGUE_SPEAKING_WIDGETS:
+            return False
+
+    turns = _dialogue_turns(content)
+    if len(turns) < 2:
+        return False
+
+    partner_turns = [t for t in turns if t.get("speaker") == "partner"]
+    learner_turns = [t for t in turns if t.get("speaker") == "learner"]
+    if not partner_turns or not learner_turns:
+        return False
+    if max(_word_count(str(t.get("text") or "")) for t in partner_turns) < 10:
+        return False
+    if max(_word_count(str(t.get("text") or "")) for t in learner_turns) < 8:
+        return False
+
+    prompts = content.get("speaking_prompts")
+    if not isinstance(prompts, list) or not prompts:
+        return False
+    if not all(isinstance(p, str) and p.strip() for p in prompts):
+        return False
+
+    samples = content.get("sample_responses")
+    if not isinstance(samples, list) or not samples:
+        return False
+    if _word_count(str(samples[0] or "")) < 8:
+        return False
+
+    if not str(content.get("instructions") or "").strip():
+        return False
+    if not str(content.get("task_intro") or "").strip():
+        return False
+    return True
+
+
+def normalize_interview_speaking_payload(content: dict) -> dict:
+    """Normalize SPEAK_INTERVIEW payloads into the `questions` shape the
+    interview widget renders (`item_id`, `interviewer_prompt`, `sample_answer`,
+    `answer_hint`) plus a top-level `interview_context`.
+    """
+    normalized = dict(content or {})
+    raw_questions = normalized.get("questions")
+    questions: list[dict] = []
+    if isinstance(raw_questions, list):
+        for index, item in enumerate(raw_questions, start=1):
+            if not isinstance(item, dict):
+                continue
+            prompt = str(
+                item.get("interviewer_prompt") or item.get("prompt") or ""
+            ).strip()
+            if not prompt:
+                continue
+            questions.append(
+                {
+                    "item_id": str(item.get("item_id") or "").strip() or f"item_{index}",
+                    "interviewer_prompt": prompt,
+                    "sample_answer": str(item.get("sample_answer") or "").strip(),
+                    "answer_hint": str(item.get("answer_hint") or "").strip(),
+                }
+            )
+    normalized["questions"] = questions
+
+    context = normalized.get("interview_context")
+    normalized["interview_context"] = (
+        context.strip() if isinstance(context, str) else ""
+    )
+
+    for key in ("instructions", "task_intro", "grammar_rule_to_practice"):
+        value = normalized.get(key)
+        if isinstance(value, str):
+            normalized[key] = value.strip()
+
+    duration = normalized.get("speaking_duration_seconds")
+    try:
+        duration_int = int(duration) if duration is not None else 0
+    except (TypeError, ValueError):
+        duration_int = 0
+    if duration_int <= 0:
+        duration_int = 30
+    normalized["speaking_duration_seconds"] = duration_int
+
+    if not normalized.get("estimated_time_minutes"):
+        normalized["estimated_time_minutes"] = 3
+
+    return normalized
+
+
+def is_valid_interview_speaking_payload(
+    content: dict, *, expected_questions: int = 2
+) -> bool:
+    """Return True when a SPEAK_INTERVIEW payload is safe to render/evaluate."""
+    questions = content.get("questions")
+    if not isinstance(questions, list) or len(questions) < expected_questions:
+        return False
+    for question in questions:
+        if not isinstance(question, dict):
+            return False
+        if not str(question.get("interviewer_prompt") or "").strip():
+            return False
+        if not str(question.get("sample_answer") or "").strip():
+            return False
+    if not str(content.get("instructions") or "").strip():
         return False
     return True
 
@@ -737,7 +1544,7 @@ def _normalize_mcq_items(raw_items: Any) -> list[dict]:
             continue
         clean_options = [str(option).strip() for option in options if str(option).strip()]
         correct_index = _coerce_correct_index(raw, clean_options)
-        if not prompt or len(clean_options) != 4 or correct_index is None:
+        if not prompt or len(clean_options) < 3 or correct_index is None:
             continue
         item_id = str(raw.get("item_id") or raw.get("id") or f"q{index}").strip()
         items.append({
@@ -841,6 +1648,45 @@ def _normalize_error_correction_items(raw_items: Any) -> list[dict]:
             {
                 "item_id": item_id,
                 "incorrect_sentence": incorrect,
+                "sample_answer": sample,
+                "watch_hints": clean_hints,
+            }
+        )
+    return items
+
+
+def _normalize_sentence_transform_items(raw_items: Any) -> list[dict]:
+    if not isinstance(raw_items, list):
+        return []
+    items: list[dict] = []
+    for index, raw in enumerate(raw_items, start=1):
+        if not isinstance(raw, dict):
+            continue
+        source = str(
+            raw.get("source_sentence")
+            or raw.get("source")
+            or raw.get("prompt")
+            or raw.get("original_sentence")
+            or raw.get("sentence")
+            or ""
+        ).strip()
+        sample = str(
+            raw.get("sample_answer")
+            or raw.get("correct_answer")
+            or raw.get("reference_answer")
+            or ""
+        ).strip()
+        if not source or not sample:
+            continue
+        hints = raw.get("watch_hints") or raw.get("hints") or []
+        if not isinstance(hints, list):
+            hints = [str(hints)] if str(hints).strip() else []
+        clean_hints = [str(hint).strip() for hint in hints if str(hint).strip()]
+        item_id = str(raw.get("item_id") or raw.get("id") or f"st_{index}").strip()
+        items.append(
+            {
+                "item_id": item_id or f"st_{index}",
+                "source_sentence": source,
                 "sample_answer": sample,
                 "watch_hints": clean_hints,
             }

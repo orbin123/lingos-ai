@@ -3,7 +3,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { FileText, LayoutDashboard, MessageCircle, MoreHorizontal, RotateCcw, Sparkles } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  LayoutDashboard,
+  MessageCircle,
+  MoreHorizontal,
+  RotateCcw,
+  Sparkles,
+} from "lucide-react";
 
 import { api } from "@/lib/api";
 
@@ -20,7 +30,13 @@ import {
 } from "@/components/chat/TaskChatSkeletons";
 import { AppConfirmDialog } from "@/components/ui/AppConfirmDialog";
 import { SessionScorecard as DaySessionScorecard } from "@/components/sessions/SessionScorecard";
-import { type SessionScorecardRead, type PronunciationResult } from "@/lib/sessions-api";
+import {
+  learningSessionApi,
+  type CompletedActivitySummary,
+  type LearningSessionState,
+  type SessionScorecardRead,
+  type PronunciationResult,
+} from "@/lib/sessions-api";
 import {
   WIDGET_COMPONENTS,
   WIDGET_SECTION_LABEL,
@@ -46,7 +62,6 @@ import {
   ChatTopbar,
   LessonMetaCard,
   SectionMarker,
-  roundIconButton,
 } from "@/components/chat/ChatChrome";
 
 /* ── Score / Feedback payloads (rendered by chat session, not by widgets) ── */
@@ -120,6 +135,7 @@ interface FinalScorecardPayload {
 interface RagFeedbackPayload {
   mentor_note?: string | null;
   available?: boolean;
+  pending?: boolean;
 }
 
 interface FeedbackError {
@@ -223,6 +239,81 @@ function shouldShowActivitySkeletonAfterChat(content?: string) {
   );
 }
 
+function sequenceFromMeta(payload: Record<string, unknown> | undefined): number | null {
+  const meta = payload?._session as
+    | { sequence?: number; current_task_index?: number }
+    | undefined;
+  if (meta && typeof meta.sequence === "number") return meta.sequence;
+  if (meta && typeof meta.current_task_index === "number") return meta.current_task_index + 1;
+  const direct = payload?.sequence;
+  return typeof direct === "number" ? direct : null;
+}
+
+const RETRY_ACTIVITY_ACTION = "Retry activity";
+
+function isNavigationPromptActions(actions?: string[]): boolean {
+  return (
+    actions?.some((label) => label === "Next activity" || label === "Go to dashboard") ?? false
+  );
+}
+
+function retrySequenceFromEvents(events: ChatEvent[]): number | null {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const evt = events[i];
+    if (evt.kind !== "scorecard" && evt.kind !== "pronunciation") continue;
+    const seq = sequenceFromMeta(evt.payload as Record<string, unknown>);
+    if (seq !== null) return seq;
+  }
+  return null;
+}
+
+function latestCompletedSummarySequence(
+  summaries: CompletedActivitySummary[],
+): number | null {
+  if (!summaries.length) return null;
+  return summaries[summaries.length - 1]?.sequence ?? null;
+}
+
+function navigationPromptActions(actions?: string[]): string[] | undefined {
+  if (!isNavigationPromptActions(actions)) return actions;
+  return (actions ?? []).filter((label) => label !== RETRY_ACTIVITY_ACTION);
+}
+
+function isDailyCompleteFarewell(content: string): boolean {
+  return content.includes("Today's activities are complete");
+}
+
+function hydrateResultEventsFromState(state: LearningSessionState): ChatEvent[] {
+  if (!state.last_evaluation || !state.last_feedback) return [];
+  const evaluation = state.last_evaluation as Record<string, unknown>;
+  const feedback = state.last_feedback as Record<string, unknown>;
+  const completed = state.completed_sequences ?? [];
+  const sequence =
+    (completed.length > 0 ? completed[completed.length - 1] : null) ??
+    state.current_sequence;
+  const sessionMeta =
+    typeof sequence === "number" ? { sequence, current_task_index: sequence - 1 } : undefined;
+  const scorecardPayload = {
+    overall_score: Number(evaluation.raw_score ?? feedback.score ?? 0),
+    skill_name: state.skill_name,
+    topic: state.topic,
+    rubric_scores: evaluation.rubric_scores as Record<string, number> | undefined,
+    weighted_points: evaluation.weighted_points as Record<string, number> | undefined,
+    _session: sessionMeta,
+    sequence,
+  } as ScorecardPayload & { _session?: { sequence: number; current_task_index: number }; sequence?: number };
+  const feedbackPayload = {
+    ...feedback,
+    score: Number(feedback.score ?? evaluation.raw_score ?? 0),
+  } as FeedbackPayload;
+  return [
+    { kind: "section", tone: "score", label: "Activity score" },
+    { kind: "scorecard", payload: scorecardPayload },
+    { kind: "section", tone: "feedback", label: "Activity feedback" },
+    { kind: "feedback", payload: feedbackPayload },
+  ];
+}
+
 function textValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -251,12 +342,6 @@ function buildLessonEyebrow(meta: LessonMeta): string {
   return parts.join(" · ");
 }
 
-function agentDebugLog(message: string, data: Record<string, unknown>, hypothesisId: string) {
-  // #region agent log
-  fetch('http://127.0.0.1:7588/ingest/7b2f1294-46b7-45e6-9e45-9caa7b81d367',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'dfa507'},body:JSON.stringify({sessionId:'dfa507',runId:'initial',hypothesisId,location:'frontend/src/app/task/chat/[sessionId]/page.tsx',message,data,timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
-}
-
 function SendIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -276,13 +361,24 @@ function MicIcon() {
 function Topbar({
   onRestart,
   restarting,
+  onRestartActivity,
+  canRestartActivity,
+  restartingActivity,
 }: {
   onRestart: () => void;
   restarting: boolean;
+  onRestartActivity: () => void;
+  canRestartActivity: boolean;
+  restartingActivity: boolean;
 }) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [restartSubmenuOpen, setRestartSubmenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) setRestartSubmenuOpen(false);
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -292,7 +388,13 @@ function Topbar({
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
+      if (event.key === "Escape") {
+        if (restartSubmenuOpen) {
+          setRestartSubmenuOpen(false);
+        } else {
+          setMenuOpen(false);
+        }
+      }
     };
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
@@ -300,7 +402,7 @@ function Topbar({
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [menuOpen]);
+  }, [menuOpen, restartSubmenuOpen]);
 
   const goToDashboard = () => {
     setMenuOpen(false);
@@ -312,20 +414,85 @@ function Topbar({
     onRestart();
   };
 
+  const restartActivity = () => {
+    setMenuOpen(false);
+    onRestartActivity();
+  };
+
+  const restartBusy = restarting || restartingActivity;
+
+  const menuItemStyle = (disabled: boolean): React.CSSProperties => ({
+    width: "100%",
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 11px",
+    borderRadius: 10,
+    color: "oklch(28% 0.08 245)",
+    fontSize: 13,
+    fontWeight: 700,
+    fontFamily: "inherit",
+    cursor: disabled ? "not-allowed" : "pointer",
+    opacity: disabled ? 0.55 : 1,
+    textAlign: "left",
+  });
+
+  const submenuItemStyle = (disabled: boolean): React.CSSProperties => ({
+    ...menuItemStyle(disabled),
+    fontWeight: 600,
+    fontSize: 12.5,
+    whiteSpace: "nowrap",
+  });
+
+  const flyoutStyle: React.CSSProperties = {
+    position: "absolute",
+    left: "calc(100% + 6px)",
+    top: 0,
+    minWidth: 210,
+    padding: 6,
+    borderRadius: 14,
+    background: "white",
+    border: "1px solid oklch(85% 0.025 240)",
+    boxShadow: "0 14px 34px rgba(35,55,100,0.18)",
+    zIndex: 1,
+  };
+
   return (
     <ChatTopbar
       subtitle="Chat session"
       onBack={() => router.push("/dashboard")}
       actions={
-        <div ref={menuRef} style={{ position: "relative" }}>
+        <div ref={menuRef} style={{ position: "relative", overflow: "visible" }}>
+          <style>{`
+            .session-menu-option {
+              border: none;
+              background: transparent;
+              transition: background 0.12s ease;
+            }
+            .session-menu-option:not(:disabled):hover {
+              background: oklch(93% 0.03 240);
+            }
+            .session-menu-restart-row:not([data-busy="true"]) {
+              transition: background 0.12s ease;
+            }
+            .session-menu-restart-row:not([data-busy="true"]):hover {
+              background: oklch(93% 0.03 240);
+            }
+            .session-menu-restart-row[data-open="true"]:not([data-busy="true"]) {
+              background: oklch(96% 0.02 240);
+            }
+            .session-menu-restart-row[data-open="true"]:not([data-busy="true"]):hover {
+              background: oklch(91% 0.035 240);
+            }
+          `}</style>
           <button
             type="button"
+            className="chat-round-icon-btn"
             aria-label="Session options"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
             style={{
-              ...roundIconButton,
               cursor: "pointer",
             }}
           >
@@ -346,52 +513,88 @@ function Topbar({
                 background: "white",
                 border: "1px solid oklch(85% 0.025 240)",
                 boxShadow: "0 14px 34px rgba(35,55,100,0.18)",
+                overflow: "visible",
               }}
             >
+              <div style={{ position: "relative", overflow: "visible" }}>
+                <div
+                  className="session-menu-restart-row"
+                  data-busy={restartBusy ? "true" : "false"}
+                  data-open={restartSubmenuOpen ? "true" : "false"}
+                  style={{
+                    display: "flex",
+                    alignItems: "stretch",
+                    borderRadius: 10,
+                  }}
+                >
+                  <div
+                    role="menuitem"
+                    aria-disabled={restartBusy}
+                    style={{
+                      ...menuItemStyle(restartBusy),
+                      flex: 1,
+                      cursor: restartBusy ? "not-allowed" : "default",
+                    }}
+                  >
+                    <RotateCcw size={15} />
+                    {restartBusy ? "Restarting..." : "Restart"}
+                  </div>
+                  {!restartBusy && (
+                    <button
+                      type="button"
+                      className="session-menu-option"
+                      aria-label="Restart options"
+                      aria-haspopup="menu"
+                      aria-expanded={restartSubmenuOpen}
+                      onClick={() => setRestartSubmenuOpen((open) => !open)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 32,
+                        flexShrink: 0,
+                        borderRadius: "0 10px 10px 0",
+                        color: "oklch(28% 0.08 245)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <ChevronRight size={15} aria-hidden />
+                    </button>
+                  )}
+                </div>
+                {restartSubmenuOpen && !restartBusy && (
+                  <div role="menu" aria-label="Restart options" style={flyoutStyle}>
+                    {canRestartActivity && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="session-menu-option"
+                        disabled={restartingActivity}
+                        onClick={restartActivity}
+                        style={submenuItemStyle(restartingActivity)}
+                      >
+                        Restart current activity
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="session-menu-option"
+                      disabled={restarting}
+                      onClick={restart}
+                      style={submenuItemStyle(restarting)}
+                    >
+                      Restart whole session
+                    </button>
+                  </div>
+                )}
+              </div>
               <button
+                type="button"
                 role="menuitem"
-                disabled={restarting}
-                onClick={restart}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 11px",
-                  borderRadius: 10,
-                  border: "none",
-                  background: "transparent",
-                  color: "oklch(28% 0.08 245)",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  fontFamily: "inherit",
-                  cursor: restarting ? "not-allowed" : "pointer",
-                  opacity: restarting ? 0.55 : 1,
-                  textAlign: "left",
-                }}
-              >
-                <RotateCcw size={15} />
-                {restarting ? "Restarting..." : "Restart session"}
-              </button>
-              <button
-                role="menuitem"
+                className="session-menu-option"
                 onClick={goToDashboard}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 11px",
-                  borderRadius: 10,
-                  border: "none",
-                  background: "transparent",
-                  color: "oklch(28% 0.08 245)",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  fontFamily: "inherit",
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}
+                style={menuItemStyle(false)}
               >
                 <LayoutDashboard size={15} />
                 Back to dashboard
@@ -573,7 +776,7 @@ function ChatPronunciationCard({ payload }: { payload: PronunciationResultPayloa
         <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 16px", fontSize: 11.5, color: "oklch(45% 0.07 240)", marginTop: 8, paddingLeft: 2 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ width: 9, height: 9, borderRadius: "50%", background: "oklch(48% 0.18 155)" }} />
-            <span>Good (\u226580%)</span>
+            <span>Good</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span style={{ width: 9, height: 9, borderRadius: "50%", background: "oklch(60% 0.13 80)" }} />
@@ -873,19 +1076,14 @@ function Composer({
               )}
               <button
                 type="button"
+                className="chat-composer-mic-btn"
+                data-recording={recorder.state === "recording" ? "true" : "false"}
                 onClick={handleMicClick}
                 disabled={recorder.state === "transcribing"}
                 title={micTitle}
                 aria-label={micTitle}
                 style={{
-                  position: "absolute", inset: 0,
-                  width: 36, height: 36, borderRadius: "50%",
-                  background: recorder.state === "recording"
-                    ? "rgba(0,112,196,0.08)"
-                    : "transparent",
-                  border: "none",
-                  color: recorder.state === "error" ? "#c0392b" : "oklch(45% 0.07 240)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: recorder.state === "error" ? "#c0392b" : undefined,
                   cursor: recorder.state === "transcribing" ? "wait" : "pointer",
                 }}
               >
@@ -900,21 +1098,96 @@ function Composer({
             </div>
           )}
           <button
+            type="button"
+            className="chat-composer-send-btn"
             onClick={onSend}
             disabled={sendDisabled}
             style={{
-              width: 38, height: 38, borderRadius: "50%",
-              background: "#0070C4", color: "white", border: "none",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 4px 12px rgba(0,112,196,0.35)",
               cursor: sendDisabled ? "not-allowed" : "pointer",
-              opacity: sendDisabled ? 0.5 : 1,
             }}
           >
             <SendIcon />
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── Completed-activity compact summary row (resume view) ────────────── */
+function CompletedActivityRow({
+  summary,
+  onRetry,
+  retrying,
+}: {
+  summary: CompletedActivitySummary;
+  onRetry: (sequence: number) => void;
+  retrying: boolean;
+}) {
+  const score = Number.isFinite(summary.raw_score) ? summary.raw_score : 0;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "10px 14px",
+        marginBottom: 8,
+        borderRadius: 14,
+        background: "rgba(255,255,255,0.85)",
+        border: "1px solid oklch(90% 0.02 245)",
+        boxShadow: "0 2px 8px rgba(80,110,180,0.06)",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
+        <Check size={15} style={{ color: "oklch(48% 0.16 155)", flexShrink: 0 }} />
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: "oklch(28% 0.08 245)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Activity {summary.sequence} · {summary.label}
+        </span>
+      </div>
+      <span
+        style={{
+          fontSize: 12.5,
+          fontWeight: 800,
+          color: "oklch(45% 0.07 240)",
+          flexShrink: 0,
+        }}
+      >
+        {score.toFixed(1)}/10
+      </span>
+      <button
+        type="button"
+        onClick={() => onRetry(summary.sequence)}
+        disabled={retrying}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 5,
+          padding: "5px 11px",
+          borderRadius: 999,
+          border: "1px solid oklch(86% 0.025 240)",
+          background: "white",
+          color: "oklch(28% 0.08 245)",
+          fontSize: 12,
+          fontWeight: 700,
+          fontFamily: "inherit",
+          cursor: retrying ? "not-allowed" : "pointer",
+          opacity: retrying ? 0.55 : 1,
+          flexShrink: 0,
+        }}
+      >
+        <RotateCcw size={12} />
+        Retry
+      </button>
     </div>
   );
 }
@@ -954,8 +1227,13 @@ export default function ChatSessionPage() {
   const [loadingType, setLoadingType] = useState<TaskChatLoadingType>(
     initialConnectionState === "connecting" ? "teacher_loading" : null,
   );
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);
+  const [retryingSequence, setRetryingSequence] = useState<number | null>(null);
+  const [currentSequence, setCurrentSequence] = useState<number | null>(null);
+  const [lastSubmittedSequence, setLastSubmittedSequence] = useState<number | null>(null);
+  const [completedSummaries, setCompletedSummaries] = useState<CompletedActivitySummary[]>([]);
   const [daySessionScorecard, setDaySessionScorecard] =
     useState<SessionScorecardRead | null>(null);
   const [daySessionScorecardError, setDaySessionScorecardError] = useState<string | null>(null);
@@ -964,10 +1242,75 @@ export default function ChatSessionPage() {
   const pendingSendsRef = useRef<WSOutgoing[]>([]);
   const eventsRef = useRef<ChatEvent[]>(events);
   const runtimeBlueprintRef = useRef<RuntimeBlueprint | null>(null);
+  // Set when a restart/retry intentionally wipes the transcript so the next
+  // WebSocket open clears non-chat events instead of preserving them.
+  const fullResetRef = useRef(false);
+  const nextActivityLockRef = useRef(false);
+  const reconnectIntentRef = useRef<"none" | "retry" | "auto">("none");
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
   useEffect(() => {
     eventsRef.current = events;
   }, [events]);
+
+  // Hydrate phase + lesson meta from the REST snapshot on mount so a returning
+  // learner lands on the correct step without a teaching flash. The WebSocket
+  // resume re-delivers the actual transcript/task, so we don't rebuild events
+  // here — we only seed phase and, when the day is already done, surface the
+  // scorecard immediately.
+  useEffect(() => {
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const state = await learningSessionApi.getState(sessionId);
+        if (cancelled) return;
+        // Compact summaries for completed activities are always refreshed (the
+        // WS resume never replays them), including after a restart/retry —
+        // hence the `reconnectAttempt` dependency.
+        setCompletedSummaries(
+          state.daily_completed ? [] : (state.completed_activities ?? []),
+        );
+        // Phase + current-sequence seeding only matters before the WS resume
+        // has populated the transcript; once events exist, the WS is the
+        // source of truth and we must not override it.
+        if (eventsRef.current.length > 0) return;
+        const hydratedResults =
+          state.last_resumable_phase === "feedback"
+            ? hydrateResultEventsFromState(state)
+            : [];
+        if (hydratedResults.length > 0) {
+          setEvents(hydratedResults);
+        }
+        if (typeof state.current_sequence === "number") {
+          setCurrentSequence(state.current_sequence);
+        } else if (hydratedResults.length > 0) {
+          const seq = state.completed_sequences?.at(-1);
+          if (typeof seq === "number") setCurrentSequence(seq);
+        }
+        if (reconnectIntentRef.current === "retry") {
+          setPhase("practice");
+          return;
+        }
+        const nextPhase =
+          state.daily_completed || state.last_resumable_phase === "ended"
+            ? "ended"
+            : state.last_resumable_phase === "practice_task"
+              ? "practice"
+              : state.last_resumable_phase === "teaching"
+                ? "teaching"
+                : state.last_resumable_phase === "feedback"
+                  ? "submitted"
+                  : "submitted";
+        setPhase(nextPhase);
+      } catch {
+        // Snapshot is best-effort; the WebSocket resume is the source of truth.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, reconnectAttempt]);
 
   useEffect(() => {
     if (phase !== "ended") return;
@@ -1053,12 +1396,122 @@ export default function ChatSessionPage() {
     };
   }, [connectionState, phase, sessionId, daySessionScorecard]);
 
+  // If the socket drops while evaluation/feedback is in flight, reconnect so
+  // the resume stream can replay scorecard + feedback widgets.
+  useEffect(() => {
+    if (connectionState !== "closed" && connectionState !== "error") return;
+    if (reconnectIntentRef.current !== "none") return;
+    if (phase !== "submitted" && loadingType !== "feedback_loading") return;
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+
+    const timer = window.setTimeout(() => {
+      reconnectIntentRef.current = "auto";
+      setIsReconnecting(true);
+      setConnectionState("connecting");
+      setReconnectAttempt((attempt) => attempt + 1);
+    }, 600);
+
+    return () => window.clearTimeout(timer);
+  }, [connectionState, phase, loadingType, sessionId]);
+
+  const LOADING_TIMEOUT_MS = 90_000;
+
+  useEffect(() => {
+    if (!loadingType) {
+      setLoadingTimedOut(false);
+      return;
+    }
+
+    setLoadingTimedOut(false);
+    const timer = window.setTimeout(() => {
+      setLoadingTimedOut(true);
+      setLoadingType(null);
+    }, LOADING_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [loadingType, reconnectAttempt]);
+
+  const retryLoadingConnection = useCallback(() => {
+    setLoadingTimedOut(false);
+    reconnectIntentRef.current = "auto";
+    setIsReconnecting(true);
+    setConnectionState("connecting");
+    setReconnectAttempt((attempt) => attempt + 1);
+  }, []);
+
   const lastTaskIdx = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i -= 1) {
       if (events[i].kind === "task") return i;
     }
     return -1;
   }, [events]);
+
+  const navigationPromptChatIndex = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const evt = events[i];
+      if (
+        evt.kind === "chat" &&
+        evt.role === "ai" &&
+        !evt.streaming &&
+        isNavigationPromptActions(evt.actions)
+      ) {
+        return i;
+      }
+    }
+    return -1;
+  }, [events]);
+
+  const firstDayResultsIndex = useMemo(() => {
+    const finalIdx = events.findIndex((evt) => evt.kind === "final_scorecard");
+    if (finalIdx >= 0) {
+      if (finalIdx > 0 && events[finalIdx - 1]?.kind === "section") {
+        return finalIdx - 1;
+      }
+      return finalIdx;
+    }
+    return -1;
+  }, [events]);
+
+  const sessionResultsRef = useRef<HTMLDivElement | null>(null);
+  const [dayResultsInView, setDayResultsInView] = useState(false);
+
+  useEffect(() => {
+    const el = sessionResultsRef.current;
+    if (!el) {
+      setDayResultsInView(false);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setDayResultsInView(entry?.isIntersecting ?? false),
+      { threshold: 0.15 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [firstDayResultsIndex, events, phase, daySessionScorecard]);
+
+  const hasCompletionFarewell = useMemo(
+    () =>
+      events.some(
+        (evt) =>
+          evt.kind === "chat" &&
+          evt.role === "ai" &&
+          isNavigationPromptActions(evt.actions) &&
+          isDailyCompleteFarewell(evt.content),
+      ),
+    [events],
+  );
+
+  const scrollToDayResults = useCallback(() => {
+    sessionResultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const retrySequence = useMemo(() => {
+    const fromResults = retrySequenceFromEvents(events);
+    if (fromResults !== null) return fromResults;
+    if (lastSubmittedSequence !== null) return lastSubmittedSequence;
+    if (currentSequence !== null) return currentSequence;
+    return latestCompletedSummarySequence(completedSummaries);
+  }, [events, lastSubmittedSequence, currentSequence, completedSummaries]);
 
   const handleIncoming = useCallback((msg: WSIncoming) => {
     if (msg.type === "chat_message") {
@@ -1219,34 +1672,48 @@ export default function ChatSessionPage() {
       }
       if (msg.widget === "rag_feedback" || payloadKind === "rag_feedback") {
         const payload = msg.payload as unknown as RagFeedbackPayload;
-        if (payload.available !== false) {
-          setEvents((prev) => [
+        // The backend streams a "pending" placeholder first, then a terminal
+        // event carrying the real note (or an explicit unavailability). Upsert
+        // in place so the placeholder is replaced rather than duplicated, and
+        // always render — never silently drop the card when the note is absent.
+        setEvents((prev) => {
+          const idx = prev.map((e) => e.kind).lastIndexOf("rag_feedback");
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = { kind: "rag_feedback", payload };
+            return next;
+          }
+          return [
             ...prev,
             { kind: "section", tone: "feedback", label: "Coach note" },
             { kind: "rag_feedback", payload },
-          ]);
-        }
+          ];
+        });
         return;
       }
       if (msg.widget === "session_completed" || payloadKind === "completed") {
-        setPhase("ended");
+        // Final scorecard + RAG feedback render inline; the farewell chat
+        // with "Go to dashboard" follows and drives phase → ended.
         setLoadingType(null);
         return;
       }
       if (msg.widget === "pronunciation_result") {
         setLoadingType(null);
         const payload = msg.payload as unknown as PronunciationResultPayload;
+        setCurrentSequence(sequenceFromMeta(msg.payload));
         setEvents((prev) => [
           ...prev,
           { kind: "section", tone: "score", label: "Pronunciation assessment" },
           { kind: "pronunciation", payload },
         ]);
+        nextActivityLockRef.current = false;
         setPhase("submitted");
         return;
       }
       if (msg.widget === "scorecard" || payloadKind === "evaluation") {
         setLoadingType("feedback_loading");
         const payload = msg.payload as unknown as ScorecardPayload;
+        setCurrentSequence(sequenceFromMeta(msg.payload));
         setLessonMeta((curr) => ({
           ...curr,
           title: curr.title === "Today's lesson" ? payload.topic || curr.title : curr.title,
@@ -1257,6 +1724,7 @@ export default function ChatSessionPage() {
           { kind: "section", tone: "score", label: "Activity score" },
           { kind: "scorecard", payload },
         ]);
+        nextActivityLockRef.current = false;
         setPhase("submitted");
         return;
       }
@@ -1289,31 +1757,6 @@ export default function ChatSessionPage() {
           blueprint_contract: activityContract ?? undefined,
           widget,
         } as unknown as AnyTaskPayload;
-        if (widget === "listen_and_respond") {
-          const listenPayload = payload as AnyTaskPayload & {
-            audio_url?: string | null;
-            browser_tts_fallback?: boolean;
-            audio_script?: string;
-            inner_widget?: string;
-            items?: unknown[];
-            tts_error?: string;
-          };
-          agentDebugLog(
-            "Received listen_and_respond ui_event",
-            {
-              audio_url_present: Boolean(listenPayload.audio_url),
-              audio_url: listenPayload.audio_url,
-              browser_tts_fallback: listenPayload.browser_tts_fallback,
-              audio_script_len: listenPayload.audio_script?.length ?? 0,
-              inner_widget: listenPayload.inner_widget,
-              items_len: Array.isArray(listenPayload.items) ? listenPayload.items.length : null,
-              phase: (msg.payload as { phase?: string }).phase,
-              archetype_id: (msg.payload as { archetype_id?: string }).archetype_id,
-              tts_error: listenPayload.tts_error,
-            },
-            "H2,H3",
-          );
-        }
         const topicName =
           (payload as { topic_name?: string; topic?: string }).topic_name ||
           (payload as { topic_name?: string; topic?: string }).topic ||
@@ -1324,6 +1767,7 @@ export default function ChatSessionPage() {
             title: curr.title === "Today's lesson" ? topicName : curr.title,
           }));
         }
+        setCurrentSequence(sequenceFromMeta(msg.payload));
         setEvents((prev) => [
           ...prev,
           { kind: "section", tone: "task", label: WIDGET_SECTION_LABEL[widget] },
@@ -1368,23 +1812,36 @@ export default function ChatSessionPage() {
 
     ws.onopen = () => {
       if (wsRef.current !== ws) return;
+      reconnectIntentRef.current = "none";
+      setIsReconnecting(false);
       setConnectionState("open");
       setLoadingType((curr) => curr ?? (eventsRef.current.length === 0 ? "teacher_loading" : null));
-      setEvents((prev) => prev.filter((e) => e.kind === "chat"));
+      // The backend resume re-sends the blueprint and the live task widget on
+      // every (re)connect. Drop only the stale live task to avoid duplicates,
+      // but keep already-delivered results (scorecards/feedback) and the chat
+      // transcript so an in-app reconnect doesn't lose the screen. A confirmed
+      // restart/retry wipes everything (it already cleared events), so honour
+      // that by filtering to chat-only.
+      if (fullResetRef.current) {
+        fullResetRef.current = false;
+        setEvents((prev) => prev.filter((e) => e.kind === "chat"));
+      } else {
+        setEvents((prev) => prev.filter((e) => e.kind !== "task"));
+      }
       const queued = pendingSendsRef.current.splice(0);
       queued.forEach((payload) => ws.send(JSON.stringify(payload)));
     };
     ws.onclose = () => {
-      if (wsRef.current === ws) {
-        setConnectionState("closed");
-        setLoadingType(null);
-      }
+      if (wsRef.current !== ws) return;
+      if (reconnectIntentRef.current !== "none") return;
+      setConnectionState("closed");
+      setLoadingType(null);
     };
     ws.onerror = () => {
-      if (wsRef.current === ws) {
-        setConnectionState("error");
-        setLoadingType(null);
-      }
+      if (wsRef.current !== ws) return;
+      if (reconnectIntentRef.current !== "none") return;
+      setConnectionState("error");
+      setLoadingType(null);
     };
 
     ws.onmessage = (raw) => {
@@ -1449,6 +1906,17 @@ export default function ChatSessionPage() {
       }, 0);
       return;
     }
+    if (
+      label === "Next activity" &&
+      (nextActivityLockRef.current ||
+        phase === "practice" ||
+        loadingType === "next_activity_loading")
+    ) {
+      return;
+    }
+    if (label === "Next activity") {
+      nextActivityLockRef.current = true;
+    }
     setEvents((prev) => [...prev, { kind: "chat", role: "you", content: label }]);
     send({ type: "follow_up_action", action: label });
     if (label === "Next activity") setPhase("practice");
@@ -1475,11 +1943,21 @@ export default function ChatSessionPage() {
         message: string;
       }>(restartPath);
 
+      fullResetRef.current = true;
+      nextActivityLockRef.current = false;
       pendingSendsRef.current = [];
       wsRef.current?.close();
       wsRef.current = null;
       setEvents([]);
       setComposer("");
+      setCurrentSequence(null);
+      setLastSubmittedSequence(null);
+      setCompletedSummaries([]);
+      // Restart wipes the V2 scorecard server-side; drop the cached copy so a
+      // later re-completion refetches fresh scores instead of the stale guard
+      // short-circuiting the refetch.
+      setDaySessionScorecard(null);
+      setDaySessionScorecardError(null);
       setPhase(res.data.message === "Session complete" ? "ended" : "teaching");
       setLessonMeta((curr) => ({
         ...curr,
@@ -1509,6 +1987,46 @@ export default function ChatSessionPage() {
     }
   }
 
+  async function handleRetryActivity(sequence: number) {
+    if (!sessionId || retryingSequence !== null) return;
+    setRetryingSequence(sequence);
+    setLoadingType("activity_loading");
+    try {
+      await learningSessionApi.resetActivity(sessionId, sequence);
+      // Wipe the transcript back to the teaching/chat history; the backend
+      // resume re-delivers the reset activity as the live task on reconnect.
+      fullResetRef.current = true;
+      nextActivityLockRef.current = false;
+      reconnectIntentRef.current = "retry";
+      setIsReconnecting(true);
+      pendingSendsRef.current = [];
+      wsRef.current?.close();
+      wsRef.current = null;
+      setEvents([]);
+      setComposer("");
+      setDaySessionScorecard(null);
+      setDaySessionScorecardError(null);
+      setCurrentSequence(null);
+      setLastSubmittedSequence(null);
+      setPhase("practice");
+      setConnectionState("connecting");
+      setReconnectAttempt((attempt) => attempt + 1);
+      queryClient.invalidateQueries({ queryKey: ["task", "next"] });
+    } catch (err: unknown) {
+      const detail =
+        (err as { response?: { data?: { detail?: string } }; message?: string })
+          ?.response?.data?.detail ||
+        (err as { message?: string })?.message ||
+        "Could not retry this activity.";
+      setLoadingType(null);
+      setIsReconnecting(false);
+      reconnectIntentRef.current = "none";
+      setEvents((prev) => [...prev, { kind: "chat", role: "ai", content: `⚠️ ${detail}` }]);
+    } finally {
+      setRetryingSequence(null);
+    }
+  }
+
   const setTaskAnswers = useCallback((eventIdx: number, next: Record<string, unknown>) => {
     setEvents((prev) =>
       prev.map((e, i) =>
@@ -1524,6 +2042,9 @@ export default function ChatSessionPage() {
     const evt = eventsRef.current[eventIdx];
     if (!evt || evt.kind !== "task" || evt.submitted) return;
     const answers = answersOverride ?? evt.answers ?? {};
+    const submittedSequence =
+      currentSequence ?? sequenceFromMeta(evt.payload as Record<string, unknown>);
+    if (submittedSequence !== null) setLastSubmittedSequence(submittedSequence);
     send({ type: "task_submission", answers });
     setEvents((prev) =>
       prev.map((e, i) =>
@@ -1533,7 +2054,7 @@ export default function ChatSessionPage() {
       ),
     );
     setPhase("submitted");
-  }, [send]);
+  }, [send, currentSequence]);
 
   /* --- Render ----------------------------------------------------- */
   const composerPlaceholder =
@@ -1545,12 +2066,42 @@ export default function ChatSessionPage() {
     (evt) => evt.kind === "chat" && evt.role === "ai" && evt.streaming,
   );
   const hasFeedback = events.some((evt) => evt.kind === "feedback" || evt.kind === "pronunciation");
+  // The compact completed-activity rows are a *resume* affordance. Once the
+  // live transcript already shows result widgets (the learner has been working
+  // in this session), suppress the rows so a mid-session reconnect — which
+  // preserves those widgets — can't render the same activity both inline and
+  // as a compact row.
+  const hasInlineResults = events.some(
+    (evt) =>
+      evt.kind === "scorecard" ||
+      evt.kind === "feedback" ||
+      evt.kind === "pronunciation" ||
+      evt.kind === "final_scorecard",
+  );
   const visibleLoadingType: TaskChatLoadingType =
     loadingType === "teacher_loading" && hasActiveAiStream
       ? null
       : loadingType === "feedback_loading" && hasFeedback
         ? null
         : loadingType;
+  const hasLiveTask = events.some((evt) => evt.kind === "task");
+  const hasFinalScorecard = events.some((evt) => evt.kind === "final_scorecard");
+  const showScrollToDayResults =
+    !dayResultsInView &&
+    (hasFinalScorecard
+      ? firstDayResultsIndex >= 0 && hasCompletionFarewell
+      : phase === "ended" && Boolean(daySessionScorecard));
+  const showTeachingMarker =
+    phase === "teaching" &&
+    !hasLiveTask &&
+    !hasInlineResults &&
+    !visibleLoadingType &&
+    connectionState === "open";
+  const showConnectionIssue =
+    connectionState !== "open" &&
+    phase !== "ended" &&
+    !visibleLoadingType &&
+    !isReconnecting;
 
   return (
     <>
@@ -1560,12 +2111,24 @@ export default function ChatSessionPage() {
         <Topbar
           onRestart={requestRestartSession}
           restarting={restarting}
+          onRestartActivity={() => {
+            const sequence =
+              phase === "practice" && currentSequence !== null
+                ? currentSequence
+                : retrySequence;
+            if (sequence !== null) void handleRetryActivity(sequence);
+          }}
+          canRestartActivity={
+            (phase === "practice" && currentSequence !== null) ||
+            (navigationPromptChatIndex >= 0 && retrySequence !== null)
+          }
+          restartingActivity={retryingSequence !== null}
         />
 
         <AppConfirmDialog
           open={restartDialogOpen}
-          title="Restart chat session?"
-          description="Your completed dashboard activities will stay completed. This only restarts the chat teaching flow."
+          title="Restart this session?"
+          description="This clears today's activity progress and scores for this session and starts over from teaching."
           confirmLabel="Restart session"
           loadingLabel="Restarting..."
           isLoading={restarting}
@@ -1581,39 +2144,94 @@ export default function ChatSessionPage() {
             focus={lessonMeta.focus}
           />
 
-          <SectionMarker tone="intro" icon={<MessageCircle size={13} />}>Teaching</SectionMarker>
+          {showTeachingMarker && (
+            <SectionMarker tone="intro" icon={<MessageCircle size={13} />}>
+              Teaching
+            </SectionMarker>
+          )}
+
+          {phase !== "ended" && !hasInlineResults && completedSummaries.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <SectionMarker tone="score" icon={<Sparkles size={13} />}>
+                Completed activities
+              </SectionMarker>
+              {completedSummaries.map((summary) => (
+                <CompletedActivityRow
+                  key={summary.sequence}
+                  summary={summary}
+                  onRetry={handleRetryActivity}
+                  retrying={retryingSequence !== null}
+                />
+              ))}
+            </div>
+          )}
 
           {events.map((evt, i) => {
             if (evt.kind === "chat") {
+              if (
+                hasFinalScorecard &&
+                evt.role === "ai" &&
+                !evt.streaming &&
+                isNavigationPromptActions(evt.actions) &&
+                !isDailyCompleteFarewell(evt.content)
+              ) {
+                return null;
+              }
+              const isNavigationPrompt =
+                evt.role === "ai" &&
+                !evt.streaming &&
+                isNavigationPromptActions(evt.actions);
+              const showRetry =
+                isNavigationPrompt &&
+                i === navigationPromptChatIndex &&
+                retrySequence !== null;
+              const isLatestNavigationPrompt =
+                isNavigationPrompt && i === navigationPromptChatIndex;
               return (
                 <ChatBubble
                   key={i}
                   role={evt.role}
                   name={i === 0 && evt.role === "ai" ? "LingosAI" : undefined}
-                  actions={evt.actions}
+                  actions={isNavigationPrompt ? navigationPromptActions(evt.actions) : evt.actions}
                   streaming={evt.streaming}
-                  onAction={handleAction}
+                  onAction={
+                    isLatestNavigationPrompt
+                      ? handleAction
+                      : isNavigationPrompt
+                        ? (actionLabel) => {
+                            if (actionLabel === "Go to dashboard") handleAction(actionLabel);
+                          }
+                        : handleAction
+                  }
+                  copyText={evt.role === "ai" ? evt.content : undefined}
+                  onRetry={
+                    showRetry ? () => handleRetryActivity(retrySequence) : undefined
+                  }
+                  retrying={retryingSequence !== null}
                 >
                   {evt.content}
                 </ChatBubble>
               );
             }
             if (evt.kind === "section") {
+              const anchorResults = i === firstDayResultsIndex;
               return (
-                <SectionMarker
+                <div
                   key={i}
-                  tone={evt.tone}
-                  icon={evt.tone === "task" ? <FileText size={13} /> : <Sparkles size={13} />}
+                  ref={anchorResults ? sessionResultsRef : undefined}
+                  id={anchorResults ? "session-day-results" : undefined}
                 >
-                  {evt.label}
-                </SectionMarker>
+                  <SectionMarker
+                    tone={evt.tone}
+                    icon={evt.tone === "task" ? <FileText size={13} /> : <Sparkles size={13} />}
+                  >
+                    {evt.label}
+                  </SectionMarker>
+                </div>
               );
             }
             if (evt.kind === "task") {
               const widget = evt.payload.widget;
-              // M4: render converged archetypes through the rich widget library
-              // in live interactive mode — editable input before submission and
-              // a graded review after — replacing the generic RuntimeTaskWidget.
               const richTask = adaptContractTask(evt.payload);
               if (richTask) {
                 return (
@@ -1630,10 +2248,6 @@ export default function ChatSessionPage() {
                   />
                 );
               }
-              // Every Week 1–4 contract archetype is converged onto the rich
-              // widget library above. If a contract task reaches here it is a
-              // regression — scream loudly in dev so it cannot pass silently
-              // through the generic runtime widget.
               const rawTaskWidget = rawContractTaskWidget(evt.payload);
               if (rawTaskWidget && process.env.NODE_ENV !== "production") {
                 return (
@@ -1677,7 +2291,19 @@ export default function ChatSessionPage() {
               );
             }
             if (evt.kind === "final_scorecard") {
-              return <RuntimeFinalScorecard key={i} payload={evt.payload} />;
+              const anchorResults =
+                i === firstDayResultsIndex &&
+                (firstDayResultsIndex === 0 ||
+                  events[firstDayResultsIndex - 1]?.kind !== "section");
+              return (
+                <div
+                  key={i}
+                  ref={anchorResults ? sessionResultsRef : undefined}
+                  id={anchorResults ? "session-day-results" : undefined}
+                >
+                  <RuntimeFinalScorecard payload={evt.payload} />
+                </div>
+              );
             }
             if (evt.kind === "rag_feedback") {
               return <RuntimeRagFeedback key={i} payload={evt.payload} />;
@@ -1700,18 +2326,47 @@ export default function ChatSessionPage() {
 
           <TaskChatLoadingSkeleton type={visibleLoadingType} />
 
-          {connectionState !== "open" && phase !== "ended" && !visibleLoadingType && (
+          {loadingTimedOut && (
+            <div style={{ marginTop: 16 }}>
+              <ChatBubble role="ai">
+                This is taking longer than expected. Try reconnecting to resume your session.
+              </ChatBubble>
+              <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={retryLoadingConnection}
+                  style={{
+                    borderRadius: 999,
+                    border: "1px solid oklch(82% 0.03 240)",
+                    background: "white",
+                    padding: "8px 14px",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Reconnect
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showConnectionIssue && (
             <div style={{ marginTop: 16 }}>
               <ChatBubble role="ai" name={events.length === 0 ? "LingosAI" : undefined}>
                 {connectionState === "connecting" && "Connecting to your session…"}
-                {connectionState === "closed" && "Connection closed. Refresh to reconnect."}
+                {connectionState === "closed" && "Connection closed. Reconnecting…"}
                 {connectionState === "error" && "Could not reach the session. Make sure you're signed in."}
               </ChatBubble>
             </div>
           )}
 
-          {phase === "ended" && (
-            <div style={{ marginTop: 24 }}>
+          {phase === "ended" && !hasFinalScorecard && (
+            <div
+              ref={sessionResultsRef}
+              id="session-day-results"
+              style={{ marginTop: 24 }}
+            >
               {daySessionScorecard ? (
                 <DaySessionScorecard
                   scorecard={daySessionScorecard}
@@ -1733,6 +2388,34 @@ export default function ChatSessionPage() {
 
           <div style={{ height: 60 }} />
         </ChatMain>
+
+        {showScrollToDayResults && (
+          <button
+            type="button"
+            aria-label="View your session score and coach feedback"
+            onClick={scrollToDayResults}
+            style={{
+              position: "fixed",
+              bottom: 92,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 20,
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              border: "1px solid oklch(82% 0.03 240)",
+              background: "white",
+              color: "oklch(42% 0.12 240)",
+              boxShadow: "0 8px 24px rgba(35,55,100,0.18)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+            }}
+          >
+            <ChevronDown size={22} strokeWidth={2.4} />
+          </button>
+        )}
 
         <Composer
           value={composer}

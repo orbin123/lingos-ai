@@ -4,14 +4,17 @@ import { Volume2 } from "lucide-react";
 import { useState } from "react";
 import type { SessionPreviewState } from "../../teaching/source";
 import type { ListenClozeTask, LiveTaskController } from "../source";
+import { spatialFieldProps } from "@/lib/spatial-field-navigation";
 import {
   FeedbackRow,
   ListeningAudioCard,
+  blankNeedsBaseVerbHint,
   liveStringRecord,
   normalizeAnswer,
   ResultBanner,
   RuleCallout,
   StatusDot,
+  stripLeadingParentheticalHints,
   SubmitButton,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
@@ -60,15 +63,6 @@ export function ListenClozeTaskWidget({
         onComplete={() => setAudioComplete(true)}
       />
       {unlocked && task.grammarRule && <RuleCallout label="Listening focus">{task.grammarRule}</RuleCallout>}
-      {unlocked && task.targetWords.length > 0 && (
-        <div className="tw-target-chip-row" style={{ marginBottom: 14 }}>
-          {task.targetWords.map((word) => (
-            <span className="tw-target-chip used" key={word}>
-              {word}
-            </span>
-          ))}
-        </div>
-      )}
       {showResults && !live?.submitted && (
         <ResultBanner
           total={task.items.length}
@@ -82,9 +76,11 @@ export function ListenClozeTaskWidget({
           {passageAligned
             ? parts.map((part, index) => {
                 const item = task.items[index];
+                const displayPart =
+                  index > 0 ? stripLeadingParentheticalHints(part) : part;
                 return (
                   <span key={`listen-part-${index}`}>
-                    {part}
+                    {displayPart}
                     {item ? (
                       <InlineListenBlank
                         item={item}
@@ -104,9 +100,12 @@ export function ListenClozeTaskWidget({
                   : [`${item.sentenceWithBlank} `, ""];
                 return (
                   <div key={item.itemId} style={{ marginBottom: 6 }}>
-                    {segments.map((segment, segIndex) => (
+                    {segments.map((segment, segIndex) => {
+                      const displaySegment =
+                        segIndex > 0 ? stripLeadingParentheticalHints(segment) : segment;
+                      return (
                       <span key={`${item.itemId}-seg-${segIndex}`}>
-                        {segment}
+                        {displaySegment}
                         {segIndex < segments.length - 1 ? (
                           <InlineListenBlank
                             item={item}
@@ -118,7 +117,8 @@ export function ListenClozeTaskWidget({
                           />
                         ) : null}
                       </span>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -201,8 +201,9 @@ function InlineListenBlank({
           onChange={(event) => onChange(event.target.value)}
           aria-label={`Blank ${index + 1}`}
           style={{ width: "clamp(96px, 18vw, 160px)", textAlign: "left" }}
+          {...spatialFieldProps(index)}
         />
-        {item.baseVerb && (
+        {blankNeedsBaseVerbHint(item) && (
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tw-primary)", fontStyle: "italic" }}>
             ({item.baseVerb})
           </span>
@@ -239,7 +240,7 @@ function InlineListenBlank({
         >
           answer
         </span>
-        {item.baseVerb && (
+        {blankNeedsBaseVerbHint(item) && (
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tw-primary)", fontStyle: "italic" }}>
             ({item.baseVerb})
           </span>

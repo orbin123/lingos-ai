@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
-
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -107,49 +105,3 @@ class TestUpdateSettings:
         assert pref.allow_read is False
 
 
-class TestAdvanceDay:
-    def test_day_1_to_2(self, db_session):
-        uid = _make_user(db_session)
-        repo = UserCoursePreferenceRepository(db_session)
-        pref = repo.get_or_create_for_user(uid)
-        db_session.commit()
-
-        now = datetime(2026, 5, 19, 12, 0, tzinfo=timezone.utc)
-        repo.advance_day(pref, now=now)
-        db_session.commit()
-        db_session.refresh(pref)
-
-        assert pref.current_week == 1
-        assert pref.current_day_in_week == 2
-        # SQLite drops tzinfo on round-trip; Postgres preserves it. Compare
-        # the wall-clock parts only.
-        assert pref.current_day_started_at.replace(tzinfo=None) == now.replace(tzinfo=None)
-        assert pref.last_completed_on == date(2026, 5, 19)
-
-    def test_day_7_rolls_into_next_week_day_1(self, db_session):
-        uid = _make_user(db_session)
-        repo = UserCoursePreferenceRepository(db_session)
-        pref = repo.get_or_create_for_user(uid)
-        pref.current_week = 3
-        pref.current_day_in_week = 7
-        db_session.commit()
-
-        repo.advance_day(pref)
-        db_session.commit()
-        db_session.refresh(pref)
-        assert pref.current_week == 4
-        assert pref.current_day_in_week == 1
-
-    def test_advance_clamps_at_final_week_day_7(self, db_session):
-        uid = _make_user(db_session)
-        repo = UserCoursePreferenceRepository(db_session)
-        pref = repo.get_or_create_for_user(uid)
-        pref.current_week = 48
-        pref.current_day_in_week = 7
-        db_session.commit()
-
-        repo.advance_day(pref)
-        db_session.commit()
-        db_session.refresh(pref)
-        assert pref.current_week == 48
-        assert pref.current_day_in_week == 7

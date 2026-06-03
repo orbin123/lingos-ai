@@ -7,7 +7,9 @@ deterministic Stub* agents to keep the suite offline.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio  # noqa: F401  — ensures the asyncio plugin is loaded
@@ -470,6 +472,246 @@ class TestSessionLifecycle:
         assert streak_data.today_streak_awarded is True
 
 
+class TestResetActivity:
+    """Per-activity reset: clear eval/feedback, reopen day, drop scorecard."""
+
+    async def _start(self, db, tasks_per_day=2, score=8.0):
+        service = SessionService(
+            db,
+            evaluator=StubEvaluator(default_score=score),
+            feedback_generator=StubFeedbackGenerator(),
+        )
+        session = await service.start_session(
+            user_id=_user_id(db),
+            day_id="day_24_05_03",
+            course_length=CourseLength.WEEKS_24,
+            tasks_per_day=tasks_per_day,
+            allowed_activities={"read", "write", "listen", "speak"},
+        )
+        return service, session
+
+    @pytest.mark.asyncio
+    async def test_reset_clears_attempt_payload(self, db_session):
+        service, session = await self._start(db_session)
+        await service.submit_activity(
+            session_id=session.session_id,
+            user_id=session.user_id,
+            sequence=1,
+            user_response={"answer": "first try"},
+        )
+
+        attempt = await service.reset_activity(
+            session_id=session.session_id,
+            user_id=session.user_id,
+            sequence=1,
+        )
+
+        assert attempt.status is AttemptStatus.PENDING
+        assert attempt.user_response is None
+        assert attempt.submitted_at is None
+        # No evaluation/feedback rows remain for the reset attempt.
+        assert (
+            db_session.query(ActivityEvaluation)
+            .filter_by(attempt_id=attempt.id)
+            .count()
+            == 0
+        )
+        assert (
+            db_session.query(ActivityFeedback)
+            .filter_by(attempt_id=attempt.id)
+            .count()
+            == 0
+        )
+
+    @pytest.mark.asyncio
+    async def test_reset_allows_resubmit_without_error(self, db_session):
+        service, session = await self._start(db_session)
+        await service.submit_activity(
+            session_id=session.session_id,
+            user_id=session.user_id,
+            sequence=1,
+            user_response={"answer": "first"},
+        )
+        await service.reset_activity(
+            session_id=session.session_id,
+            user_id=session.user_id,
+            sequence=1,
+        )
+
+        # Re-submitting the reset activity must not raise AttemptAlreadySubmitted.
+        attempt, evaluation, feedback = await service.submit_activity(
+            session_id=session.session_id,
+            user_id=session.user_id,
+            sequence=1,
+            user_response={"answer": "retry"},
+        )
+        assert attempt.status is AttemptStatus.EVALUATED
+        assert attempt.user_response == {"answer": "retry"}
+        assert evaluation is not None
+        assert feedback is not None
+
+    @pytest.mark.asyncio
+    async def test_reset_reopens_completed_day_and_clears_scorecard(self, db_session):
+        service, session = await self._start(db_session, tasks_per_day=2, score=8.0)
+        for seq in (1, 2):
+            await service.submit_activity(
+                session_id=session.session_id,
+                user_id=session.user_id,
+                sequence=seq,
+                user_response={"a": "b"},
+            )
+        scorecard, _ = await service.complete_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+        assert scorecard is not None
+        completed = service.get_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+        assert completed.status is SessionStatus.COMPLETED
+
+        await service.reset_activity(
+            session_id=session.session_id,
+            user_id=session.user_id,
+            sequence=1,
+        )
+
+        reopened = service.get_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+        assert reopened.status is SessionStatus.IN_PROGRESS
+        assert reopened.completed_at is None
+        # The stale scorecard is gone (rebuilt on the next complete).
+        assert (
+            db_session.query(SessionScorecard)
+            .filter_by(session_id=reopened.id)
+            .count()
+            == 0
+        )
+        assert reopened.attempts[0].status is AttemptStatus.PENDING
+        assert reopened.attempts[1].status is AttemptStatus.EVALUATED
+
+    @pytest.mark.asyncio
+    async def test_get_scorecard_returns_none_after_reset_reopens_day(
+        self, db_session,
+    ):
+        """After a reset reopens a completed day, the scorecard is gone, so
+        the day-level read returns None until the day is completed again."""
+        service, session = await self._start(db_session, tasks_per_day=2, score=8.0)
+        for seq in (1, 2):
+            await service.submit_activity(
+                session_id=session.session_id,
+                user_id=session.user_id,
+                sequence=seq,
+                user_response={"a": "b"},
+            )
+        await service.complete_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+        assert service.get_scorecard(
+            session_id=session.session_id, user_id=session.user_id,
+        ) is not None
+
+        await service.reset_activity(
+            session_id=session.session_id,
+            user_id=session.user_id,
+            sequence=1,
+        )
+
+        assert service.get_scorecard(
+            session_id=session.session_id, user_id=session.user_id,
+        ) is None
+
+
+class TestRestartRescoring:
+    """Re-completing a day after a per-activity retry must reflect the new
+    score WITHOUT awarding points a second time."""
+
+    async def _start(self, db, score=8.0):
+        service = SessionService(
+            db,
+            evaluator=StubEvaluator(default_score=score),
+            feedback_generator=StubFeedbackGenerator(),
+        )
+        session = await service.start_session(
+            user_id=_user_id(db),
+            day_id="day_24_05_03",
+            course_length=CourseLength.WEEKS_24,
+            tasks_per_day=4,
+            allowed_activities={"read", "write", "listen", "speak"},
+        )
+        return service, session
+
+    @staticmethod
+    def _total_points(db, user_id: int) -> int:
+        return sum(
+            int(row.points)
+            for row in db.query(SkillPoints).filter_by(user_id=user_id).all()
+        )
+
+    @pytest.mark.asyncio
+    async def test_retry_speaking_rescore_does_not_double_apply_points(
+        self, db_session,
+    ):
+        service, session = await self._start(db_session, score=8.0)
+        uid = session.user_id
+
+        # Complete the day with all activities scored 8.0.
+        for seq in (1, 2, 3, 4):
+            await service.submit_activity(
+                session_id=session.session_id,
+                user_id=uid,
+                sequence=seq,
+                user_response={"a": "b"},
+            )
+        scorecard1, report1 = await service.complete_session(
+            session_id=session.session_id, user_id=uid,
+        )
+        assert report1.applied is True
+        assert scorecard1.points_applied is True
+        points_after_first = self._total_points(db_session, uid)
+        assert points_after_first > 0
+
+        # Speaking is the 4th activity (SPEAK_TIMED). Retry it with a new,
+        # lower score via a second service wired with a different evaluator.
+        speaking = next(
+            a for a in service.get_session(
+                session_id=session.session_id, user_id=uid,
+            ).attempts
+            if ARCHETYPE_REGISTRY[a.archetype_id].core_activity == "speak"
+        )
+        await service.reset_activity(
+            session_id=session.session_id, user_id=uid, sequence=speaking.sequence,
+        )
+
+        service2 = SessionService(
+            db_session,
+            evaluator=StubEvaluator(default_score=3.0),
+            feedback_generator=StubFeedbackGenerator(),
+        )
+        await service2.submit_activity(
+            session_id=session.session_id,
+            user_id=uid,
+            sequence=speaking.sequence,
+            user_response={"a": "redo"},
+        )
+        scorecard2, report2 = await service2.complete_session(
+            session_id=session.session_id, user_id=uid,
+        )
+
+        # The rebuilt scorecard reflects the NEW speaking score.
+        speaking_entry = next(
+            a for a in scorecard2.activities
+            if a["sequence"] == speaking.sequence
+        )
+        assert speaking_entry["raw_score"] == pytest.approx(3.0)
+
+        # Points were applied exactly once — the retry/re-complete must not
+        # award a second batch.
+        assert report2.applied is False
+        assert scorecard2.points_applied is True
+        assert self._total_points(db_session, uid) == points_after_first
+
+
 class TestAdvanceDay:
     def _set_preference(self, db, *, user_id: int, week: int, day: int):
         pref = UserCoursePreference(
@@ -536,6 +778,8 @@ class TestAdvanceDay:
             learning_goal="More practice.",
         )
         db_session.add(week6)
+        db_session.flush()
+        _add_curriculum_day(db_session, week=week6, day_number=1)
         db_session.commit()
         self._set_preference(db_session, user_id=user_id, week=5, day=7)
         _add_completed_daily_session(
@@ -783,3 +1027,339 @@ class TestAttemptDeliveryRepair:
         assert repair_call["archetype_id"] == "SPEAK_TIMED"
         assert repair_call["task_spec"]["topic_override"] == "Say simple present routines"
         assert "3 speaking prompts" in repair_call["task_spec"]["widget_requirements"]
+
+
+class TestRagResilience:
+    """RAG is best-effort and must never block or break the chat flow.
+
+    - ``submit_activity`` never touches the vector store synchronously.
+    - ``complete_session`` is fully decoupled from the Coach's Note: it commits
+      the scorecard with ``mentor_note=None`` and never awaits the generator, so
+      a slow/hanging note can never stall completion.
+    - ``ensure_mentor_note`` is the single, idempotent owner of note generation
+      (retrieve context → generate → store the session-summary vector). It is
+      awaited in-band by the chat WS / REST completion paths.
+    - The background worker only re-indexes per-activity vectors.
+    """
+
+    async def _start(self, db, tasks_per_day=2, score=8.0):
+        service = SessionService(
+            db,
+            evaluator=StubEvaluator(default_score=score),
+            feedback_generator=StubFeedbackGenerator(),
+        )
+        session = await service.start_session(
+            user_id=_user_id(db),
+            day_id="day_24_05_03",
+            course_length=CourseLength.WEEKS_24,
+            tasks_per_day=tasks_per_day,
+            allowed_activities={"read", "write", "listen", "speak"},
+        )
+        return service, session
+
+    async def _submit_all(self, service, session, count):
+        for seq in range(1, count + 1):
+            await service.submit_activity(
+                session_id=session.session_id,
+                user_id=session.user_id,
+                sequence=seq,
+                user_response={"a": "b"},
+            )
+
+    @staticmethod
+    def _mock_rag(order):
+        async def rec_activity(**_kw):
+            order.append("activity")
+            return "act_x"
+
+        async def rec_retrieve(**_kw):
+            order.append("retrieve")
+            return {}
+
+        async def rec_session(**_kw):
+            order.append("session")
+            return "sess_x"
+
+        async def rec_mentor(**_kw):
+            order.append("mentor")
+            return "Watch your tenses next time."
+
+        rag = MagicMock()
+        rag.store_activity_feedback = AsyncMock(side_effect=rec_activity)
+        rag.retrieve_context_for_feedback = AsyncMock(side_effect=rec_retrieve)
+        rag.store_session_summary = AsyncMock(side_effect=rec_session)
+        mentor = MagicMock()
+        mentor.generate = AsyncMock(side_effect=rec_mentor)
+        return rag, mentor
+
+    @pytest.mark.asyncio
+    async def test_submit_does_not_touch_rag_synchronously(self, db_session):
+        """The submit path must never call the vector store (it would race the
+        shared WebSocket DB session)."""
+        service, session = await self._start(db_session, tasks_per_day=2)
+        rag = MagicMock()
+        rag.store_activity_feedback = AsyncMock()
+        rag.retrieve_context_for_activity = AsyncMock()
+        service._rag_service = rag
+
+        await service.submit_activity(
+            session_id=session.session_id,
+            user_id=session.user_id,
+            sequence=1,
+            user_response={"a": "b"},
+        )
+
+        assert rag.store_activity_feedback.await_count == 0
+        assert rag.retrieve_context_for_activity.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_complete_session_does_not_generate_note(self, db_session):
+        """Completion is decoupled from the note: even with RAG wired, the
+        scorecard commits with mentor_note=None and the generator is untouched.
+        Note generation is owned by the awaited ensure_mentor_note step."""
+        service, session = await self._start(db_session, tasks_per_day=2)
+        await self._submit_all(service, session, 2)
+
+        order: list[str] = []
+        rag, mentor = self._mock_rag(order)
+        service._rag_service = rag
+        service._mentor_generator = mentor
+        service._schedule_post_completion_rag = lambda **kwargs: None  # isolate
+
+        scorecard, _report = await service.complete_session(
+            session_id=session.session_id,
+            user_id=session.user_id,
+        )
+
+        assert scorecard.mentor_note is None
+        assert order == []  # no retrieve / mentor / session on the completion path
+        assert mentor.generate.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_complete_session_never_awaits_a_hanging_note(self, db_session):
+        """A hanging generator cannot stall completion, because completion no
+        longer awaits the note at all."""
+        service, session = await self._start(db_session, tasks_per_day=2)
+        await self._submit_all(service, session, 2)
+
+        async def hang(**_kw):
+            await asyncio.sleep(60)
+
+        rag = MagicMock()
+        rag.retrieve_context_for_feedback = AsyncMock(side_effect=hang)
+        mentor = MagicMock()
+        mentor.generate = AsyncMock(side_effect=hang)
+        service._rag_service = rag
+        service._mentor_generator = mentor
+        service._schedule_post_completion_rag = lambda **kwargs: None
+
+        scorecard, _report = await asyncio.wait_for(
+            service.complete_session(
+                session_id=session.session_id,
+                user_id=session.user_id,
+            ),
+            timeout=2.0,
+        )
+
+        assert scorecard.mentor_note is None
+        assert rag.retrieve_context_for_feedback.await_count == 0
+        assert mentor.generate.await_count == 0
+        refreshed = service.get_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+        assert refreshed.status is SessionStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_ensure_mentor_note_generates_persists_and_stores_summary(
+        self, db_session
+    ):
+        """ensure_mentor_note retrieves context, generates the note, persists it
+        on the scorecard, and stores the day-level summary vector — in order."""
+        service, session = await self._start(db_session, tasks_per_day=2)
+        await self._submit_all(service, session, 2)
+        scorecard, _report = await service.complete_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+        assert scorecard.mentor_note is None
+
+        order: list[str] = []
+        rag, mentor = self._mock_rag(order)
+        service._rag_service = rag
+        service._mentor_generator = mentor
+
+        note = await service.ensure_mentor_note(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+
+        assert note == "Watch your tenses next time."
+        assert order == ["retrieve", "mentor", "session"]
+        db_session.refresh(scorecard)
+        assert scorecard.mentor_note == "Watch your tenses next time."
+
+    @pytest.mark.asyncio
+    async def test_ensure_mentor_note_is_idempotent(self, db_session):
+        """A second ensure_mentor_note returns the persisted note without
+        re-invoking the LLM or re-storing the summary."""
+        service, session = await self._start(db_session, tasks_per_day=2)
+        await self._submit_all(service, session, 2)
+        await service.complete_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+
+        order: list[str] = []
+        rag, mentor = self._mock_rag(order)
+        service._rag_service = rag
+        service._mentor_generator = mentor
+
+        first = await service.ensure_mentor_note(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+        second = await service.ensure_mentor_note(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+
+        assert first == second == "Watch your tenses next time."
+        assert mentor.generate.await_count == 1  # not regenerated
+        assert rag.store_session_summary.await_count == 1  # not re-stored
+
+    @pytest.mark.asyncio
+    async def test_ensure_mentor_note_generates_from_empty_context(self, db_session):
+        """When RAG retrieval degrades to an empty context (slow/failed vectors),
+        the note is still generated from the activity data alone."""
+        service, session = await self._start(db_session, tasks_per_day=2)
+        await self._submit_all(service, session, 2)
+        await service.complete_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+
+        rag = MagicMock()
+        rag.retrieve_context_for_feedback = AsyncMock(return_value={})  # degraded
+        rag.store_session_summary = AsyncMock()
+        mentor = MagicMock()
+        mentor.generate = AsyncMock(return_value="Keep practising your tenses.")
+        service._rag_service = rag
+        service._mentor_generator = mentor
+
+        note = await service.ensure_mentor_note(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+
+        assert note == "Keep practising your tenses."
+        assert mentor.generate.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_worker_indexes_activities_only(self, db_session):
+        """The background worker only re-indexes per-activity vectors; it does
+        NOT retrieve context, generate the note, or store the summary."""
+        service, session = await self._start(db_session, tasks_per_day=2)
+        await self._submit_all(service, session, 2)
+        scorecard, _report = await service.complete_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+        assert scorecard.mentor_note is None
+
+        order: list[str] = []
+        rag, mentor = self._mock_rag(order)
+        service._rag_service = rag
+        service._mentor_generator = mentor
+
+        await service.run_post_completion_rag(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+
+        assert order == ["activity", "activity"]
+        assert mentor.generate.await_count == 0
+        assert rag.store_session_summary.await_count == 0
+        db_session.refresh(scorecard)
+        assert scorecard.mentor_note is None
+
+    @pytest.mark.asyncio
+    async def test_reset_activity_returns_without_awaiting_rag_delete(
+        self, db_session
+    ):
+        """Per-activity retry commits the V2 reset immediately and only
+        *schedules* the (potentially slow) vector cleanup — it never awaits
+        Pinecone, so a hanging delete cannot stall the retry."""
+        service, session = await self._start(db_session, tasks_per_day=2)
+        await self._submit_all(service, session, 2)
+        await service.complete_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+
+        async def hang(*_a, **_kw):
+            await asyncio.sleep(60)
+
+        rag = MagicMock()
+        rag.delete_for_attempt = AsyncMock(side_effect=hang)
+        rag.delete_session_summary = AsyncMock(side_effect=hang)
+        service._rag_service = rag
+        scheduled: list[dict] = []
+        service._schedule_rag_delete = lambda **kw: scheduled.append(kw)
+
+        attempt = await asyncio.wait_for(
+            service.reset_activity(
+                session_id=session.session_id,
+                user_id=session.user_id,
+                sequence=1,
+            ),
+            timeout=2.0,
+        )
+
+        # V2 reset committed; the hanging delete was NOT awaited on the path.
+        assert attempt.status is AttemptStatus.PENDING
+        assert rag.delete_for_attempt.await_count == 0
+        # Cleanup was scheduled fire-and-forget with the right scope.
+        assert scheduled and scheduled[0]["delete_summary"] is True
+        assert scheduled[0]["attempt_ids"] == [attempt.id]
+        # The day was reopened and its now-stale scorecard dropped.
+        refreshed = service.get_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+        assert refreshed.status is SessionStatus.IN_PROGRESS
+        assert service.get_scorecard(
+            session_id=session.session_id, user_id=session.user_id,
+        ) is None
+
+    @pytest.mark.asyncio
+    async def test_reset_session_full_resets_all_and_schedules_delete(
+        self, db_session
+    ):
+        """Full restart resets every attempt to PENDING, drops the scorecard,
+        reopens the day, commits immediately, and schedules background vector
+        cleanup — without awaiting Pinecone."""
+        service, session = await self._start(db_session, tasks_per_day=2)
+        await self._submit_all(service, session, 2)
+        await service.complete_session(
+            session_id=session.session_id, user_id=session.user_id,
+        )
+
+        async def hang(*_a, **_kw):
+            await asyncio.sleep(60)
+
+        rag = MagicMock()
+        rag.delete_for_attempt = AsyncMock(side_effect=hang)
+        rag.delete_session_summary = AsyncMock(side_effect=hang)
+        service._rag_service = rag
+        scheduled: list[dict] = []
+        service._schedule_rag_delete = lambda **kw: scheduled.append(kw)
+
+        reopened = await asyncio.wait_for(
+            service.reset_session_full(
+                session_id=session.session_id, user_id=session.user_id,
+            ),
+            timeout=2.0,
+        )
+
+        assert reopened.status is SessionStatus.IN_PROGRESS
+        assert reopened.completed_at is None
+        attempts = service.attempts_repo.list_for_session(reopened.id)
+        assert attempts
+        assert all(a.status is AttemptStatus.PENDING for a in attempts)
+        assert service.get_scorecard(
+            session_id=session.session_id, user_id=session.user_id,
+        ) is None
+        # Background cleanup scheduled for all attempts incl. session summary;
+        # the hanging delete was never awaited on the request path.
+        assert rag.delete_for_attempt.await_count == 0
+        assert scheduled and scheduled[0]["delete_summary"] is True
+        assert sorted(scheduled[0]["attempt_ids"]) == sorted(a.id for a in attempts)

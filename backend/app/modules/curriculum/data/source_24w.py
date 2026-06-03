@@ -168,11 +168,12 @@ WEEKS_24: tuple[WeekSource, ...] = (
                 task_widget="fill_blanks",
                 topic_override="Simple present routines",
                 generation_instructions=(
-                    "Write a 5-7 sentence passage about a daily routine. "
+                    "Write a 4-5 blank connected passage about a daily routine. "
                     "Focus on simple present and third-person -s."
                 ),
                 widget_requirements=(
-                    "Always include base_verb for every blank."
+                    "Always include base_verb for every blank. "
+                    "Do not repeat base_verb inline in the passage after each ___ — the UI shows it separately."
                 ),
             ),
             evaluation=EvaluationBlueprint(
@@ -892,9 +893,10 @@ WEEKS_24: tuple[WeekSource, ...] = (
                                 "by its role in the sentence."
                             ),
                             widget_requirements=(
-                                "Target widget 'fill_blanks'. Provide passage_title, passage, "
-                                "and a BlankItem per blank with base_verb (the cue pronoun), "
-                                "correct_answer, and explanation."
+                                "Target widget 'fill_blanks'. Provide passage_title and a passage "
+                                "with ___ markers only — no inline hints in parentheses after blanks. "
+                                "Provide a BlankItem per blank with correct_answer and explanation. "
+                                "Omit base_verb; these are pronoun blanks, not verb inflection."
                             ),
                         ),
                         evaluation=EvaluationBlueprint(
@@ -971,14 +973,25 @@ WEEKS_24: tuple[WeekSource, ...] = (
                             task_widget="speak_roleplay",
                             topic_override="Pronoun roleplay scenario",
                             generation_instructions=(
-                                "Set up a short ownership roleplay (for example about a book "
-                                "on the table) where the learner answers the partner using "
-                                "possessive pronouns like mine and object pronouns like him."
+                                "Set up an ownership roleplay (for example a book, jacket, "
+                                "or keys someone found). The partner's opening should be "
+                                "2-3 sentences that describe the object and ask who it "
+                                "belongs to. The learner's spoken response must be 2-3 "
+                                "connected sentences using possessive pronouns (mine, yours) "
+                                "and object pronouns (him, her) to explain ownership — not "
+                                "a one-line answer like 'Yes, it is mine.'"
                             ),
                             widget_requirements=(
-                                "Target widget 'speak_roleplay'. Provide a dialogue_context "
-                                "alternating partner and learner turns, target_words (mine, "
-                                "yours, she, him, he), and speaking_duration_seconds: 30."
+                                "Target widget 'speak_roleplay'. Provide dialogue_context "
+                                "with alternating partner and learner turns (4-6 turns "
+                                "total). Partner lines set the scene in 2-3 sentences; "
+                                "each learner line is 2-3 connected sentences (roughly "
+                                "15-30 words). Include target_words (mine, yours, she, "
+                                "him, he), speaking_prompts with one instruction to "
+                                "respond aloud, sample_responses with the learner's model "
+                                "answer (same text as the learner dialogue turn), "
+                                "grammar_rule_to_practice, and speaking_duration_seconds: "
+                                "45."
                             ),
                         ),
                         evaluation=EvaluationBlueprint(
@@ -1232,9 +1245,14 @@ WEEKS_24: tuple[WeekSource, ...] = (
                                 "correct."
                             ),
                             widget_requirements=(
-                                "Target widget 'listen_retell'. Provide audio_script, "
-                                "passage_to_retell, target_words listing the key preposition "
-                                "phrases, and grammar_rule."
+                                "Target widget 'listen_retell'. Provide: "
+                                "audio_script (the full spoken monologue text), "
+                                "passage_to_retell (a 2-3 sentence model retell — shorter "
+                                "than the audio, showing how a good student would summarise "
+                                "the key points using the target prepositions), "
+                                "sample_responses (list containing that same model retell), "
+                                "target_words (list of the key preposition phrases from the "
+                                "audio), and grammar_rule."
                             ),
                         ),
                         evaluation=EvaluationBlueprint(
@@ -1288,9 +1306,15 @@ WEEKS_24: tuple[WeekSource, ...] = (
                                 "two windows)."
                             ),
                             widget_requirements=(
-                                "Target widget 'speak_present'. Provide "
-                                "visual_prompt_description of a cozy room, grammar_rule, "
-                                "target_words, and speaking_duration_seconds: 45."
+                                "Target widget 'speak_present'. Provide: "
+                                "prompts as a list with one general question asking the learner to "
+                                "describe the objects in the room and where they are using prepositions "
+                                "(e.g. 'Describe the objects in the room and their positions.'); "
+                                "visual_prompt_description as a short sample spoken answer that "
+                                "uses at least three spatial prepositions to describe the cozy room "
+                                "(e.g. 'The lamp is next to the sofa. The books are on the table. "
+                                "The plant stands between the two windows.'); "
+                                "grammar_rule, target_words, and speaking_duration_seconds: 45."
                             ),
                         ),
                         evaluation=EvaluationBlueprint(
@@ -1484,28 +1508,37 @@ WEEKS_24: tuple[WeekSource, ...] = (
                             id="open",
                             goal="Introduce short clear questions.",
                             instruction=(
-                                "Greet the learner. Explain in two sentences that a good A1 "
-                                "conversation uses short clear questions like 'Are you "
-                                "free?', 'Can we meet?', and 'What do you like?'. Ask them "
-                                "to write one short, polite question."
+                                "In two sentences, explain that today's lesson is about "
+                                "keeping a conversation moving with simple questions. Give "
+                                "two real-life examples: 'How are you?' and 'Are you using "
+                                "this chair?' Then invite: 'You start — ask me any simple "
+                                "question!' Do NOT echo or repeat anything the learner "
+                                "writes. If they answer or comment instead of asking a "
+                                "question, say only: 'You go first — ask me a question!'"
                             ),
                         ),
                         TeacherStep(
                             id="answer_then_follow_up",
                             goal="Teach the question-answer-follow-up loop.",
                             instruction=(
-                                "Confirm their question is clear and polite. Explain that "
-                                "when someone answers, you add one simple follow-up question "
-                                "so the conversation does not stop. Ask them to answer and "
-                                "add a follow-up question."
+                                "The learner asked you a question. Answer it directly and "
+                                "naturally in one short sentence — stay fully in character "
+                                "as the other person in the conversation. Do NOT say 'You "
+                                "asked...' or echo their question in any way. After "
+                                "answering, stay in character and say: 'What would you "
+                                "ask next?'"
                             ),
                         ),
                         TeacherStep(
                             id="wrap_up",
                             goal="Move to practice.",
                             instruction=(
-                                "Remind them to keep words short and answer directly, then "
-                                "ask only: Ready to try the practice task?"
+                                "The learner gave a follow-up. Respond to it naturally in "
+                                "one sentence — still in character. Then step out of the "
+                                "roleplay and say: 'Well done — you kept the conversation "
+                                "going! Are you comfortable asking questions like these?' "
+                                "After their reply, say: 'Great — ready for the practice "
+                                "tasks?'"
                             ),
                         ),
                     ),
@@ -1961,32 +1994,36 @@ WEEKS_24: tuple[WeekSource, ...] = (
                     steps=(
                         TeacherStep(
                             id="open",
-                            goal="Introduce survival help phrases.",
+                            goal="Introduce the topic and invite the first phrase.",
                             instruction=(
-                                "Greet the learner. Explain in two sentences that useful "
-                                "survival phrases are 'Excuse me, could you help me?' and "
-                                "'Where is the...?', plus directions like go straight, turn "
-                                "left, and next to. Ask them to write a polite request for "
-                                "help."
+                                "Greet the learner. In one short sentence say that today's "
+                                "lesson is about asking for help and directions. Then ask: "
+                                "'How do you politely ask a stranger for help?' "
+                                "Do NOT list phrases or examples before they answer — wait "
+                                "for their reply first."
                             ),
                         ),
                         TeacherStep(
-                            id="add_place_and_landmarks",
-                            goal="Add the place and listen for landmarks.",
+                            id="ask_for_directions",
+                            goal="Confirm the help phrase and move to asking for directions.",
                             instruction=(
-                                "Confirm their request. Ask them to add the place they need "
-                                "(for example the station). Explain that when someone gives "
-                                "directions you listen for action words and landmarks (go "
-                                "straight, turn left, next to the pharmacy), and preview "
-                                "today's reading, listening, writing, and map tasks."
+                                "Quote one specific word from the learner's reply to confirm "
+                                "it sounds polite. If they used a good polite phrase, affirm "
+                                "it briefly; if not, give a gentle one-sentence correction. "
+                                "Then transition: explain that the second survival phrase is "
+                                "asking where a place is. Ask: 'Now how would you ask a "
+                                "stranger where the station is?' Stop and wait for their "
+                                "answer."
                             ),
                         ),
                         TeacherStep(
                             id="wrap_up",
-                            goal="Move to practice.",
+                            goal="Confirm they have both phrases and move to practice.",
                             instruction=(
-                                "If the learner has written a clear polite request, ask "
-                                "only: Ready to try the practice task?"
+                                "Quote something from their directions question to confirm it "
+                                "sounds natural. Tell them in one sentence that they now have "
+                                "both survival phrases. Then ask only: Ready to try the "
+                                "practice task?"
                             ),
                         ),
                     ),

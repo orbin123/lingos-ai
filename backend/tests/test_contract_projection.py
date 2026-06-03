@@ -252,6 +252,34 @@ def test_dictation_family_requires_audio() -> None:
     assert len(model.items) == 1
 
 
+def test_dictation_family_fills_correct_answer_from_sample_or_target_words() -> None:
+    content = {
+        "instructions": "Type what you hear.",
+        "audio_genre": "classroom",
+        "audio_script": "I am reading a book. The students are studying together.",
+        "audio_duration_seconds": 12,
+        "target_words": ["am reading", "are studying"],
+        "items": [
+            {
+                "item_id": "d1",
+                "prompt": "I ___ a book.",
+                "sample_answer": "am reading",
+                "explanation": "Use am with I.",
+            },
+            {
+                "item_id": "d2",
+                "prompt": "The students ___ together.",
+                "explanation": "Plural subject uses are.",
+            },
+        ],
+    }
+    payload = project_task_payload(
+        "LISTEN_DICTATION", content, activity_id="a", sequence=1
+    )
+    assert payload["items"][0]["correct_answer"] == "I am reading a book."
+    assert payload["items"][1]["correct_answer"] == "The students are studying together."
+
+
 def test_open_text_family_projects_items_and_hints() -> None:
     content = {
         "instructions": "Write three sentences.",
@@ -288,6 +316,25 @@ def test_transform_family_maps_source_alias() -> None:
     )
     model = TransformPayload.model_validate(payload)
     assert model.items[0].source_sentence == "The cat was chased by the dog."
+
+
+def test_transform_family_maps_prompt_alias() -> None:
+    content = {
+        "instructions": "Rewrite into present continuous.",
+        "items": [
+            {
+                "item_id": "st1",
+                "prompt": "She walks to school.",
+                "sample_answer": "She is walking to school.",
+                "watch_hints": ["she -> is", "walk -> walking"],
+            }
+        ],
+    }
+    payload = project_task_payload(
+        "WRITE_SENT_TRANS", content, activity_id="a", sequence=1
+    )
+    model = TransformPayload.model_validate(payload)
+    assert model.items[0].source_sentence == "She walks to school."
 
 
 def test_error_correction_family_projects_items() -> None:
@@ -351,6 +398,54 @@ def test_speaking_family_maps_grammar_rule_to_practice_alias() -> None:
     payload = project_task_payload("SPEAK_TIMED", content, activity_id="a", sequence=1)
     model = SpeakingPayload.model_validate(payload)
     assert model.grammar_rule == "Use simple present with frequency adverbs."
+
+
+def test_speak_pic_desc_maps_image_fields() -> None:
+    content = {
+        "instructions": "Describe the picture aloud.",
+        "speaking_prompts": ["Describe the cat using 'a' or 'the'."],
+        "sample_responses": ["I see a cat on the sofa."],
+        "image_alt": "A cat sleeping on a sofa next to an open book.",
+        "image_url": "/images/ab/scene.png",
+        "speaking_duration_seconds": 45,
+    }
+    payload = project_task_payload("SPEAK_PIC_DESC", content, activity_id="a", sequence=1)
+    model = SpeakingPayload.model_validate(payload)
+    assert model.task_widget == "speak_pic_desc"
+    assert model.image_alt == "A cat sleeping on a sofa next to an open book."
+    assert model.image_url == "/images/ab/scene.png"
+    assert model.prompts == ("Describe the cat using 'a' or 'the'.",)
+
+
+def test_speak_interview_projects_questions_and_context() -> None:
+    content = {
+        "instructions": "Answer the interview questions aloud.",
+        "interview_context": "A friendly mini interview about yourself.",
+        "questions": [
+            {
+                "interviewer_prompt": "What is your name?",
+                "sample_answer": "My name is Sam.",
+                "answer_hint": "Use 'My name is'.",
+            },
+            {
+                "prompt": "What do you do?",
+                "sample_answer": "I'm a teacher.",
+            },
+        ],
+        "speaking_duration_seconds": 30,
+    }
+    payload = project_task_payload("SPEAK_INTERVIEW", content, activity_id="a", sequence=1)
+    model = SpeakingPayload.model_validate(payload)
+    assert model.task_widget == "speak_interview"
+    assert model.interview_context == "A friendly mini interview about yourself."
+    assert len(model.questions) == 2
+    assert model.questions[0].item_id == "item_1"
+    assert model.questions[0].interviewer_prompt == "What is your name?"
+    assert model.questions[0].sample_answer == "My name is Sam."
+    assert model.questions[0].answer_hint == "Use 'My name is'."
+    # Falls back from `prompt` alias and synthesizes item_id.
+    assert model.questions[1].item_id == "item_2"
+    assert model.questions[1].interviewer_prompt == "What do you do?"
 
 
 def test_every_contract_archetype_has_a_task_builder() -> None:

@@ -128,7 +128,6 @@ function LiveSpeakTimed({ task, live }: { task: SpeakTimedTask; live: LiveTaskCo
   return (
     <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Speaking focus">{task.grammarRule}</RuleCallout>
-      <SpeakingCues task={task} />
 
       {interactive ? (
         <>
@@ -282,33 +281,6 @@ function recordingsFromAnswers(answers: Record<string, unknown>): Record<string,
   return out;
 }
 
-function SpeakingCues({ task }: { task: SpeakTimedTask }) {
-  if (task.targetWords.length === 0) return null;
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 800,
-          color: "oklch(45% 0.07 240)",
-          marginBottom: 8,
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-        }}
-      >
-        Target speaking cues
-      </div>
-      <div className="tw-target-chip-row">
-        {task.targetWords.map((word) => (
-          <span className="tw-target-chip used" key={word}>
-            {word}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function PreviewSpeakTimed({
   task,
   previewState,
@@ -326,7 +298,6 @@ function PreviewSpeakTimed({
   return (
     <TaskWidgetFrame task={task} icon={<Mic2 size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Speaking focus">{task.grammarRule}</RuleCallout>
-      <SpeakingCues task={task} />
 
       {!isDefault && (
         <ResultBanner
@@ -334,8 +305,8 @@ function PreviewSpeakTimed({
           correct={correctCount}
           label={
             answer?.isCorrect
-              ? "Speech fluent and target vocabulary used"
-              : "Speech complete but missed target vocabulary"
+              ? "Speech fluent and clear"
+              : "Speech complete but needs improvement"
           }
         />
       )}

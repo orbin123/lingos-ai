@@ -26,11 +26,13 @@ from pydantic import BaseModel, ValidationError
 
 from app.modules.sessions.contracts.base import (
     BlankItem,
+    DialogueTurn,
     DictationItem,
     ErrorCorrectionItem,
     ErrorSpottingError,
     ErrorSpottingSentence,
     ErrorSpottingToken,
+    InterviewQuestion,
     McqItem,
     OpenTextItem,
     StructureLabelItem,
@@ -269,19 +271,31 @@ def _error_spotting_sentence(raw: dict[str, Any]) -> ErrorSpottingSentence:
 
 
 def _dictation_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]:
-    items = _build_items(
-        archetype_id,
-        content.get("items"),
-        lambda raw: DictationItem(
-            item_id=_str(raw.get("item_id")),
-            prompt=_str(raw.get("prompt")),
-            correct_answer=_str(raw.get("correct_answer")),
-            explanation=_str(raw.get("explanation")),
-        ),
-    )
+    target_words = content.get("target_words") or ()
+    if not isinstance(target_words, (list, tuple)):
+        target_words = ()
+    items: list[DictationItem] = []
+    for index, raw in enumerate(content.get("items") or ()):
+        if not isinstance(raw, dict):
+            continue
+        try:
+            items.append(
+                DictationItem(
+                    item_id=_str(raw.get("item_id")),
+                    prompt=_str(raw.get("prompt")),
+                    correct_answer=_dictation_correct_answer(
+                        raw,
+                        index,
+                        target_words,
+                    ),
+                    explanation=_str(raw.get("explanation")),
+                )
+            )
+        except ValidationError as exc:
+            raise ContractValidationError(archetype_id, _fmt(exc)) from exc
     # AudioMixin requires the audio fields — surface them as required, not optional.
     return {
-        "items": items,
+        "items": tuple(items),
         "audio_genre": _str(content.get("audio_genre")),
         "audio_script": _str(content.get("audio_script")),
         "audio_url": _optional_str(content.get("audio_url")),
@@ -289,6 +303,30 @@ def _dictation_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any
             content.get("audio_duration_seconds"), default=0
         ),
     }
+
+
+def _dictation_correct_answer(
+    raw: dict[str, Any],
+    index: int,
+    target_words: tuple[str, ...] | list[str],
+) -> str:
+    """Resolve the reference sentence for a dictation item.
+
+    The LLM sometimes omits ``correct_answer`` and only lists verb chunks in
+    ``target_words``, or uses ``sample_answer`` / cloze-style prompts instead.
+    """
+    prompt = _str(raw.get("prompt"))
+    answer = _str(raw.get("correct_answer") or raw.get("sample_answer"))
+    if not answer and index < len(target_words):
+        answer = _str(target_words[index])
+    if not answer:
+        return ""
+    if "___" not in prompt:
+        return answer
+    parts = [part.strip() for part in prompt.split("___") if part.strip()]
+    if parts and all(part.lower() in answer.lower() for part in parts):
+        return answer
+    return prompt.replace("___", answer.strip(), 1).strip()
 
 
 def _open_text_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]:
@@ -318,7 +356,13 @@ def _transform_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any
         content.get("items"),
         lambda raw: TransformItem(
             item_id=_str(raw.get("item_id") or raw.get("id")),
-            source_sentence=_str(raw.get("source_sentence") or raw.get("source")),
+            source_sentence=_str(
+                raw.get("source_sentence")
+                or raw.get("source")
+                or raw.get("prompt")
+                or raw.get("original_sentence")
+                or raw.get("sentence")
+            ),
             sample_answer=_str(raw.get("sample_answer")),
             watch_hints=_str_tuple(raw.get("watch_hints")),
         ),
@@ -371,8 +415,43 @@ def _speaking_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]
         or content.get("prompts")
         or ([content.get("speaking_prompt")] if content.get("speaking_prompt") else [])
     )
+    dialogue_raw = content.get("dialogue_context") or []
+    dialogue_turns: tuple[DialogueTurn, ...] = ()
+    if isinstance(dialogue_raw, list):
+        turns: list[DialogueTurn] = []
+        for raw in dialogue_raw:
+            if not isinstance(raw, dict):
+                continue
+            role = _str(raw.get("role"))
+            text = _str(raw.get("text"))
+            speaker_raw = _str(raw.get("speaker")).lower()
+            speaker = "learner" if speaker_raw == "learner" else "partner"
+            if role and text:
+                turns.append(DialogueTurn(role=role, text=text, speaker=speaker))
+        dialogue_turns = tuple(turns)
+    questions_raw = content.get("questions") or []
+    questions: tuple[InterviewQuestion, ...] = ()
+    if isinstance(questions_raw, list):
+        parsed: list[InterviewQuestion] = []
+        for index, raw in enumerate(questions_raw):
+            if not isinstance(raw, dict):
+                continue
+            prompt = _str(raw.get("interviewer_prompt") or raw.get("prompt"))
+            if not prompt:
+                continue
+            parsed.append(
+                InterviewQuestion(
+                    item_id=_str(raw.get("item_id")) or f"item_{index + 1}",
+                    interviewer_prompt=prompt,
+                    sample_answer=_str(raw.get("sample_answer")),
+                    answer_hint=_str(raw.get("answer_hint")),
+                )
+            )
+        questions = tuple(parsed)
     return {
         "prompts": prompts,
+        "interview_context": _str(content.get("interview_context")),
+        "questions": questions,
         "sample_responses": _str_tuple(
             content.get("sample_responses") or content.get("sample_answers")
         ),
@@ -380,11 +459,14 @@ def _speaking_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]
             content.get("speaking_duration_seconds"), default=45
         ),
         "text_to_read_aloud": _str(
-            content.get("text_to_read_aloud") or content.get("passage")
+            content.get("text_to_read_aloud")
+            or content.get("passage")
+            or content.get("primary_text")
         ),
         "image_url": _str(content.get("image_url")),
         "image_alt": _str(content.get("image_alt")),
         "passage_to_retell": _str(content.get("passage_to_retell")),
+        "dialogue_context": dialogue_turns,
         **_audio_fields(content),
     }
 
