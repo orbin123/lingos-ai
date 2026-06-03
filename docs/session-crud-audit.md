@@ -13,9 +13,9 @@ Two session concepts (see `CLAUDE.md`):
   `ActivityFeedback`, `SessionScorecard`) — the V2 engine that owns task
   content, scoring and the points write-back.
 
-The chat layer never writes scoring tables directly except in the legacy
-full-restart wipe (see follow-up #1); all evaluation/feedback/scorecard writes
-are owned by `SessionService`.
+The chat layer never writes scoring tables directly; all
+evaluation/feedback/scorecard writes — including full restart — are owned by
+`SessionService` (`reset_activity`, `reset_session_full`).
 
 ## Coverage table
 
@@ -23,13 +23,13 @@ are owned by `SessionService`.
 |---|---|---|---|---|
 | **LearningSession** | `create_session` → `session_repo.create` | `get_by_session_id`, `get_by_daily_session_id`; REST `GET …/state`, `GET …/by-daily-session/{id}` | submit handlers (`messages`, `phase`, `evaluation`, `feedback`, `task_queue`, `current_task_index`); `restart_session`, `reset_activity`; `_maybe_refresh_file_persona` (topic/skill/level/instructions) | **None** — never deleted; restart resets in place (follow-up #2) |
 | **DailySession** | `SessionService.start_session` | `get_by_session_id`, `get_in_progress`, `get_latest_for_day`, `get_with_attempts` | `status`/`completed_at` on submit/complete; **reopen** (→ `IN_PROGRESS`, `completed_at=None`) on `reset_activity` (if completed) and `restart_session`; stale-file session → `ABANDONED` | **None** — terminal states are `COMPLETED`/`ABANDONED`, rows are kept |
-| **ActivityAttempt** | `_materialise_attempt` (during `start_session`) | `list_for_session`, `get`, `first_pending` | submit (`user_response`, `submitted_at`, `status`); `reset_to_pending` (clears response, → `PENDING`); `restart_session` bulk reset to `PENDING` | **None** — reset to `PENDING`, never deleted |
-| **ActivityEvaluation** | `submit_activity` | `attempt.evaluation` relationship; aggregated in `complete_session` | **None** — replaced via delete+recreate on re-submit | `reset_activity` → `delete_for_attempt`; `restart_session` → bulk delete by attempt id |
-| **ActivityFeedback** | `submit_activity` | `attempt.feedback` relationship; mentor-note aggregation | **None** — replaced via delete+recreate on re-submit | `reset_activity` → `delete_for_attempt`; `restart_session` → bulk delete by attempt id |
-| **SessionScorecard** | `complete_session` | `get_scorecard`; chat `GET …/scorecard` (now 404s unless day is `COMPLETED`) | rebuilt (delete + recreate) when stored scores are stale or the day was reopened; `points_applied` / `mentor_note` set at build | `reset_activity` (when day was completed), `restart_session`, and `complete_session`'s rebuild path |
+| **ActivityAttempt** | `_materialise_attempt` (during `start_session`) | `list_for_session`, `get`, `first_pending` | submit (`user_response`, `submitted_at`, `status`); `reset_to_pending` (clears response, → `PENDING`) via both `reset_activity` and `reset_session_full` | **None** — reset to `PENDING`, never deleted |
+| **ActivityEvaluation** | `submit_activity` | `attempt.evaluation` relationship; aggregated in `complete_session` | **None** — replaced via delete+recreate on re-submit | `reset_activity` / `reset_session_full` → `delete_for_attempt` |
+| **ActivityFeedback** | `submit_activity` | `attempt.feedback` relationship; mentor-note aggregation | **None** — replaced via delete+recreate on re-submit | `reset_activity` / `reset_session_full` → `delete_for_attempt` |
+| **SessionScorecard** | `complete_session` | `get_scorecard`; chat `GET …/scorecard` (now 404s unless day is `COMPLETED`) | rebuilt (delete + recreate) when stored scores are stale or the day was reopened; `points_applied` / `mentor_note` set at build | `reset_activity` (when day was completed), `reset_session_full`, and `complete_session`'s rebuild path |
 | **SkillPoints / SkillPointsLog** | `apply_session_scorecard` (first completion only) | `SkillPointsRepository.get_*`, `SkillPointsLogRepository.list_for_user` / `has_for_session` | `upsert_points` (cumulative) | **None** — `SkillPointsLog` is append-only; survives scorecard deletion and is the guard against double-award (see below) |
 | **streak DailyActivity** | `StreakService.record_in_same_tx` (first evaluated submit per local calendar day) | `get_streak_data`, dashboard reads | streak counters updated in the same TX as the first daily submit | **None** — restart/retry do **not** touch streaks (decision below) |
-| **RAG feedback-memory** (Pinecone vectors) | `_store_activity_memory_safe` (on submit), `_store_session_memory_safe` (on complete) — fire-and-forget | `retrieve_context_for_feedback` (mentor-note generation) | **None** | **None** from the session lifecycle (decision below) |
+| **RAG feedback-memory** (Pinecone vectors + Postgres mirror) | `_store_activity_memory_safe`, `_store_session_memory_safe` (post-completion worker) — fire-and-forget | `retrieve_context_for_feedback` (mentor-note generation) | **None** | `reset_activity` / `reset_session_full` purge the reset attempt vector(s) + session-summary vector via a **background** worker (own DB session) — best-effort, non-blocking (decision below) |
 
 ## Behavioural guarantees after this change
 
@@ -42,9 +42,10 @@ are owned by `SessionService`.
   evaluation/feedback, flips it to `PENDING`, and — if the day was
   `COMPLETED` — reopens the day and drops the now-stale scorecard. Other
   activities are untouched.
-- **Full restart** (`restart_session`) wipes the chat envelope, resets every
-  attempt to `PENDING`, deletes all evaluations/feedback, deletes the
-  scorecard, and reopens the day.
+- **Full restart** (`restart_session`) wipes the chat envelope, then delegates
+  the V2 reset to `SessionService.reset_session_full`: every attempt → `PENDING`,
+  all evaluations/feedback deleted, scorecard dropped, day reopened. The V2 reset
+  commits immediately; stale RAG vectors are purged in the background.
 - **Points are awarded at most once per `DailySession`.** `apply_session_scorecard`
   only writes on a first attempt with an un-applied scorecard, but the scorecard
   row is deleted on reopen, so that flag alone is not enough. `complete_session`
@@ -56,29 +57,28 @@ are owned by `SessionService`.
 
 ## Documented decisions
 
-1. **RAG feedback-memory is NOT deleted on restart/retry.** Restart and
-   per-activity reset leave historical feedback-memory vectors in place. This is
-   intentional: the memory's purpose is to remember a learner's *recurring*
-   weaknesses across attempts, so wiping it on every redo would defeat the
-   feature. The trade-off is that a single day re-done several times can
-   accumulate near-duplicate activity-feedback entries.
-   *Possible follow-up:* dedupe by `(attempt_id, day_id)` or TTL-expire activity
-   entries so a heavily-retried day doesn't skew retrieval.
+1. **RAG vectors for the reset attempt(s) are purged in the background.**
+   Per-activity reset and full restart drop the now-stale activity-feedback
+   vector(s) for the reset attempts (and the session-summary vector when the day
+   is reopened) so Pinecone and its Postgres mirror stay in sync with the V2
+   reset. This runs **fire-and-forget on its own DB session**
+   (`_run_rag_delete_worker`) so it never blocks the reset/restart commit, and is
+   best-effort (failures logged under `rag.delete.*`, never raised). Historical
+   vectors from *other* days/sessions are untouched, so the memory still surfaces
+   a learner's *recurring* weaknesses across days. The previous policy left the
+   stale vector in place; deleting it before re-completion re-indexes avoids
+   accumulating near-duplicate entries for a heavily-retried day.
 
 2. **Streaks are NOT reverted on restart/retry.** A streak credit is earned for
    *showing up and completing an activity* on a calendar day; redoing work the
    same day neither re-awards (one `DailyActivity` per day) nor removes it.
 
-## Follow-ups (not done here)
+## Follow-ups
 
-1. **Chat layer issues raw `delete(...)` against V2 tables in
-   `restart_session`.** This breaks the "chat layer never writes scoring tables
-   directly" rule. Consider extracting
-   `SessionService.reset_session(session_id, user_id, *, scope="full")` and
-   calling it from the chat layer, mirroring `reset_activity`. Deferred because
-   the existing mock-based restart tests are tightly coupled to the inline
-   implementation and `_make_v2_session_service` eagerly builds LLM agents
-   (awkward in a pure-DB unit test); doing it cleanly means reworking those
-   tests. Behaviour is correct today.
+1. **DONE — Chat layer no longer issues raw `delete(...)` against V2 tables.**
+   `restart_session` now delegates to `SessionService.reset_session_full`,
+   mirroring `reset_activity`, so all scoring-table writes are owned by
+   `SessionService`. The V2 reset commits immediately and schedules background
+   RAG cleanup.
 2. **`LearningSession` rows are never deleted.** Restart resets in place; there
    is no hard-delete/GC path for abandoned chat envelopes. Acceptable for now.

@@ -28,7 +28,6 @@ import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
-from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.ai.agents.planner import PlannerAgent
@@ -77,8 +76,6 @@ from app.modules.sessions.exceptions import (
 )
 from app.modules.sessions.models import (
     ActivityAttempt,
-    ActivityEvaluation,
-    ActivityFeedback,
     AttemptStatus,
     DailySession,
     SessionScorecard,
@@ -87,6 +84,7 @@ from app.modules.sessions.models import (
 from app.modules.sessions.repository import (
     ActivityAttemptRepository,
     DailySessionRepository,
+    ScorecardRepository,
 )
 from app.modules.sessions.contracts import (
     ContractValidationError,
@@ -99,12 +97,19 @@ from app.modules.sessions.contracts import (
 )
 from app.modules.sessions.evaluator import EvaluationResult
 from app.modules.sessions.feedback_generator import FeedbackResult, MistakeOut
-from app.modules.sessions.service import SessionService
+from app.modules.sessions.service import SessionService, generate_mentor_note_async
 from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.modules.skills.repository import SkillRepository
 from app.scoring import CourseLength, get_archetype
 
 logger = logging.getLogger(__name__)
+
+# Guard against concurrent complete_session calls (e.g. WS submit + resume).
+_completing_daily_uuids: set[str] = set()
+
+# Strong refs to in-flight Coach's Note workers so a timed-out (shielded) task
+# is not garbage-collected before it finishes persisting the note.
+_pending_note_tasks: set[asyncio.Task[str | None]] = set()
 
 # Friendly labels for the four core activities, used in the compact
 # completed-activity summary rows the chat UI renders on resume.
@@ -820,12 +825,15 @@ class LearningSessionService:
                 f"User {user_id} cannot restart session {session_id}"
             )
 
+        # Load the linked daily session up-front so it is always bound, even if
+        # the best-effort teacher-instructions refresh below raises.
+        daily = self.db.get(DailySession, session.daily_session_id)
+
         # Refresh teacher instructions against current curriculum data so
         # content edits in source_24w.py or curriculum_days take effect on
         # the next teaching turn.  Try file persona first, fall back to
         # DB-driven planner.
         try:
-            daily = self.db.get(DailySession, session.daily_session_id)
             if daily is not None:
                 teacher_instructions = None
                 if self._maybe_refresh_file_persona(
@@ -870,45 +878,16 @@ class LearningSessionService:
         session.pre_generated_tasks = None
 
         # Reset all activity attempts for this daily session so the full
-        # activity queue becomes available again from the beginning.
+        # activity queue becomes available again from the beginning. Delegate to
+        # SessionService so the chat layer no longer writes V2 scoring tables
+        # directly; it resets every attempt to PENDING, drops the scorecard,
+        # reopens the day (committing immediately), and schedules best-effort
+        # background RAG vector cleanup.
         if daily is not None:
-            attempt_ids = list(
-                self.db.execute(
-                    select(ActivityAttempt.id).where(
-                        ActivityAttempt.session_id == daily.id
-                    )
-                ).scalars()
+            await _make_v2_session_service(self.db).reset_session_full(
+                session_id=daily.session_id,
+                user_id=user_id,
             )
-            if attempt_ids:
-                self.db.execute(
-                    delete(ActivityFeedback).where(
-                        ActivityFeedback.attempt_id.in_(attempt_ids)
-                    )
-                )
-                self.db.execute(
-                    delete(ActivityEvaluation).where(
-                        ActivityEvaluation.attempt_id.in_(attempt_ids)
-                    )
-                )
-                self.db.execute(
-                    ActivityAttempt.__table__.update()
-                    .where(ActivityAttempt.id.in_(attempt_ids))
-                    .values(
-                        status=AttemptStatus.PENDING,
-                        user_response=None,
-                        submitted_at=None,
-                    )
-                )
-            # Drop the now-stale scorecard so a restarted day starts clean.
-            # It is rebuilt from fresh evaluations when the day is re-completed.
-            self.db.execute(
-                delete(SessionScorecard).where(
-                    SessionScorecard.session_id == daily.id
-                )
-            )
-            if daily.status == SessionStatus.COMPLETED:
-                daily.status = SessionStatus.IN_PROGRESS
-            daily.completed_at = None
 
         # Rebuild the chat task_queue so every entry reflects PENDING again.
         self._sync_task_queue_from_attempts(session)
@@ -949,7 +928,7 @@ class LearningSessionService:
                 f"DailySession id={session.daily_session_id} not found"
             )
 
-        _make_v2_session_service(self.db).reset_activity(
+        await _make_v2_session_service(self.db).reset_activity(
             session_id=daily.session_id,
             user_id=user_id,
             sequence=int(sequence),
@@ -1255,20 +1234,38 @@ class LearningSessionService:
         if daily is None or daily.status is not SessionStatus.IN_PROGRESS:
             return daily
 
+        if daily.session_id in _completing_daily_uuids:
+            return daily
+
+        if ScorecardRepository(self.db).get_for_session(daily.id) is not None:
+            self.db.refresh(daily)
+            return daily
+
         attempts = self.attempts_repo.list_for_session(daily.id)
         if not attempts or any(
             attempt.status is not AttemptStatus.EVALUATED for attempt in attempts
         ):
             return daily
 
+        # Take the same completion lock the WS path uses so a concurrent
+        # complete_session can't double-award points or skip the scorecard.
+        _completing_daily_uuids.add(daily.session_id)
         try:
             await _make_v2_session_service(self.db).complete_session(
                 session_id=daily.session_id,
                 user_id=session.user_id,
             )
-            return self.db.get(DailySession, session.daily_session_id)
         except (SessionNotFound, SessionAbandoned, SessionAlreadyCompleted):
-            return self.db.get(DailySession, session.daily_session_id)
+            pass
+        except Exception:
+            logger.warning(
+                "Auto-complete failed for daily session_id=%s; leaving open",
+                daily.session_id,
+                exc_info=True,
+            )
+        finally:
+            _completing_daily_uuids.discard(daily.session_id)
+        return self.db.get(DailySession, session.daily_session_id)
 
     def _stream_completed_daily_message(self) -> AsyncIterator[WSOutgoingMessage]:
         return self._stream_chat_text(
@@ -1518,6 +1515,20 @@ class LearningSessionService:
             return
         except (AttemptNotFound, SessionNotFound) as exc:
             yield WSOutgoingMessage(type="error", content=str(exc))
+            return
+        except Exception:
+            # Any other failure (DB, LLM, unexpected RAG error) must not kill the
+            # WS handler — surface a recoverable error and keep the connection.
+            logger.warning(
+                "submit_activity failed for session_id=%s sequence=%s",
+                session.session_id,
+                sequence,
+                exc_info=True,
+            )
+            yield WSOutgoingMessage(
+                type="error",
+                content="Something went wrong while submitting your answer. Please try again.",
+            )
             return
 
         evaluation_dict = {
@@ -1928,11 +1939,26 @@ class LearningSessionService:
             return
 
         if any(sig in action for sig in another_signals):
+            # Idempotent: learner already has the pending task on screen.
+            if session.phase == "practice_task":
+                return
             attempt = self._next_pending_attempt(session)
             if attempt is None:
                 async for msg in self._complete_and_announce(session, state):
                     yield msg
                 return
+            current_seq = state.get("current_sequence")
+            if (
+                current_seq is not None
+                and int(current_seq) == int(attempt.sequence)
+            ):
+                return
+            # Claim the transition before prepare/delivery so a double-click
+            # while still in feedback cannot deliver the same task twice.
+            session.phase = "practice_task"
+            state["phase"] = "practice_task"
+            self.session_repo.save(session)
+            self.db.commit()
             attempt = await self._prepare_attempt_for_delivery(attempt)
             state["task_content"] = dict(attempt.task_content or {})
             state["task_type"] = self._task_type_for_attempt(attempt)
@@ -1972,6 +1998,34 @@ class LearningSessionService:
         async for msg in self._stream_followup_answer(session, state, raw_action):
             yield msg
 
+    async def _await_scorecard_while_completing(
+        self,
+        daily: DailySession,
+        *,
+        max_wait_s: float | None = None,
+        interval_s: float = 0.1,
+    ) -> SessionScorecard | None:
+        """Wait for an in-flight ``complete_session`` to commit.
+
+        The wait window covers the inline mentor-note budget plus a buffer so an
+        in-flight completion's scorecard (and the RAG widget that follows it) is
+        observed rather than skipped.
+        """
+        if max_wait_s is None:
+            max_wait_s = settings.RAG_MENTOR_NOTE_TIMEOUT_S + 7.0
+        elapsed = 0.0
+        while elapsed < max_wait_s:
+            self.db.expire(daily)
+            self.db.refresh(daily)
+            scorecard = ScorecardRepository(self.db).get_for_session(daily.id)
+            if scorecard is not None:
+                return scorecard
+            if daily.session_id not in _completing_daily_uuids:
+                return ScorecardRepository(self.db).get_for_session(daily.id)
+            await asyncio.sleep(interval_s)
+            elapsed += interval_s
+        return ScorecardRepository(self.db).get_for_session(daily.id)
+
     async def _complete_and_announce(
         self,
         session: LearningSession,
@@ -1985,13 +2039,36 @@ class LearningSessionService:
             attempts = self.attempts_repo.list_for_session(daily.id)
             evaluated = [a for a in attempts if a.status is AttemptStatus.EVALUATED]
             if evaluated:
-                try:
-                    v2_service = _make_v2_session_service(self.db)
-                    scorecard, _report = await v2_service.complete_session(
-                        session_id=daily.session_id, user_id=session.user_id,
-                    )
-                except (SessionNotFound, SessionAbandoned, SessionAlreadyCompleted):
-                    pass
+                existing_scorecard = ScorecardRepository(self.db).get_for_session(
+                    daily.id
+                )
+                if existing_scorecard is not None:
+                    scorecard = existing_scorecard
+                    self.db.refresh(daily)
+                elif daily.session_id in _completing_daily_uuids:
+                    scorecard = await self._await_scorecard_while_completing(daily)
+                elif daily.session_id not in _completing_daily_uuids:
+                    _completing_daily_uuids.add(daily.session_id)
+                    try:
+                        v2_service = _make_v2_session_service(self.db)
+                        scorecard, _report = await v2_service.complete_session(
+                            session_id=daily.session_id,
+                            user_id=session.user_id,
+                        )
+                        self.db.refresh(daily)
+                    except (SessionNotFound, SessionAbandoned, SessionAlreadyCompleted):
+                        pass
+                    except Exception:
+                        # Any other failure (DB/LLM/RAG) must not kill the WS
+                        # handler — the farewell still streams below so the chat
+                        # degrades gracefully instead of hanging.
+                        logger.warning(
+                            "complete_session failed for daily session_id=%s",
+                            daily.session_id,
+                            exc_info=True,
+                        )
+                    finally:
+                        _completing_daily_uuids.discard(daily.session_id)
         elif daily is not None and daily.status is SessionStatus.COMPLETED:
             try:
                 scorecard = _make_v2_session_service(self.db).get_scorecard(
@@ -2018,11 +2095,36 @@ class LearningSessionService:
                 scorecard_payload=scorecard_payload,
                 session_meta=session_meta,
             )
+
+            # Coach's Note: stream the scorecard instantly, then resolve the note
+            # in-band over the still-open WS. If it was already persisted (re-open
+            # / earlier generation), use it; otherwise generate it now under a
+            # ceiling. A "pending" placeholder is shown while we wait, then the
+            # terminal event carries the real note or an explicit unavailability.
+            mentor_note = scorecard_payload.get("mentor_note")
+            if not mentor_note:
+                rag_widget = final_widgets["rag_feedback_widget"]
+                yield self._event_orchestrator().rag_feedback_event(
+                    widget=rag_widget,
+                    feedback_payload={
+                        "mentor_note": None,
+                        "available": False,
+                        "pending": True,
+                        "source": "feedback_memory",
+                        "_session": session_meta,
+                    },
+                    session_meta=session_meta,
+                )
+                mentor_note = await self._resolve_mentor_note(
+                    daily_uuid=daily.session_id,
+                    user_id=session.user_id,
+                )
             yield self._event_orchestrator().rag_feedback_event(
                 widget=final_widgets["rag_feedback_widget"],
                 feedback_payload={
-                    "mentor_note": scorecard_payload.get("mentor_note"),
-                    "available": bool(scorecard_payload.get("mentor_note")),
+                    "mentor_note": mentor_note,
+                    "available": bool(mentor_note),
+                    "pending": False,
                     "source": "feedback_memory",
                     "_session": session_meta,
                 },
@@ -2050,6 +2152,37 @@ class LearningSessionService:
             farewell, actions=["Go to dashboard"],
         ):
             yield msg
+
+    async def _resolve_mentor_note(
+        self,
+        *,
+        daily_uuid: str,
+        user_id: int,
+    ) -> str | None:
+        """Generate the Coach's Note in-band, under a ceiling. Never raises.
+
+        Runs on a dedicated DB session (off the request session) and is
+        ``asyncio.shield``-ed so a timeout shows the user a fallback while the
+        worker keeps running and persists the note for later scorecard/dashboard
+        reads.
+        """
+        task: asyncio.Task[str | None] = asyncio.ensure_future(
+            generate_mentor_note_async(session_id=daily_uuid, user_id=user_id)
+        )
+        _pending_note_tasks.add(task)
+        task.add_done_callback(_pending_note_tasks.discard)
+        try:
+            return await asyncio.wait_for(
+                asyncio.shield(task),
+                timeout=settings.RAG_MENTOR_NOTE_TIMEOUT_S,
+            )
+        except Exception:
+            logger.warning(
+                "Coach's Note not ready in-band for session=%s; "
+                "background worker will persist it",
+                daily_uuid,
+            )
+            return None
 
     def _final_review_widgets(self, daily: DailySession) -> dict[str, str]:
         try:

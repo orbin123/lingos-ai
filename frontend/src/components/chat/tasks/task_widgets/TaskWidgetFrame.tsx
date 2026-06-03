@@ -455,6 +455,35 @@ export function normalizeAnswer(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
 
+/** Words that fill a blank directly — no base-verb hint should appear beside them. */
+const BLANK_HINT_WORDS = new Set([
+  "i", "me", "you", "he", "him", "she", "her", "it", "we", "us", "they", "them",
+  "mine", "yours", "his", "hers", "ours", "theirs",
+  "my", "your", "our", "their", "its",
+  "a", "an", "the", "this", "that", "these", "those",
+]);
+
+export function blankNeedsBaseVerbHint(item: {
+  baseVerb?: string;
+  correctAnswer?: string;
+}): boolean {
+  const baseVerb = item.baseVerb?.trim();
+  if (!baseVerb) return false;
+  const correct = normalizeAnswer(item.correctAnswer);
+  if (BLANK_HINT_WORDS.has(correct)) return false;
+  if (BLANK_HINT_WORDS.has(baseVerb.toLowerCase())) return false;
+  // Never let the hint spell out the answer.
+  if (normalizeAnswer(baseVerb) === correct) return false;
+  return true;
+}
+
+/** Remove inline `(hint)` groups that leaked into passage text after a blank. */
+export function stripLeadingParentheticalHints(text: string): string {
+  const withoutHints = text.replace(/^(\s*\([^)]+\))+/, "");
+  if (withoutHints === text) return text;
+  return withoutHints.replace(/^\s+/, "");
+}
+
 /** Remove `(baseVerb)` hints from passage text — the UI renders them from `baseVerb`. */
 export function stripInlineVerbHint(text: string, baseVerb?: string): string {
   if (!baseVerb?.trim()) return text;

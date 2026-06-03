@@ -83,7 +83,7 @@ _TASK_SPEC: dict[str, tuple[str, type[BaseModel]]] = {
     "WRITE_PARA": ("write_paragraph", OpenTextPayload),
     "WRITE_EMAIL": ("write_email", OpenTextPayload),
     "WRITE_WORD_UPGRADE": ("write_word_upgrade", OpenTextPayload),
-    "WRITE_PARAPHRASE": ("write_paraphrase", OpenTextPayload),
+    "WRITE_PARAPHRASE": ("write_paraphrase", ErrorCorrectionPayload),
     "WRITE_IDEA_PARA": ("write_paragraph", OpenTextPayload),
     "WRITE_TIMED": ("write_timed", OpenTextPayload),
     "WRITE_BULLETS_TO_PARA": ("write_bullets_to_para", OpenTextPayload),

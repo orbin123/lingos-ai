@@ -17,6 +17,18 @@ import json
 from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.scoring import ArchetypeSpec
 
+_FILL_BLANKS_OMIT_BASE_VERB_MARKERS = (
+    "omit base_verb",
+    "without base_verb",
+    "no base_verb",
+    "do not include base_verb",
+)
+
+
+def _fill_blanks_omit_base_verb(spec: dict) -> bool:
+    widget_req = str(spec.get("widget_requirements") or "").lower()
+    return any(marker in widget_req for marker in _FILL_BLANKS_OMIT_BASE_VERB_MARKERS)
+
 _OPEN_ENDED_FEEDBACK_WIDGETS = {
     "open_text",
     "timed_text",
@@ -86,9 +98,12 @@ Hard rules:
   - `target_words` (optional) lists 0–10 vocabulary items the activity
     centres on. Use for vocabulary-themed archetypes; leave empty otherwise.
   - For fill_in_blanks, include exactly 4 or 5 `items` (or `blanks`) with
-    sentence_with_blank, correct_answer, explanation, and optional
-    distractors/base_verb. Put `base_verb` only in each item — never
-    inline in the `passage` after a `___` blank (the UI shows it separately).
+    sentence_with_blank, correct_answer, and explanation. Include `base_verb`
+    only when the blank tests verb inflection (simple present -s, past tense,
+    etc.). For pronoun, article, or vocabulary blanks, omit `base_verb`.
+    Never put inline hints in parentheses after a `___` blank in the passage.
+    The `correct_answer` word must NEVER appear as plain text in `passage` or
+    `sentence_with_blank` — put a `___` blank where it belongs.
   - For mcq, include `items` with item_id, prompt, options, correct_index,
     and explanation.
   - For listen_and_respond, include `audio_script`, `audio_url: null`,
@@ -124,6 +139,23 @@ Hard rules:
   - For picture-description (speak_pic_desc), include `image_alt` (a vivid
     scene description for image generation — no text or labels in the image).
     Do NOT set `image_url`; the backend generates it from `image_alt`.
+  - For roleplay/smalltalk speaking (speak_roleplay, speak_smalltalk), include:
+      * `dialogue_context` — alternating partner and learner turns with
+        `role`, `text`, and `speaker` (`partner` or `learner`).
+      * Partner turns set the scene in 2-3 sentences; learner turns are
+        2-3 connected sentences (roughly 15-30 words), not one-liners.
+      * `speaking_prompts` — exactly one instruction telling the learner
+        what to say aloud.
+      * `sample_responses` — exactly one model answer matching the learner
+        dialogue turn text.
+      * `grammar_rule_to_practice`, `target_words`, and
+        `speaking_duration_seconds` (typically 45).
+  - For mini-interview speaking (speak_interview), include:
+      * `interview_context` — one or two sentences framing the interview.
+      * `questions` — exactly 3 objects, each with `item_id`,
+        `interviewer_prompt` (a short simple question), `sample_answer`
+        (one short full sentence), and `answer_hint` (a brief starter).
+      * Do NOT emit `speaking_prompts` or `dialogue_context`.
   - Include answer keys/sample answers inside the payload so the evaluator
     can score the response from this task alone.
 """
@@ -367,6 +399,7 @@ def build_feedback_user_prompt(
     user_response: dict | None,
     feedback_overrides: dict | None = None,
     confirmed_mistakes: list[dict] | None = None,
+    learner_history: str | None = None,
 ) -> str:
     widget_key = _widget_key(archetype.ui_widget)
     parts = [
@@ -409,6 +442,13 @@ def build_feedback_user_prompt(
             "",
             "Author feedback overrides:",
             json.dumps(feedback_overrides, ensure_ascii=False, indent=2),
+        ])
+    if learner_history:
+        parts.extend([
+            "",
+            "Learner history (advisory only — past activities by this learner; "
+            "use ONLY to phrase the tip, never to change the score):",
+            learner_history,
         ])
     parts.extend([
         "",
@@ -461,26 +501,92 @@ def build_task_gen_user_prompt(
     if widget_key == "fill_in_blanks":
         parts.extend([
             "FillInBlanks requirements:",
-            "- Create exactly 4 or 5 blanks that form a SHORT connected narrative about a routine or daily activity.",
+            "- Create exactly 4 or 5 blanks that form a SHORT connected narrative.",
             "- Base the story's topic and characters on the learner's interests listed above.",
             "  Example: learner loves football → write about a footballer's morning routine;",
             "  learner loves movies → write about a film director's day.",
             "  If no specific interests are given, use a relatable everyday routine.",
-            "- EVERY BlankItem MUST include `base_verb` (the bare infinitive, e.g. 'wake', 'prepare', 'eat').",
-            "- Do NOT repeat the base verb in the `passage` text after each `___` — the UI renders it from `base_verb`.",
-            "- Mix subjects deliberately: include at least one each of I / he or she / a proper name / they.",
-            "- `correct_answer` is the correctly inflected simple-present form (base verb or +s/+es).",
-            "- Include exactly 2 distractors per item (wrong inflections, e.g. 'wakes'/'waking' when correct is 'wake').",
+            "- Do NOT put inline hints in parentheses after `___` in the `passage`.",
+            "- Every `sentence_with_blank` and the `passage` MUST contain a `___`",
+            "  exactly where the `correct_answer` goes. NEVER write the",
+            "  `correct_answer` word into the passage or sentence — only `___`.",
             "- Items must read sequentially — together they tell one coherent story.",
         ])
+        if _fill_blanks_omit_base_verb(spec):
+            parts.extend([
+                "- These blanks are NOT verb inflection. Omit `base_verb` on every BlankItem.",
+                "- `correct_answer` is the word that belongs in the blank (for example a pronoun).",
+            ])
+        else:
+            parts.extend([
+                "- EVERY BlankItem MUST include `base_verb` (the bare infinitive, e.g. 'wake', 'prepare', 'eat').",
+                "- The UI renders `base_verb` beside each blank — do not repeat it in the passage.",
+                "- Mix subjects deliberately: include at least one each of I / he or she / a proper name / they.",
+                "- `correct_answer` is the correctly inflected simple-present form (base verb or +s/+es).",
+                "- Include exactly 2 distractors per item (wrong inflections, e.g. 'wakes'/'waking' when correct is 'wake').",
+            ])
     if widget_key == "listen_and_respond":
         parts.extend([
             "ListenAndRespond requirements:",
             "- `audio_script` must be a natural-sounding spoken passage (60-120 words) at the target CEFR level.",
             "- `inner_widget` must be 'mcq' unless widget_requirements specifies otherwise.",
-            "- For MCQ: `items` list with item_id (q1, q2…), prompt, options (list of 4 strings), correct_index (0-based int), explanation.",
-            "- For fill_in_blanks: include exactly 4 or 5 blanks — a `passage` with ___ markers (no inline verb hints) and `items` with item_id, sentence_with_blank, base_verb, correct_answer, grammar_rule, and explanation.",
+            "- For MCQ: `items` list with item_id (q1, q2…), prompt, options (list of 3-4 strings), correct_index (0-based int), explanation.",
+            "- For fill_in_blanks: include exactly 4 or 5 blanks — a `passage` with ___ markers (no inline verb hints) and `items` with item_id, sentence_with_blank, base_verb, correct_answer, grammar_rule, and explanation. The `passage` and every `sentence_with_blank` MUST use `___` where the `correct_answer` goes — never write the answer word as plain text.",
             "- Set `audio_url: null` — the backend synthesizes the audio from audio_script.",
+        ])
+    if archetype.archetype_id == "LISTEN_TONE":
+        parts.extend([
+            "ListenTone requirements:",
+            "- `inner_widget` must be 'mcq'.",
+            "- `audio_script`: a short spoken clip (20-40 seconds) that clearly conveys one emotional tone or register.",
+            "- Each MCQ item asks the learner to identify the speaker's tone from exactly 3 options (e.g. Formal / Casual / Urgent, or Angry / Calm / Excited).",
+            "- Provide 1-2 items. Each item: item_id (q1, q2), prompt (≤15 words), options (list of exactly 3 strings), correct_index (0-based int), explanation.",
+            "- Set `audio_url: null` — the backend synthesizes audio from `audio_script`.",
+        ])
+    if archetype.archetype_id in {"READ_COMP_MCQ", "READ_CONTEXT_MCQ", "READ_TONE_ID"}:
+        parts.extend([
+            "ReadingMCQ question-design rules:",
+            "- NEVER generate a direct lookup question whose answer is a single word or"
+            "  phrase copied verbatim from the passage (e.g. 'What is Alice's name?' is"
+            "  banned — the learner just copies 'Alice'). Every question MUST require"
+            "  inference, interpretation, or social reasoning.",
+            "- Target one of these thinking levels per question:",
+            "    * Conversation dynamics — what does the speaker do, in what order, and why?",
+            "      e.g. 'What does Alice do to start the conversation?' (introduce herself ✓",
+            "      vs. ask a question ✗)",
+            "    * Speaker intent / purpose — why does a speaker say something?",
+            "      e.g. 'Why does Bob ask where Alice lives?'",
+            "    * Emotional tone / attitude — how does a speaker feel or come across?",
+            "      e.g. 'How does Alice come across during the conversation?'",
+            "    * Implied meaning — what is NOT stated but can be inferred?",
+            "    * Appropriate next move — what would a speaker naturally say or do next?",
+            "- Distractors must be plausible but clearly wrong on reflection; avoid"
+            "  obviously absurd options.",
+            "- Keep questions short and learner-friendly (≤15 words in the prompt).",
+        ])
+    if archetype.archetype_id == "LISTEN_RETELL":
+        parts.extend([
+            "ListenRetell requirements:",
+            "- `inner_widget` must be 'speak_and_record' (not mcq).",
+            "- `audio_script`: a natural spoken monologue (about 30-45 seconds when read aloud) "
+            "at the target CEFR level.",
+            "- `speaking_prompts`: exactly ONE instruction (e.g. 'Retell what you heard in your own words.').",
+            "- `sample_responses`: exactly ONE model retell — main ideas in the learner's own words, "
+            "using the day's grammar focus.",
+            "- `passage_to_retell`: the same text as `sample_responses[0]` (reference retell shown after submit).",
+            "- Include `grammar_rule_to_practice` and 3-8 `target_words` from the audio.",
+            "- Set `audio_url: null` — the backend synthesizes audio from `audio_script`.",
+            "- Do NOT generate `items` or MCQ fields.",
+        ])
+    if archetype.archetype_id == "LISTEN_SHADOW":
+        parts.extend([
+            "ListenShadow requirements:",
+            "- `inner_widget` must be 'speak_and_record'.",
+            "- `audio_script`: one short spoken line or paragraph (about 15-30 seconds) to shadow.",
+            "- `text_to_shadow`: the exact line the learner repeats (usually matches `audio_script`).",
+            "- Include `grammar_rule_to_practice` and 3-6 `target_words`.",
+            "- Set `audio_url: null` — the backend synthesizes audio from `audio_script`.",
+            "- Do NOT generate `items` or MCQ fields.",
         ])
     if archetype.archetype_id == "LISTEN_DICTATION":
         parts.extend([
@@ -559,6 +665,36 @@ def build_task_gen_user_prompt(
             "- Set `instructions` to 'Read the connected passage aloud clearly.'",
             "- Set `speaking_duration_seconds` to 45.",
             "- Include `grammar_rule_to_practice` and 6-10 `target_words` from the passage.",
+        ])
+    if archetype.archetype_id in {"SPEAK_ROLEPLAY", "SPEAK_SMALLTALK"}:
+        parts.extend([
+            "Dialogue speaking requirements:",
+            "- REQUIRED: `dialogue_context` with 4-6 alternating partner/learner turns.",
+            "- Partner turns: 2-3 sentences that set the scene and ask a clear question.",
+            "- Learner turns: 2-3 connected sentences (about 15-30 words each). "
+            "Never use a single short clause like 'Yes, it is mine.'",
+            "- `speaking_prompts`: exactly ONE instruction for what to record.",
+            "- `sample_responses`: exactly ONE model answer — copy the main learner "
+            "turn text from `dialogue_context`.",
+            "- Include `grammar_rule_to_practice`, 3-6 `target_words`, and "
+            "`speaking_duration_seconds` (45 unless widget requirements say otherwise).",
+            "- Set `task_intro` to a short imperative (e.g. 'Act out your role in the conversation.').",
+        ])
+    if archetype.archetype_id == "SPEAK_INTERVIEW":
+        parts.extend([
+            "Mini-interview speaking requirements:",
+            "- REQUIRED: `interview_context` — one or two sentences setting up a "
+            "friendly mini interview the learner answers aloud.",
+            "- REQUIRED: `questions` — a list of exactly 3 questions. Each MUST include:",
+            "    * `item_id` (e.g. 'q1', 'q2', 'q3'),",
+            "    * `interviewer_prompt` — a short, simple question (≤12 words),",
+            "    * `sample_answer` — one short full-sentence model answer,",
+            "    * `answer_hint` — a brief hint such as a sentence starter.",
+            "- Do NOT emit `speaking_prompts` or `dialogue_context` for this task.",
+            "- Include `grammar_rule_to_practice`, 3-6 `target_words`, and "
+            "`speaking_duration_seconds` (30 unless widget requirements say otherwise).",
+            "- Set `task_intro` to a short imperative (e.g. 'Answer the interview "
+            "questions out loud.').",
         ])
     parts.extend([
         f"Generate one {archetype.core_activity} task on this topic at the "

@@ -105,6 +105,7 @@ class LLMFeedbackGenerator:
         user_response: dict | None,
         task_content: dict | None = None,
         feedback_overrides: dict | None = None,
+        learner_history: str | None = None,
     ) -> FeedbackResult:
         rounded = int(round(evaluation.raw_score))
         if user_response is None:
@@ -152,6 +153,7 @@ class LLMFeedbackGenerator:
                     user_response=user_response,
                     feedback_overrides=feedback_overrides,
                     confirmed_mistakes=confirmed_mistakes,
+                    learner_history=learner_history,
                 ),
                 output_model=FeedbackOutput,
                 temperature=self.temperature,

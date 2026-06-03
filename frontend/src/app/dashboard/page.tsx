@@ -408,6 +408,10 @@ function EnrolledView({
   userName,
 }: EnrolledViewProps) {
   const totalWeeks = preference.course_length === "48w" ? 48 : 24;
+  // Days completed before today in the current week (1-based: day 1 = 0 done).
+  const daysCompletedThisWeek = preference.current_day_in_week - 1;
+  const weeklyGoalPct = Math.round((daysCompletedThisWeek / 7) * 100);
+  const daysRemainingThisWeek = 7 - daysCompletedThisWeek;
   return (
     <div
       style={{
@@ -580,12 +584,12 @@ function EnrolledView({
                 zIndex: 1,
               }}
             >
-              <GoalRing pct={42} />
+              <GoalRing pct={weeklyGoalPct} />
               <div style={{ fontSize: 13, lineHeight: 1.5, color: "white" }}>
                 <div>
-                  <strong style={{ fontSize: 16, fontWeight: 800 }}>3</strong> of 7 sessions
+                  <strong style={{ fontSize: 16, fontWeight: 800 }}>{daysCompletedThisWeek}</strong> of 7 sessions
                 </div>
-                <div style={{ opacity: 0.85 }}>4 more this week</div>
+                <div style={{ opacity: 0.85 }}>{daysRemainingThisWeek} more this week</div>
               </div>
             </div>
           </div>

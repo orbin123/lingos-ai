@@ -8,12 +8,13 @@ import { spatialFieldProps } from "@/lib/spatial-field-navigation";
 import {
   FeedbackRow,
   ListeningAudioCard,
+  blankNeedsBaseVerbHint,
   liveStringRecord,
   normalizeAnswer,
   ResultBanner,
   RuleCallout,
   StatusDot,
-  stripInlineVerbHint,
+  stripLeadingParentheticalHints,
   SubmitButton,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
@@ -76,9 +77,7 @@ export function ListenClozeTaskWidget({
             ? parts.map((part, index) => {
                 const item = task.items[index];
                 const displayPart =
-                  index > 0 && task.items[index - 1]?.baseVerb
-                    ? stripInlineVerbHint(part, task.items[index - 1].baseVerb)
-                    : part;
+                  index > 0 ? stripLeadingParentheticalHints(part) : part;
                 return (
                   <span key={`listen-part-${index}`}>
                     {displayPart}
@@ -103,7 +102,7 @@ export function ListenClozeTaskWidget({
                   <div key={item.itemId} style={{ marginBottom: 6 }}>
                     {segments.map((segment, segIndex) => {
                       const displaySegment =
-                        segIndex > 0 ? stripInlineVerbHint(segment, item.baseVerb) : segment;
+                        segIndex > 0 ? stripLeadingParentheticalHints(segment) : segment;
                       return (
                       <span key={`${item.itemId}-seg-${segIndex}`}>
                         {displaySegment}
@@ -204,7 +203,7 @@ function InlineListenBlank({
           style={{ width: "clamp(96px, 18vw, 160px)", textAlign: "left" }}
           {...spatialFieldProps(index)}
         />
-        {item.baseVerb && (
+        {blankNeedsBaseVerbHint(item) && (
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tw-primary)", fontStyle: "italic" }}>
             ({item.baseVerb})
           </span>
@@ -241,7 +240,7 @@ function InlineListenBlank({
         >
           answer
         </span>
-        {item.baseVerb && (
+        {blankNeedsBaseVerbHint(item) && (
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tw-primary)", fontStyle: "italic" }}>
             ({item.baseVerb})
           </span>

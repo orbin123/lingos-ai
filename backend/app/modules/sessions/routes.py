@@ -5,11 +5,13 @@ All endpoints require auth (the caller's `user_id` is taken from the JWT).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.ai.pronunciation import (
     PronunciationError,
     PronunciationResult,
@@ -691,6 +693,24 @@ async def complete_session(
             "session %s completed: %s",
             session_id, {"applied": report.applied, "reason": report.reason},
         )
+        # Generate + persist the Coach's Note before responding so the scorecard
+        # is returned with mentor_note populated (no client re-fetch needed).
+        # Idempotent and never raises; bounded by RAG_MENTOR_NOTE_TIMEOUT_S.
+        try:
+            note = await asyncio.wait_for(
+                service.ensure_mentor_note(
+                    session_id=session_id, user_id=current_user.id
+                ),
+                timeout=settings.RAG_MENTOR_NOTE_TIMEOUT_S,
+            )
+            if note:
+                scorecard.mentor_note = note
+        except (asyncio.TimeoutError, Exception):
+            logger.warning(
+                "mentor note not ready inline for session %s; "
+                "scorecard returned without it",
+                session_id,
+            )
         return _serialize_scorecard(session_id, scorecard, db=db)
     except SessionNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

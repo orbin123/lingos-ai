@@ -507,9 +507,9 @@ function adaptWriteBulletsToPara(payload: AnyTaskPayload): WriteBulletsToParaTas
 function adaptWriteParaphrase(payload: AnyTaskPayload): WriteParaphraseTask {
   const items = arrayValue(payload.items).map((raw, index) => ({
     itemId: textValue(raw.item_id) || `item_${index + 1}`,
-    incorrectSentence: textValue(raw.prompt) || textValue(raw.source_sentence),
+    incorrectSentence: textValue(raw.incorrect_sentence) || textValue(raw.prompt) || textValue(raw.source_sentence),
     sampleAnswer: textValue(raw.sample_answer),
-    watchHints: stringArray(raw.answer_hints),
+    watchHints: firstStringArray(raw.watch_hints, raw.answer_hints),
   }));
   return {
     ...baseFields(payload),
@@ -667,7 +667,25 @@ function adaptSpeakDebate(payload: AnyTaskPayload): SpeakDebateTask {
   };
 }
 
+/** Reference retell shown as "Model response" after submit (mirrors backend contract fields). */
+export function resolveListenRetellModelAnswer(payload: AnyTaskPayload): string {
+  const audioScript = textValue(payload.audio_script);
+  const samples = firstStringArray(payload.sample_responses, payload.sample_answers);
+  const fallbackSample = textValue(payload.sample_response);
+  const allSamples = samples.length > 0 ? samples : fallbackSample ? [fallbackSample] : [];
+  const passage = textValue(payload.passage_to_retell);
+  const readAloud = textValue(payload.text_to_read_aloud);
+  const distinctReadAloud =
+    readAloud && readAloud !== audioScript ? readAloud : "";
+  return passage || allSamples[0] || distinctReadAloud || "";
+}
+
 function adaptListenRetell(payload: AnyTaskPayload): ListenRetellTask {
+  const modelAnswer = resolveListenRetellModelAnswer(payload);
+  const fallbackPrompt = textValue(payload.speaking_prompt) || textValue(payload.prompt);
+  const prompts = speakingPrompts(payload);
+  const allPrompts =
+    prompts.length > 0 ? prompts : fallbackPrompt ? [fallbackPrompt] : [];
   return {
     ...baseFields(payload),
     widget: "listen_retell",
@@ -678,9 +696,9 @@ function adaptListenRetell(payload: AnyTaskPayload): ListenRetellTask {
     audioDurationSeconds: numberValue(payload.audio_duration_seconds),
     grammarRule: grammarRule(payload),
     targetWords: stringArray(payload.target_words),
-    passageToRetell: textValue(payload.passage_to_retell),
-    prompts: speakingPrompts(payload),
-    sampleResponses: speakingSamples(payload),
+    passageToRetell: modelAnswer,
+    prompts: allPrompts,
+    sampleResponses: modelAnswer ? [modelAnswer] : speakingSamples(payload),
     answers: { correct: [], wrong: [] },
   };
 }

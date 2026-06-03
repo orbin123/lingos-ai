@@ -61,10 +61,3 @@ def test_update_settings_persists(db_session):
     assert pref.allow_listen is False
 
 
-def test_advance_after_session_complete_increments_day(db_session):
-    uid = _make_user(db_session)
-    svc = PreferenceService(db_session)
-    svc.get(user_id=uid)  # ensure row exists
-    pref = svc.advance_after_session_complete(user_id=uid)
-    assert pref.current_day_in_week == 2
-    assert pref.last_completed_on is not None

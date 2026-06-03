@@ -8,13 +8,23 @@ import { AxiosError } from "axios";
 import type { UserCoursePreferenceRead } from "@/lib/preferences-api";
 import { getApiErrorMessage } from "@/lib/errors";
 import { useTodaySessionPlan, useStartLearningSession } from "@/hooks/useSessionsFlow";
-import { sessionsApi, type DashboardPlanActivity } from "@/lib/sessions-api";
+import {
+  sessionsApi,
+  type DashboardPlanActivity,
+  type DashboardTodayPlanResponse,
+} from "@/lib/sessions-api";
 
 interface DailyTaskPanelProps {
   preference: UserCoursePreferenceRead;
 }
 
-function activitiesPerDay(preference: UserCoursePreferenceRead) {
+function activityCount(
+  preference: UserCoursePreferenceRead,
+  plan: DashboardTodayPlanResponse | undefined,
+): number {
+  if (plan?.activities.length) {
+    return plan.activities.length;
+  }
   return Math.max(2, Math.min(4, preference.tasks_per_day));
 }
 
@@ -77,6 +87,12 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
     },
   });
 
+  const weekOverride = searchParams.get("week") ? Number(searchParams.get("week")) : null;
+  const dayOverride = searchParams.get("day") ? Number(searchParams.get("day")) : null;
+  const isInOverrideMode =
+    (weekOverride !== null && weekOverride !== preference.current_week) ||
+    (dayOverride !== null && dayOverride !== preference.current_day_in_week);
+
   const handleStart = useCallback(async () => {
     const week = Number(searchParams.get("week") || preference.current_week || 1);
     const day = Number(searchParams.get("day") || preference.current_day_in_week || 1);
@@ -105,6 +121,25 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
     >
       <PanelHeader preference={preference} />
 
+      {isInOverrideMode && (
+        <div
+          style={{
+            marginBottom: 12,
+            padding: "8px 12px",
+            borderRadius: 10,
+            background: "oklch(96% 0.06 60)",
+            border: "1px solid oklch(80% 0.12 60)",
+            fontSize: 12.5,
+            color: "oklch(40% 0.14 60)",
+            fontWeight: 600,
+          }}
+        >
+          Previewing Week {weekOverride ?? preference.current_week}, Day{" "}
+          {dayOverride ?? preference.current_day_in_week} — not your current lesson.
+          Completing this session will not advance your progress.
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <Tag bg="#d6e8f7" color="#00599e">
           Day {preference.current_day_in_week}
@@ -113,7 +148,7 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
           Week {preference.current_week}
         </Tag>
         <Tag bg="oklch(96% 0.04 60)" color="oklch(45% 0.14 60)">
-          {activitiesPerDay(preference)} activities
+          {activityCount(preference, plan)} activities
         </Tag>
       </div>
 
@@ -471,7 +506,7 @@ function CompletedDayBlock({
   error: Error | null;
   onAdvance: () => void;
 }) {
-  const advanceLabel = isLastDayOfWeek ? "Advance to next week" : "Advance to next day";
+  const advanceLabel = isLastDayOfWeek ? `Advance to Week ${week + 1}` : "Advance to next day";
 
   return (
     <div

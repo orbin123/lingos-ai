@@ -11,7 +11,12 @@ import asyncio
 import logging
 from typing import Any
 
-from app.ai.embeddings.client import pinecone_query, pinecone_upsert
+from app.ai.embeddings.client import (
+    pinecone_delete,
+    pinecone_query,
+    pinecone_upsert,
+)
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +44,15 @@ class EmbeddingService:
 
         Caller decides whether to block, retry, or log on these errors.
         """
-        await asyncio.to_thread(
-            pinecone_upsert,
-            vector_id=vector_id,
-            values=values,
-            metadata=metadata,
-            namespace=namespace,
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                pinecone_upsert,
+                vector_id=vector_id,
+                values=values,
+                metadata=metadata,
+                namespace=namespace,
+            ),
+            timeout=settings.PINECONE_OPERATION_TIMEOUT_S,
         )
 
         logger.info("Upserted vector_id=%s namespace=%s", vector_id, namespace)
@@ -65,15 +73,43 @@ class EmbeddingService:
         Raises:
           PineconeQueryFailed -- Pinecone rejected the query
         """
-        matches = await asyncio.to_thread(
-            pinecone_query,
-            values=values,
-            top_k=top_k,
-            filter=filter,
-            namespace=namespace,
+        matches = await asyncio.wait_for(
+            asyncio.to_thread(
+                pinecone_query,
+                values=values,
+                top_k=top_k,
+                filter=filter,
+                namespace=namespace,
+            ),
+            timeout=settings.PINECONE_OPERATION_TIMEOUT_S,
         )
         logger.info(
             "Queried namespace=%s top_k=%d returned=%d",
             namespace, top_k, len(matches),
         )
         return matches
+
+    async def delete(
+        self,
+        *,
+        vector_ids: list[str],
+        namespace: str = "",
+    ) -> None:
+        """Delete vectors by id. No-op when ``vector_ids`` is empty.
+
+        Raises:
+          PineconeDeleteFailed -- Pinecone rejected the delete
+        """
+        if not vector_ids:
+            return
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                pinecone_delete,
+                vector_ids=vector_ids,
+                namespace=namespace,
+            ),
+            timeout=settings.PINECONE_OPERATION_TIMEOUT_S,
+        )
+        logger.info(
+            "Deleted %d vector(s) namespace=%s", len(vector_ids), namespace,
+        )

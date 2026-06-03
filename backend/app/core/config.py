@@ -108,6 +108,25 @@ class Settings(BaseSettings):
     # RAG / Embeddings
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_EMBEDDING_DIMENSIONS: int = 1024
+    # A normalized mistake must appear in at least this many of the learner's
+    # past activities to count as a "recurring pattern" in the Coach's Note.
+    RAG_RECURRENCE_MIN_COUNT: int = 2
+    # Phase 2: make per-activity feedback memory-aware (advisory only, never
+    # changes scoring). Off by default — keeps current behavior unchanged.
+    RAG_PER_ACTIVITY_FEEDBACK: bool = False
+    # Kept short so RAG retrieval fails fast and degrades gracefully: when a
+    # vector call is slow, retrieve_context_for_feedback drops the Pinecone
+    # context and the Coach's Note is still generated from Postgres-only data.
+    OPENAI_EMBEDDING_TIMEOUT_S: float = 8.0
+    PINECONE_OPERATION_TIMEOUT_S: float = 8.0
+    # Whole-operation ceiling for the Coach's Note. The completion path streams
+    # the scorecard immediately, shows a "generating…" placeholder, then awaits
+    # ensure_mentor_note up to this long before showing a fallback. It must
+    # comfortably cover embedding + Pinecone retrieval + the LLM generation.
+    RAG_MENTOR_NOTE_TIMEOUT_S: float = 30.0
+    # Cap on the (flagged) per-activity memory retrieval so enabling
+    # RAG_PER_ACTIVITY_FEEDBACK can never add tens of seconds to a submit.
+    RAG_PER_ACTIVITY_TIMEOUT_S: float = 5.0
 
     # Find and read .env file
     model_config = SettingsConfigDict(

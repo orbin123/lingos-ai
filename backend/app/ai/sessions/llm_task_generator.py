@@ -34,15 +34,22 @@ from app.modules.sessions.task_generator import (
     is_valid_open_text_payload,
     is_valid_speak_and_record_payload,
     is_valid_error_correction_payload,
+    is_valid_dialogue_speaking_payload,
+    is_valid_interview_speaking_payload,
+    normalize_interview_speaking_payload,
     normalize_error_spotting_payload,
     normalize_fill_in_blanks_payload,
     normalize_listen_and_respond_payload,
+    normalize_listen_retell_payload,
     normalize_open_text_payload,
     normalize_speak_and_record_payload,
     normalize_speak_pic_desc_payload,
+    normalize_dialogue_speaking_payload,
     normalize_error_correction_payload,
     normalize_read_aloud_payload,
     is_valid_read_aloud_payload,
+    normalize_read_structure_payload,
+    is_valid_read_structure_payload,
     normalize_sentence_transform_payload,
     is_valid_sentence_transform_payload,
 )
@@ -102,6 +109,27 @@ class TaskGenItem(BaseModel):
     watch_hints: list[str] | None = None
 
 
+class TaskGenDialogueTurn(BaseModel):
+    """One turn in a roleplay/smalltalk dialogue."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: str
+    text: str
+    speaker: Literal["partner", "learner"]
+
+
+class TaskGenInterviewQuestion(BaseModel):
+    """One question in a mini-interview speaking task (SPEAK_INTERVIEW)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str | None = None
+    interviewer_prompt: str
+    sample_answer: str = ""
+    answer_hint: str = ""
+
+
 class TaskGenOutput(BaseModel):
     """LLM-side schema for one generated task."""
 
@@ -131,7 +159,12 @@ class TaskGenOutput(BaseModel):
     speaking_prompts: list[str] = Field(default_factory=list)
     sample_response: str | None = None
     sample_responses: list[str] = Field(default_factory=list)
+    passage_to_retell: str | None = None
+    text_to_shadow: str | None = None
     image_alt: str | None = None
+    dialogue_context: list[TaskGenDialogueTurn] = Field(default_factory=list)
+    interview_context: str | None = None
+    questions: list[TaskGenInterviewQuestion] = Field(default_factory=list)
 
 
 class ErrorCorrectionItem(BaseModel):
@@ -449,11 +482,23 @@ class LLMTaskGenerator:
                 content=content,
                 archetype=archetype,
             )
+        elif self._is_dialogue_speaking_task(archetype):
+            content = normalize_dialogue_speaking_payload(content)
+            if not is_valid_dialogue_speaking_payload(content):
+                raise _TaskContentInvalid(
+                    f"dialogue-speaking payload failed validation for {archetype.archetype_id}"
+                )
         elif self._is_speak_and_record_task(archetype):
             content = normalize_speak_and_record_payload(content)
             if not is_valid_speak_and_record_payload(content):
                 raise _TaskContentInvalid(
                     f"speak-and-record payload failed validation for {archetype.archetype_id}"
+                )
+        elif self._is_interview_task(archetype):
+            content = normalize_interview_speaking_payload(content)
+            if not is_valid_interview_speaking_payload(content):
+                raise _TaskContentInvalid(
+                    f"interview-speaking payload failed validation for {archetype.archetype_id}"
                 )
         if archetype.ui_widget == "ErrorCorrection":
             content = normalize_error_correction_payload(content)
@@ -473,8 +518,17 @@ class LLMTaskGenerator:
                 raise _TaskContentInvalid(
                     f"error-spotting payload failed validation for {archetype.archetype_id}"
                 )
+        elif self._is_read_structure_task(archetype):
+            content = normalize_read_structure_payload(content)
+            if not is_valid_read_structure_payload(content):
+                raise _TaskContentInvalid(
+                    f"read-structure payload failed validation for {archetype.archetype_id}"
+                )
         elif self._is_listening_task(archetype):
-            content = normalize_listen_and_respond_payload(content)
+            if archetype.archetype_id in {"LISTEN_RETELL", "LISTEN_SHADOW"}:
+                content = normalize_listen_retell_payload(content)
+            else:
+                content = normalize_listen_and_respond_payload(content)
             if not is_valid_listening_payload(content):
                 raise _TaskContentInvalid(
                     f"listening payload failed validation for {archetype.archetype_id}"
@@ -599,8 +653,16 @@ class LLMTaskGenerator:
         return archetype.archetype_id == "SPEAK_PIC_DESC"
 
     @staticmethod
+    def _is_dialogue_speaking_task(archetype: ArchetypeSpec) -> bool:
+        return archetype.archetype_id in {"SPEAK_ROLEPLAY", "SPEAK_SMALLTALK"}
+
+    @staticmethod
     def _is_speak_and_record_task(archetype: ArchetypeSpec) -> bool:
         return archetype.archetype_id == "SPEAK_TIMED"
+
+    @staticmethod
+    def _is_interview_task(archetype: ArchetypeSpec) -> bool:
+        return archetype.archetype_id == "SPEAK_INTERVIEW"
 
     async def _attach_required_image(
         self,
@@ -647,3 +709,7 @@ class LLMTaskGenerator:
             archetype.archetype_id == "READ_ERROR_SPOT"
             or archetype.ui_widget == "ErrorSpotting"
         )
+
+    @staticmethod
+    def _is_read_structure_task(archetype: ArchetypeSpec) -> bool:
+        return archetype.archetype_id == "READ_STRUCTURE_ID"

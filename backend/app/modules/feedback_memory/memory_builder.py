@@ -64,6 +64,12 @@ def build_activity_memory(
     if next_tip:
         parts.append(f"Tip: {next_tip}")
 
+    # Summary — the evaluator's free-text gloss. Included so the day-level
+    # note (and per-activity retrieval) has the full narrative, not just the
+    # structured mistake list.
+    if summary:
+        parts.append(f"Summary: {summary.strip()}")
+
     return "\n".join(parts)
 
 

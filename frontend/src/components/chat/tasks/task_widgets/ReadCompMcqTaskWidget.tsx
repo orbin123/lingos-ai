@@ -12,6 +12,7 @@ import {
   SubmitButton,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
+import { PassageBlock } from "./PassageBlock";
 
 export function ReadCompMcqTaskWidget({
   task,
@@ -41,10 +42,7 @@ export function ReadCompMcqTaskWidget({
   return (
     <TaskWidgetFrame task={task} icon={<FileText size={18} strokeWidth={2.5} />}>
       <RuleCallout label="Reading focus">{task.grammarRule}</RuleCallout>
-      <div className="tw-passage">
-        <div className="tw-passage-label">{task.passageTitle}</div>
-        {task.passage}
-      </div>
+      <PassageBlock title={task.passageTitle}>{task.passage}</PassageBlock>
 
       {showResults && !live?.submitted && (
         <ResultBanner

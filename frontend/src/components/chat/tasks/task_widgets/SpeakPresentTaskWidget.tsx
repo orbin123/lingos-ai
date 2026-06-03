@@ -32,6 +32,9 @@ export function SpeakPresentTaskWidget({
                   className="tw-card"
                   style={{ background: "oklch(98% 0.01 245)", marginBottom: 12 }}
                 >
+                  <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", color: "oklch(50% 0.1 240)", marginBottom: 6 }}>
+                    Sample answer
+                  </div>
                   {task.visualPromptDescription}
                 </div>
               ) : undefined,

@@ -417,6 +417,37 @@ def test_speak_pic_desc_maps_image_fields() -> None:
     assert model.prompts == ("Describe the cat using 'a' or 'the'.",)
 
 
+def test_speak_interview_projects_questions_and_context() -> None:
+    content = {
+        "instructions": "Answer the interview questions aloud.",
+        "interview_context": "A friendly mini interview about yourself.",
+        "questions": [
+            {
+                "interviewer_prompt": "What is your name?",
+                "sample_answer": "My name is Sam.",
+                "answer_hint": "Use 'My name is'.",
+            },
+            {
+                "prompt": "What do you do?",
+                "sample_answer": "I'm a teacher.",
+            },
+        ],
+        "speaking_duration_seconds": 30,
+    }
+    payload = project_task_payload("SPEAK_INTERVIEW", content, activity_id="a", sequence=1)
+    model = SpeakingPayload.model_validate(payload)
+    assert model.task_widget == "speak_interview"
+    assert model.interview_context == "A friendly mini interview about yourself."
+    assert len(model.questions) == 2
+    assert model.questions[0].item_id == "item_1"
+    assert model.questions[0].interviewer_prompt == "What is your name?"
+    assert model.questions[0].sample_answer == "My name is Sam."
+    assert model.questions[0].answer_hint == "Use 'My name is'."
+    # Falls back from `prompt` alias and synthesizes item_id.
+    assert model.questions[1].item_id == "item_2"
+    assert model.questions[1].interviewer_prompt == "What do you do?"
+
+
 def test_every_contract_archetype_has_a_task_builder() -> None:
     """Each registered archetype's payload model must have a projection builder
     so promoting it to the contract path can never hit the 'no builder' guard."""

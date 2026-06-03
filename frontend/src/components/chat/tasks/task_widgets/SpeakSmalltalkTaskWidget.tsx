@@ -3,7 +3,7 @@
 import { Mic2, MessageSquare, Sparkles } from "lucide-react";
 import type { SessionPreviewState } from "../../teaching/source";
 import type { LiveTaskController, SpeakSmalltalkTask } from "../source";
-import { DialogueContextBlock, LiveSpeakingRecorder } from "./LiveSpeakingRecorder";
+import { InlineDialogueRecorder, type SpeakingSlot } from "./LiveSpeakingRecorder";
 import {
   ResultBanner,
   RuleCallout,
@@ -21,20 +21,21 @@ export function SpeakSmalltalkTaskWidget({
   live?: LiveTaskController;
 }) {
   if (live) {
+    const slots: SpeakingSlot[] = task.dialogueContext
+      .filter((t) => t.speaker === "learner")
+      .map((t, idx) => ({
+        id: `prompt_${idx + 1}`,
+        prompt: task.prompts?.[idx] ?? "Respond to your partner out loud.",
+        sampleResponse: task.sampleResponses?.[idx] ?? t.text ?? "",
+      }));
     return (
       <TaskWidgetFrame task={task} icon={<MessageSquare size={18} strokeWidth={2.5} />}>
         <RuleCallout label="Speaking Focus">{task.grammarRule}</RuleCallout>
-        <LiveSpeakingRecorder
+        <InlineDialogueRecorder
+          dialogueContext={task.dialogueContext}
+          slots={slots}
           live={live}
           durationSeconds={task.speakingDurationSeconds}
-          slots={[
-            {
-              id: "prompt_1",
-              prompt: task.prompts?.[0] || "Play your part in this small-talk exchange out loud.",
-              sampleResponse: task.sampleResponses?.[0] || "",
-              context: <DialogueContextBlock turns={task.dialogueContext} />,
-            },
-          ]}
         />
       </TaskWidgetFrame>
     );

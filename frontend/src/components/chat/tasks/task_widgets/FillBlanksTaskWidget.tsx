@@ -6,12 +6,13 @@ import type { FillBlanksTask, LiveTaskController } from "../source";
 import { spatialFieldProps } from "@/lib/spatial-field-navigation";
 import {
   FeedbackRow,
+  blankNeedsBaseVerbHint,
   liveStringRecord,
   normalizeAnswer,
   ResultBanner,
   RuleCallout,
   StatusDot,
-  stripInlineVerbHint,
+  stripLeadingParentheticalHints,
   SubmitButton,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
@@ -71,9 +72,7 @@ export function FillBlanksTaskWidget({
           ? parts.map((part, index) => {
               const item = task.items[index];
               const displayPart =
-                index > 0 && task.items[index - 1]?.baseVerb
-                  ? stripInlineVerbHint(part, task.items[index - 1].baseVerb)
-                  : part;
+                index > 0 ? stripLeadingParentheticalHints(part) : part;
               return (
                 <span key={`part-${index}`}>
                   {displayPart}
@@ -98,7 +97,7 @@ export function FillBlanksTaskWidget({
                 <div key={item.itemId} style={{ marginBottom: 6 }}>
                   {segments.map((segment, segIndex) => {
                     const displaySegment =
-                      segIndex > 0 ? stripInlineVerbHint(segment, item.baseVerb) : segment;
+                      segIndex > 0 ? stripLeadingParentheticalHints(segment) : segment;
                     return (
                     <span key={`${item.itemId}-seg-${segIndex}`}>
                       {displaySegment}
@@ -200,7 +199,7 @@ function InlineBlank({
           style={{ width: "clamp(96px, 18vw, 160px)", textAlign: "left" }}
           {...spatialFieldProps(index)}
         />
-        {item.baseVerb && (
+        {blankNeedsBaseVerbHint(item) && (
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tw-primary)", fontStyle: "italic" }}>
             ({item.baseVerb})
           </span>
@@ -237,7 +236,7 @@ function InlineBlank({
         >
           answer
         </span>
-        {item.baseVerb && (
+        {blankNeedsBaseVerbHint(item) && (
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--tw-primary)", fontStyle: "italic" }}>
             ({item.baseVerb})
           </span>

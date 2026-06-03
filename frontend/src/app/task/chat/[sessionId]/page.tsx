@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
+  ChevronRight,
   FileText,
   LayoutDashboard,
   MessageCircle,
@@ -61,7 +62,6 @@ import {
   ChatTopbar,
   LessonMetaCard,
   SectionMarker,
-  roundIconButton,
 } from "@/components/chat/ChatChrome";
 
 /* ── Score / Feedback payloads (rendered by chat session, not by widgets) ── */
@@ -135,6 +135,7 @@ interface FinalScorecardPayload {
 interface RagFeedbackPayload {
   mentor_note?: string | null;
   available?: boolean;
+  pending?: boolean;
 }
 
 interface FeedbackError {
@@ -372,7 +373,12 @@ function Topbar({
 }) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [restartSubmenuOpen, setRestartSubmenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) setRestartSubmenuOpen(false);
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -382,7 +388,13 @@ function Topbar({
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
+      if (event.key === "Escape") {
+        if (restartSubmenuOpen) {
+          setRestartSubmenuOpen(false);
+        } else {
+          setMenuOpen(false);
+        }
+      }
     };
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
@@ -390,7 +402,7 @@ function Topbar({
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [menuOpen]);
+  }, [menuOpen, restartSubmenuOpen]);
 
   const goToDashboard = () => {
     setMenuOpen(false);
@@ -407,6 +419,8 @@ function Topbar({
     onRestartActivity();
   };
 
+  const restartBusy = restarting || restartingActivity;
+
   const menuItemStyle = (disabled: boolean): React.CSSProperties => ({
     width: "100%",
     display: "flex",
@@ -414,8 +428,6 @@ function Topbar({
     gap: 10,
     padding: "10px 11px",
     borderRadius: 10,
-    border: "none",
-    background: "transparent",
     color: "oklch(28% 0.08 245)",
     fontSize: 13,
     fontWeight: 700,
@@ -425,20 +437,62 @@ function Topbar({
     textAlign: "left",
   });
 
+  const submenuItemStyle = (disabled: boolean): React.CSSProperties => ({
+    ...menuItemStyle(disabled),
+    fontWeight: 600,
+    fontSize: 12.5,
+    whiteSpace: "nowrap",
+  });
+
+  const flyoutStyle: React.CSSProperties = {
+    position: "absolute",
+    left: "calc(100% + 6px)",
+    top: 0,
+    minWidth: 210,
+    padding: 6,
+    borderRadius: 14,
+    background: "white",
+    border: "1px solid oklch(85% 0.025 240)",
+    boxShadow: "0 14px 34px rgba(35,55,100,0.18)",
+    zIndex: 1,
+  };
+
   return (
     <ChatTopbar
       subtitle="Chat session"
       onBack={() => router.push("/dashboard")}
       actions={
-        <div ref={menuRef} style={{ position: "relative" }}>
+        <div ref={menuRef} style={{ position: "relative", overflow: "visible" }}>
+          <style>{`
+            .session-menu-option {
+              border: none;
+              background: transparent;
+              transition: background 0.12s ease;
+            }
+            .session-menu-option:not(:disabled):hover {
+              background: oklch(93% 0.03 240);
+            }
+            .session-menu-restart-row:not([data-busy="true"]) {
+              transition: background 0.12s ease;
+            }
+            .session-menu-restart-row:not([data-busy="true"]):hover {
+              background: oklch(93% 0.03 240);
+            }
+            .session-menu-restart-row[data-open="true"]:not([data-busy="true"]) {
+              background: oklch(96% 0.02 240);
+            }
+            .session-menu-restart-row[data-open="true"]:not([data-busy="true"]):hover {
+              background: oklch(91% 0.035 240);
+            }
+          `}</style>
           <button
             type="button"
+            className="chat-round-icon-btn"
             aria-label="Session options"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen((open) => !open)}
             style={{
-              ...roundIconButton,
               cursor: "pointer",
             }}
           >
@@ -459,30 +513,86 @@ function Topbar({
                 background: "white",
                 border: "1px solid oklch(85% 0.025 240)",
                 boxShadow: "0 14px 34px rgba(35,55,100,0.18)",
+                overflow: "visible",
               }}
             >
-              {canRestartActivity && (
-                <button
-                  role="menuitem"
-                  disabled={restartingActivity}
-                  onClick={restartActivity}
-                  style={menuItemStyle(restartingActivity)}
+              <div style={{ position: "relative", overflow: "visible" }}>
+                <div
+                  className="session-menu-restart-row"
+                  data-busy={restartBusy ? "true" : "false"}
+                  data-open={restartSubmenuOpen ? "true" : "false"}
+                  style={{
+                    display: "flex",
+                    alignItems: "stretch",
+                    borderRadius: 10,
+                  }}
                 >
-                  <RotateCcw size={15} />
-                  {restartingActivity ? "Restarting..." : "Restart current activity"}
-                </button>
-              )}
+                  <div
+                    role="menuitem"
+                    aria-disabled={restartBusy}
+                    style={{
+                      ...menuItemStyle(restartBusy),
+                      flex: 1,
+                      cursor: restartBusy ? "not-allowed" : "default",
+                    }}
+                  >
+                    <RotateCcw size={15} />
+                    {restartBusy ? "Restarting..." : "Restart"}
+                  </div>
+                  {!restartBusy && (
+                    <button
+                      type="button"
+                      className="session-menu-option"
+                      aria-label="Restart options"
+                      aria-haspopup="menu"
+                      aria-expanded={restartSubmenuOpen}
+                      onClick={() => setRestartSubmenuOpen((open) => !open)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        width: 32,
+                        flexShrink: 0,
+                        borderRadius: "0 10px 10px 0",
+                        color: "oklch(28% 0.08 245)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <ChevronRight size={15} aria-hidden />
+                    </button>
+                  )}
+                </div>
+                {restartSubmenuOpen && !restartBusy && (
+                  <div role="menu" aria-label="Restart options" style={flyoutStyle}>
+                    {canRestartActivity && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="session-menu-option"
+                        disabled={restartingActivity}
+                        onClick={restartActivity}
+                        style={submenuItemStyle(restartingActivity)}
+                      >
+                        Restart current activity
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="session-menu-option"
+                      disabled={restarting}
+                      onClick={restart}
+                      style={submenuItemStyle(restarting)}
+                    >
+                      Restart whole session
+                    </button>
+                  </div>
+                )}
+              </div>
               <button
+                type="button"
                 role="menuitem"
-                disabled={restarting}
-                onClick={restart}
-                style={menuItemStyle(restarting)}
-              >
-                <RotateCcw size={15} />
-                {restarting ? "Restarting..." : "Restart whole session"}
-              </button>
-              <button
-                role="menuitem"
+                className="session-menu-option"
                 onClick={goToDashboard}
                 style={menuItemStyle(false)}
               >
@@ -966,19 +1076,14 @@ function Composer({
               )}
               <button
                 type="button"
+                className="chat-composer-mic-btn"
+                data-recording={recorder.state === "recording" ? "true" : "false"}
                 onClick={handleMicClick}
                 disabled={recorder.state === "transcribing"}
                 title={micTitle}
                 aria-label={micTitle}
                 style={{
-                  position: "absolute", inset: 0,
-                  width: 36, height: 36, borderRadius: "50%",
-                  background: recorder.state === "recording"
-                    ? "rgba(0,112,196,0.08)"
-                    : "transparent",
-                  border: "none",
-                  color: recorder.state === "error" ? "#c0392b" : "oklch(45% 0.07 240)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
+                  color: recorder.state === "error" ? "#c0392b" : undefined,
                   cursor: recorder.state === "transcribing" ? "wait" : "pointer",
                 }}
               >
@@ -993,15 +1098,12 @@ function Composer({
             </div>
           )}
           <button
+            type="button"
+            className="chat-composer-send-btn"
             onClick={onSend}
             disabled={sendDisabled}
             style={{
-              width: 38, height: 38, borderRadius: "50%",
-              background: "#0070C4", color: "white", border: "none",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 4px 12px rgba(0,112,196,0.35)",
               cursor: sendDisabled ? "not-allowed" : "pointer",
-              opacity: sendDisabled ? 0.5 : 1,
             }}
           >
             <SendIcon />
@@ -1125,6 +1227,7 @@ export default function ChatSessionPage() {
   const [loadingType, setLoadingType] = useState<TaskChatLoadingType>(
     initialConnectionState === "connecting" ? "teacher_loading" : null,
   );
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);
   const [retryingSequence, setRetryingSequence] = useState<number | null>(null);
@@ -1142,6 +1245,7 @@ export default function ChatSessionPage() {
   // Set when a restart/retry intentionally wipes the transcript so the next
   // WebSocket open clears non-chat events instead of preserving them.
   const fullResetRef = useRef(false);
+  const nextActivityLockRef = useRef(false);
   const reconnectIntentRef = useRef<"none" | "retry" | "auto">("none");
   const [isReconnecting, setIsReconnecting] = useState(false);
 
@@ -1309,6 +1413,31 @@ export default function ChatSessionPage() {
 
     return () => window.clearTimeout(timer);
   }, [connectionState, phase, loadingType, sessionId]);
+
+  const LOADING_TIMEOUT_MS = 90_000;
+
+  useEffect(() => {
+    if (!loadingType) {
+      setLoadingTimedOut(false);
+      return;
+    }
+
+    setLoadingTimedOut(false);
+    const timer = window.setTimeout(() => {
+      setLoadingTimedOut(true);
+      setLoadingType(null);
+    }, LOADING_TIMEOUT_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [loadingType, reconnectAttempt]);
+
+  const retryLoadingConnection = useCallback(() => {
+    setLoadingTimedOut(false);
+    reconnectIntentRef.current = "auto";
+    setIsReconnecting(true);
+    setConnectionState("connecting");
+    setReconnectAttempt((attempt) => attempt + 1);
+  }, []);
 
   const lastTaskIdx = useMemo(() => {
     for (let i = events.length - 1; i >= 0; i -= 1) {
@@ -1543,13 +1672,23 @@ export default function ChatSessionPage() {
       }
       if (msg.widget === "rag_feedback" || payloadKind === "rag_feedback") {
         const payload = msg.payload as unknown as RagFeedbackPayload;
-        if (payload.available !== false) {
-          setEvents((prev) => [
+        // The backend streams a "pending" placeholder first, then a terminal
+        // event carrying the real note (or an explicit unavailability). Upsert
+        // in place so the placeholder is replaced rather than duplicated, and
+        // always render — never silently drop the card when the note is absent.
+        setEvents((prev) => {
+          const idx = prev.map((e) => e.kind).lastIndexOf("rag_feedback");
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = { kind: "rag_feedback", payload };
+            return next;
+          }
+          return [
             ...prev,
             { kind: "section", tone: "feedback", label: "Coach note" },
             { kind: "rag_feedback", payload },
-          ]);
-        }
+          ];
+        });
         return;
       }
       if (msg.widget === "session_completed" || payloadKind === "completed") {
@@ -1567,6 +1706,7 @@ export default function ChatSessionPage() {
           { kind: "section", tone: "score", label: "Pronunciation assessment" },
           { kind: "pronunciation", payload },
         ]);
+        nextActivityLockRef.current = false;
         setPhase("submitted");
         return;
       }
@@ -1584,6 +1724,7 @@ export default function ChatSessionPage() {
           { kind: "section", tone: "score", label: "Activity score" },
           { kind: "scorecard", payload },
         ]);
+        nextActivityLockRef.current = false;
         setPhase("submitted");
         return;
       }
@@ -1765,6 +1906,17 @@ export default function ChatSessionPage() {
       }, 0);
       return;
     }
+    if (
+      label === "Next activity" &&
+      (nextActivityLockRef.current ||
+        phase === "practice" ||
+        loadingType === "next_activity_loading")
+    ) {
+      return;
+    }
+    if (label === "Next activity") {
+      nextActivityLockRef.current = true;
+    }
     setEvents((prev) => [...prev, { kind: "chat", role: "you", content: label }]);
     send({ type: "follow_up_action", action: label });
     if (label === "Next activity") setPhase("practice");
@@ -1792,6 +1944,7 @@ export default function ChatSessionPage() {
       }>(restartPath);
 
       fullResetRef.current = true;
+      nextActivityLockRef.current = false;
       pendingSendsRef.current = [];
       wsRef.current?.close();
       wsRef.current = null;
@@ -1843,6 +1996,7 @@ export default function ChatSessionPage() {
       // Wipe the transcript back to the teaching/chat history; the backend
       // resume re-delivers the reset activity as the live task on reconnect.
       fullResetRef.current = true;
+      nextActivityLockRef.current = false;
       reconnectIntentRef.current = "retry";
       setIsReconnecting(true);
       pendingSendsRef.current = [];
@@ -2031,6 +2185,8 @@ export default function ChatSessionPage() {
                 isNavigationPrompt &&
                 i === navigationPromptChatIndex &&
                 retrySequence !== null;
+              const isLatestNavigationPrompt =
+                isNavigationPrompt && i === navigationPromptChatIndex;
               return (
                 <ChatBubble
                   key={i}
@@ -2038,7 +2194,15 @@ export default function ChatSessionPage() {
                   name={i === 0 && evt.role === "ai" ? "LingosAI" : undefined}
                   actions={isNavigationPrompt ? navigationPromptActions(evt.actions) : evt.actions}
                   streaming={evt.streaming}
-                  onAction={handleAction}
+                  onAction={
+                    isLatestNavigationPrompt
+                      ? handleAction
+                      : isNavigationPrompt
+                        ? (actionLabel) => {
+                            if (actionLabel === "Go to dashboard") handleAction(actionLabel);
+                          }
+                        : handleAction
+                  }
                   copyText={evt.role === "ai" ? evt.content : undefined}
                   onRetry={
                     showRetry ? () => handleRetryActivity(retrySequence) : undefined
@@ -2161,6 +2325,31 @@ export default function ChatSessionPage() {
           })}
 
           <TaskChatLoadingSkeleton type={visibleLoadingType} />
+
+          {loadingTimedOut && (
+            <div style={{ marginTop: 16 }}>
+              <ChatBubble role="ai">
+                This is taking longer than expected. Try reconnecting to resume your session.
+              </ChatBubble>
+              <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={retryLoadingConnection}
+                  style={{
+                    borderRadius: 999,
+                    border: "1px solid oklch(82% 0.03 240)",
+                    background: "white",
+                    padding: "8px 14px",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Reconnect
+                </button>
+              </div>
+            </div>
+          )}
 
           {showConnectionIssue && (
             <div style={{ marginTop: 16 }}>

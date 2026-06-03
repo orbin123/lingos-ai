@@ -147,11 +147,11 @@ export function ChatTopbar({
       >
         <button
           type="button"
+          className="chat-round-icon-btn"
           aria-label="Back"
           title="Back"
           onClick={onBack}
           style={{
-            ...roundIconButton,
             cursor: onBack ? "pointer" : "default",
           }}
         >

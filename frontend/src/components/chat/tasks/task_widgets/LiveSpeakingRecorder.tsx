@@ -302,3 +302,247 @@ export function LiveSpeakingRecorder({
     </>
   );
 }
+
+/**
+ * Inline dialogue recorder for speak_roleplay / speak_smalltalk.
+ * Renders the conversation turn-by-turn: partner bubbles show text, learner
+ * bubbles show a Record button that transitions to transcript once recorded.
+ */
+export function InlineDialogueRecorder({
+  dialogueContext,
+  slots,
+  live,
+  durationSeconds,
+}: {
+  dialogueContext: { role: string; text: string; speaker: string }[];
+  slots: SpeakingSlot[];
+  live: LiveTaskController;
+  durationSeconds: number;
+}) {
+  const interactive = !live.submitted;
+  const recordingsById = useMemo(() => recordingsFromAnswers(live.answers), [live.answers]);
+  const recorder = useVoiceRecorder();
+  const startedAtRef = useRef(Date.now());
+  const recordingStartedAtRef = useRef(Date.now());
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [transcribingItemId, setTranscribingItemId] = useState<string | null>(null);
+  const [recordingSupported, setRecordingSupported] = useState(true);
+
+  useEffect(() => { setRecordingSupported(isVoiceRecordingSupported()); }, []);
+  useEffect(() => { if (recorder.state === "error") setActiveItemId(null); }, [recorder.state]);
+
+  const busy = recorder.state === "recording" || recorder.state === "paused" || recorder.state === "transcribing";
+  const allRecorded = slots.length > 0 && slots.every((s) => recordingsById[s.id]?.transcript?.trim());
+
+  // Map each turn index to its slot (sequential learner turns only)
+  let learnerSlotIdx = 0;
+  const turnSlots: Array<SpeakingSlot | null> = dialogueContext.map((turn) => {
+    if (turn.speaker !== "learner") return null;
+    const slot = slots[learnerSlotIdx] ?? null;
+    learnerSlotIdx++;
+    return slot;
+  });
+
+  const saveRecording = (itemId: string, recording: SpeakRecording) => {
+    const nextById = { ...recordingsById, [itemId]: recording };
+    live.setAnswers({
+      ...live.answers,
+      recordings: slots.map((s) => nextById[s.id]).filter(Boolean),
+    });
+  };
+
+  const startRecording = async (itemId: string) => {
+    if (!recordingSupported || busy || live.submitted) return;
+    setActiveItemId(itemId);
+    recordingStartedAtRef.current = Date.now();
+    await recorder.start();
+  };
+
+  const stopRecording = async () => {
+    const itemId = activeItemId;
+    if (!itemId) return;
+    const startedAt = recordingStartedAtRef.current || Date.now();
+    const blob = await recorder.stop();
+    setActiveItemId(null);
+    if (!blob || blob.size === 0) {
+      recorder.setError("No audio was captured. Please record that prompt again.");
+      return;
+    }
+    setTranscribingItemId(itemId);
+    recorder.setTranscribing(true);
+    let completed = false;
+    try {
+      const ext = extensionForMime(blob.type || recorder.mimeType || "audio/webm");
+      const result = await tasksApi.transcribeAudio(blob, `speak-${itemId}${ext}`);
+      const transcript = result.transcript.trim();
+      if (!transcript) throw new Error("empty transcript");
+      saveRecording(itemId, {
+        item_id: itemId,
+        transcript,
+        audio_blob_url: result.audio_url,
+        duration_seconds: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
+        attempt_number: (recordingsById[itemId]?.attempt_number ?? 0) + 1,
+      });
+      completed = true;
+    } catch {
+      recorder.setError("Transcription failed. Please record that prompt again.");
+    } finally {
+      setTranscribingItemId(null);
+      if (completed) recorder.setTranscribing(false);
+    }
+  };
+
+  const submit = () => {
+    live.onSubmit({
+      recordings: slots.map((s) => recordingsById[s.id]).filter(Boolean),
+      time_spent_seconds: Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000)),
+    });
+  };
+
+  return (
+    <>
+      {!recordingSupported && interactive && (
+        <div className="tw-card" style={{ background: "#fff4e5", borderColor: "#fdc283" }}>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: "#7a4d00" }}>
+            Microphone recording is not available in this browser.
+          </div>
+        </div>
+      )}
+
+      {/* Conversation */}
+      <div style={{
+        border: "1.5px solid oklch(90% 0.02 240)",
+        borderRadius: 18,
+        background: "oklch(97% 0.015 245)",
+        padding: 16,
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+        marginBottom: 16,
+        boxShadow: "inset 0 2px 8px rgba(80,110,180,0.03)",
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: "oklch(45% 0.07 240)", textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px dashed oklch(85% 0.03 240)", paddingBottom: 6 }}>
+          Conversation
+        </div>
+
+        {dialogueContext.map((turn, index) => {
+          const isPartner = turn.speaker === "partner";
+          const slot = turnSlots[index];
+          const recording = slot ? recordingsById[slot.id] : null;
+          const isThisRecording = !!(slot && activeItemId === slot.id && recorder.state === "recording");
+          const isThisTranscribing = !!(slot && transcribingItemId === slot.id);
+
+          return (
+            <div
+              key={index}
+              style={{ display: "flex", flexDirection: isPartner ? "row" : "row-reverse", alignItems: "flex-start", gap: 10, width: "100%" }}
+            >
+              {/* Avatar */}
+              <div style={{
+                width: 32, height: 32, borderRadius: 10, flexShrink: 0,
+                background: isPartner ? "oklch(55% 0.16 240)" : "oklch(45% 0.18 155)",
+                color: "white", fontSize: 12, fontWeight: 800,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                boxShadow: "0 3px 8px rgba(0,0,0,0.06)",
+              }}>
+                {turn.role[0]}
+              </div>
+
+              {/* Bubble */}
+              <div style={{ maxWidth: "80%" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "oklch(45% 0.07 240)", marginBottom: 3, textAlign: isPartner ? "left" : "right" }}>
+                  {turn.role}
+                </div>
+                <div style={{
+                  padding: "10px 14px",
+                  borderRadius: 14,
+                  borderTopLeftRadius: isPartner ? 0 : 14,
+                  borderTopRightRadius: isPartner ? 14 : 0,
+                  background: isPartner ? "white" : "oklch(90% 0.05 155)",
+                  border: isPartner ? "1px solid oklch(90% 0.02 240)" : "1px solid oklch(85% 0.05 155)",
+                  color: "oklch(20% 0.09 245)", fontSize: 13.5, lineHeight: 1.5,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.02)",
+                }}>
+                  {isPartner || !slot ? (
+                    turn.text
+                  ) : isThisRecording ? (
+                    // Active recording — show Stop button (takes priority over any existing transcript)
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <button
+                        type="button"
+                        onClick={stopRecording}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px",
+                          borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 800, fontSize: 13,
+                          background: "#cf2e2e", color: "white", boxShadow: "0 4px 12px rgba(207,46,46,0.24)",
+                        }}
+                      >
+                        <Square size={12} fill="currentColor" /> Stop
+                      </button>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "oklch(40% 0.12 240)" }}>
+                        {Math.round(recorder.elapsedMs / 1000)}s
+                      </span>
+                    </div>
+                  ) : isThisTranscribing ? (
+                    // Transcribing in progress — takes priority over old transcript
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: "oklch(40% 0.12 240)" }}>
+                      <Loader2 size={14} className="animate-spin" />
+                      Transcribing…
+                    </div>
+                  ) : recording ? (
+                    // Transcript done — show it (with re-record option in interactive mode)
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 800, color: "oklch(35% 0.18 155)", marginBottom: 4 }}>
+                        <StatusDot ok />
+                        <span>YOUR RESPONSE</span>
+                      </div>
+                      <div style={{ fontStyle: "italic", fontSize: 13, color: "oklch(20% 0.09 245)", marginBottom: 4 }}>
+                        &ldquo;{recording.transcript}&rdquo;
+                      </div>
+                      {interactive && (
+                        <button
+                          type="button"
+                          onClick={() => startRecording(slot.id)}
+                          disabled={busy}
+                          style={{ background: "none", border: "none", padding: 0, cursor: busy ? "default" : "pointer", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: "oklch(40% 0.12 240)", opacity: busy ? 0.5 : 1 }}
+                        >
+                          <RotateCcw size={11} /> Record again
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    // Idle — show initial Record button
+                    <button
+                      type="button"
+                      onClick={() => startRecording(slot.id)}
+                      disabled={!recordingSupported || busy}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px",
+                        borderRadius: 8, border: "none", cursor: (!recordingSupported || busy) ? "default" : "pointer",
+                        fontWeight: 800, fontSize: 13, background: "#0070C4", color: "white",
+                        opacity: (!recordingSupported || busy) ? 0.5 : 1,
+                        boxShadow: "0 4px 12px rgba(0,112,196,0.22)",
+                      }}
+                    >
+                      <Mic2 size={14} /> Record
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {recorder.errorMessage && (
+        <div className="tw-fb-explain" style={{ color: "var(--tw-red)", fontWeight: 800 }}>
+          {recorder.errorMessage}
+        </div>
+      )}
+
+      {interactive && (
+        <SubmitButton disabled={!allRecorded || busy} onClick={submit} />
+      )}
+    </>
+  );
+}

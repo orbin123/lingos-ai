@@ -1,6 +1,7 @@
 "use client";
 
-import { BookOpenCheck } from "lucide-react";
+import { BookOpenCheck, Check, ChevronDown } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { SessionPreviewState } from "../../teaching/source";
 import type { LiveTaskController, ReadStructureTask } from "../source";
 import {
@@ -13,6 +14,168 @@ import {
   SubmitButton,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
+
+/**
+ * Styled label picker for the structure task. Replaces the native `<select>`
+ * so the closed control's chevron sits inset from the edge (not jammed far
+ * right) and the open menu matches the widget's rounded navy/soft-blue look
+ * instead of the browser's default option list.
+ */
+function StructureLabelSelect({
+  value,
+  options,
+  onChange,
+  disabled = false,
+  ariaLabel,
+}: {
+  value: string;
+  options: readonly string[];
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  ariaLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const hasValue = Boolean(value);
+
+  return (
+    <div ref={rootRef} style={{ position: "relative", width: "100%" }}>
+      <button
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={ariaLabel}
+        onClick={() => !disabled && setOpen((prev) => !prev)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          borderRadius: 10,
+          border: `1.5px solid ${open ? "oklch(60% 0.13 250)" : "oklch(85% 0.025 240)"}`,
+          background: disabled ? "oklch(99% 0.005 240)" : "white",
+          color: hasValue ? "var(--tw-navy)" : "oklch(45% 0.06 240)",
+          padding: "10px 14px",
+          fontFamily: "inherit",
+          fontSize: 13,
+          fontWeight: 800,
+          textAlign: "left",
+          cursor: disabled ? "not-allowed" : "pointer",
+          boxShadow: open ? "0 0 0 3px oklch(60% 0.13 250 / 0.16)" : "none",
+          transition: "border-color 120ms ease, box-shadow 120ms ease",
+        }}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {value || "Choose label"}
+        </span>
+        <ChevronDown
+          size={18}
+          strokeWidth={2.5}
+          style={{
+            flexShrink: 0,
+            color: "oklch(55% 0.08 245)",
+            transform: open ? "rotate(180deg)" : "none",
+            transition: "transform 140ms ease",
+          }}
+        />
+      </button>
+
+      {open && !disabled && (
+        <ul
+          role="listbox"
+          aria-label={ariaLabel}
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            right: 0,
+            zIndex: 20,
+            margin: 0,
+            padding: 6,
+            listStyle: "none",
+            display: "grid",
+            gap: 2,
+            background: "white",
+            borderRadius: 12,
+            border: "1px solid oklch(90% 0.025 240)",
+            boxShadow: "0 12px 28px oklch(45% 0.07 240 / 0.18)",
+          }}
+        >
+          {options.map((option) => {
+            const selected = option === value;
+            return (
+              <li
+                key={option}
+                role="option"
+                aria-selected={selected}
+                tabIndex={0}
+                onClick={() => {
+                  onChange(option);
+                  setOpen(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onChange(option);
+                    setOpen(false);
+                  }
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  borderRadius: 8,
+                  padding: "9px 11px",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  color: "var(--tw-navy)",
+                  background: selected ? "oklch(95% 0.04 245)" : "transparent",
+                  cursor: "pointer",
+                  outline: "none",
+                }}
+                onMouseEnter={(event) => {
+                  if (!selected) event.currentTarget.style.background = "oklch(97% 0.02 245)";
+                }}
+                onMouseLeave={(event) => {
+                  if (!selected) event.currentTarget.style.background = "transparent";
+                }}
+                onFocus={(event) => {
+                  if (!selected) event.currentTarget.style.background = "oklch(97% 0.02 245)";
+                }}
+                onBlur={(event) => {
+                  if (!selected) event.currentTarget.style.background = "transparent";
+                }}
+              >
+                {option}
+                {selected && <Check size={15} strokeWidth={3} style={{ color: "oklch(55% 0.13 250)" }} />}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function LiveStructure({ task, live }: { task: ReadStructureTask; live: LiveTaskController }) {
   const interactive = !live.submitted;
@@ -50,30 +213,13 @@ function LiveStructure({ task, live }: { task: ReadStructureTask; live: LiveTask
                 <div style={{ fontSize: 14.5, lineHeight: 1.65, color: "var(--tw-navy)", marginBottom: 10 }}>
                   {item.paragraph}
                 </div>
-                <select
+                <StructureLabelSelect
                   value={value}
+                  options={task.structureLabels}
                   disabled={!interactive}
-                  aria-label={`Choose structure label for ${itemLabel}`}
-                  onChange={(event) => setLabel(item.itemId, event.target.value)}
-                  style={{
-                    width: "100%",
-                    borderRadius: 10,
-                    border: "1.5px solid oklch(85% 0.025 240)",
-                    background: "white",
-                    color: "var(--tw-navy)",
-                    padding: "10px 12px",
-                    fontFamily: "inherit",
-                    fontSize: 13,
-                    fontWeight: 800,
-                  }}
-                >
-                  <option value="">Choose label</option>
-                  {task.structureLabels.map((label) => (
-                    <option key={label} value={label}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+                  ariaLabel={`Choose structure label for ${itemLabel}`}
+                  onChange={(next) => setLabel(item.itemId, next)}
+                />
                 {showResults && (
                   <div
                     style={{
@@ -206,29 +352,13 @@ export function ReadStructureTaskWidget({
               <div style={{ fontSize: 14, fontWeight: 800, color: "var(--tw-navy)" }}>
                 Label {item.label?.toLowerCase() ?? `paragraph ${index + 1}`}
               </div>
-              <select
-                disabled
+              <StructureLabelSelect
                 value=""
-                aria-label={`Choose structure label for ${item.label?.toLowerCase() ?? `paragraph ${index + 1}`}`}
-                style={{
-                  width: "100%",
-                  borderRadius: 10,
-                  border: "1.5px solid oklch(85% 0.025 240)",
-                  background: "oklch(99% 0.005 240)",
-                  color: "oklch(55% 0.06 240)",
-                  padding: "10px 12px",
-                  fontFamily: "inherit",
-                  fontSize: 13,
-                  fontWeight: 800,
-                }}
-              >
-                <option value="">Choose label</option>
-                {task.structureLabels.map((label) => (
-                  <option key={label} value={label}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+                options={task.structureLabels}
+                disabled
+                ariaLabel={`Choose structure label for ${item.label?.toLowerCase() ?? `paragraph ${index + 1}`}`}
+                onChange={() => {}}
+              />
             </div>
           ))}
         </div>

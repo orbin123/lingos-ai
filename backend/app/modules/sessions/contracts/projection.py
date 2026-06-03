@@ -26,11 +26,13 @@ from pydantic import BaseModel, ValidationError
 
 from app.modules.sessions.contracts.base import (
     BlankItem,
+    DialogueTurn,
     DictationItem,
     ErrorCorrectionItem,
     ErrorSpottingError,
     ErrorSpottingSentence,
     ErrorSpottingToken,
+    InterviewQuestion,
     McqItem,
     OpenTextItem,
     StructureLabelItem,
@@ -413,8 +415,43 @@ def _speaking_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]
         or content.get("prompts")
         or ([content.get("speaking_prompt")] if content.get("speaking_prompt") else [])
     )
+    dialogue_raw = content.get("dialogue_context") or []
+    dialogue_turns: tuple[DialogueTurn, ...] = ()
+    if isinstance(dialogue_raw, list):
+        turns: list[DialogueTurn] = []
+        for raw in dialogue_raw:
+            if not isinstance(raw, dict):
+                continue
+            role = _str(raw.get("role"))
+            text = _str(raw.get("text"))
+            speaker_raw = _str(raw.get("speaker")).lower()
+            speaker = "learner" if speaker_raw == "learner" else "partner"
+            if role and text:
+                turns.append(DialogueTurn(role=role, text=text, speaker=speaker))
+        dialogue_turns = tuple(turns)
+    questions_raw = content.get("questions") or []
+    questions: tuple[InterviewQuestion, ...] = ()
+    if isinstance(questions_raw, list):
+        parsed: list[InterviewQuestion] = []
+        for index, raw in enumerate(questions_raw):
+            if not isinstance(raw, dict):
+                continue
+            prompt = _str(raw.get("interviewer_prompt") or raw.get("prompt"))
+            if not prompt:
+                continue
+            parsed.append(
+                InterviewQuestion(
+                    item_id=_str(raw.get("item_id")) or f"item_{index + 1}",
+                    interviewer_prompt=prompt,
+                    sample_answer=_str(raw.get("sample_answer")),
+                    answer_hint=_str(raw.get("answer_hint")),
+                )
+            )
+        questions = tuple(parsed)
     return {
         "prompts": prompts,
+        "interview_context": _str(content.get("interview_context")),
+        "questions": questions,
         "sample_responses": _str_tuple(
             content.get("sample_responses") or content.get("sample_answers")
         ),
@@ -429,6 +466,7 @@ def _speaking_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]
         "image_url": _str(content.get("image_url")),
         "image_alt": _str(content.get("image_alt")),
         "passage_to_retell": _str(content.get("passage_to_retell")),
+        "dialogue_context": dialogue_turns,
         **_audio_fields(content),
     }
 

@@ -13,7 +13,11 @@ from functools import lru_cache
 
 from pinecone import Pinecone
 
-from app.ai.embeddings.exceptions import PineconeQueryFailed, PineconeUpsertFailed
+from app.ai.embeddings.exceptions import (
+    PineconeDeleteFailed,
+    PineconeQueryFailed,
+    PineconeUpsertFailed,
+)
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -83,3 +87,36 @@ def pinecone_query(
     except Exception as e:
         logger.warning("Pinecone query error: %s", e)
         raise PineconeQueryFailed(f"Pinecone query failed: {e}") from e
+
+
+def pinecone_delete(
+    *, vector_ids: list[str], namespace: str = ""
+) -> None:
+    """Delete vectors by id from the configured Pinecone index.
+
+    No-op when ``vector_ids`` is empty. Raises PineconeDeleteFailed on
+    any SDK error.
+    """
+    if not vector_ids:
+        return
+    try:
+        _pinecone_index().delete(ids=vector_ids, namespace=namespace)
+    except Exception as e:  # pinecone SDK throws various subclasses
+        logger.warning("Pinecone delete error: %s", e)
+        raise PineconeDeleteFailed(f"Pinecone delete failed: {e}") from e
+
+
+def pinecone_index_stats() -> dict:
+    """Return index statistics (dimension, namespaces, vector counts).
+
+    Used by the smoke-test script to verify the index dimension matches
+    the configured embedding dimension. Returns a plain dict.
+    """
+    stats = _pinecone_index().describe_index_stats()
+    # The SDK returns an object that is dict-like / has a to_dict in newer
+    # versions; normalise to a plain dict for printing.
+    if hasattr(stats, "to_dict"):
+        return stats.to_dict()
+    if isinstance(stats, dict):
+        return stats
+    return dict(stats)
