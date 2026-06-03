@@ -2160,27 +2160,29 @@ WEEKS_24: tuple[WeekSource, ...] = (
                             goal="Introduce tone in messages.",
                             instruction=(
                                 "Greet the learner. Explain in two sentences that the same "
-                                "message can sound formal, casual, or urgent. Read 'Could you "
-                                "please call me when you are free?' and ask what tone they "
-                                "hear."
+                                "message can sound formal, casual, or urgent depending on the "
+                                "words we choose. Read 'Could you please call me when you are "
+                                "free?' aloud, then ask them how they would ask a close friend "
+                                "to call them back in their own words."
                             ),
                         ),
                         TeacherStep(
                             id="make_casual_and_urgent",
                             goal="Change tone and spot urgency.",
                             instruction=(
-                                "Confirm it is formal and polite. Ask them to make it casual "
-                                "for a friend, and explain that in calls you listen for "
-                                "urgency words like now, quickly, or in five minutes. Preview "
-                                "that the day ends with relaxed small talk."
+                                "Warmly react to their version and name whether it sounds "
+                                "formal, casual, or urgent. Explain that in calls we also "
+                                "listen for urgency words like now, quickly, or in five "
+                                "minutes, and invite them to say the same request in an urgent "
+                                "way. Preview that the day ends with relaxed small talk."
                             ),
                         ),
                         TeacherStep(
                             id="wrap_up",
                             goal="Move to practice.",
                             instruction=(
-                                "If the learner has changed the tone correctly at least "
-                                "once, ask only: Ready to try the practice task?"
+                                "If the learner has rephrased the message in their own words "
+                                "at least once, ask only: Ready to try the practice task?"
                             ),
                         ),
                     ),
@@ -2319,7 +2321,8 @@ WEEKS_24: tuple[WeekSource, ...] = (
                                 "Greet the learner for the small-talk wrap-up. Explain in "
                                 "two sentences that natural fluency is not long sentences; "
                                 "it is connecting ideas, responding warmly, and keeping the "
-                                "chat moving. Invite a short reaction."
+                                "chat moving. Ask them what they most enjoy chatting about "
+                                "with friends."
                             ),
                         ),
                         TeacherStep(
@@ -2638,8 +2641,8 @@ WEEKS_24: tuple[WeekSource, ...] = (
                             instruction=(
                                 "Greet the learner. Explain in two sentences that savoury "
                                 "means salty or spicy food and bland means lacking flavour. "
-                                "Ask for a word to describe a dish with a rich, pleasant "
-                                "taste."
+                                "Ask them to tell you about a dish they really enjoy and how "
+                                "it tastes."
                             ),
                         ),
                         TeacherStep(
@@ -2943,19 +2946,19 @@ WEEKS_24: tuple[WeekSource, ...] = (
                             instruction=(
                                 "Greet the learner. Explain in two sentences that a manager "
                                 "leads a team and a receptionist greets visitors and answers "
-                                "calls. Ask what they call someone who is responsible for a "
-                                "project."
+                                "calls. Ask them to tell you about a job they know well and "
+                                "what that person does each day."
                             ),
                         ),
                         TeacherStep(
                             id="workplace_actions",
                             goal="Practise workplace action verbs.",
                             instruction=(
-                                "Confirm and explain that 'responsible for' means in charge "
-                                "of, and 'manages' means organises and leads. Ask which verb "
-                                "describes a person who works in an office or hospital, then "
-                                "preview today's job-ad reading, dictation, rewrite, and "
-                                "timed speech."
+                                "React to the job they described and explain that "
+                                "'responsible for' means in charge of, while 'manages' means "
+                                "organises and leads. Ask which verb describes a person who "
+                                "works in an office or hospital, then preview today's job-ad "
+                                "reading, dictation, rewrite, and timed speech."
                             ),
                         ),
                         TeacherStep(
@@ -3101,16 +3104,18 @@ WEEKS_24: tuple[WeekSource, ...] = (
                                 "Greet the learner. Explain in two sentences that words like "
                                 "daily, weekly, and fortnightly tell us how often something "
                                 "happens, and a deadline is the latest time to finish. Ask "
-                                "what word describes something happening every two weeks."
+                                "them to tell you about something they do on a regular "
+                                "schedule and how often it happens."
                             ),
                         ),
                         TeacherStep(
                             id="more_frequency",
                             goal="Practise more frequency words.",
                             instruction=(
-                                "Confirm 'fortnightly'. Ask what word fits a meeting held "
-                                "four times a year, then preview today's match, week-"
-                                "planning listening, time-adverb transform, and planner "
+                                "Pick up a frequency word from their answer, or offer one "
+                                "like daily or weekly, and confirm it. Ask what word fits a "
+                                "meeting held four times a year, then preview today's match, "
+                                "week-planning listening, time-adverb transform, and planner "
                                 "picture tasks."
                             ),
                         ),
@@ -3255,16 +3260,17 @@ WEEKS_24: tuple[WeekSource, ...] = (
                             instruction=(
                                 "Greet the learner. Explain in two sentences that 'content' "
                                 "means peaceful and satisfied and 'overwhelmed' means having "
-                                "too much to do. Ask what word they would use when stressed "
-                                "with too much to do."
+                                "too much to do. Ask them to tell you how they felt the last "
+                                "time they had too much to do."
                             ),
                         ),
                         TeacherStep(
                             id="stronger_words",
                             goal="Practise stronger emotion words.",
                             instruction=(
-                                "Confirm 'overwhelmed'. Explain 'disappointed' (sad it did "
-                                "not happen as hoped) and ask for a stronger word for "
+                                "Reflect their feeling back (overwhelmed fits having too "
+                                "much to do) and confirm it. Explain 'disappointed' (sad it "
+                                "did not happen as hoped) and ask for a stronger word for "
                                 "extremely sad or shocked, then preview today's diary "
                                 "reading, dictation, word-upgrade, and feelings speech."
                             ),
@@ -3412,19 +3418,20 @@ WEEKS_24: tuple[WeekSource, ...] = (
                             instruction=(
                                 "Greet the learner for the weekly review. Explain in one "
                                 "sentence that today consolidates the week's words across "
-                                "People, Food, Places, Work, Time, and Feelings. Ask if they "
-                                "are ready for a challenge."
+                                "People, Food, Places, Work, Time, and Feelings. Ask them to "
+                                "share one word they remember from this week and what it "
+                                "means."
                             ),
                         ),
                         TeacherStep(
                             id="recall_prompt",
                             goal="Prompt active recall.",
                             instruction=(
-                                "Explain that reviewing moves words into long-term memory. "
-                                "Ask them to recall one strong word from the week (for "
-                                "example a word meaning very sad or shocked), then preview "
-                                "today's match, story listening, free-recall paragraph, and "
-                                "90-second speaking challenge."
+                                "Affirm the word they shared and explain that reviewing moves "
+                                "words into long-term memory. Ask them to recall one more "
+                                "strong word from the week (for example a word meaning very "
+                                "sad or shocked), then preview today's match, story listening, "
+                                "free-recall paragraph, and 90-second speaking challenge."
                             ),
                         ),
                         TeacherStep(
@@ -3729,18 +3736,19 @@ WEEKS_24: tuple[WeekSource, ...] = (
                             goal="Contrast confident and hesitant tone.",
                             instruction=(
                                 "Greet the learner. Explain in two sentences that sharing "
-                                "opinions is about how you say it. Compare a confident line "
-                                "(absolutely convinced) with a hesitant one (I guess, I "
-                                "don't know) and ask which sounds more confident."
+                                "opinions confidently is less about being right and more "
+                                "about how you say it. Ask them to tell you one opinion they "
+                                "feel strongly about, in a single sentence."
                             ),
                         ),
                         TeacherStep(
                             id="confident_markers",
                             goal="Name confident vs hedging markers.",
                             instruction=(
-                                "Confirm the confident one. Explain that strong words "
+                                "React warmly to their opinion. Explain that strong words "
                                 "(convinced, absolutely) sound sure while hedges (guess, "
-                                "maybe, I don't know) sound uncertain, and preview that "
+                                "maybe, I don't know) sound uncertain, and invite them to say "
+                                "their opinion again in a more confident way. Preview that "
                                 "today they will distinguish tones and write and speak their "
                                 "views clearly under time pressure."
                             ),
