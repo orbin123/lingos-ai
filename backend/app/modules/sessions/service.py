@@ -88,6 +88,7 @@ from app.modules.sessions.task_generator import (
     is_valid_open_text_payload,
     is_valid_read_aloud_payload,
     is_valid_read_structure_payload,
+    is_valid_read_tone_id_payload,
     is_valid_sentence_transform_payload,
     is_valid_speak_and_record_payload,
     is_valid_speak_pic_desc_payload,
@@ -413,6 +414,8 @@ class SessionService:
             return is_valid_sentence_transform_payload(content, expected_items=3)
         if spec.archetype_id == "READ_STRUCTURE_ID":
             return is_valid_read_structure_payload(content)
+        if spec.archetype_id == "READ_TONE_ID":
+            return is_valid_read_tone_id_payload(content)
         return True
 
     async def _regenerate_task_content(

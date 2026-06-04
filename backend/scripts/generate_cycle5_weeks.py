@@ -70,7 +70,7 @@ def emit_cycle5() -> str:
 
 
 def patch_source_file() -> None:
-    path = Path(__file__).resolve().parents[1] / "app/modules/curriculum/data/source_24w.py"
+    path = Path(__file__).resolve().parents[1] / "app/modules/curriculum/data/source_L_C1C2.py"
     text = path.read_text()
     start = text.index("    # ── Cycle 5 —")
     end = text.index("    # ── Cycle 6 —")

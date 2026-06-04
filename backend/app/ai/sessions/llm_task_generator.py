@@ -95,6 +95,8 @@ class TaskGenItem(BaseModel):
 
     item_id: str
     prompt: str | None = None
+    sender: str | None = None
+    message: str | None = None
     options: list[str] | None = None
     correct_index: int | None = None
     explanation: str | None = None

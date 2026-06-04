@@ -22,8 +22,8 @@ from app.scoring import ARCHETYPE_REGISTRY, CourseLength, get_archetype
 
 _THEME_CYCLE = ("grammar", "communication", "vocabulary", "confidence")
 
-# Expected CEFR per 24w cycle (6 cycles × 4 weeks). Source: spec §6.
-_CYCLE_CEFR = ("A1", "A2", "B1", "B1+", "B2", "C1")
+# Expected CEFR per 24w calendar week (6 bands × 4 weeks).
+_CYCLE_CEFR = ("A1", "A2", "B1", "B2", "C1", "C2")
 
 _WEEK_ID_PATTERN_24 = re.compile(r"^wk_24_\d{2}$")
 _WEEK_ID_PATTERN_48 = re.compile(r"^wk_48_\d{2}$")
@@ -74,24 +74,34 @@ def test_24w_cefr_steps_one_band_per_cycle():
         )
 
 
-def test_48w_theme_rotation_follows_4_week_cycle():
-    """source_48w.py rotates themes the same way as 24w: grammar → communication → vocabulary → confidence."""
+def test_48w_theme_rotation_follows_source_week_pairs():
+    """48w rotates themes every two calendar weeks (one source week = 14 days)."""
     weeks = load_weeks(CourseLength.WEEKS_48)
-    for idx, week in enumerate(weeks):
-        expected = _THEME_CYCLE[idx % 4]
+    for week in weeks:
+        expected = _THEME_CYCLE[(week.week_number - 1) // 2 % 4]
         assert week.theme_type == expected, (
             f"week {week.week_number} should be {expected}, got {week.theme_type}"
         )
 
 
-def test_48w_placeholder_days_have_empty_topic():
-    """source_48w.py is a placeholder — all day topics should be empty strings."""
+def test_48w_cefr_follows_level_pairing_bands() -> None:
+    """48w uses six level bands across 48 calendar weeks."""
     weeks = load_weeks(CourseLength.WEEKS_48)
-    for week in weeks:
-        for day in week.days:
-            assert day.topic == "", (
-                f"{day.day_id} has non-empty topic: {day.topic!r}"
-            )
+    # A1A2 band weeks 1-16: week metadata uses first calendar day of the week
+    assert weeks[0].cefr_level == "A1"
+    assert weeks[1].cefr_level == "A2"
+    # B1B2 band starts at calendar week 17
+    assert weeks[16].cefr_level == "B1"
+    assert weeks[17].cefr_level == "B2"
+    # C1C2 band starts at calendar week 33
+    assert weeks[32].cefr_level == "C1"
+    assert weeks[33].cefr_level == "C2"
+
+
+def test_48w_days_have_populated_topics_from_composed_bands() -> None:
+    weeks = load_weeks(CourseLength.WEEKS_48)
+    assert weeks[0].days[0].topic.startswith("Simple Present Tense")
+    assert weeks[0].days[1].topic.startswith("Simple Present Tense")
 
 
 # ── ID format and uniqueness ───────────────────────────────────────

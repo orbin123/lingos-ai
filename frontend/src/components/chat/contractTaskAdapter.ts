@@ -354,12 +354,10 @@ function adaptReadContextMcq(payload: AnyTaskPayload): ReadContextMcqTask {
 }
 
 function adaptReadToneId(payload: AnyTaskPayload): ReadToneIdTask {
-  // `sender`/`message` are mock-only embellishments absent from the wire; the
-  // widget falls back to rendering the prompt + options when they are empty.
   const items = arrayValue(payload.items).map((raw, index) => ({
     itemId: textValue(raw.item_id) || `item_${index + 1}`,
-    sender: "",
-    message: "",
+    sender: textValue(raw.sender),
+    message: textValue(raw.message),
     prompt: textValue(raw.prompt),
     options: stringArray(raw.options),
     correctIndex: numberValue(raw.correct_index),

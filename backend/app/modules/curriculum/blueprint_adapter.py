@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from app.modules.curriculum.data.source_24w import (
+from app.modules.curriculum.data.types import (
     ActivityBlueprint,
     DaySource,
     WeekSource,
@@ -55,7 +55,7 @@ def adapt_day_source(
     if not day.title and not activities:
         raise DayNotFound(
             f"week {week_number} day {day_index} is blank - "
-            "author it in source_24w.py before starting a session"
+            "author it in the level-band source files before starting a session"
         )
 
     task_archetypes = tuple(activity.task.archetype_id for activity in activities)

@@ -182,5 +182,41 @@ def test_get_day_rejects_non_contiguous_activity_sequences(monkeypatch) -> None:
         ),
     )
     monkeypatch.setattr(file_source, "WEEKS_24", (week,))
+
+    def _resolve_stub(course_length, calendar_week, day_index):
+        del course_length
+        return type(
+            "R",
+            (),
+            {
+                "day": week.days[0],
+                "cefr_level": "A1",
+                "sub_level_min": 1,
+                "sub_level_max": 1,
+                "band": "A1A2",
+                "source_week": 1,
+                "calendar_week": calendar_week,
+            },
+        )()
+
+    monkeypatch.setattr(file_source, "resolve_day", _resolve_stub)
+    monkeypatch.setattr(
+        file_source,
+        "week_source_from_resolved",
+        lambda resolved: week,
+    )
     with pytest.raises(DayNotFound, match="contiguous"):
         file_source.get_day(99, 0)
+
+
+def test_get_day_48w_w1_d2_is_depth_pass_with_a2() -> None:
+    day = file_source.get_day_by_id("day_48_01_02")
+    assert day.cefr_level == "A2"
+    assert day.day_id == "day_48_01_02"
+    assert day.topic.startswith("Simple Present Tense")
+
+
+def test_get_day_48w_w1_d1_is_base_pass_with_a1() -> None:
+    day = file_source.get_day_by_id("day_48_01_01")
+    assert day.cefr_level == "A1"
+    assert day.topic.startswith("Simple Present Tense")

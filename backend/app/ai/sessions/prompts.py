@@ -534,6 +534,14 @@ def build_task_gen_user_prompt(
             "- For fill_in_blanks: include exactly 4 or 5 blanks — a `passage` with ___ markers (no inline verb hints) and `items` with item_id, sentence_with_blank, base_verb, correct_answer, grammar_rule, and explanation. The `passage` and every `sentence_with_blank` MUST use `___` where the `correct_answer` goes — never write the answer word as plain text.",
             "- Set `audio_url: null` — the backend synthesizes the audio from audio_script.",
         ])
+    if archetype.archetype_id == "READ_TONE_ID":
+        parts.extend([
+            "ReadToneId requirements:",
+            "- Provide `passage_title` and exactly 2 items.",
+            "- Each item MUST include: item_id (q1, q2), sender (the person who sent the message, e.g. 'Manager', 'Friend'), message (the full text of the message to read), prompt (≤15 words, e.g. 'What tone is this message?'), options (exactly 3 strings: Formal / Casual / Urgent), correct_index (0-based int), explanation.",
+            "- The `message` field is what the learner reads to identify the tone — it must be a realistic short text/chat message.",
+            "- Make one message clearly formal, one clearly casual or urgent.",
+        ])
     if archetype.archetype_id == "LISTEN_TONE":
         parts.extend([
             "ListenTone requirements:",

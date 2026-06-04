@@ -5,7 +5,16 @@ Imports blueprint types from ``types.py`` only.
 
 from __future__ import annotations
 
-from .types import DaySource, WeekSource
+from .types import (
+    ActivityBlueprint,
+    DaySource,
+    EvaluationBlueprint,
+    FeedbackBlueprint,
+    TaskBlueprint,
+    TeacherBlueprint,
+    TeacherStep,
+    WeekSource,
+)
 
 
 # ── A1A2 band: source weeks 1-8 (A1 wk 1-4, A2 wk 5-8) ──

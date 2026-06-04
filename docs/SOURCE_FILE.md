@@ -2,11 +2,21 @@ Use this as a **fixed preamble** you paste every time. Below it, add your **batc
 
 ---
 
-## Preamble: Author the next 4-week block in `source_24w.py`
+## Preamble: Author the next 4-week block in a level-band source file
 
 ### Role
 
-You are filling in **exactly four consecutive weeks** of `backend/app/modules/curriculum/data/source_24w.py` for the LingosAI 24-week course. This is a **working prototype**: replicate proven structure, change topics and level only. Do not redesign the curriculum system.
+You are filling in **exactly four consecutive source weeks** in one level-band file for the LingosAI 24-week course. Band files live under `backend/app/modules/curriculum/data/`:
+
+| Global 24w weeks | Band file | Local source weeks | CEFR (24w) |
+|------------------|-----------|-------------------|------------|
+| 1–8 | `source_L_A1A2.py` | 1–8 | 1–4 A1, 5–8 A2 |
+| 9–16 | `source_L_B1B2.py` | 1–8 | 1–4 B1, 5–8 B2 |
+| 17–24 | `source_L_C1C2.py` | 1–8 | 1–4 C1, 5–8 C2 |
+
+Runtime assembly is via `composer.py` (48w doubles each day into two consecutive calendar days). `source_24w.py` is a composed re-export for tests and seeders.
+
+This is a **working prototype**: replicate proven structure, change topics and level only. Do not redesign the curriculum system.
 
 ---
 
@@ -22,20 +32,17 @@ You are filling in **exactly four consecutive weeks** of `backend/app/modules/cu
 
 - **24 weeks = 6 cycles × 4 theme weeks.** Theme order every cycle: `grammar` → `communication` → `vocabulary` → `confidence`.
 - **7 days per week** (`DaySource` × 7). Each day must be fully authored (not empty stubs).
-- **File:** `backend/app/modules/curriculum/data/source_24w.py` only (no registry, scoring, frontend, or `source_48w.py` unless explicitly asked).
+- **File:** the band module for your global week range (see table above). Edit **local** `week_number` 1–8 inside that file only (no registry, scoring, frontend, or 48w `depth_day` unless explicitly asked).
 
-**CEFR / sub-level by cycle** (do not change `WeekSource` metadata on existing shells):
+**CEFR on `WeekSource` shells** (band-local week numbers):
 
-| Weeks   | Cycle label (comment in file) | `cefr_level` | `sub_level_min`–`max` |
-|--------|-------------------------------|--------------|------------------------|
-| 1–4    | Foundation                    | A1           | 1–2                    |
-| 5–8    | Daily Life                    | A2           | 3–3                    |
-| 9–12   | Functioning                   | B1           | 4–5                    |
-| 13–16  | Expanding                     | B1+          | 5–6                    |
-| 17–20  | Reasoning                     | B2           | 6–7                    |
-| 21–24  | Mastery                       | C1           | 8–8                    |
+| Band | Local weeks | `cefr_level` | `sub_level_min`–`max` |
+|------|-------------|--------------|------------------------|
+| A1A2 | 1–4 / 5–8 | A1 / A2 | 1–2 / 3 |
+| B1B2 | 1–4 / 5–8 | B1 / B2 | 4–5 / 6–7 |
+| C1C2 | 1–4 / 5–8 | C1 / C2 | 8 / 8 |
 
-Within your batch, week `N` must keep the `theme_type`, `cefr_level`, and `sub_level_*` already defined on its `WeekSource` shell.
+Within your batch, each `WeekSource` must keep its `theme_type`, `cefr_level`, and `sub_level_*` shell values.
 
 ---
 
@@ -148,7 +155,7 @@ If a `test_cycle1_day_integrity`-style test exists for your week range, run it t
 
 **2. Check the batch blocks topics for new batch pasted:**
 
-**3. Rewrite the source_24w.py file for the new batch**
+**3. Rewrite the band source file for the new batch (local weeks 1–8)**
 
 Here’s **17–20** (B2, Cycle 5 — Reasoning). Mirror **13–16** day-for-day for structure (`W17→W13` … `W20→W16`). Topics step up from the **13–16 plan** (and your authored **9–12**).
 

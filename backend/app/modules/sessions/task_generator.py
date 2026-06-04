@@ -885,6 +885,17 @@ def is_valid_read_structure_payload(content: dict) -> bool:
     )
 
 
+def is_valid_read_tone_id_payload(content: dict) -> bool:
+    """Return True when a read-tone-id payload has message text on every item."""
+    items = content.get("items")
+    if not isinstance(items, list) or not items:
+        return False
+    return all(
+        isinstance(item, dict) and str(item.get("message") or "").strip()
+        for item in items
+    )
+
+
 def normalize_error_spotting_payload(content: dict) -> dict:
     """Normalize word-level error-spotting payloads for the chat widget."""
     normalized = dict(content or {})

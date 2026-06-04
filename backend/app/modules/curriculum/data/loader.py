@@ -1,8 +1,8 @@
 """Hydrate WeekSource rows into fully-shaped WeekRecord / DayRecord values.
 
 `load_weeks(course_length)` is the only thing seeders, tests, and runtime
-code should call. The two underlying source modules (`source_24w.py` and the
-derived 48w via `stretch.py`) are implementation details.
+code should call. Band source files and ``composer.compose_weeks()`` are
+implementation details.
 
 Each hydrated day carries:
   - a stable `day_id` (`day_<24|48>_<week>_<day>`)
@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.modules.curriculum.data.source_24w import WEEKS_24, WeekSource
-from app.modules.curriculum.data.source_48w import WEEKS_48
+from app.modules.curriculum.data.composer import compose_weeks
+from app.modules.curriculum.data.types import WeekSource
 from app.scoring import CourseLength, get_archetype
 
 
@@ -168,6 +168,4 @@ def _hydrate(week: WeekSource, course_length: CourseLength) -> WeekRecord:
 
 def load_weeks(course_length: CourseLength) -> tuple[WeekRecord, ...]:
     """Return all hydrated WeekRecord rows for `course_length`."""
-    if course_length is CourseLength.WEEKS_24:
-        return tuple(_hydrate(w, course_length) for w in WEEKS_24)
-    return tuple(_hydrate(w, course_length) for w in WEEKS_48)
+    return tuple(_hydrate(w, course_length) for w in compose_weeks(course_length))

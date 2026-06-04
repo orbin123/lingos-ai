@@ -12,7 +12,8 @@ from typing import Any
 # Run from backend/
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.modules.curriculum.data.source_24w import (  # noqa: E402
+from app.modules.curriculum.data.source_L_B1B2 import WEEKS_B1B2  # noqa: E402
+from app.modules.curriculum.data.types import (  # noqa: E402
     ActivityBlueprint,
     DaySource,
     EvaluationBlueprint,
@@ -21,8 +22,19 @@ from app.modules.curriculum.data.source_24w import (  # noqa: E402
     TeacherBlueprint,
     TeacherStep,
     WeekSource,
-    WEEKS_24,
 )
+
+# Global 24w weeks 9-16 ↔ B1B2 band-local weeks 1-8.
+WEEKS_24 = WEEKS_B1B2
+
+
+def _band_week(global_week: int) -> int:
+    return global_week - 8
+
+
+def _find_band_week(global_week: int) -> WeekSource:
+    local = _band_week(global_week)
+    return next(x for x in WEEKS_24 if x.week_number == local)
 
 THIRD_COND_LISTEN_PAYLOAD: dict[str, Any] = {
     "task_intro": "Listen, then complete the third-conditional notes.",
@@ -133,8 +145,7 @@ class DaySpec:
 
 
 def _week_days(week: int) -> tuple[DaySource, ...]:
-    w = next(x for x in WEEKS_24 if x.week_number == week)
-    return w.days
+    return _find_band_week(week).days
 
 
 def _apply_strings(obj: Any, pairs: tuple[tuple[str, str], ...]) -> Any:
@@ -1571,18 +1582,18 @@ for idx, (topics, gens) in enumerate(_CONF_GEN, start=1):
 
 
 def build_week(week: int) -> WeekSource:
-    shell = next(w for w in WEEKS_24 if w.week_number == week)
+    shell = _find_band_week(week)
     days = []
     for d in range(7):
         mirror = _week_days(week - 4)[d]
         spec = DAY_SPECS[(week, d)]
         days.append(_build_day(mirror, spec))
-    return dataclasses.replace(shell, days=tuple(days))
+    return dataclasses.replace(shell, week_number=_band_week(week), days=tuple(days))
 
 
 def emit_cycle4() -> str:
     lines = [
-        "    # ── Cycle 4 — Expanding (B1+) ───────────────────────────────",
+        "    # ── Cycle 4 — Expanding (B2) — band weeks 5-8 ───────────────",
     ]
     for week in (13, 14, 15, 16):
         w = build_week(week)
@@ -1602,7 +1613,7 @@ def emit_cycle4() -> str:
 
 
 def patch_source_file() -> None:
-    path = Path(__file__).resolve().parents[1] / "app/modules/curriculum/data/source_24w.py"
+    path = Path(__file__).resolve().parents[1] / "app/modules/curriculum/data/source_L_B1B2.py"
     text = path.read_text()
     start = text.index("    # ── Cycle 4 —")
     end = text.index("    # ── Cycle 5 —")

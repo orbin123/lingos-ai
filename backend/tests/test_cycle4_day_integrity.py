@@ -38,7 +38,7 @@ def test_cycle4_day_is_valid(week: int, day_index: int) -> None:
 
     day = file_source.get_day(week, day_index)
     assert day.day_id == expected_id
-    assert day.cefr_level == "B1+", f"{expected_id}: Cycle 4 must be B1+"
+    assert day.cefr_level == "B2", f"{expected_id}: Cycle 4 must be B2"
     assert day.topic.strip(), f"{expected_id}: empty topic"
     assert day.explanation_brief.strip(), f"{expected_id}: empty explanation_brief"
 

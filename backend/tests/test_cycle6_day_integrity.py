@@ -39,7 +39,7 @@ def test_cycle6_day_is_valid(week: int, day_index: int) -> None:
 
     day = file_source.get_day(week, day_index)
     assert day.day_id == expected_id
-    assert day.cefr_level == "C1", f"{expected_id}: Cycle 6 must be C1"
+    assert day.cefr_level == "C2", f"{expected_id}: Cycle 6 must be C2"
     assert day.topic.strip(), f"{expected_id}: empty topic"
     assert day.explanation_brief.strip(), f"{expected_id}: empty explanation_brief"
 
