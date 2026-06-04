@@ -35,6 +35,7 @@ backup*.sql
 
 # Test Files
 backend/scratch
+backend/scripts
 
 # Local archive of deprecated files (kept locally, not committed)
 backend/.archive/

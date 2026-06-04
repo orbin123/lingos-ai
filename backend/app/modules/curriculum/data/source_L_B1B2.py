@@ -186,6 +186,138 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Past Perfect in Narratives — Already & Just",
+                    description=(
+                        "Building on yesterday's past perfect basics, learners order events clearly in short narratives using already, just, and by the time."
+                    ),
+                    focus="Clear before-ordering in narratives with already and just.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen past perfect with narrative ordering (already, just).",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce the past perfect.",
+                                instruction=(
+                                    "Greet the learner and note they practised had + past participle yesterday. Explain in two sentences that B2 depth uses already and just to show what had happened just before another past moment. Ask for one sentence with already about something they had finished before a past event."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="form_had_pp",
+                                goal="Teach the had + past participle form.",
+                                instruction=(
+                                    "Confirm their sentence. Model just (I had just arrived when…) and by the time in a two-clause narrative. Ask them to add by the time or just to link two past moments."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="signal_words",
+                                goal="Teach already, just, by the time, before, and after.",
+                                instruction=(
+                                    "Affirm the time words. Ask for a 3-sentence mini-story ordering three events with at least two past perfect clauses."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has ordered events with already or just once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_cloze_past_perfect_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CLOZE",
+                                activity="read",
+                                task_widget="fill_blanks",
+                                topic_override="Past perfect earlier actions — narrative ordering — already and just",
+                                generation_instructions=(
+                                    "Write a 4-5 blank connected passage about a person's day where several things had already happened before a key moment. Focus on the past perfect with had + past participle. B2 depth: past perfect narratives with already, just, by the time; clear before-ordering; assume base had + PP from yesterday."
+                                ),
+                                widget_requirements=(
+                                    "Always include base_verb for every blank so the learner forms had + past participle. Do not repeat base_verb inline in the passage after each ___ — the UI shows it separately."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_plus_llm",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_past_perfect_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Listening for past perfect order — narrative ordering — already and just",
+                                generation_instructions=(
+                                    "Generate a 70-100 word spoken passage about a person describing a past situation where earlier actions had already happened, using the past perfect with had and time words like already, just, and by the time. B2 depth: past perfect narratives with already, just, by the time; clear before-ordering; assume base had + PP from yesterday."
+                                ),
+                                widget_requirements="Generate 3-4 MCQ items with prompt, options, correct_index, and explanation.",
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_past_perfect_sentences_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_OPEN_SENT",
+                                activity="write",
+                                task_widget="open_text",
+                                topic_override="Write past perfect sentences — narrative ordering — already and just",
+                                generation_instructions=(
+                                    "Ask for affirmative past perfect sentences using I, he, and she, describing what had happened before another past action, with correct past participles and time words like already, just, and by the time. B2 depth: past perfect narratives with already, just, by the time; clear before-ordering; assume base had + PP from yesterday."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_past_perfect_events_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override=(
+                                    "Say what had happened before a past moment — narrative ordering — already and just"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to say short past perfect sentences about what had happened before a past moment using correct had and a past participle. B2 depth: past perfect narratives with already, just, by the time; clear before-ordering; assume base had + PP from yesterday."
+                                ),
+                                widget_requirements=(
+                                    "Create exactly 3 speaking prompts: one with I, one with he, and one with she. Include speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Second Conditional - Imagining Unreal Situations",
@@ -456,6 +588,156 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Second Conditional — Unless, Provided & Tone",
+                    description=(
+                        "Building on yesterday's second conditional, learners extend if-clauses with unless and provided (that) and soften tone in imaginary scenarios."
+                    ),
+                    focus="Unless/provided if-clauses; softer tone in unreal scenarios.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Extend second conditional with unless, provided, and tone.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce the second conditional.",
+                                instruction=(
+                                    "Greet the learner and note they worked on if + past simple, would + base yesterday. Explain in two sentences that B2 depth adds unless (if not) and provided (only if) and softens tone (I would probably…). Ask what they would do unless they had to work this weekend."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="if_clause_form",
+                                goal="Teach the past simple in the if-clause.",
+                                instruction=(
+                                    "Use their answer. Show provided (that) with past simple and ask them to rewrite one if-sentence as Unless…"
+                                ),
+                            ),
+                            TeacherStep(
+                                id="result_clause",
+                                goal="Teach would + base verb in the result clause.",
+                                instruction=(
+                                    "Model a softer result (I would probably travel). Ask for one full sentence with unless or provided and would."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used unless or provided once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_error_spot_second_conditional_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_ERROR_SPOT",
+                                activity="read",
+                                task_widget="error_spotting",
+                                topic_override="Spot second conditional errors — unless, provided, and softer tone",
+                                generation_instructions=(
+                                    "Generate a 5-sentence passage about imaginary situations and their results. Each sentence must contain exactly one grammatical error, so there are exactly 5 error tokens for the learner to tap. Make the mistakes diverse across second-conditional usage: include a present-tense verb where the if-clause needs the past simple, a missing would in the result clause, will instead of would, a wrong verb form after would, and a condition-marker mismatch. Do not make all errors the same kind of mistake. B2 depth: second conditional with unless/provided; softer would probably tone; error-spotting includes unless/provided forms."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'error_spotting'. Return exactly 5 `passage_sentences`. Each sentence must include `sentence_id`, `tokens`, and one `error` object. Each token needs stable `token_id`, `text`, and `is_error`; exactly one token per sentence must have `is_error: true`. Each `error` must include token_id, incorrect_phrase, correction, error_type, rule, and explanation. Set `total_errors` to 5. Allowed error_type values: irregular_past, missing_past_auxiliary, passive_helper_missing, time_marker_mismatch, object_or_complement_mismatch, past_participle_form, regular_past_ending."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_plus_llm",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_cloze_second_conditional_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_CLOZE",
+                                activity="listen",
+                                task_widget="listen_cloze",
+                                topic_override="Listen and fill second conditional forms — unless, provided, and softer tone",
+                                generation_instructions=(
+                                    "Listen to the short daydream audio, then complete the paraphrased notes with the missing second-conditional verbs from the clip. B2 depth: second conditional with unless/provided; softer would probably tone; error-spotting includes unless/provided forms."
+                                ),
+                                widget_requirements=(
+                                    "Set inner_widget to 'fill_in_blanks'. Use the authored audio_script, passage, and 5 BlankItems exactly as provided so rule-based scoring can compare each typed verb phrase with correct_answer."
+                                ),
+                                static_payload={
+                                    "task_intro": "Listen, then complete the second-conditional notes.",
+                                    "instructions": (
+                                        "Play the audio once, then type the missing second-conditional verbs in the paraphrased notes."
+                                    ),
+                                    "estimated_time_minutes": 3,
+                                    "inner_widget": "fill_in_blanks",
+                                    "audio_genre": "Personal daydream monologue",
+                                    "audio_script": (
+                                        "Sometimes I imagine a completely different life. If I had more free time, I would learn the piano. If I lived by the sea, I would swim every single morning. If money were not a problem, I would travel around the world. If I spoke five languages, I would work as a tour guide. Honestly, if I knew then what I know now, I would worry much less."
+                                    ),
+                                    "passage_title": "A Different Life Notes",
+                                    "passage": (
+                                        "If I ___ more free time, I would learn the piano. If I lived by the sea, I ___ every morning. If money were not a problem, I ___ around the world. If I ___ five languages, I would work as a guide. If I knew then what I know now, I ___ much less."
+                                    ),
+                                    "items": [{'item_id': 'b1', 'blank_id': 'b1', 'sentence_with_blank': 'If I ___ more free time, I would learn the piano.', 'base_verb': 'have', 'correct_answer': 'had', 'distractors': ['have', 'would have'], 'options': ['had', 'have', 'would have'], 'grammar_rule': 'Use the past simple in the if-clause of the second conditional.', 'explanation': 'The if-clause needs the past simple, so we use had.'}, {'item_id': 'b2', 'blank_id': 'b2', 'sentence_with_blank': 'If I lived by the sea, I ___ every morning.', 'base_verb': 'swim', 'correct_answer': 'would swim', 'distractors': ['will swim', 'swam'], 'options': ['would swim', 'will swim', 'swam'], 'grammar_rule': 'Use would + base verb in the result clause of the second conditional.', 'explanation': 'The result clause needs would + base verb, so we use would swim.'}, {'item_id': 'b3', 'blank_id': 'b3', 'sentence_with_blank': 'If money were not a problem, I ___ around the world.', 'base_verb': 'travel', 'correct_answer': 'would travel', 'distractors': ['will travel', 'travelled'], 'options': ['would travel', 'will travel', 'travelled'], 'grammar_rule': 'Use would + base verb in the result clause of the second conditional.', 'explanation': 'The result of an unreal condition uses would travel.'}, {'item_id': 'b4', 'blank_id': 'b4', 'sentence_with_blank': 'If I ___ five languages, I would work as a guide.', 'base_verb': 'speak', 'correct_answer': 'spoke', 'distractors': ['speak', 'would speak'], 'options': ['spoke', 'speak', 'would speak'], 'grammar_rule': 'Use the past simple in the if-clause of the second conditional.', 'explanation': 'The if-clause needs the past simple, so we use spoke.'}, {'item_id': 'b5', 'blank_id': 'b5', 'sentence_with_blank': 'If I knew then what I know now, I ___ much less.', 'base_verb': 'worry', 'correct_answer': 'would worry', 'distractors': ['will worry', 'worried'], 'options': ['would worry', 'will worry', 'worried'], 'grammar_rule': 'Use would + base verb in the result clause of the second conditional.', 'explanation': 'The imagined result uses would worry.'}],
+                                    "target_words_in_audio": ['had', 'would swim', 'would travel', 'spoke', 'would worry'],
+                                },
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_error_corr_second_conditional_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_ERROR_CORR",
+                                activity="write",
+                                task_widget="error_correction",
+                                topic_override="Correct second conditional mistakes — unless, provided, and softer tone",
+                                generation_instructions=(
+                                    "Give the learner 3 sentences that each contain one second conditional error — mix wrong tense in the if-clause (e.g. 'If I have time, I would help') and will/would mistakes (e.g. 'If it rained, we will stay home'). Ask the learner to rewrite each sentence correctly. B2 depth: second conditional with unless/provided; softer would probably tone; error-spotting includes unless/provided forms."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_read_aloud_second_conditional_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_READ_ALOUD",
+                                activity="speak",
+                                task_widget="read_aloud",
+                                topic_override="Read second conditional passage aloud — unless, provided, and softer tone",
+                                generation_instructions=(
+                                    "Give the learner a connected second conditional narrative passage of 55-70 words to read aloud, describing several imaginary situations and their results, mixing if-clauses in the past simple and result clauses with would. B2 depth: second conditional with unless/provided; softer would probably tone; error-spotting includes unless/provided forms."
+                                ),
+                                widget_requirements=(
+                                    "Populate `text_to_read_aloud` with a single connected second conditional passage (55-70 words) describing imaginary situations and their results. Set `task_intro` to 'Read the passage above out loud.' Include `grammar_rule_to_practice` explaining the second conditional with if + past simple and would + base verb, and `speaking_duration_seconds: 45`."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="The Passive Voice - Focus on the Action",
@@ -628,6 +910,141 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Passive in Reports — When Agent Matters",
+                    description=(
+                        "Building on yesterday's passive voice, learners write short news-style passives and decide when to name the agent with by."
+                    ),
+                    focus="Short report-style passives; when the agent matters.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen passive in reports and agent choice.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce the passive voice.",
+                                instruction=(
+                                    "Greet the learner and note they practised be + past participle yesterday. Explain in two sentences that report-style English often uses passive when the action matters more than the doer, but adds by when the agent is important. Ask them to report one workplace event passively."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="form_be_pp",
+                                goal="Teach the be + past participle form.",
+                                instruction=(
+                                    "Confirm their passive. Give one headline-style sentence (The report was published…) and ask when by is needed."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="when_to_use",
+                                goal="Teach when to choose the passive and add by.",
+                                instruction=(
+                                    "Model a passive without by and one with by for contrast. Ask for one past passive in a two-sentence news note."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has written a report-style passive once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_passive_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="Understand a process in the passive — report-style passive and agent choice",
+                                generation_instructions=(
+                                    "Write a 60-75 word passage describing how a product is made or how a process works, mixing active and passive sentences (the beans are picked, the coffee is shipped). Then ask comprehension questions about the steps, and include one item asking which sentence uses the correct passive form. B2 depth: short news-style passives; include when to add by; timed speech sounds like a brief process or incident report."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_dictation_passive_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_DICTATION",
+                                activity="listen",
+                                task_widget="listen_dictation",
+                                topic_override="Hear passive-form chunks — report-style passive and agent choice",
+                                generation_instructions=(
+                                    "Generate a 35-45 word process audio script of 4 short sentences with varied passive forms (is made, was sent, are delivered, will be repaired). The learner types each sentence exactly as heard. B2 depth: short news-style passives; include when to add by; timed speech sounds like a brief process or incident report."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_dictation'. Provide audio_script and 4 dictation items, each with prompt, correct_answer, and explanation. Set target_words to the passive chunks (for example 'is made', 'was sent', 'are delivered', 'will be repaired')."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_passive_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override="Rewrite active into passive — report-style passive and agent choice",
+                                generation_instructions=(
+                                    "Give the learner 3 active sentences with varied tenses and ask them to rewrite each in the passive, keeping the same meaning and using by only when the doer matters. B2 depth: short news-style passives; include when to add by; timed speech sounds like a brief process or incident report."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints (for example 'present -> is/are + past participle', 'past -> was/were + past participle')."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_passive_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override="Describe a process with the passive — report-style passive and agent choice",
+                                generation_instructions=(
+                                    "Ask the learner to say one passive sentence per prompt, choosing the right form of be for the tense and using a correct past participle. B2 depth: short news-style passives; include when to add by; timed speech sounds like a brief process or incident report."
+                                ),
+                                widget_requirements=(
+                                    "Create exactly 3 speaking prompts: one present passive about how something is made, one past passive about something that was built or sent, and one about something that will be done. Include speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Relative Clauses - Adding Detail with Who, Which & That",
@@ -785,6 +1202,142 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Defining vs Non-Defining — Commas & Flow",
+                    description=(
+                        "Building on yesterday's relative clauses, learners contrast defining and non-defining clauses with commas and reduce repetition in flow."
+                    ),
+                    focus="Defining vs non-defining relatives; commas and flow.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen relatives with defining vs non-defining and commas.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce relative clauses.",
+                                instruction=(
+                                    "Greet the learner and note they used who/which/that yesterday. Explain in two sentences that non-defining clauses add extra detail with commas (My manager, who is based in Berlin, …) while defining clauses identify which one (the colleague who leads the project). Ask them to describe a person with a non-defining clause."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="defining_clauses",
+                                goal="Teach placement of the relative pronoun.",
+                                instruction=(
+                                    "Confirm commas for non-defining. Contrast with a defining clause without commas and ask them to combine two short sentences using which or who to avoid repetition."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used commas or reduced repetition once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_word_match_relative_clauses_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_WORD_MATCH",
+                                activity="read",
+                                task_widget="read_word_match",
+                                topic_override=(
+                                    "Match nouns to the right relative pronoun — defining vs non-defining — commas and flow"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to match each noun phrase or clue to the correct relative pronoun (a person -> who, a thing -> which, a place -> where, either person or thing -> that). B2 depth: defining vs non-defining relative clauses; comma control; picture description mixes both types without ambiguity."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_word_match'. Provide options (the relative pronouns who, which, that, where) and 3-4 items, each with prompt (a noun phrase with a clue), correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_relative_clauses_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override=(
+                                    "Hearing relative clauses in speech — defining vs non-defining — commas and flow"
+                                ),
+                                generation_instructions=(
+                                    "Generate a 35-45 word short description that uses at least two relative clauses (the woman who runs the cafe, the phone which broke). Include comprehension questions about which person did what and which thing is described. B2 depth: defining vs non-defining relative clauses; comma control; picture description mixes both types without ambiguity."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 2-3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_open_sent_relative_clauses_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_OPEN_SENT",
+                                activity="write",
+                                task_widget="open_text",
+                                topic_override=(
+                                    "Write sentences with relative clauses — defining vs non-defining — commas and flow"
+                                ),
+                                generation_instructions=(
+                                    "Ask for three short sentences: one describing a person with who, one describing a thing with which or that, and one describing a place with where. Remind the learner to put the relative pronoun right after the noun. B2 depth: defining vs non-defining relative clauses; comma control; picture description mixes both types without ambiguity."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'open_text'. Provide target_words (who, which, that, where), common_mistakes, and 3 items, each with prompt, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_relative_clauses_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override=(
+                                    "Identify people in a picture with relative clauses — defining vs non-defining — commas and flow"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to describe a simple scene aloud, using relative clauses to identify the people and things (the man who is reading, the bag which is on the table). B2 depth: defining vs non-defining relative clauses; comma control; picture description mixes both types without ambiguity."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a busy cafe with several people doing different things, grammar_rule, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Reported Speech - Telling What Others Said",
@@ -952,6 +1505,138 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Reported Qs, Commands & Time Shifts",
+                    description=(
+                        "Building on yesterday's reported statements, learners report wh-questions, commands, and time-word shifts accurately."
+                    ),
+                    focus="Reported questions and commands; time shifts.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen reported speech with questions, commands, and shifts.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce reported speech.",
+                                instruction=(
+                                    "Greet the learner and note they practised said/told with backshift yesterday. Explain in two sentences that B2 depth adds asked if/whether, told someone to…, and time shifts (today → that day). Ask them to report one question someone asked them."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="backshift",
+                                goal="Teach backshift of tense and pronouns.",
+                                instruction=(
+                                    "Model asked if and told me to. Ask them to report a polite command (Please send…) as told me to + infinitive with correct pronoun shift."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has reported a question or command once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_cloze_reported_speech_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CLOZE",
+                                activity="read",
+                                task_widget="fill_blanks",
+                                topic_override="Fill reported speech blanks — reported questions, commands, and time shifts",
+                                generation_instructions=(
+                                    "Write a short 4-5 sentence passage that reports a conversation, with blanks that each need the correct reported-speech word (said, told, asked, was, had), so the learner backshifts by meaning. B2 depth: wh-/yes-no reported questions, imperative reporting (told to), time and pronoun shifts; roleplay includes mixed statement and question reporting."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'fill_blanks'. Provide passage_title and a passage with ___ markers only — no inline hints in parentheses after blanks. Provide a BlankItem per blank with correct_answer and explanation. Omit base_verb; these are reporting blanks, not verb inflection."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_plus_llm",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_infer_reported_speech_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_INFER",
+                                activity="listen",
+                                task_widget="listen_infer",
+                                topic_override=(
+                                    "Infer the original words behind a report — reported questions, commands, and time shifts"
+                                ),
+                                generation_instructions=(
+                                    "Generate a 35-45 word audio clip where one person reports what another said and asked (She said she was busy, he asked if I could help). Ask the learner to infer the original words and the meaning. B2 depth: wh-/yes-no reported questions, imperative reporting (told to), time and pronoun shifts; roleplay includes mixed statement and question reporting."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 2 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_para_reported_speech_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARA",
+                                activity="write",
+                                task_widget="write_paragraph",
+                                topic_override=(
+                                    "Write a paragraph in reported speech — reported questions, commands, and time shifts"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to write a 3-4 sentence paragraph reporting a short conversation they had, using said that, told me that, and asked, with the verbs correctly shifted back. B2 depth: wh-/yes-no reported questions, imperative reporting (told to), time and pronoun shifts; roleplay includes mixed statement and question reporting."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (said that, told me, asked if, would), minimum_words 25, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_roleplay_reported_speech_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_ROLEPLAY",
+                                activity="speak",
+                                task_widget="speak_roleplay",
+                                topic_override="Pass on a message roleplay — reported questions, commands, and time shifts",
+                                generation_instructions=(
+                                    "Set up a roleplay where the learner passes on a message (for example telling a colleague what the manager said). The partner's opening should be 2-3 sentences that give the original message and ask the learner to report it. The learner's spoken response must be 2-3 connected sentences using reported speech (he said that, she asked if, they told me) — not a one-line answer. B2 depth: wh-/yes-no reported questions, imperative reporting (told to), time and pronoun shifts; roleplay includes mixed statement and question reporting."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_roleplay'. Provide dialogue_context with alternating partner and learner turns (4-6 turns total). Partner lines set the scene in 2-3 sentences; each learner line is 2-3 connected sentences (roughly 15-30 words). Include target_words (said that, told me, asked if, would), speaking_prompts with one instruction to respond aloud, sample_responses with the learner's model answer (same text as the learner dialogue turn), grammar_rule_to_practice, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Used To & Would - Talking About Past Habits",
@@ -1112,6 +1797,138 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Used To vs Would — Meaning & Negatives",
+                    description=(
+                        "Building on yesterday's past habits, learners contrast used to and would for past habits, and form clear negatives (didn't use to)."
+                    ),
+                    focus="Used to vs would for past habits; negatives.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen used to vs would and negative forms.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce used to and would.",
+                                instruction=(
+                                    "Greet the learner and note they practised used to and would yesterday. Explain in two sentences that used to states a past state or habit, would often describes repeated past actions (not states), and negatives use didn't use to. Ask for one thing they didn't use to do."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="used_to_vs_would",
+                                goal="Teach used to vs would.",
+                                instruction=(
+                                    "Confirm didn't use to. Ask when would fits better than used to for a repeated action (Every Sunday we would…) vs a state (I used to live…)."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has contrasted used to and would or used a negative once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tfng_used_to_would_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TFNG",
+                                activity="read",
+                                task_widget="read_tfng",
+                                topic_override="Past habits in text — used to vs would — meaning and negatives",
+                                generation_instructions=(
+                                    "Write a short profile of how someone's life used to be different (where they used to live, what they would do every summer), rich in used to and would for past habits and states. Then give True / False / Not Given statements about how things used to be. B2 depth: contrast used to (state/habit) vs would (repeated action); include didn't use to; email and small talk use past habit narrative."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tfng'. Provide passage_title, passage, and 5 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_shadow_used_to_would_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_SHADOW",
+                                activity="listen",
+                                task_widget="listen_shadow",
+                                topic_override=(
+                                    "Repeat used to / would phrases in connected speech — used to vs would — meaning and negatives"
+                                ),
+                                generation_instructions=(
+                                    "Generate a short, natural monologue (about 20 seconds) in which used to and would phrases describing past habits are blended into connected speech (I used to walk to school, we would play outside for hours), for the learner to shadow and reproduce smoothly. B2 depth: contrast used to (state/habit) vs would (repeated action); include didn't use to; email and small talk use past habit narrative."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow (identical to the script), target_words highlighting the used to / would chunks, and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_email_used_to_would_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_EMAIL",
+                                activity="write",
+                                task_widget="write_email",
+                                topic_override="Tell a friend how life used to be — used to vs would — meaning and negatives",
+                                generation_instructions=(
+                                    "Ask the learner to write a short email to a friend describing how their life or hometown used to be different, using used to and would for past habits and states (I used to..., we would...). B2 depth: contrast used to (state/habit) vs would (repeated action); include didn't use to; email and small talk use past habit narrative."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_email'. Provide prompt, grammar_rule, target_words (used to, would, no longer, back then), minimum_words 25, sample_answer (with To and Subject lines), and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_smalltalk_used_to_would_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_SMALLTALK",
+                                activity="speak",
+                                task_widget="speak_smalltalk",
+                                topic_override=(
+                                    "Casual chat about how things used to be — used to vs would — meaning and negatives"
+                                ),
+                                generation_instructions=(
+                                    "Set up casual small talk about childhood and the past where the learner answers using used to and would naturally to describe old habits (I used to..., we would...). B2 depth: contrast used to (state/habit) vs would (repeated action); include didn't use to; email and small talk use past habit narrative."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (used to, would, as a child, back then), and speaking_duration_seconds: 30."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Concession & Contrast - Despite, In Spite Of, Whereas & However",
@@ -1286,6 +2103,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Although vs However — Placement",
+                    description=(
+                        "Building on yesterday's contrast linkers, learners place although, however, and whereas correctly in a short four-sentence argument."
+                    ),
+                    focus="Although vs however placement in a 4-sentence argument.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen concession/contrast with placement control.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce concession linkers.",
+                                instruction=(
+                                    "Greet the learner and note they used despite/whereas/however yesterday. Explain in two sentences that although joins clauses inside one sentence while However often starts a new sentence after a full stop. Ask them to compare two options they care about."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="contrast_linkers",
+                                goal="Teach whereas and however.",
+                                instruction=(
+                                    "Model Although…, … and a second sentence starting However…. Ask for a four-sentence argument with although and however placed correctly."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has placed although or however correctly once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_context_mcq_concession_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CONTEXT_MCQ",
+                                activity="read",
+                                task_widget="read_context_mcq",
+                                topic_override="Contrast linkers in context — although vs however — placement",
+                                generation_instructions=(
+                                    "Write a short 60-75 word passage about a person's choices or a comparison with 4 blanks that each need a contrast linker chosen from context: despite or in spite of before a noun or -ing, whereas to compare two clauses, and however to contrast two sentences. B2 depth: 4-sentence argument with although (mid-clause) and However (sentence initial); paraphrase and speak_present test placement not just linker list."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_context_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options (despite, in spite of, whereas, however), correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_retell_concession_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_RETELL",
+                                activity="listen",
+                                task_widget="listen_retell",
+                                topic_override="Listen and summarize with contrast linkers — although vs however — placement",
+                                generation_instructions=(
+                                    "Generate a ~40 second monologue telling a short story or comparison that uses contrast linkers (despite, in spite of, whereas, however) to connect opposing ideas. Ask the learner to retell the main ideas in their own words, keeping the contrast linkers correct. B2 depth: 4-sentence argument with although (mid-clause) and However (sentence initial); paraphrase and speak_present test placement not just linker list."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_retell'. Provide: audio_script (the full spoken monologue text), passage_to_retell (a 2-3 sentence model retell — shorter than the audio, showing how a good student would summarise the key points using contrast linkers), sample_responses (list containing that same model retell), target_words (list of the key contrast linkers from the audio), and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_paraphrase_concession_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARAPHRASE",
+                                activity="write",
+                                task_widget="write_paraphrase",
+                                topic_override="Joining contrasting ideas with linkers — although vs however — placement",
+                                generation_instructions=(
+                                    "Give the learner 3 pairs of contrasting sentences and ask them to rewrite each pair as one smooth sentence using a contrast linker (despite, in spite of, whereas, or however) that fits the meaning, with correct grammar after each linker. B2 depth: 4-sentence argument with although (mid-clause) and However (sentence initial); paraphrase and speak_present test placement not just linker list."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paraphrase'. Provide 3 items, each with incorrect_sentence (the contrasting sentence pair), sample_answer, and watch_hints (the target contrast linker)."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_present_concession_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PRESENT",
+                                activity="speak",
+                                task_widget="speak_present",
+                                topic_override="Compare two options with contrast linkers — although vs however — placement",
+                                generation_instructions=(
+                                    "Ask the learner to compare two options or opinions aloud, using at least three contrast linkers (despite, in spite of, whereas, however) to connect the opposing ideas. B2 depth: 4-sentence argument with although (mid-clause) and However (sentence initial); paraphrase and speak_present test placement not just linker list."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_present'. Provide: prompts as a list with one general question asking the learner to compare two choices and say which they prefer using contrast linkers (e.g. 'Compare living in a city and the countryside, and say which you prefer.'); visual_prompt_description as a short sample spoken answer that uses at least three contrast linkers (e.g. 'A city is exciting, whereas the countryside is calm. Despite the noise, I prefer the city. However, I visit the countryside often, so I get both.'); grammar_rule, target_words, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
         ),
     ),
@@ -1454,6 +2399,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Deadlocks — Trade-offs & Conditional Offers",
+                    description=(
+                        "Building on yesterday's negotiating basics, learners handle deadlocks with trade-offs and conditional offers (If you…, then we…)."
+                    ),
+                    focus="Deadlocks; trade-offs; conditional offers.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen negotiating with conditional offers and trade-offs.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce negotiating.",
+                                instruction=(
+                                    "Welcome the learner and note they practised compromise phrases yesterday. Explain in two sentences that when negotiation stalls, B2 speakers offer conditional trades (If you can…, then we can…). Ask what they would offer if a teammate wanted a different deadline."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="propose_compromise",
+                                goal="Teach proposing a compromise.",
+                                instruction=(
+                                    "Affirm their idea. Model If you…, then we… and a trade-off (I can do X if you do Y). Ask them to propose one conditional offer on their scenario."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used an If you…, then we… offer once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_negotiating_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="Negotiating to an agreement — deadlocks — trade-offs and conditional offers",
+                                generation_instructions=(
+                                    "Write a short message exchange in which two people negotiate a shared decision, propose trade-offs, and agree on a final compromise. Then ask comprehension questions about what each side wanted, the trade-off, and the final agreement. B2 depth: deadlock language with If you…, then we… and explicit trade-offs; roleplay reaches agreement via conditional offer not only meet halfway."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_negotiating_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Listening to a negotiation — deadlocks — trade-offs and conditional offers",
+                                generation_instructions=(
+                                    "Generate a 35-45 word dialogue between two people negotiating: one proposes an idea, they discuss two trade-offs, and agree on a compromise. The learner answers questions about each side's wish, the trade-off, and the agreement. B2 depth: deadlock language with If you…, then we… and explicit trade-offs; roleplay reaches agreement via conditional offer not only meet halfway."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_negotiating_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override="Polite negotiation phrases — deadlocks — trade-offs and conditional offers",
+                                generation_instructions=(
+                                    "Give the learner 3 blunt demands (We do it my way. Lower the price. Change the date.) and ask them to rewrite each as a polite negotiation move using forms like 'Would you be willing to...?', 'How about we...?', and 'Could we meet halfway on...?'. B2 depth: deadlock language with If you…, then we… and explicit trade-offs; roleplay reaches agreement via conditional offer not only meet halfway."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_roleplay_negotiating_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_ROLEPLAY",
+                                activity="speak",
+                                task_widget="speak_roleplay",
+                                topic_override="Negotiate with a colleague — deadlocks — trade-offs and conditional offers",
+                                generation_instructions=(
+                                    "Set up a friendly roleplay where a colleague proposes a plan the learner cannot fully accept. The learner reacts, proposes a trade-off, and confirms a compromise using phrases like 'How about...?' and 'Let's meet halfway.' B2 depth: deadlock language with If you…, then we… and explicit trade-offs; roleplay reaches agreement via conditional offer not only meet halfway."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_roleplay'. Provide a dialogue_context alternating partner and learner turns, target_words (How about, meet halfway, that works, agreed), and speaking_duration_seconds: 30."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Telling News & Reacting",
@@ -1614,6 +2687,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Breaking News — Stance & Follow-ups",
+                    description=(
+                        "Building on yesterday's telling news, learners show stance (surprise, concern) and ask two follow-up probes when reacting to news."
+                    ),
+                    focus="Stance when breaking news; two follow-up probes.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen telling/reacting to news with stance and follow-ups.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce telling and reacting to news.",
+                                instruction=(
+                                    "Greet the learner and note they shared news reactions yesterday. Explain in two sentences that B2 reactions show stance (That's surprising / I'm concerned that…) then ask two follow-ups (What happened next? How do you feel about…?). Ask how they would react to surprising work news."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="react_followup",
+                                goal="React and add a follow-up question.",
+                                instruction=(
+                                    "Model stance + two questions. Ask them to react to: 'Our office is moving next month' with stance and two follow-ups."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has shown stance and one follow-up once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tfng_telling_news_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TFNG",
+                                activity="read",
+                                task_widget="read_tfng",
+                                topic_override="A piece of shared news — breaking news — stance and follow-ups",
+                                generation_instructions=(
+                                    "Write a short first-person message sharing recent news (a new job, a move) together with the warm reactions of a friend. Then give True / False / Not Given statements based only on the message. B2 depth: surprise/concern stance plus two follow-up probes; interview and email tasks require stance before detail questions."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tfng'. Provide passage_title, passage, and 4 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_infer_telling_news_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_INFER",
+                                activity="listen",
+                                task_widget="listen_infer",
+                                topic_override="Infer feelings behind news — breaking news — stance and follow-ups",
+                                generation_instructions=(
+                                    "Generate a conversation (about 45 seconds) where someone shares news and a friend reacts with surprise and concern. Ask the learner to infer how each speaker feels and what they imply, not only what they state. B2 depth: surprise/concern stance plus two follow-up probes; interview and email tasks require stance before detail questions."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_email_telling_news_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_EMAIL",
+                                activity="write",
+                                task_widget="write_email",
+                                topic_override="Reply to a friend's news — breaking news — stance and follow-ups",
+                                generation_instructions=(
+                                    "Ask the learner to write a short message to a friend who shared some news. It must include a warm greeting, one reaction (surprise or congratulations), two follow-up questions, and a close. B2 depth: surprise/concern stance plus two follow-up probes; interview and email tasks require stance before detail questions."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_email'. Provide prompt, grammar_rule, target_words, minimum_words 25, sample_answer (with To and Subject lines), and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_interview_telling_news_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_INTERVIEW",
+                                activity="speak",
+                                task_widget="speak_interview",
+                                topic_override="React to news in a mini chat — breaking news — stance and follow-ups",
+                                generation_instructions=(
+                                    "Run a friendly mini interview where the learner reacts to three pieces of news (a promotion, a small problem, a holiday plan) in one or two full sentences each, with a reaction and a follow-up question. B2 depth: surprise/concern stance plus two follow-up probes; interview and email tasks require stance before detail questions."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_interview'. Provide interview_context, grammar_rule, target_words (That's wonderful, Oh no, How did, What about), 3 questions each with interviewer_prompt, sample_answer, and answer_hint, and speaking_duration_seconds: 35."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Explaining a Problem & Solution",
@@ -1780,6 +2981,141 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Root Cause & Measurable Fix",
+                    description=(
+                        "Building on yesterday's problem-solution order, learners name root cause, impact, and a measurable fix."
+                    ),
+                    focus="Root cause, impact, and measurable solution.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen problem-solution with cause, impact, and measurable fix.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce explaining a problem.",
+                                instruction=(
+                                    "Greet the learner and note they used situation–problem–action yesterday. Explain in two sentences that B2 depth adds root cause (The underlying issue was…), impact (As a result, we lost…), and a measurable fix (by Friday / reduce errors by 20%). Ask about a problem they solved recently."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="structure_order",
+                                goal="Teach signposting the order.",
+                                instruction=(
+                                    "Affirm their story. Ask them to state root cause and impact in two sentences with signposting."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="add_recommendation",
+                                goal="Add a recommendation with a reason.",
+                                instruction=(
+                                    "Model a measurable fix (We will… by…). Ask for one recommendation with a number or deadline."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has named cause or a measurable fix once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_structure_problem_solution_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_STRUCTURE_ID",
+                                activity="read",
+                                task_widget="read_structure",
+                                topic_override="Identify parts of a problem-solution text — root cause and measurable fix",
+                                generation_instructions=(
+                                    "Provide a 3-paragraph problem-solution passage and ask the learner to label each paragraph as the Situation (background), Problem (what went wrong), or Solution (the action and result). B2 depth: cause → impact → measurable solution; paragraph and opinion speak include metric or deadline in the fix."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_structure'. Provide passage_title, structure_labels ['Situation', 'Problem', 'Solution'], and 3 items, each with paragraph, correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_plus_llm",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_retell_problem_solution_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_RETELL",
+                                activity="listen",
+                                task_widget="listen_retell",
+                                topic_override="Retell a problem and solution — root cause and measurable fix",
+                                generation_instructions=(
+                                    "Generate a problem-solution monologue (about 50 seconds) describing a situation, a problem, and how it was solved. Ask the learner to retell the key points in order using signposting words and the final result. B2 depth: cause → impact → measurable solution; paragraph and opinion speak include metric or deadline in the fix."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_retell'. Provide audio_script, passage_to_retell, target_words (the situation was, the problem, so, as a result), and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_para_problem_solution_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARA",
+                                activity="write",
+                                task_widget="write_paragraph",
+                                topic_override="Write about a problem you solved — root cause and measurable fix",
+                                generation_instructions=(
+                                    "Ask the learner to write a 5-7 sentence paragraph about a problem they solved, describing the situation, the problem, the action, and the result, using at least three signposting words and one reason with because. B2 depth: cause → impact → measurable solution; paragraph and opinion speak include metric or deadline in the fix."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (first, the problem was, so, as a result, because), minimum_words 45, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_opinion_problem_solution_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_OPINION",
+                                activity="speak",
+                                task_widget="speak_present",
+                                topic_override="Recommend the best solution — root cause and measurable fix",
+                                generation_instructions=(
+                                    "Ask the learner to answer in two or three sentences what the best solution to a common problem is, giving their recommendation and one reason with because. B2 depth: cause → impact → measurable solution; paragraph and opinion speak include metric or deadline in the fix."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_present'. Provide grammar_rule, target_words (I would suggest, because, the best way, however), a visual_prompt_description or prompt for the recommendation, and speaking_duration_seconds: 40."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Workplace Communication - Updates & Tasks",
@@ -1940,6 +3276,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Blockers, Owners & Next Steps",
+                    description=(
+                        "Building on yesterday's workplace updates, learners give professional status with blockers, owners, and clear next steps."
+                    ),
+                    focus="Status updates with blockers, owners, and next steps.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen workplace updates with blockers and ownership.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce workplace update phrases.",
+                                instruction=(
+                                    "Greet the learner and note they practised deadlines and clarifying tasks yesterday. Explain in two sentences that B2 status updates name blockers (We're blocked by…), owners (Alex owns…), and next steps (Next, we will… by…). Ask for a one-sentence status on a task they're doing."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="extend_question",
+                                goal="Practise extending a work request.",
+                                instruction=(
+                                    "Add blocker and owner to their update. Ask them to close with one next step and a date."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used blocker, owner, or next step once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_workplace_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="Workplace Update — blockers, owners, and next steps",
+                                generation_instructions=(
+                                    "Write a short work email or message thread where a colleague gives a status update, confirms a deadline, and clarifies a task. Then ask comprehension questions about the progress, the deadline, and what is still needed. B2 depth: professional status with blocker/owner/next-step language; roleplay sounds like a brief stand-up or manager check-in."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_workplace_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Voicemail update details — blockers, owners, and next steps",
+                                generation_instructions=(
+                                    "Generate a short workplace voicemail (about 40 seconds) about a project update, a changed deadline, and a request. Ask comprehension questions about the update, the new deadline, and the request. B2 depth: professional status with blocker/owner/next-step language; roleplay sounds like a brief stand-up or manager check-in."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_bullets_to_para_workplace_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_BULLETS_TO_PARA",
+                                activity="write",
+                                task_widget="write_bullets_to_para",
+                                topic_override="Write a work update from notes — blockers, owners, and next steps",
+                                generation_instructions=(
+                                    "Give the learner a 4-item task-notes list (task, progress, blocker, next step) and ask them to turn it into a clear, polite update message to a manager, using complete sentences and professional phrasing. B2 depth: professional status with blocker/owner/next-step language; roleplay sounds like a brief stand-up or manager check-in."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_bullets_to_para'. Provide bullets (4 work items), prompt, grammar_rule, target_words, minimum_words 25, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_roleplay_workplace_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_ROLEPLAY",
+                                activity="speak",
+                                task_widget="speak_roleplay",
+                                topic_override="Check in with a manager — blockers, owners, and next steps",
+                                generation_instructions=(
+                                    "Set up a check-in roleplay where a manager greets the learner and asks for a progress update. The learner gives a clear update using 'So far I've...' and answers the manager's questions about timing and next steps politely and directly. B2 depth: professional status with blocker/owner/next-step language; roleplay sounds like a brief stand-up or manager check-in."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_roleplay'. Provide a dialogue_context alternating partner and learner turns, target_words (so far, on track, by Friday, next step), and speaking_duration_seconds: 30."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Persuading & Making Your Case",
@@ -2103,6 +3567,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Acknowledge Then Refute",
+                    description=(
+                        "Building on yesterday's persuasive case, learners acknowledge the other side then refute with Yes, but… and evidence."
+                    ),
+                    focus="Acknowledge then refute with Yes, but… and evidence.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen persuasion with acknowledge-then-refute pattern.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce the topic and invite the first attempt.",
+                                instruction=(
+                                    "Greet the learner and note they built claim–reason–evidence yesterday. Explain in two sentences that stronger B2 persuasion acknowledges fairly (That's a fair point,) then refutes (Yes, but… / However, the data shows…). Ask how they would push back politely on a weak idea."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="persuade_evidence",
+                                goal="Confirm the attempt and add a reason and evidence.",
+                                instruction=(
+                                    "Model That's a fair point; however… with one evidence phrase. Ask them to acknowledge one downside of remote work then refute it."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Confirm they have reason and evidence and move to practice.",
+                                instruction=(
+                                    "If the learner has used acknowledge + however/but once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tfng_persuading_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TFNG",
+                                activity="read",
+                                task_widget="read_tfng",
+                                topic_override="A persuasive message — acknowledge then refute",
+                                generation_instructions=(
+                                    "Write a short, persuasive message that argues for one idea using a clear reason, a piece of evidence, and a polite acknowledgement of the other side. Then give True / False / Not Given statements based only on the message. B2 depth: Yes, but / That's a fair point; however… with evidence; picture persuasion includes polite refutation not only claim-reason."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tfng'. Provide passage_title, passage, and 4 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_infer_persuading_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_INFER",
+                                activity="listen",
+                                task_widget="listen_infer",
+                                topic_override="Infer the argument behind a pitch — acknowledge then refute",
+                                generation_instructions=(
+                                    "Generate a persuasive dialogue (about 40 seconds) where one person makes a case, gives a reason and evidence, and the other raises a doubt. Ask the learner to infer the main claim, the evidence, and the doubt. B2 depth: Yes, but / That's a fair point; however… with evidence; picture persuasion includes polite refutation not only claim-reason."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_idea_para_persuading_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_IDEA_PARA",
+                                activity="write",
+                                task_widget="write_paragraph",
+                                topic_override="Write a persuasive case — acknowledge then refute",
+                                generation_instructions=(
+                                    "Ask the learner to write a short persuasive paragraph arguing for a four-day work week, including a clear claim, one reason, one piece of evidence, and a polite acknowledgement of the other side. B2 depth: Yes, but / That's a fair point; however… with evidence; picture persuasion includes polite refutation not only claim-reason."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (I believe, because, for example, admittedly), minimum_words 25, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_persuading_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override="Describe and argue about a scene — acknowledge then refute",
+                                generation_instructions=(
+                                    "Ask the learner to describe a picture of a public choice (for example a crowded car park next to an empty bus stop) aloud, and make a short case for one solution using a reason and evidence. B2 depth: Yes, but / That's a fair point; however… with evidence; picture persuasion includes polite refutation not only claim-reason."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a busy car park beside an empty bus lane, grammar_rule, and speaking_duration_seconds: 40."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Adjusting Your Tone - Professional vs Casual Register",
@@ -2260,6 +3852,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Register Repair — Blunt/Vague Fix",
+                    description=(
+                        "Building on yesterday's register work, learners repair blunt or vague messages for a manager vs a teammate."
+                    ),
+                    focus="Fix blunt or vague tone for manager vs teammate.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen register with repair for audience.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce register in messages.",
+                                instruction=(
+                                    "Greet the learner and note they compared professional and casual yesterday. Explain in two sentences that B2 register repair fixes blunt lines (Send it now → Could you send it by…) and vague lines (Sort this out → Please clarify who owns…). Ask them to soften one blunt message to a manager."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="formal_informal",
+                                goal="Change register and notice the markers.",
+                                instruction=(
+                                    "Confirm the repair. Ask them to rewrite the same idea for a close teammate in casual register without losing clarity."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has repaired one blunt or vague line once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tone_id_register_w10_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TONE_ID",
+                                activity="read",
+                                task_widget="read_tone_id",
+                                topic_override="Professional vs casual in messages — register repair — manager vs teammate",
+                                generation_instructions=(
+                                    "Provide two short messages, one clearly professional and one clearly casual, and ask the learner to label each as Professional or Casual based on word choice and punctuation. B2 depth: repair blunt/vague messages for manager vs teammate; paraphrase and small talk switch register deliberately."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options (Professional, Casual), correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_tone_register_w10_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_TONE",
+                                activity="listen",
+                                task_widget="listen_tone",
+                                topic_override="Professional vs casual in speech — register repair — manager vs teammate",
+                                generation_instructions=(
+                                    "Generate a short spoken message (about 28 seconds) with clear register cues. Ask the learner to choose whether the speaker sounds professional or casual and why. B2 depth: repair blunt/vague messages for manager vs teammate; paraphrase and small talk switch register deliberately."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_tone'. Provide audio_script and at least 1 MCQ item with prompt, options (Professional, Casual), correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_paraphrase_register_w10_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARAPHRASE",
+                                activity="write",
+                                task_widget="write_paraphrase",
+                                topic_override="Change message register — register repair — manager vs teammate",
+                                generation_instructions=(
+                                    "Give the learner one professional message to rewrite as a casual note and one casual note to rewrite as a polite professional message, keeping the meaning the same while changing the register. B2 depth: repair blunt/vague messages for manager vs teammate; paraphrase and small talk switch register deliberately."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paraphrase'. Provide 2 items, each with incorrect_sentence (the message to convert), sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_smalltalk_register_w10_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_SMALLTALK",
+                                activity="speak",
+                                task_widget="speak_smalltalk",
+                                topic_override="Casual catch-up chat — register repair — manager vs teammate",
+                                generation_instructions=(
+                                    "Set up relaxed small talk about plans for the weekend where the learner answers two turns in a friendly casual tone with one simple detail each. B2 depth: repair blunt/vague messages for manager vs teammate; paraphrase and small talk switch register deliberately."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (That sounds great, I might, probably, weekend), and speaking_duration_seconds: 35."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Guided Discussion - Stay on Topic & Build on Others",
@@ -2421,6 +4141,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Paraphrase & Invite Quieter Voice",
+                    description=(
+                        "Building on yesterday's discussion skills, learners paraphrase others' points and invite quieter voices into the conversation."
+                    ),
+                    focus="Paraphrase others; invite quieter voices.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen facilitation with paraphrase and inclusive invites.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Reframe discussion as building together.",
+                                instruction=(
+                                    "Greet the learner for communication-week depth and note they built on others' points yesterday. Explain in two sentences that B2 facilitation paraphrases (So you mean…) and invites quieter voices (We haven't heard from… / What do you think, …?). Ask which topic they enjoy discussing."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="build_on_points",
+                                goal="Teach building on others' points.",
+                                instruction=(
+                                    "Model paraphrase + invite. Ask them to paraphrase 'Remote work saves time' and invite someone quieter with one inclusive phrase."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has paraphrased or invited once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_structure_discussion_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_STRUCTURE_ID",
+                                activity="read",
+                                task_widget="read_structure",
+                                topic_override="Discussion structure — paraphrase and invite quieter voice",
+                                generation_instructions=(
+                                    "Provide a short focused discussion thread in 3 parts and ask the learner to label each part as the Opening (topic and first view), Building (agreeing, adding, and questioning), or Closing (summary and next step). B2 depth: paraphrase (So you mean…) plus inclusive invite; retell and spoken summary include one paraphrase and one invitation phrase."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_structure'. Provide passage_title, structure_labels ['Opening', 'Building', 'Closing'], and 3 items, each with label, paragraph, correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_plus_llm",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_retell_discussion_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_RETELL",
+                                activity="listen",
+                                task_widget="listen_retell",
+                                topic_override="Retell a discussion — paraphrase and invite quieter voice",
+                                generation_instructions=(
+                                    "Generate a focused discussion (about 55 seconds) where two people debate a topic, build on each other's points, and reach a conclusion. Ask the learner to retell the key points in writing in their own words (the topic, each view, the conclusion). B2 depth: paraphrase (So you mean…) plus inclusive invite; retell and spoken summary include one paraphrase and one invitation phrase."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_retell'. Set response_mode to 'written'. Provide audio_script, passage_to_retell, target_words, and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_email_discussion_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_EMAIL",
+                                activity="write",
+                                task_widget="write_email",
+                                topic_override="Reply to a group thread — paraphrase and invite quieter voice",
+                                generation_instructions=(
+                                    "Ask the learner to write a short reply (45-60 words) to a group message thread discussing a shared decision, including a clear opinion, one point that builds on someone else's, one question, and a natural closing. B2 depth: paraphrase (So you mean…) plus inclusive invite; retell and spoken summary include one paraphrase and one invitation phrase."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_email'. Provide prompt, grammar_rule, target_words, minimum_words 45, sample_answer (with To and Subject lines), and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_present_discussion_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PRESENT",
+                                activity="speak",
+                                task_widget="speak_present",
+                                topic_override="Summarise a discussion — paraphrase and invite quieter voice",
+                                generation_instructions=(
+                                    "Ask the learner to speak for up to 60 seconds summarising a recent discussion using a simple structure: the topic, the main views, and the conclusion they reached. B2 depth: paraphrase (So you mean…) plus inclusive invite; retell and spoken summary include one paraphrase and one invitation phrase."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_present'. Provide grammar_rule, target_words (we discussed, on one hand, on the other hand, in the end), a visual_prompt_description, an optional model_presentation, and speaking_duration_seconds: 60."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
         ),
     ),
@@ -2586,6 +4434,136 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Environment Collocations — Offset, Net Zero",
+                    description=(
+                        "Building on yesterday's environment vocabulary, learners use policy collocations (carbon offset, net zero, emissions target) in a short policy-style paragraph."
+                    ),
+                    focus="Environment collocations in a policy mini-paragraph (offset, net zero).",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen environment lexis with policy collocations.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce environment words.",
+                                instruction=(
+                                    "Welcome the learner and note they practised environment words yesterday. Explain in two sentences that B2 depth uses collocations like carbon offset and net zero in short policy paragraphs. Ask what their city or company is doing about emissions."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more environment words.",
+                                instruction=(
+                                    "Use their answer to model offset (balance emissions) and net zero (no net emissions). Ask them to add one emissions target phrase to their idea."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used at least one policy collocation, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_word_match_environment_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_WORD_MATCH",
+                                activity="read",
+                                task_widget="read_word_match",
+                                topic_override="Environment & Climate Vocabulary — policy collocations — offset and net zero",
+                                generation_instructions=(
+                                    "Ask the learner to match environment words (pollution, renewable, drought, sustainable) to short definitions about the planet, energy, and the climate. B2 depth: environment collocations (carbon offset, net zero, emissions target) in a cohesive policy mini-paragraph; assume base environment words from yesterday."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_word_match'. Provide options (the environment words) and 4 items, each with prompt (the definition), correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_environment_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="A talk about the climate — policy collocations — offset and net zero",
+                                generation_instructions=(
+                                    "Generate a short scenario (about 30 seconds) where someone describes a local environmental problem, its cause, and one sustainable solution. Ask the learner what the problem is, the cause, and the solution. B2 depth: environment collocations (carbon offset, net zero, emissions target) in a cohesive policy mini-paragraph; assume base environment words from yesterday."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_environment_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override=(
+                                    "Environment vocabulary sentence transformation — policy collocations — offset and net zero"
+                                ),
+                                generation_instructions=(
+                                    "Give the learner 2-3 wordy descriptions of environmental ideas (energy that never runs out, a long time without rain, harmful waste in the air) and ask them to rewrite each using the precise word (renewable, drought, pollution). B2 depth: environment collocations (carbon offset, net zero, emissions target) in a cohesive policy mini-paragraph; assume base environment words from yesterday."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 2-3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_environment_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override="Describe an environment scene — policy collocations — offset and net zero",
+                                generation_instructions=(
+                                    "Ask the learner to describe a photo of an environmental scene aloud (for example a city under smog or a wind farm), naming what is happening using environment words such as pollution, renewable, and sustainable. B2 depth: environment collocations (carbon offset, net zero, emissions target) in a cohesive policy mini-paragraph; assume base environment words from yesterday."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a wind farm beside a smoggy city skyline, grammar_rule, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Education & Learning - Courses, Study & Qualifications",
@@ -2742,6 +4720,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Study Journey Verbs — Enrol, Assess",
+                    description=(
+                        "Building on yesterday's education vocabulary, learners narrate a course journey using study verbs (enrol, assess, submit, graduate) in connected speech and writing."
+                    ),
+                    focus="Study journey verbs in a course narrative (enrol, assess).",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen education lexis with study-journey verb collocations.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce education words.",
+                                instruction=(
+                                    "Greet the learner and note they worked on education words yesterday. Explain in two sentences that today they chain study verbs (enrol, assess, resubmit) into a course narrative. Ask them to say one sentence about when they enrolled on a course."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more education words.",
+                                instruction=(
+                                    "Confirm enrol. Ask what happens after enrolment (assessed, submitted) and have them add assess or deadline in a second sentence."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has linked two study-journey verbs, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_context_mcq_education_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CONTEXT_MCQ",
+                                activity="read",
+                                task_widget="read_context_mcq",
+                                topic_override="Education & Learning — study journey verbs — enrol and assess",
+                                generation_instructions=(
+                                    "Write a short passage about a student who enrols on a course, works on an assignment, and revises for an exam, then ask the learner to infer the meaning of 'revise' from context. B2 depth: course narrative with study verbs (enrol, assess, submit, graduate); dictation and timed speech use connected journey order."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_context_mcq'. Provide passage_title, passage, and at least 1 MCQ item with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_dictation_education_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_DICTATION",
+                                activity="listen",
+                                task_widget="listen_dictation",
+                                topic_override="Course Announcement — study journey verbs — enrol and assess",
+                                generation_instructions=(
+                                    "Generate a short, clear course announcement (about 12 seconds) with precise education vocabulary (assignment, deadline, qualification), and ask the learner to type the exact sentence they hear. B2 depth: course narrative with study verbs (enrol, assess, submit, graduate); dictation and timed speech use connected journey order."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_dictation'. Provide audio_script, target_words (the key education words), and 1 dictation item with prompt, correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_word_upgrade_education_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_WORD_UPGRADE",
+                                activity="write",
+                                task_widget="write_word_upgrade",
+                                topic_override="Vocabulary Word Upgrade — study journey verbs — enrol and assess",
+                                generation_instructions=(
+                                    "Give the learner 3 plain education sentences (I signed up for a class, I will study again before the test, the work is due on Friday) and ask them to rewrite each using a precise education word (enrolled, revise, deadline). B2 depth: course narrative with study verbs (enrol, assess, submit, graduate); dictation and timed speech use connected journey order."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_word_upgrade'. Provide 3 items, each with source_sentence, target_upgrade_word, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_education_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override="Timed Monologue Speech — study journey verbs — enrol and assess",
+                                generation_instructions=(
+                                    "Ask the learner to describe how they study for an exam for up to 60 seconds, covering the course, an assignment, how they revise, and the deadline, using education words. B2 depth: course narrative with study verbs (enrol, assess, submit, graduate); dictation and timed speech use connected journey order."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (enrol, assignment, revise, qualification), and speaking_duration_seconds: 60."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Culture & Society - Traditions, Community & Diversity",
@@ -2895,6 +5001,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Respectful Framing & Nuanced Adjectives",
+                    description=(
+                        "Building on yesterday's culture vocabulary, learners discuss sensitive topics with respectful framing and nuanced adjectives (diverse, inclusive, heritage-rich)."
+                    ),
+                    focus="Respectful framing and nuanced adjectives on sensitive topics.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen culture lexis with respectful framing and nuance.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce culture words.",
+                                instruction=(
+                                    "Greet the learner and note they described traditions and community yesterday. Explain in two sentences that B2 depth uses respectful framing (people from…, cultural heritage) and nuanced adjectives on sensitive topics. Ask them to describe a diverse community they know without stereotypes."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more culture words.",
+                                instruction=(
+                                    "Affirm respectful wording. Model inclusive vs blunt adjectives and ask them to upgrade one plain description (very different people → culturally diverse community)."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used respectful framing once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_word_match_culture_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_WORD_MATCH",
+                                activity="read",
+                                task_widget="read_word_match",
+                                topic_override="Culture & Society — respectful framing and nuanced adjectives",
+                                generation_instructions=(
+                                    "Ask the learner to match culture words (tradition, community, diversity, heritage) to short definitions. B2 depth: sensitive culture topics with respectful framing and nuanced adjectives; avoid stereotypes in prompts and sample answers."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_word_match'. Provide options (the culture words) and 4 items, each with prompt (the definition), correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_culture_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Describing a local festival — respectful framing and nuanced adjectives",
+                                generation_instructions=(
+                                    "Generate a short monologue (about 25 seconds) where someone describes a community festival, a tradition, and why it matters. Ask comprehension questions about the festival, how often it happens, and why people value it. B2 depth: sensitive culture topics with respectful framing and nuanced adjectives; avoid stereotypes in prompts and sample answers."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_para_culture_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARA",
+                                activity="write",
+                                task_widget="write_paragraph",
+                                topic_override="Describe a tradition — respectful framing and nuanced adjectives",
+                                generation_instructions=(
+                                    "Ask the learner to write 3-4 sentences about a tradition or community event in their culture, including the words tradition and heritage. B2 depth: sensitive culture topics with respectful framing and nuanced adjectives; avoid stereotypes in prompts and sample answers."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (tradition, community, heritage, celebrate), minimum_words 20, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_culture_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override="Describe a cultural scene — respectful framing and nuanced adjectives",
+                                generation_instructions=(
+                                    "Ask the learner to describe a cultural scene aloud, naming what people are doing using 'There is' or 'I can see' and culture words. B2 depth: sensitive culture topics with respectful framing and nuanced adjectives; avoid stereotypes in prompts and sample answers."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a street festival with people in traditional dress, grammar_rule, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Work & Careers - Jobs, Teamwork & Progress",
@@ -3050,6 +5284,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Career Move Collocations",
+                    description=(
+                        "Building on yesterday's work vocabulary, learners use HR-style career collocations (apply for, get promoted, hand in notice) in micro-dialogues."
+                    ),
+                    focus="Career move collocations in HR-style chat.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen work lexis with career-move collocations.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce work words.",
+                                instruction=(
+                                    "Greet the learner and note they practised workplace words yesterday. Explain in two sentences that career moves use fixed collocations (apply for a role, hand in your notice, get promoted). Ask what career move they would like next."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more work words.",
+                                instruction=(
+                                    "React to their goal. Model hand in notice vs resign and ask them to say one HR-style sentence about a colleague who got promoted."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used a career collocation, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_context_mcq_work_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CONTEXT_MCQ",
+                                activity="read",
+                                task_widget="read_context_mcq",
+                                topic_override="Working Life — career move collocations — HR-style chat",
+                                generation_instructions=(
+                                    "Write a short passage describing how a team collaborates on a project, meets a deadline, and how one member is promoted, and ask the learner to infer the meaning of 'collaborate' from context. B2 depth: HR-style micro-dialogues with career collocations (apply for, hand in notice, get promoted, collaborate on); timed speech sounds like a brief career check-in."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_context_mcq'. Provide passage_title, passage, and at least 1 MCQ item with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_dictation_work_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_DICTATION",
+                                activity="listen",
+                                task_widget="listen_dictation",
+                                topic_override="Talking about a job — career move collocations — HR-style chat",
+                                generation_instructions=(
+                                    "Generate a short sentence (about 14 seconds) using work vocabulary (promote, collaborate, deadline), and ask the learner to type the exact sentence. B2 depth: HR-style micro-dialogues with career collocations (apply for, hand in notice, get promoted, collaborate on); timed speech sounds like a brief career check-in."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_dictation'. Provide audio_script, target_words (the key work words), and 1 dictation item with prompt, correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_paraphrase_work_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARAPHRASE",
+                                activity="write",
+                                task_widget="write_paraphrase",
+                                topic_override="Rewrite with work vocabulary — career move collocations — HR-style chat",
+                                generation_instructions=(
+                                    "Give the learner 2 plain sentences about work (we all worked together on the report, she left her job last month) and ask them to rewrite each using more precise work vocabulary (collaborated, resigned). B2 depth: HR-style micro-dialogues with career collocations (apply for, hand in notice, get promoted, collaborate on); timed speech sounds like a brief career check-in."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paraphrase'. Provide 2 items, each with incorrect_sentence (the plain sentence), sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_work_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override="Timed Work Speech — career move collocations — HR-style chat",
+                                generation_instructions=(
+                                    "Ask the learner to talk for up to 60 seconds about their work or studies, describing what they do, who they collaborate with, and an important deadline. B2 depth: HR-style micro-dialogues with career collocations (apply for, hand in notice, get promoted, collaborate on); timed speech sounds like a brief career check-in."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (promote, resign, collaborate, deadline), and speaking_duration_seconds: 60."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="News & Current Issues - Headlines, Policy & Debate",
@@ -3202,6 +5564,138 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Claim vs Evidence — Reportedly/Allegedly",
+                    description=(
+                        "Building on yesterday's news vocabulary, learners separate claims from evidence using hedging language (reportedly, allegedly, according to)."
+                    ),
+                    focus="Claim vs evidence with reportedly/allegedly; opinion vs fact.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen news lexis with claim vs evidence language.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce news words.",
+                                instruction=(
+                                    "Greet the learner and note they discussed headlines and policy yesterday. Explain in two sentences that B2 news language distinguishes claims from evidence (reportedly, allegedly, according to sources). Ask them to react to: 'The minister will resign tomorrow' — fact or claim?"
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more news words.",
+                                instruction=(
+                                    "Confirm it is a claim until confirmed. Show reportedly vs allegedly and ask them to rewrite the headline with one hedging phrase."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has hedged a claim at least once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_word_match_news_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_WORD_MATCH",
+                                activity="read",
+                                task_widget="read_word_match",
+                                topic_override=(
+                                    "News & Current Issues Vocabulary — claim vs evidence — reportedly and allegedly"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to match news words (headline, policy, debate, impact) to their meanings. B2 depth: separate opinion from fact; use reportedly, allegedly, according to; MCQ and picture description test evidence vs speculation."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_word_match'. Provide options (the news words) and 4 items, each with prompt (the meaning), correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_news_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="A news report — claim vs evidence — reportedly and allegedly",
+                                generation_instructions=(
+                                    "Generate a monologue (about 40 seconds) where a reporter summarises a story, a new policy, and its impact. Ask comprehension questions about the story, the policy, and the impact. B2 depth: separate opinion from fact; use reportedly, allegedly, according to; MCQ and picture description test evidence vs speculation."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_news_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override=(
+                                    "News vocabulary sentence transformation — claim vs evidence — reportedly and allegedly"
+                                ),
+                                generation_instructions=(
+                                    "Give the learner 3 wordy news phrases (the title of the story, a plan made by the government, the effect it had on people) and ask them to rewrite each using a precise news word (headline, policy, impact). B2 depth: separate opinion from fact; use reportedly, allegedly, according to; MCQ and picture description test evidence vs speculation."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_news_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override="Describe a news scene — claim vs evidence — reportedly and allegedly",
+                                generation_instructions=(
+                                    "Ask the learner to describe a news scene aloud, using news words (headline, policy, debate, impact) to talk about what is happening and why it matters. B2 depth: separate opinion from fact; use reportedly, allegedly, according to; MCQ and picture description test evidence vs speculation."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a news studio with a reporter and a headline on the screen, grammar_rule, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Abstract Qualities & Values - Integrity, Resilience & Perspective",
@@ -3362,6 +5856,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Values in Action — Micro-Scenarios",
+                    description=(
+                        "Building on yesterday's values vocabulary, learners define abstract qualities and illustrate each with a short micro-scenario."
+                    ),
+                    focus="Define values and show each in a micro-scenario.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen values lexis with define-plus-example micro-scenarios.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce values words.",
+                                instruction=(
+                                    "Greet the learner and note they upgraded values words yesterday. Explain in two sentences that B2 depth defines a value then shows it in a micro-scenario (Integrity means…; for example, she returned the wallet). Ask them to define resilience in one sentence."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="stronger_words",
+                                goal="Practise stronger values words.",
+                                instruction=(
+                                    "Confirm their definition. Ask for a two-sentence micro-scenario showing integrity or empathy in action at work or study."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has given define + example once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_context_mcq_values_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CONTEXT_MCQ",
+                                activity="read",
+                                task_widget="read_context_mcq",
+                                topic_override="Infer values from context — values in action — define plus micro-scenario",
+                                generation_instructions=(
+                                    "Write a short profile of a person whose actions reveal their values (keeps promises even when it is hard, recovers after setbacks, listens to other views). Ask the learner to infer the quality word that best fits at each point. B2 depth: each value word needs a definition plus a concrete micro-scenario; timed speech uses integrity/resilience/perspective with brief examples."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_context_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_dictation_values_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_DICTATION",
+                                activity="listen",
+                                task_widget="listen_dictation",
+                                topic_override="Dictate values words — values in action — define plus micro-scenario",
+                                generation_instructions=(
+                                    "Generate a short personal description (about 45 seconds) in which the speaker names abstract qualities (integrity, resilience). Ask the learner to type the exact quality word that completes each blanked sentence. B2 depth: each value word needs a definition plus a concrete micro-scenario; timed speech uses integrity/resilience/perspective with brief examples."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_dictation'. Provide audio_script, target_words (the quality words), and 2 dictation items, each with a prompt sentence containing a blank, correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_word_upgrade_values_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_WORD_UPGRADE",
+                                activity="write",
+                                task_widget="write_word_upgrade",
+                                topic_override="Upgrade values vocabulary — values in action — define plus micro-scenario",
+                                generation_instructions=(
+                                    "Give the learner 3 plain sentences about values (he is always honest and fair, she keeps going after problems, he understands how others feel) and ask them to rewrite each using a stronger quality word (integrity, resilience, empathy). B2 depth: each value word needs a definition plus a concrete micro-scenario; timed speech uses integrity/resilience/perspective with brief examples."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_word_upgrade'. Provide 3 items, each with source_sentence, target_upgrade_word, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_values_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override="Talk about a value you admire — values in action — define plus micro-scenario",
+                                generation_instructions=(
+                                    "Ask the learner to talk about a person they admire using at least one strong quality word and explaining why that value matters. B2 depth: each value word needs a definition plus a concrete micro-scenario; timed speech uses integrity/resilience/perspective with brief examples."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (integrity, resilience, perspective, empathy, ambition), and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Review & Word Building - Consolidate the week's vocab",
@@ -3519,6 +6141,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Week Review Paragraph",
+                    description=(
+                        "Building on the week's vocabulary, learners recycle week 3 lexis in one cohesive review paragraph across all six topics."
+                    ),
+                    focus="Recycle week 3 lexis in one cohesive review paragraph.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Consolidate week 3 vocabulary in a connected paragraph.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Frame the review day.",
+                                instruction=(
+                                    "Greet the learner for the vocabulary review depth day. Note they built lexis across environment, education, culture, work, news, and values this week. Explain that today they weave those words into one cohesive paragraph. Ask for two words they will definitely include."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="recall_prompt",
+                                goal="Prompt active recall.",
+                                instruction=(
+                                    "Affirm their choices. Ask them to link two topics in one sentence (for example sustainable policy and career promotion), then preview match, listening, paragraph, and 90-second recall."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has linked two topics, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_word_match_review_w11_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_WORD_MATCH",
+                                activity="read",
+                                task_widget="read_word_match",
+                                topic_override="Weekly Review Match — week 3 lexis in one review paragraph",
+                                generation_instructions=(
+                                    "Ask the learner to match 6 words from across the week (one per topic, for example sustainable, qualification, heritage, collaborate, policy, resilience) to their definitions. B2 depth: recycle week 3 collocations (offset, enrol, inclusive, promoted, reportedly, integrity) in one cohesive paragraph; speaking challenge uses cross-topic collocations naturally."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_word_match'. Provide options (the 6 words) and 6 items, each with prompt (the definition), correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_review_w11_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Weekly consolidation story — week 3 lexis in one review paragraph",
+                                generation_instructions=(
+                                    "Generate a short personal story (about 28 seconds) that weaves in vocabulary from all six topics (sustainable, qualification, heritage, collaborate, policy, resilience). Ask comprehension questions that depend on those words. B2 depth: recycle week 3 collocations (offset, enrol, inclusive, promoted, reportedly, integrity) in one cohesive paragraph; speaking challenge uses cross-topic collocations naturally."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_para_review_w11_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARA",
+                                activity="write",
+                                task_widget="write_paragraph",
+                                topic_override="Free recall writing — week 3 lexis in one review paragraph",
+                                generation_instructions=(
+                                    "Ask the learner to write a short paragraph (3-5 sentences) on any topic that uses at least 5 words learned this week, integrating them smoothly. B2 depth: recycle week 3 collocations (offset, enrol, inclusive, promoted, reportedly, integrity) in one cohesive paragraph; speaking challenge uses cross-topic collocations naturally."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (the week's words), minimum_words 25, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_review_w11_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override="Playful end-of-week recall challenge — week 3 lexis in one review paragraph",
+                                generation_instructions=(
+                                    "Ask the learner to talk for up to 90 seconds on any topic, using as many of this week's vocabulary words as they can in natural, spontaneous speech. B2 depth: recycle week 3 collocations (offset, enrol, inclusive, promoted, reportedly, integrity) in one cohesive paragraph; speaking challenge uses cross-topic collocations naturally."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (the week's words), and speaking_duration_seconds: 90."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
         ),
     ),
@@ -3684,6 +6434,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Timebox & Decision Recap",
+                    description=(
+                        "Building on yesterday's discussion leadership, learners timebox topics, steer the group, and close with a clear decision recap."
+                    ),
+                    focus="Timebox discussion topics; steer and close with decision recap.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen discussion leadership with timeboxing and decision recap.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Frame leading as small steps.",
+                                instruction=(
+                                    "Welcome the learner and note they practised inviting others yesterday. Explain in two sentences that B2 facilitation timeboxes topics (We have five minutes on…) and ends with a decision recap (So we agreed…). Ask how they would open a 10-minute team discussion."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="preview",
+                                goal="Preview the day and reassure.",
+                                instruction=(
+                                    "Affirm their opener. Model a decision recap with three bullet actions and ask them to timebox one topic and invite one quieter voice."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has timeboxed or recapped a decision once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_leading_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="Leading a group discussion story — timebox and decision recap",
+                                generation_instructions=(
+                                    "Write a short, encouraging story about someone who guides a group discussion: they open the topic, invite a quiet member to share, and summarise the group's decision. Then ask comprehension questions about how they opened, who they invited, and the result. B2 depth: steer with timeboxing; close with So we agreed / action recap; read-aloud paragraph models facilitation language."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_shadow_leading_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_SHADOW",
+                                activity="listen",
+                                task_widget="listen_shadow",
+                                topic_override="Confident invitation shadowing — timebox and decision recap",
+                                generation_instructions=(
+                                    "Generate a short, warm clip (about 15 seconds) of a person inviting others into a discussion (What do you think, Priya? / Let's hear another view.), for the learner to shadow with natural pacing and confidence. B2 depth: steer with timeboxing; close with So we agreed / action recap; read-aloud paragraph models facilitation language."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow (a sentence or two from the script), target_words, and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_leading_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override="Reframe passive language into leadership language — timebox and decision recap",
+                                generation_instructions=(
+                                    "Give the learner 3 passive statements (I just follow what others decide, I never lead anything, nobody listens to me) and ask them to reframe each into confident leadership language using verbs like guide, invite, and summarise. B2 depth: steer with timeboxing; close with So we agreed / action recap; read-aloud paragraph models facilitation language."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_read_aloud_leading_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_READ_ALOUD",
+                                activity="speak",
+                                task_widget="read_aloud",
+                                topic_override="Leadership paragraph read aloud — timebox and decision recap",
+                                generation_instructions=(
+                                    "Give the learner a short, positive paragraph (about 35 words) about guiding a group and inviting every voice in, to read aloud with clear pronunciation and steady pacing. B2 depth: steer with timeboxing; close with So we agreed / action recap; read-aloud paragraph models facilitation language."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_aloud'. Provide text_to_read_aloud, grammar_rule about clear pronunciation and breathing pauses, target_words, and speaking_duration_seconds: 30."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Building a Clear Argument - Claim, Reason & Example",
@@ -3843,6 +6721,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Counterclaim & One Rebuttal",
+                    description=(
+                        "Building on yesterday's argument structure, learners add a counterclaim and one rebuttal using however / while it's true layers."
+                    ),
+                    focus="Counterclaim plus one rebuttal with however-layer.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen arguments with counterclaim and rebuttal.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Frame a clear argument.",
+                                instruction=(
+                                    "Greet the learner and note they built claim-reason-example yesterday. Explain in two sentences that stronger B2 arguments acknowledge a counterclaim then rebut it (While it's true…, however…). Ask for one opinion they hold about learning English."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="argument_markers",
+                                goal="Name strong vs weak argument structure.",
+                                instruction=(
+                                    "Use their opinion. Show counterclaim + one rebuttal and ask them to add However… after a fair point against their view."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used counterclaim and rebuttal once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tone_id_argument_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TONE_ID",
+                                activity="read",
+                                task_widget="read_tone_id",
+                                topic_override="Strong vs weak argument — counterclaim and one rebuttal",
+                                generation_instructions=(
+                                    "Provide two short responses to the same question, one a well-built argument (claim, reason, example) and one a weak opinion with no support, and ask the learner to label each as Well-built or Weak. B2 depth: include counterclaim (While it's true / Some argue) and one rebuttal (However…); timed write and speak use however-layer."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options (Weak / Unsupported, Well-built / Supported), correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_argument_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Argument structure patterns — counterclaim and one rebuttal",
+                                generation_instructions=(
+                                    "Generate a clip (about 22 seconds) of two speakers answering the same question: one gives only an opinion, one gives a claim with a reason and an example. Ask the learner which speaker builds a clearer argument. B2 depth: include counterclaim (While it's true / Some argue) and one rebuttal (However…); timed write and speak use however-layer."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and at least 1 MCQ item with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_timed_argument_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_TIMED",
+                                activity="write",
+                                task_widget="write_timed",
+                                topic_override="Timed Argument Write — counterclaim and one rebuttal",
+                                generation_instructions=(
+                                    "Ask the learner to argue in writing whether students should learn a second language, in at least 25 words under a short time limit, including a claim, a reason, and an example. B2 depth: include counterclaim (While it's true / Some argue) and one rebuttal (However…); timed write and speak use however-layer."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (I argue that, because, for instance, therefore), writing_duration_seconds: 180, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_argument_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override="Timed Improvised Argument Speech — counterclaim and one rebuttal",
+                                generation_instructions=(
+                                    "Ask the learner to speak for up to 60 seconds on whether technology makes life easier, building a clear argument with a claim, a reason, and an example. B2 depth: include counterclaim (While it's true / Some argue) and one rebuttal (However…); timed write and speak use however-layer."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (I believe, because, for example, overall), and speaking_duration_seconds: 60."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Goals, Ambitions & Trade-offs - Talk About Your Future Honestly",
@@ -4004,6 +7010,140 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Prioritising with Whereas/On the other hand",
+                    description=(
+                        "Building on yesterday's goals language, learners compare goals and trade-offs with whereas and on the other hand."
+                    ),
+                    focus="Prioritise goals with whereas / on the other hand trade-offs.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen goal talk with contrasting connectors.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Invite a simple goal.",
+                                instruction=(
+                                    "Greet the learner and note they discussed goals and trade-offs yesterday. Explain in two sentences that B2 prioritising contrasts goals (I want X, whereas Y means giving up Z). Ask for two goals they are balancing."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="goals_tradeoffs",
+                                goal="Contrast confident and grounded goal language.",
+                                instruction=(
+                                    "Affirm both goals. Ask them to link them with whereas or on the other hand and name one trade-off honestly."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has contrasted two goals once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_goals_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="A personal goals bio — prioritising with whereas and on the other hand",
+                                generation_instructions=(
+                                    "Write a short first-person bio of someone who describes a clear goal, the trade-off it involves, and their plan to reach it. Then ask comprehension questions about their goal, the trade-off, their plan, and their motivation. B2 depth: compare goals with whereas / on the other hand; picture description speculates on ambition with contrast connectors."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_tone_goals_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_TONE",
+                                activity="listen",
+                                task_widget="listen_tone",
+                                topic_override=(
+                                    "Realistic vs unrealistic ambition — prioritising with whereas and on the other hand"
+                                ),
+                                generation_instructions=(
+                                    "Generate two versions of the same person describing their goals: a grounded-realistic version (I'm working toward..., step by step) and an unrealistic version (I'll be famous next month, no effort needed). Ask the learner to label each version's tone. B2 depth: compare goals with whereas / on the other hand; picture description speculates on ambition with contrast connectors."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_tone'. Provide two intros (each with id, label, speaker, audio_script) and 2 MCQ items, each with prompt, options (Unrealistic / Vague, Realistic / Grounded), correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_goals_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override=(
+                                    "Richer goal-statement transforms — prioritising with whereas and on the other hand"
+                                ),
+                                generation_instructions=(
+                                    "Give the learner 3 plain goal statements (I want a better job, I hope to travel, I would like to study more) and ask them to rewrite each into a clearer, grounded goal with a trade-off or step (I'm aiming to..., which means...). B2 depth: compare goals with whereas / on the other hand; picture description speculates on ambition with contrast connectors."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_goals_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override=(
+                                    "Describe a person working toward a goal — prioritising with whereas and on the other hand"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to describe a picture of a person working toward a goal, saying what they are doing and what ambition they might be pursuing, using speculative phrases like looks like, seems to be, and might be. B2 depth: compare goals with whereas / on the other hand; picture description speculates on ambition with contrast connectors."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a person studying late at a desk covered in plans, grammar_rule about speculative language, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Handling Disagreement or Criticism - Stay Calm and Respond",
@@ -4164,6 +7304,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Clarify, Agree Partly, Plan Fix",
+                    description=(
+                        "Building on yesterday's calm responses, learners use a non-defensive three-step: clarify, agree partly, plan a fix."
+                    ),
+                    focus="Non-defensive 3-step: clarify, agree partly, plan fix.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen criticism responses with clarify–partial agree–fix.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Normalise disagreement.",
+                                instruction=(
+                                    "Greet the learner and note they practised calm responses yesterday. Explain in two sentences that B2 depth uses clarify (Just to confirm…), agree partly (That's fair, and…), then plan a fix (I'll… by Friday). Ask what they do when criticism feels unfair."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="respond_calmly",
+                                goal="Teach calm responding.",
+                                instruction=(
+                                    "Reassure them. Model the three-step on sample criticism and ask them to agree partly with one point and offer one concrete fix."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used clarify or partial agree once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tone_id_criticism_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TONE_ID",
+                                activity="read",
+                                task_widget="read_tone_id",
+                                topic_override="Responding tone shift — clarify, agree partly, plan fix",
+                                generation_instructions=(
+                                    "Provide two short messages where a speaker first reacts defensively and then responds calmly to criticism, and ask the learner to identify the tone shift in each (for example defensive to open, annoyed to composed). B2 depth: non-defensive 3-step (clarify, That's fair and…, I'll fix by…); smalltalk pushback requires partial agreement plus action plan."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options describing tone shifts, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_shadow_criticism_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_SHADOW",
+                                activity="listen",
+                                task_widget="listen_shadow",
+                                topic_override="Calm response phrases — clarify, agree partly, plan fix",
+                                generation_instructions=(
+                                    "Generate a short clip (about 20 seconds) where a speaker responds calmly to criticism using phrases like 'That's a fair point', 'I see what you mean', and 'Let me explain my thinking', for the learner to shadow with the same calm flow. B2 depth: non-defensive 3-step (clarify, That's fair and…, I'll fix by…); smalltalk pushback requires partial agreement plus action plan."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow, target_words (That's a fair point, I see what you mean, Let me explain), and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_timed_criticism_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_TIMED",
+                                activity="write",
+                                task_widget="write_timed",
+                                topic_override="Reflecting on criticism — clarify, agree partly, plan fix",
+                                generation_instructions=(
+                                    "Ask the learner to write a short personal reflection under a short time limit on how they respond when someone criticises their work, using transition words to organise their thoughts. B2 depth: non-defensive 3-step (clarify, That's fair and…, I'll fix by…); smalltalk pushback requires partial agreement plus action plan."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (Usually, Instead of, In future), writing_duration_seconds: 180, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_smalltalk_criticism_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_SMALLTALK",
+                                activity="speak",
+                                task_widget="speak_smalltalk",
+                                topic_override="Unpredictable pushback — clarify, agree partly, plan fix",
+                                generation_instructions=(
+                                    "Set up an unpredictable exchange where the partner pushes back on the learner's idea and the learner stays calm, acknowledges the point, and responds without getting defensive. B2 depth: non-defensive 3-step (clarify, That's fair and…, I'll fix by…); smalltalk pushback requires partial agreement plus action plan."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (That's fair, I understand, even so), and speaking_duration_seconds: 30."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Pitching an Idea Briefly - Problem, Idea & Benefit",
@@ -4320,6 +7588,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Elevator Pitch + One Objection",
+                    description=(
+                        "Building on yesterday's pitch structure, learners deliver a 60-second elevator pitch and handle one objection briefly."
+                    ),
+                    focus="60s elevator pitch plus one handled objection.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen pitching with objection handling.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Invite an idea the learner cares about.",
+                                instruction=(
+                                    "Greet the learner and note they practised problem-idea-benefit yesterday. Explain in two sentences that B2 pitches stay under 60 seconds and answer one objection (I hear your concern; however…). Ask for a one-sentence pitch idea."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="give_reasons",
+                                goal="Model a clear pitch structure.",
+                                instruction=(
+                                    "Affirm the idea. Ask them to anticipate one objection and reply with That's a fair point; however… in two sentences."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has handled one objection, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_pitching_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="A short pitch — elevator pitch plus one objection",
+                                generation_instructions=(
+                                    "Write a warm first-person passage where someone pitches an idea to improve their community (for example a shared tool library), covering the problem, the idea, the benefit, and the next step. Then ask comprehension questions about each. B2 depth: ~60s pitch with problem-idea-benefit; picture task includes one objection and brief rebuttal; sentence transforms upgrade to pitch register."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_pitching_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Enthusiasm for an idea — elevator pitch plus one objection",
+                                generation_instructions=(
+                                    "Generate an enthusiastic monologue (about 25 seconds) where someone pitches an idea (the problem it solves, the idea itself, the benefit). Ask comprehension questions about those details. B2 depth: ~60s pitch with problem-idea-benefit; picture task includes one objection and brief rebuttal; sentence transforms upgrade to pitch register."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_pitching_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override="Upgrade plain ideas into pitches — elevator pitch plus one objection",
+                                generation_instructions=(
+                                    "Give the learner 3 plain idea statements (we need more bins, the app is slow, meetings are too long) and ask them to transform each into a brief pitch naming the problem and the benefit using patterns like 'The problem is..., so I suggest..., which would...'. B2 depth: ~60s pitch with problem-idea-benefit; picture task includes one objection and brief rebuttal; sentence transforms upgrade to pitch register."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_pitching_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override="Describe a scene that needs a solution — elevator pitch plus one objection",
+                                generation_instructions=(
+                                    "Ask the learner to describe a scene that shows a problem aloud (the scene, what is wrong) and pitch one idea to improve it, using confident problem-idea-benefit language. B2 depth: ~60s pitch with problem-idea-benefit; picture task includes one objection and brief rebuttal; sentence transforms upgrade to pitch register."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing an overflowing recycling area outside an office, grammar_rule, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Longer Structured Talk - Intro, Two Points & Conclusion",
@@ -4482,6 +7878,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Signposting & Example Handoff",
+                    description=(
+                        "Building on yesterday's structured talk, learners signpost clearly (Firstly, Secondly, In short) and hand off to examples smoothly."
+                    ),
+                    focus="Signposting and example handoff (Firstly/Secondly/In short).",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen structured talks with signposts and example handoffs.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Surface what a structured talk includes.",
+                                instruction=(
+                                    "Greet the learner and note they planned intro-two points-conclusion yesterday. Explain in two sentences that B2 signposting hands off to examples (My first point is…; for instance…; In short…). Ask which topic they could present for 90 seconds."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="structure_poise",
+                                goal="Add signposting and poise.",
+                                instruction=(
+                                    "Affirm the topic. Ask them to say Firstly… and For instance… for one point, then preview signposted reading, listening, timed plan, and presentation."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used two signposts once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tone_id_structured_talk_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TONE_ID",
+                                activity="read",
+                                task_widget="read_tone_id",
+                                topic_override="Structure in longer talks — signposting and example handoff",
+                                generation_instructions=(
+                                    "Provide two short talks on the same topic, one well-structured (clear intro, signposted points, conclusion) and one rambling (no order, no signposting), and ask the learner to label each. B2 depth: Firstly/Secondly/In short with for instance handoffs; speak_present 90s must signpost and land a clear In short conclusion."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options including Well-structured and clear and Rambling and unclear, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_tone_structured_talk_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_TONE",
+                                activity="listen",
+                                task_widget="listen_tone",
+                                topic_override="Audio structured talks — signposting and example handoff",
+                                generation_instructions=(
+                                    "Generate two spoken talks on the same topic, one clearly signposted and evenly paced and one rambling with no clear order, and ask the learner which sounds more structured and what signals the structure. B2 depth: Firstly/Secondly/In short with for instance handoffs; speak_present 90s must signpost and land a clear In short conclusion."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_tone'. Provide two intros (each with id, label, speaker, audio_script) and 2 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_timed_structured_talk_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_TIMED",
+                                activity="write",
+                                task_widget="write_timed",
+                                topic_override="Structured talk plan — signposting and example handoff",
+                                generation_instructions=(
+                                    "Ask the learner to write a short structured talk plan under a short time limit: an intro sentence, two point sentences, and a conclusion sentence on a topic they know well. B2 depth: Firstly/Secondly/In short with for instance handoffs; speak_present 90s must signpost and land a clear In short conclusion."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_timed'. Provide prompt, grammar_rule describing the intro-points-conclusion structure, target_words (To begin, My first point, secondly, to conclude), writing_duration_seconds: 180, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_present_structured_talk_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PRESENT",
+                                activity="speak",
+                                task_widget="speak_present",
+                                topic_override="Structured talk — signposting and example handoff",
+                                generation_instructions=(
+                                    "Ask the learner to record a 90-second structured talk with a clear intro, two main points, and a conclusion, speaking with even pacing and clear signposting. B2 depth: Firstly/Secondly/In short with for instance handoffs; speak_present 90s must signpost and land a clear In short conclusion."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_present'. Provide a visual_prompt_description outlining the intro, two points, and conclusion, an optional model_presentation, grammar_rule, target_words (To begin, firstly, secondly, to conclude), and speaking_duration_seconds: 90."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Full Confidence Showcase (B1)",
@@ -4644,6 +8168,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="B1 Showcase Depth — Integrated",
+                    description=(
+                        "Cycle 3 confidence showcase depth: learners integrate leading, arguing, pitching, and structured talk with less scaffold than the base day."
+                    ),
+                    focus="Integrated week 4 confidence skills with less scaffold.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Showcase integrated B1 confidence skills at B2 depth.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Invite reflection on growth.",
+                                instruction=(
+                                    "Greet the learner for the Cycle 3 showcase depth. Note they built leadership, argument, and pitch skills this week. Explain that today combines those moves with less scaffolding. Ask how their confidence changed since day one of this cycle."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="showcase_preview",
+                                goal="Preview the showcase tasks.",
+                                instruction=(
+                                    "Celebrate progress. Preview integrated reading, shadowing, timed reflection, and debate with timebox, counterclaim, and pitch language in one flow."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction="Once the learner sounds ready, ask only: Ready to try the practice task?",
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_showcase_w12_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="Growing in confidence — integrated showcase — less scaffold",
+                                generation_instructions=(
+                                    "Write an inspiring first-person passage about someone who grew more confident in English by leading discussions and making clear arguments after a mentor said confidence grows with action, not waiting. Then ask comprehension questions about the early struggle, the mentor's advice, the first step, and the closing message. B2 depth: integrate facilitation, counterclaim, pitch, and signposting in one showcase; debate uses However / on the other hand with decision recap."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_shadow_showcase_w12_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_SHADOW",
+                                activity="listen",
+                                task_widget="listen_shadow",
+                                topic_override="Fluent and energetic shadow session — integrated showcase — less scaffold",
+                                generation_instructions=(
+                                    "Generate a short, energetic motivational line (about 15 seconds) about being proud of one's growing confidence and speaking up with structure and reasons, for the learner to shadow, matching the rising and falling intonation. B2 depth: integrate facilitation, counterclaim, pitch, and signposting in one showcase; debate uses However / on the other hand with decision recap."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow, target_words (proud of, growing, confidence), and grammar_rule about intonation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_timed_showcase_w12_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_TIMED",
+                                activity="write",
+                                task_widget="write_timed",
+                                topic_override="Reflecting on Cycle 3 growth — integrated showcase — less scaffold",
+                                generation_instructions=(
+                                    "Ask the learner to write a short personal reflection under a short time limit on what they learned about themselves this cycle, using reflective and forward-looking transition markers. B2 depth: integrate facilitation, counterclaim, pitch, and signposting in one showcase; debate uses However / on the other hand with decision recap."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (discovered, moreover, in the future), writing_duration_seconds: 180, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_debate_showcase_w12_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_DEBATE",
+                                activity="speak",
+                                task_widget="speak_debate",
+                                topic_override=(
+                                    "Debate: Lead firmly vs build consensus first — integrated showcase — less scaffold"
+                                ),
+                                generation_instructions=(
+                                    "Set up a friendly debate on whether it is better to lead a discussion firmly or build consensus slowly first. The AI argues for building consensus first; the learner records a counter-argument using strong opinion starters and transition markers. B2 depth: integrate facilitation, counterclaim, pitch, and signposting in one showcase; debate uses However / on the other hand with decision recap."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_debate'. Provide a debate_context with an AI moderator turn, an AI opponent turn, and a learner turn, target_words (strongly believe, however, on the other hand), and speaking_duration_seconds: 60."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
         ),
     ),
@@ -4810,6 +8462,138 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="PPC — Evidence & Result in Story",
+                    description=(
+                        "Building on yesterday's past perfect continuous, learners link had been …ing duration to a clear outcome in a short story (evidence → result)."
+                    ),
+                    focus="Past perfect continuous evidence and result in connected narrative.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen PPC with had been …ing leading to a visible outcome.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce the past perfect continuous.",
+                                instruction=(
+                                    "Greet the learner and note they practised had been plus verb-ing yesterday. Explain in two sentences that B2+ depth chains duration to a result (I had been working all morning, so the report was ready). Ask what they had been doing before a recent deadline."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="had_been_ing",
+                                goal="Teach had been + verb-ing.",
+                                instruction=(
+                                    "Use their answer to show evidence → result with so or therefore. Ask them to add one outcome sentence after a had been …ing line."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="for_since",
+                                goal="Teach for and since with the form.",
+                                instruction=(
+                                    "Add for or since to the duration clause, then state the result. Ask for one pair: duration with for/since + clear result."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has linked duration to a result once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_cloze_past_perf_cont_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CLOZE",
+                                activity="read",
+                                task_widget="fill_blanks",
+                                topic_override="Past perfect continuous duration — PPC evidence and result in story",
+                                generation_instructions=(
+                                    "Write a 4-5 blank connected passage about a busy week where several actions had been going on for a period before a key moment. Focus on the past perfect continuous with had been + verb-ing and for or since. B2+ depth: had been …ing → outcome in one story; cloze and speak require duration plus visible result (so/therefore)."
+                                ),
+                                widget_requirements=(
+                                    "Always include base_verb for every blank so the learner forms had been + verb-ing. Do not repeat base_verb inline in the passage after each ___ — the UI shows it separately."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_plus_llm",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_past_perf_cont_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Listening for past perfect continuous — PPC evidence and result in story",
+                                generation_instructions=(
+                                    "Generate a 70-100 word spoken passage about a person describing a past situation where longer actions had been in progress, using had been, for, and since before another event happened. B2+ depth: had been …ing → outcome in one story; cloze and speak require duration plus visible result (so/therefore)."
+                                ),
+                                widget_requirements="Generate 3-4 MCQ items with prompt, options, correct_index, and explanation.",
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_past_perf_cont_sentences_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_OPEN_SENT",
+                                activity="write",
+                                task_widget="open_text",
+                                topic_override="Write past perfect continuous sentences — PPC evidence and result in story",
+                                generation_instructions=(
+                                    "Ask for affirmative past perfect continuous sentences using I, he, and she, describing what had been happening for a period before another past action, with for or since. B2+ depth: had been …ing → outcome in one story; cloze and speak require duration plus visible result (so/therefore)."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_past_perf_cont_events_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override=(
+                                    "Say what had been happening before a past moment — PPC evidence and result in story"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to say short past perfect continuous sentences about what had been happening before a past moment using had been and verb-ing. B2+ depth: had been …ing → outcome in one story; cloze and speak require duration plus visible result (so/therefore)."
+                                ),
+                                widget_requirements=(
+                                    "Create exactly 3 speaking prompts: one with I, one with he, and one with she. Include speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Third Conditional - Regrets About the Past",
@@ -5049,6 +8833,156 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Regret Chains — Two If-Clauses",
+                    description=(
+                        "Building on yesterday's third conditional, learners express two regrets about the same past event using paired if-clauses."
+                    ),
+                    focus="Two third-conditional regret chains about the same past event.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen third conditional with dual regret chains.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce the third conditional.",
+                                instruction=(
+                                    "Greet the learner and note they worked on if + past perfect / would have yesterday. Explain in two sentences that B2+ depth stacks two regrets about one event (If I had…, I would have…; If we had…, we would have…). Ask for one choice they regret from last year."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="if_clause_pp",
+                                goal="Teach the past perfect in the if-clause.",
+                                instruction=(
+                                    "Model two if-clauses about the same event with different angles. Ask them to finish one if-clause and start a second about the same situation."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="would_have",
+                                goal="Teach would have + past participle.",
+                                instruction=(
+                                    "Confirm both result clauses use would have + past participle. Ask for a mini-chain of two complete third-conditional sentences on one topic."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has given two linked regrets once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_error_spot_third_conditional_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_ERROR_SPOT",
+                                activity="read",
+                                task_widget="error_spotting",
+                                topic_override="Spot third conditional errors — regret chains — two if-clauses",
+                                generation_instructions=(
+                                    "Generate a 5-sentence passage about regrets and different past choices. Each sentence must contain exactly one grammatical error, so there are exactly 5 error tokens. Make mistakes diverse across third-conditional usage: wrong tense in the if-clause, missing would have, will instead of would have, wrong past participle after would have, and a condition-marker mismatch. B2+ depth: same past event, two third-conditional regrets; error-spot and read-aloud use connected regret chains."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'error_spotting'. Return exactly 5 `passage_sentences`. Each sentence must include `sentence_id`, `tokens`, and one `error` object. Each token needs stable `token_id`, `text`, and `is_error`; exactly one token per sentence must have `is_error: true`. Each `error` must include token_id, incorrect_phrase, correction, error_type, rule, and explanation. Set `total_errors` to 5. Allowed error_type values: irregular_past, missing_past_auxiliary, passive_helper_missing, time_marker_mismatch, object_or_complement_mismatch, past_participle_form, regular_past_ending."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_plus_llm",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_cloze_third_conditional_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_CLOZE",
+                                activity="listen",
+                                task_widget="listen_cloze",
+                                topic_override="Listen and fill third conditional forms — regret chains — two if-clauses",
+                                generation_instructions=(
+                                    "Listen to the short regrets audio, then complete the paraphrased notes with the missing third-conditional verb phrases from the clip. B2+ depth: same past event, two third-conditional regrets; error-spot and read-aloud use connected regret chains."
+                                ),
+                                widget_requirements=(
+                                    "Set inner_widget to 'fill_in_blanks'. Use the authored audio_script, passage, and 5 BlankItems exactly as provided so rule-based scoring can compare each typed verb phrase with correct_answer."
+                                ),
+                                static_payload={
+                                    "task_intro": "Listen, then complete the third-conditional notes.",
+                                    "instructions": (
+                                        "Play the audio once, then type the missing third-conditional verbs in the paraphrased notes."
+                                    ),
+                                    "estimated_time_minutes": 3,
+                                    "inner_widget": "fill_in_blanks",
+                                    "audio_genre": "Reflective regrets monologue",
+                                    "audio_script": (
+                                        "Sometimes I think about different choices. If I had studied harder, I would have passed the exam. If we had left earlier, we would have caught the train. If she had known the truth, she would have called me. If they had invited us, we would have come to the party. Honestly, if I had listened to your advice, I would have saved a lot of time."
+                                    ),
+                                    "passage_title": "Different Choices Notes",
+                                    "passage": (
+                                        "If I ___ harder, I would have passed the exam. If we had left earlier, we ___ the train. If she had known the truth, she ___ me. If they ___ us, we would have come. If I had listened to your advice, I ___ a lot of time."
+                                    ),
+                                    "items": [{'item_id': 'b1', 'blank_id': 'b1', 'sentence_with_blank': 'If I ___ harder, I would have passed the exam.', 'base_verb': 'study', 'correct_answer': 'had studied', 'distractors': ['studied', 'would study'], 'options': ['had studied', 'studied', 'would study'], 'grammar_rule': 'Use the past perfect in the if-clause of the third conditional.', 'explanation': 'The if-clause needs had + past participle, so we use had studied.'}, {'item_id': 'b2', 'blank_id': 'b2', 'sentence_with_blank': 'If we had left earlier, we ___ the train.', 'base_verb': 'catch', 'correct_answer': 'would have caught', 'distractors': ['will catch', 'caught'], 'options': ['would have caught', 'will catch', 'caught'], 'grammar_rule': 'Use would have + past participle in the result clause.', 'explanation': 'The unreal past result uses would have caught.'}, {'item_id': 'b3', 'blank_id': 'b3', 'sentence_with_blank': 'If she had known the truth, she ___ me.', 'base_verb': 'call', 'correct_answer': 'would have called', 'distractors': ['will call', 'called'], 'options': ['would have called', 'will call', 'called'], 'grammar_rule': 'Use would have + past participle in the result clause.', 'explanation': 'The imagined past result uses would have called.'}, {'item_id': 'b4', 'blank_id': 'b4', 'sentence_with_blank': 'If they ___ us, we would have come.', 'base_verb': 'invite', 'correct_answer': 'had invited', 'distractors': ['invited', 'would invite'], 'options': ['had invited', 'invited', 'would invite'], 'grammar_rule': 'Use the past perfect in the if-clause of the third conditional.', 'explanation': 'The if-clause needs had invited.'}, {'item_id': 'b5', 'blank_id': 'b5', 'sentence_with_blank': 'If I had listened to your advice, I ___ a lot of time.', 'base_verb': 'save', 'correct_answer': 'would have saved', 'distractors': ['will save', 'saved'], 'options': ['would have saved', 'will save', 'saved'], 'grammar_rule': 'Use would have + past participle in the result clause.', 'explanation': 'The imagined past result uses would have saved.'}],
+                                    "target_words_in_audio": ['had studied', 'would have caught', 'would have called', 'had invited', 'would have saved'],
+                                },
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_error_corr_third_conditional_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_ERROR_CORR",
+                                activity="write",
+                                task_widget="error_correction",
+                                topic_override="Correct third conditional mistakes — regret chains — two if-clauses",
+                                generation_instructions=(
+                                    "Give the learner 3 sentences that each contain one third conditional error — mix wrong tense in the if-clause and would have mistakes. Ask the learner to rewrite each sentence correctly. B2+ depth: same past event, two third-conditional regrets; error-spot and read-aloud use connected regret chains."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_read_aloud_third_conditional_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_READ_ALOUD",
+                                activity="speak",
+                                task_widget="read_aloud",
+                                topic_override="Read third conditional passage aloud — regret chains — two if-clauses",
+                                generation_instructions=(
+                                    "Give the learner a connected third conditional narrative passage of 55-70 words to read aloud, describing several unreal past situations and their imagined results. B2+ depth: same past event, two third-conditional regrets; error-spot and read-aloud use connected regret chains."
+                                ),
+                                widget_requirements=(
+                                    "Populate `text_to_read_aloud` with a single connected second conditional passage (55-70 words) describing imaginary situations and their results. Set `task_intro` to 'Read the passage above out loud.' Include `grammar_rule_to_practice` explaining the second conditional with if + past simple and would + base verb, and `speaking_duration_seconds: 45`."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Causative Have & Get - Arranging for Others to Do Things",
@@ -5213,6 +9147,147 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Service Contexts — Repairs & Appointments",
+                    description=(
+                        "Building on yesterday's causative have/get, learners use service contexts (repairs, appointments) and clarify who performs the action."
+                    ),
+                    focus="Causative have/get in repairs and appointments; who does the action.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen causatives in service and repair scenarios.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce causative have and get.",
+                                instruction=(
+                                    "Greet the learner and note they practised have something done yesterday. Explain in two sentences that B2+ depth uses repairs and appointments (I'll have the car serviced; I got my laptop fixed). Ask what they last had repaired or arranged for someone else to do."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="have_done",
+                                goal="Teach have + object + past participle.",
+                                instruction=(
+                                    "Use their example to contrast who does the work (you vs the technician). Ask for one have + object + past participle in a repair context."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="get_to",
+                                goal="Teach get + object + to-infinitive.",
+                                instruction=(
+                                    "Introduce get someone to do something for persuasion or arrangement. Ask them to say one get sentence about booking or chasing a service appointment."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has clarified who acts once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_causative_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override=(
+                                    "Understand causative arrangements in context — service contexts — repairs and appointments"
+                                ),
+                                generation_instructions=(
+                                    "Write a 60-75 word passage about someone arranging services (repairs, deliveries, appointments) using causative have and get naturally. Then ask comprehension questions and include one item on the correct causative form. B2+ depth: causative have/get in repair and appointment dialogues; tasks name who performs the action (learner vs provider)."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_dictation_causative_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_DICTATION",
+                                activity="listen",
+                                task_widget="listen_dictation",
+                                topic_override="Hear causative have/get chunks — service contexts — repairs and appointments",
+                                generation_instructions=(
+                                    "Generate a 35-45 word audio script of 4 short sentences with varied causative forms (had my phone fixed, got them to send it, is having the report checked). The learner types each sentence exactly as heard. B2+ depth: causative have/get in repair and appointment dialogues; tasks name who performs the action (learner vs provider)."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_dictation'. Provide audio_script and 4 dictation items, each with prompt, correct_answer, and explanation. Set target_words to the passive chunks (for example 'is made', 'was sent', 'are delivered', 'will be repaired')."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_causative_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override=(
+                                    "Rewrite into causative have or get — service contexts — repairs and appointments"
+                                ),
+                                generation_instructions=(
+                                    "Give the learner 3 active sentences they did themselves and ask them to rewrite each using causative have or get, keeping the same meaning. B2+ depth: causative have/get in repair and appointment dialogues; tasks name who performs the action (learner vs provider)."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints (for example 'present -> is/are + past participle', 'past -> was/were + past participle')."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_causative_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override=(
+                                    "Describe arranged services with causative forms — service contexts — repairs and appointments"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to say one causative sentence per prompt about services or tasks arranged for them, using have + object + past participle or get + object + to-infinitive. B2+ depth: causative have/get in repair and appointment dialogues; tasks name who performs the action (learner vs provider)."
+                                ),
+                                widget_requirements=(
+                                    "Create exactly 3 speaking prompts: one present passive about how something is made, one past passive about something that was built or sent, and one about something that will be done. Include speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Reduced & Non-Defining Relative Clauses",
@@ -5366,6 +9441,142 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Formal Description Flow",
+                    description=(
+                        "Building on yesterday's reduced and non-defining relatives, learners produce formal descriptions with reduced clauses that stay unambiguous."
+                    ),
+                    focus="Reduced relatives in formal description without ambiguity.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen relative reduction for formal fluent description.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce non-defining and reduced clauses.",
+                                instruction=(
+                                    "Greet the learner and note they practised non-defining and reduced clauses yesterday. Explain in two sentences that B2+ formal flow reduces clauses only when meaning stays clear. Ask them to describe a colleague or project in one sentence with a comma clause."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="non_defining",
+                                goal="Teach commas with extra information.",
+                                instruction=(
+                                    "Affirm their comma clause. Show a safe reduction (who is leading → leading) and ask them to add one reduced phrase to their description."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used a reduced or non-defining clause once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_word_match_relative_reduced_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_WORD_MATCH",
+                                activity="read",
+                                task_widget="read_word_match",
+                                topic_override=(
+                                    "Match clause types to their punctuation or form — formal description flow — reduced relatives"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to match each sentence stub to whether it needs commas (non-defining), can drop the pronoun (reduced defining), or uses a participle phrase. B2+ depth: reduce relatives without ambiguity; picture description and MCQ test formal flow with commas and reduced phrases."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_word_match'. Provide options (the relative pronouns who, which, that, where) and 3-4 items, each with prompt (a noun phrase with a clue), correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_relative_reduced_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override=(
+                                    "Hearing reduced and non-defining clauses — formal description flow — reduced relatives"
+                                ),
+                                generation_instructions=(
+                                    "Generate a 35-45 word description mixing one non-defining clause with commas and at least one reduced clause. Include comprehension questions. B2+ depth: reduce relatives without ambiguity; picture description and MCQ test formal flow with commas and reduced phrases."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 2-3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_open_sent_relative_reduced_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_OPEN_SENT",
+                                activity="write",
+                                task_widget="open_text",
+                                topic_override=(
+                                    "Write sentences with reduced or non-defining clauses — formal description flow — reduced relatives"
+                                ),
+                                generation_instructions=(
+                                    "Ask for three short sentences: one non-defining with commas, one reduced defining without the pronoun, and one with a participle phrase after the noun. B2+ depth: reduce relatives without ambiguity; picture description and MCQ test formal flow with commas and reduced phrases."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'open_text'. Provide target_words (who, which, that, where), common_mistakes, and 3 items, each with prompt, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_relative_reduced_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override=(
+                                    "Describe a scene with reduced relative clauses — formal description flow — reduced relatives"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to describe a simple scene aloud using at least one non-defining clause and one reduced clause. B2+ depth: reduce relatives without ambiguity; picture description and MCQ test formal flow with commas and reduced phrases."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a busy cafe with several people doing different things, grammar_rule, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Reporting Verbs & Patterns - Admit, Deny, Suggest & More",
@@ -5525,6 +9736,136 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Tone — Deny/Suggest/Claim Patterns",
+                    description=(
+                        "Building on yesterday's reporting verbs, learners match verb strength to tone (deny, suggest, claim) with correct grammar patterns."
+                    ),
+                    focus="Reporting verb tone: deny, suggest, claim with correct patterns.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen reporting verbs for tone and grammar control.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce reporting verbs.",
+                                instruction=(
+                                    "Greet the learner and note they practised reporting verbs yesterday. Explain in two sentences that B2+ depth matches verb strength to tone (deny + gerund, suggest + clause, claim + that). Ask how they would report that a colleague denied a rumour."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="verb_patterns",
+                                goal="Teach verb + pattern combinations.",
+                                instruction=(
+                                    "Model deny + gerund vs suggest + should/that. Ask them to say one claim sentence and one softer suggest sentence about the same news item."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has contrasted deny/suggest/claim once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_cloze_reporting_verbs_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CLOZE",
+                                activity="read",
+                                task_widget="fill_blanks",
+                                topic_override="Fill reporting verb pattern blanks — tone — deny, suggest, claim patterns",
+                                generation_instructions=(
+                                    "Write a short 4-5 sentence passage reporting a meeting, with blanks for reporting verbs and the correct form after each (admitted, suggested, promised to, denied). B2+ depth: verb strength + grammar pattern (denied doing, suggested that, claimed that); roleplay uses measured professional tone."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'fill_blanks'. Provide passage_title and a passage with ___ markers only — no inline hints in parentheses after blanks. Provide a BlankItem per blank with correct_answer and explanation. Omit base_verb; these are reporting blanks, not verb inflection."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_plus_llm",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_infer_reporting_verbs_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_INFER",
+                                activity="listen",
+                                task_widget="listen_infer",
+                                topic_override="Infer the reporting verb and pattern — tone — deny, suggest, claim patterns",
+                                generation_instructions=(
+                                    "Generate a 35-45 word audio clip where someone reports what others said using varied reporting verbs and patterns. Ask the learner to infer the original meaning and verb choice. B2+ depth: verb strength + grammar pattern (denied doing, suggested that, claimed that); roleplay uses measured professional tone."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 2 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_para_reporting_verbs_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARA",
+                                activity="write",
+                                task_widget="write_paragraph",
+                                topic_override=(
+                                    "Write a paragraph with varied reporting verbs — tone — deny, suggest, claim patterns"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to write a 3-4 sentence paragraph reporting a short discussion using at least three different reporting verbs with correct patterns after each. B2+ depth: verb strength + grammar pattern (denied doing, suggested that, claimed that); roleplay uses measured professional tone."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (said that, told me, asked if, would), minimum_words 25, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_roleplay_reporting_verbs_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_ROLEPLAY",
+                                activity="speak",
+                                task_widget="speak_roleplay",
+                                topic_override="Pass on a message with reporting verbs — tone — deny, suggest, claim patterns",
+                                generation_instructions=(
+                                    "Set up a roleplay where the learner passes on what several people said using reporting verbs (she suggested that, he promised to, they denied) in 2-3 connected sentences. B2+ depth: verb strength + grammar pattern (denied doing, suggested that, claimed that); roleplay uses measured professional tone."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_roleplay'. Provide dialogue_context with alternating partner and learner turns (4-6 turns total). Partner lines set the scene in 2-3 sentences; each learner line is 2-3 connected sentences (roughly 15-30 words). Include target_words (said that, told me, asked if, would), speaking_prompts with one instruction to respond aloud, sample_responses with the learner's model answer (same text as the learner dialogue turn), grammar_rule_to_practice, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Wish & Regret - I Wish, If Only & Should Have",
@@ -5677,6 +10018,138 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Apology Register — Wish/Should Have",
+                    description=(
+                        "Building on yesterday's wish and regret forms, learners use professional apology register with I wish and should have."
+                    ),
+                    focus="Professional apology register with wish and should have.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen wish/regret for formal apologies.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce wish and regret forms.",
+                                instruction=(
+                                    "Greet the learner and note they practised I wish and should have yesterday. Explain in two sentences that B2+ apologies combine regret (I wish I had…) with responsibility (I should have told you sooner). Ask about a small work mistake they would apologise for."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wish_should_have",
+                                goal="Teach wish vs should have.",
+                                instruction=(
+                                    "Use their example to model a brief apology with one wish and one should have. Ask them to say a two-sentence apology to a manager or client."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used wish or should have in apology register once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tfng_wish_regret_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TFNG",
+                                activity="read",
+                                task_widget="read_tfng",
+                                topic_override="Wishes and regrets in text — apology register — wish and should have",
+                                generation_instructions=(
+                                    "Write a short profile rich in I wish, If only, and should have sentences about present and past regrets. Then give True / False / Not Given statements about what the person wishes or regrets. B2+ depth: professional apology with I wish I had… and I should have…; smalltalk task stays polite and accountable, not casual."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tfng'. Provide passage_title, passage, and 5 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_shadow_wish_regret_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_SHADOW",
+                                activity="listen",
+                                task_widget="listen_shadow",
+                                topic_override=(
+                                    "Repeat wish / should have phrases in speech — apology register — wish and should have"
+                                ),
+                                generation_instructions=(
+                                    "Generate a short natural monologue (about 20 seconds) with I wish and should have phrases blended into connected speech for shadowing. B2+ depth: professional apology with I wish I had… and I should have…; smalltalk task stays polite and accountable, not casual."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow (identical to the script), target_words highlighting the used to / would chunks, and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_email_wish_regret_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_EMAIL",
+                                activity="write",
+                                task_widget="write_email",
+                                topic_override=(
+                                    "Email a friend about a wish or regret — apology register — wish and should have"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to write a short email to a friend expressing one wish and one regret using I wish and should have correctly. B2+ depth: professional apology with I wish I had… and I should have…; smalltalk task stays polite and accountable, not casual."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_email'. Provide prompt, grammar_rule, target_words (used to, would, no longer, back then), minimum_words 25, sample_answer (with To and Subject lines), and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_smalltalk_wish_regret_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_SMALLTALK",
+                                activity="speak",
+                                task_widget="speak_smalltalk",
+                                topic_override="Casual chat about wishes and regrets — apology register — wish and should have",
+                                generation_instructions=(
+                                    "Set up casual small talk where the learner answers with I wish and should have naturally. B2+ depth: professional apology with I wish I had… and I should have…; smalltalk task stays polite and accountable, not casual."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (used to, would, as a child, back then), and speaking_duration_seconds: 30."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Formal Linkers & Nuance - Moreover, Nevertheless & In Addition",
@@ -5837,6 +10310,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Nevertheless/Moreover in Email",
+                    description=(
+                        "Building on yesterday's formal linkers, learners control nevertheless and moreover with correct punctuation in email-style paragraphs."
+                    ),
+                    focus="Nevertheless and moreover in email with punctuation control.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen formal linkers in email paragraphs.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce formal linkers.",
+                                instruction=(
+                                    "Greet the learner and note they practised moreover and nevertheless yesterday. Explain in two sentences that B2+ emails punctuate linkers clearly (Moreover, …; …, nevertheless, …). Ask them to outline one professional email they need to write."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="addition_contrast",
+                                goal="Teach moreover vs nevertheless.",
+                                instruction=(
+                                    "Model moreover for adding a point and nevertheless for contrast with commas. Ask them to say one sentence of each about their email topic."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used moreover or nevertheless once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_context_mcq_formal_linkers_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CONTEXT_MCQ",
+                                activity="read",
+                                task_widget="read_context_mcq",
+                                topic_override="Formal linkers in a short article — nevertheless and moreover in email",
+                                generation_instructions=(
+                                    "Write a short formal paragraph (policy or report style) using moreover, nevertheless, and in addition. Then ask MCQ questions about which linker fits a gap. B2+ depth: nevertheless/moreover in email paragraphs with punctuation control; presentation task sounds like a structured professional update."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_context_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options (despite, in spite of, whereas, however), correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_retell_formal_linkers_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_RETELL",
+                                activity="listen",
+                                task_widget="listen_retell",
+                                topic_override="Retell a formal mini-talk — nevertheless and moreover in email",
+                                generation_instructions=(
+                                    "Generate a 40-50 word formal audio clip with clear linker phrases. Ask the learner to retell the main points using at least two formal linkers. B2+ depth: nevertheless/moreover in email paragraphs with punctuation control; presentation task sounds like a structured professional update."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_retell'. Provide: audio_script (the full spoken monologue text), passage_to_retell (a 2-3 sentence model retell — shorter than the audio, showing how a good student would summarise the key points using contrast linkers), sample_responses (list containing that same model retell), target_words (list of the key contrast linkers from the audio), and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_paraphrase_formal_linkers_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARAPHRASE",
+                                activity="write",
+                                task_widget="write_paraphrase",
+                                topic_override="Paraphrase with formal linkers — nevertheless and moreover in email",
+                                generation_instructions=(
+                                    "Give informal sentences and ask the learner to join or rewrite them using moreover, nevertheless, or on the other hand. B2+ depth: nevertheless/moreover in email paragraphs with punctuation control; presentation task sounds like a structured professional update."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paraphrase'. Provide 3 items, each with incorrect_sentence (the contrasting sentence pair), sample_answer, and watch_hints (the target contrast linker)."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_present_formal_linkers_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PRESENT",
+                                activity="speak",
+                                task_widget="speak_present",
+                                topic_override="Short talk using formal linkers — nevertheless and moreover in email",
+                                generation_instructions=(
+                                    "Ask the learner to give a 45-second mini presentation on a work or study topic using at least two formal linkers naturally. B2+ depth: nevertheless/moreover in email paragraphs with punctuation control; presentation task sounds like a structured professional update."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_present'. Provide: prompts as a list with one general question asking the learner to compare two choices and say which they prefer using contrast linkers (e.g. 'Compare living in a city and the countryside, and say which you prefer.'); visual_prompt_description as a short sample spoken answer that uses at least three contrast linkers (e.g. 'A city is exciting, whereas the countryside is calm. Despite the noise, I prefer the city. However, I visit the countryside often, so I get both.'); grammar_rule, target_words, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
         ),
     ),
@@ -5993,6 +10594,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Reframe Positions & Test Agreement",
+                    description=(
+                        "Building on yesterday's conflict language, learners reframe positions as interests and test agreement with a clear criterion."
+                    ),
+                    focus="Reframe positions as interests; test agreement with a criterion.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen conflict resolution with interest reframing.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce conflict resolution.",
+                                instruction=(
+                                    "Welcome the learner and note they practised middle-ground language yesterday. Explain in two sentences that B2+ depth reframes positions (You want X — what you need is…) and tests agreement (Does this meet your main need?). Ask about a recent disagreement at work or study."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="middle_ground",
+                                goal="Teach middle-ground phrases.",
+                                instruction=(
+                                    "Use their example to name interests behind positions and propose one objective criterion. Ask them to reframe one side's position as an interest."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has reframed a position or tested agreement once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_conflict_resolution_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="Conflict resolution in messages — reframe positions and test agreement",
+                                generation_instructions=(
+                                    "Write a short exchange where two people disagree, acknowledge each other's points, and agree on middle-ground next steps. Ask comprehension questions. B2+ depth: interests + criterion (Would this work if…); roleplay ends with explicit agreement check, not vague compromise."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_conflict_resolution_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Listening to a disagreement resolved — reframe positions and test agreement",
+                                generation_instructions=(
+                                    "Generate a 35-45 word dialogue resolving a conflict with acknowledgement and a compromise. Include MCQs on each side's concern and the agreement. B2+ depth: interests + criterion (Would this work if…); roleplay ends with explicit agreement check, not vague compromise."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_conflict_resolution_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override="Polite conflict-resolution phrases — reframe positions and test agreement",
+                                generation_instructions=(
+                                    "Give 3 blunt conflicting statements and ask the learner to rewrite each using acknowledgement and middle-ground phrases. B2+ depth: interests + criterion (Would this work if…); roleplay ends with explicit agreement check, not vague compromise."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_roleplay_conflict_resolution_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_ROLEPLAY",
+                                activity="speak",
+                                task_widget="speak_roleplay",
+                                topic_override="Roleplay resolving a conflict — reframe positions and test agreement",
+                                generation_instructions=(
+                                    "Set up a roleplay where the learner de-escalates a disagreement and proposes a compromise both sides can accept. B2+ depth: interests + criterion (Would this work if…); roleplay ends with explicit agreement check, not vague compromise."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_roleplay'. Provide a dialogue_context alternating partner and learner turns, target_words (How about, meet halfway, that works, agreed), and speaking_duration_seconds: 30."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Giving Constructive Feedback",
@@ -6143,6 +10872,136 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Behaviour, Impact, Request",
+                    description=(
+                        "Building on yesterday's feedback structure, learners give constructive feedback as behaviour, impact, and a measurable request."
+                    ),
+                    focus="Constructive feedback: behaviour, impact, measurable request.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen feedback with measurable BIR-style requests.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce constructive feedback.",
+                                instruction=(
+                                    "Greet the learner and note they structured feedback yesterday. Explain in two sentences that B2+ feedback names behaviour, states impact, and makes a measurable request (by Friday, in the next two meetings). Ask what feedback they would give a teammate about lateness."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="feedback_structure",
+                                goal="Teach the feedback structure.",
+                                instruction=(
+                                    "Model When you…, it affects…, so please… with a measurable ask. Ask them to deliver one full behaviour-impact-request line."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has included a measurable request once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tfng_constructive_feedback_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TFNG",
+                                activity="read",
+                                task_widget="read_tfng",
+                                topic_override="Constructive feedback in writing — behaviour, impact, measurable request",
+                                generation_instructions=(
+                                    "Write a short message giving constructive feedback on work quality with a positive line, one issue, and a suggestion. Then True/False/Not Given items. B2+ depth: behaviour-impact-request with measurable ask; interview and writing tasks require specific timing or frequency."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tfng'. Provide passage_title, passage, and 4 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_infer_constructive_feedback_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_INFER",
+                                activity="listen",
+                                task_widget="listen_infer",
+                                topic_override="Infer tone in feedback conversations — behaviour, impact, measurable request",
+                                generation_instructions=(
+                                    "Generate a conversation where a manager gives constructive feedback. Ask the learner to infer tone and the main suggestion. B2+ depth: behaviour-impact-request with measurable ask; interview and writing tasks require specific timing or frequency."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_email_constructive_feedback_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_EMAIL",
+                                activity="write",
+                                task_widget="write_email",
+                                topic_override="Write constructive feedback — behaviour, impact, measurable request",
+                                generation_instructions=(
+                                    "Ask the learner to write feedback to a colleague with praise, one issue, and a concrete suggestion. B2+ depth: behaviour-impact-request with measurable ask; interview and writing tasks require specific timing or frequency."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_email'. Provide prompt, grammar_rule, target_words, minimum_words 25, sample_answer (with To and Subject lines), and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_interview_constructive_feedback_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_INTERVIEW",
+                                activity="speak",
+                                task_widget="speak_interview",
+                                topic_override=(
+                                    "React with constructive feedback in chat — behaviour, impact, measurable request"
+                                ),
+                                generation_instructions=(
+                                    "Run a mini interview where the learner gives constructive feedback on three short scenarios in full sentences. B2+ depth: behaviour-impact-request with measurable ask; interview and writing tasks require specific timing or frequency."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_interview'. Provide interview_context, grammar_rule, target_words (That's wonderful, Oh no, How did, What about), 3 questions each with interviewer_prompt, sample_answer, and answer_hint, and speaking_duration_seconds: 35."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Pros, Cons & Recommending an Option",
@@ -6301,6 +11160,143 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Risk, Mitigation & Clear Call",
+                    description=(
+                        "Building on yesterday's pros and cons, learners add risk, mitigation, and an explicit recommendation."
+                    ),
+                    focus="Pros/cons with risk, mitigation, and explicit recommendation.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen recommendations with risk and mitigation.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce pros, cons, and recommendations.",
+                                instruction=(
+                                    "Greet the learner and note they ordered pros and cons yesterday. Explain in two sentences that B2+ recommendations name one risk, one mitigation, and a clear call (I recommend X because…). Ask which option they are leaning toward in a current decision."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="structure_order",
+                                goal="Teach listing and recommending.",
+                                instruction=(
+                                    "Affirm their option. Ask for one risk and one mitigation before listing pros and cons."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="add_recommendation",
+                                goal="Add a clear recommendation.",
+                                instruction=(
+                                    "Have them close with an explicit recommendation and one reason. Ask them to say the full structure aloud in three sentences."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has stated risk, mitigation, and a clear call once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_structure_pros_cons_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_STRUCTURE_ID",
+                                activity="read",
+                                task_widget="read_structure",
+                                topic_override=(
+                                    "Identify pros, cons, and recommendation sections — risk, mitigation, and clear call"
+                                ),
+                                generation_instructions=(
+                                    "Provide a 3-paragraph text comparing two options and ask the learner to label paragraphs as Pros, Cons, or Recommendation. B2+ depth: risk + mitigation + explicit I recommend…; opinion task requires clear call after balanced pros/cons."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_structure'. Provide passage_title, structure_labels ['Situation', 'Problem', 'Solution'], and 3 items, each with paragraph, correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_plus_llm",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_retell_pros_cons_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_RETELL",
+                                activity="listen",
+                                task_widget="listen_retell",
+                                topic_override="Retell an options comparison — risk, mitigation, and clear call",
+                                generation_instructions=(
+                                    "Generate a short audio comparing two options with pros, cons, and a final recommendation. Ask the learner to retell the recommendation and main reason. B2+ depth: risk + mitigation + explicit I recommend…; opinion task requires clear call after balanced pros/cons."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_retell'. Provide audio_script, passage_to_retell, target_words (the situation was, the problem, so, as a result), and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_para_pros_cons_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARA",
+                                activity="write",
+                                task_widget="write_paragraph",
+                                topic_override="Write a pros-cons recommendation paragraph — risk, mitigation, and clear call",
+                                generation_instructions=(
+                                    "Ask the learner to write a paragraph comparing two options and recommending one with reasons. B2+ depth: risk + mitigation + explicit I recommend…; opinion task requires clear call after balanced pros/cons."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (first, the problem was, so, as a result, because), minimum_words 45, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_opinion_pros_cons_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_OPINION",
+                                activity="speak",
+                                task_widget="speak_present",
+                                topic_override="State a recommendation aloud — risk, mitigation, and clear call",
+                                generation_instructions=(
+                                    "Ask the learner to speak for 45 seconds recommending one option with pros, cons, and a clear conclusion. B2+ depth: risk + mitigation + explicit I recommend…; opinion task requires clear call after balanced pros/cons."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_present'. Provide grammar_rule, target_words (I would suggest, because, the best way, however), a visual_prompt_description or prompt for the recommendation, and speaking_duration_seconds: 40."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Leading a Short Meeting",
@@ -6448,6 +11444,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Parking Lot & Action Owners",
+                    description=(
+                        "Building on yesterday's meeting language, learners use a parking lot for digressions and assign action owners."
+                    ),
+                    focus="Parking lot for digressions; action owners and next steps.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen meeting leadership with parking lot and owners.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce leading a meeting.",
+                                instruction=(
+                                    "Welcome the learner and note they practised agendas yesterday. Explain in two sentences that B2+ chairs park tangents (Let's put that in the parking lot) and close with owners (Alex will send… by Wednesday). Ask how they would open a 15-minute stand-up."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="agenda_actions",
+                                goal="Teach open and close phrases.",
+                                instruction=(
+                                    "Model parking one tangent and assigning one owner with a deadline. Ask them to park one topic and name who owns the next action."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used parking lot or an action owner once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_leading_meeting_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="Leading a meeting in writing — parking lot and action owners",
+                                generation_instructions=(
+                                    "Write a short meeting transcript with purpose, two agenda items, and action owners. Ask comprehension questions. B2+ depth: digression control + named owners/deadlines; roleplay meeting must list parking lot and at least two owned actions."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_leading_meeting_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Listening to a short meeting — parking lot and action owners",
+                                generation_instructions=(
+                                    "Generate a 35-45 word meeting clip with opening, two points, and closing actions. Include MCQs on purpose and next steps. B2+ depth: digression control + named owners/deadlines; roleplay meeting must list parking lot and at least two owned actions."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_bullets_to_para_leading_meeting_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_BULLETS_TO_PARA",
+                                activity="write",
+                                task_widget="write_bullets_to_para",
+                                topic_override="Turn notes into a meeting summary — parking lot and action owners",
+                                generation_instructions=(
+                                    "Give bullet notes from a meeting and ask the learner to write a clear summary paragraph with action items. B2+ depth: digression control + named owners/deadlines; roleplay meeting must list parking lot and at least two owned actions."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_bullets_to_para'. Provide bullets (4 work items), prompt, grammar_rule, target_words, minimum_words 25, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_roleplay_leading_meeting_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_ROLEPLAY",
+                                activity="speak",
+                                task_widget="speak_roleplay",
+                                topic_override="Roleplay leading a meeting — parking lot and action owners",
+                                generation_instructions=(
+                                    "Set up a roleplay where the learner opens a short meeting, invites one comment, and closes with next steps. B2+ depth: digression control + named owners/deadlines; roleplay meeting must list parking lot and at least two owned actions."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_roleplay'. Provide a dialogue_context alternating partner and learner turns, target_words (so far, on track, by Friday, next step), and speaking_duration_seconds: 30."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Handling Objections",
@@ -6595,6 +11719,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Evidence Stack & Concession",
+                    description=(
+                        "Building on yesterday's objection handling, learners stack evidence and concede fairly before pushing back."
+                    ),
+                    focus="Evidence stack with concession before rebuttal.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen objections with acknowledge + data + however.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce handling objections.",
+                                instruction=(
+                                    "Greet the learner and note they responded to objections yesterday. Explain in two sentences that B2+ depth concedes partly (That's fair…) then adds evidence (According to…, our data shows…). Ask what objection they hear often about their ideas."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="respond_objection",
+                                goal="Teach acknowledge-then-respond.",
+                                instruction=(
+                                    "Use their objection to model concession + two evidence points + however. Ask them to concede one fair point and cite one piece of evidence."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has conceded and cited evidence once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tfng_handling_objections_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TFNG",
+                                activity="read",
+                                task_widget="read_tfng",
+                                topic_override="Objection handling in text — evidence stack and concession",
+                                generation_instructions=(
+                                    "Write a short sales or project update with two objections and calm responses. Then True/False/Not Given items. B2+ depth: acknowledge + data stack + however; picture description handles one objection with concession and evidence."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tfng'. Provide passage_title, passage, and 4 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_infer_handling_objections_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_INFER",
+                                activity="listen",
+                                task_widget="listen_infer",
+                                topic_override="Infer concerns behind objections — evidence stack and concession",
+                                generation_instructions=(
+                                    "Generate a dialogue with two objections and nuanced responses. Ask inference questions about concerns and agreement. B2+ depth: acknowledge + data stack + however; picture description handles one objection with concession and evidence."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_idea_para_handling_objections_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_IDEA_PARA",
+                                activity="write",
+                                task_widget="write_paragraph",
+                                topic_override="Write a response to objections — evidence stack and concession",
+                                generation_instructions=(
+                                    "Ask the learner to write a paragraph responding to two objections about an idea. B2+ depth: acknowledge + data stack + however; picture description handles one objection with concession and evidence."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (I believe, because, for example, admittedly), minimum_words 25, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_handling_objections_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override="Explain handling an objection aloud — evidence stack and concession",
+                                generation_instructions=(
+                                    "Ask the learner to describe aloud how they would handle an objection to a proposal, using acknowledge-then-respond language. B2+ depth: acknowledge + data stack + however; picture description handles one objection with concession and evidence."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a busy car park beside an empty bus lane, grammar_rule, and speaking_duration_seconds: 40."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Stakeholder Communication",
@@ -6744,6 +11996,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Same Update, Two Audiences",
+                    description=(
+                        "Building on yesterday's stakeholder tone, learners deliver the same update for executive vs team audiences."
+                    ),
+                    focus="Same update rewritten for executive vs team tone.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen stakeholder communication with audience shift.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce stakeholder communication.",
+                                instruction=(
+                                    "Greet the learner and note they adjusted tone for stakeholders yesterday. Explain in two sentences that B2+ depth delivers one update twice: concise and outcome-focused for executives, collaborative detail for the team. Ask what project update they would share this week."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="tone_detail",
+                                goal="Teach tailoring tone and detail.",
+                                instruction=(
+                                    "Have them sketch one sentence for an executive (headline + impact) and one for the team (next steps + support needed). Ask them to contrast formality."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has contrasted two audience versions once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tone_id_stakeholder_w14_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TONE_ID",
+                                activity="read",
+                                task_widget="read_tone_id",
+                                topic_override="Identify stakeholder-appropriate tone — same update — two audiences",
+                                generation_instructions=(
+                                    "Provide two short messages on the same update for different stakeholders. Ask which is for a senior leader vs a project team. B2+ depth: exec vs team tone on identical facts; smalltalk and transforms rewrite the same update with different detail and register."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options (Professional, Casual), correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_tone_stakeholder_w14_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_TONE",
+                                activity="listen",
+                                task_widget="listen_tone",
+                                topic_override="Hear tone shifts for stakeholders — same update — two audiences",
+                                generation_instructions=(
+                                    "Generate audio with two versions of the same news for different audiences. Ask tone and detail questions. B2+ depth: exec vs team tone on identical facts; smalltalk and transforms rewrite the same update with different detail and register."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_tone'. Provide audio_script and at least 1 MCQ item with prompt, options (Professional, Casual), correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_paraphrase_stakeholder_w14_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARAPHRASE",
+                                activity="write",
+                                task_widget="write_paraphrase",
+                                topic_override="Rewrite for a different stakeholder — same update — two audiences",
+                                generation_instructions=(
+                                    "Give a detailed team update and ask the learner to rewrite a 2-sentence executive version. B2+ depth: exec vs team tone on identical facts; smalltalk and transforms rewrite the same update with different detail and register."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paraphrase'. Provide 2 items, each with incorrect_sentence (the message to convert), sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_smalltalk_stakeholder_w14_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_SMALLTALK",
+                                activity="speak",
+                                task_widget="speak_smalltalk",
+                                topic_override="Small talk with stakeholder-aware replies — same update — two audiences",
+                                generation_instructions=(
+                                    "Set up small talk where the learner answers the same news differently for a manager vs a peer. B2+ depth: exec vs team tone on identical facts; smalltalk and transforms rewrite the same update with different detail and register."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (That sounds great, I might, probably, weekend), and speaking_duration_seconds: 35."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Facilitating Discussion",
@@ -6892,6 +12272,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Synthesis Question & Decision Check",
+                    description=(
+                        "Building on yesterday's facilitation, learners synthesise three views with one question and confirm the decision."
+                    ),
+                    focus="Synthesis question after three views; explicit decision check.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen facilitation with synthesis and decision check.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce facilitating discussion.",
+                                instruction=(
+                                    "Welcome the learner and note they invited and summarised voices yesterday. Explain in two sentences that B2+ facilitation names three views, asks one synthesis question (What do we all agree is the main risk?), and checks the decision (So we're choosing X — does everyone commit?). Ask about a discussion they might chair soon."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="invite_summarise",
+                                goal="Teach invite and summarise phrases.",
+                                instruction=(
+                                    "Model summarising three positions briefly, then one synthesis question. Ask them to paraphrase two views and pose one synthesis question."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has synthesised or checked a decision once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_structure_facilitating_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_STRUCTURE_ID",
+                                activity="read",
+                                task_widget="read_structure",
+                                topic_override="Structure of a facilitated discussion — synthesis question and decision check",
+                                generation_instructions=(
+                                    "Provide a 3-part facilitated discussion transcript (open, contributions, summary) and ask the learner to label each part. B2+ depth: 3 views → synthesis question → decision check; presentation closes with So we're deciding… and explicit commitment ask."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_structure'. Provide passage_title, structure_labels ['Opening', 'Building', 'Closing'], and 3 items, each with label, paragraph, correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_plus_llm",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_retell_facilitating_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_RETELL",
+                                activity="listen",
+                                task_widget="listen_retell",
+                                topic_override="Retell a facilitated discussion clip — synthesis question and decision check",
+                                generation_instructions=(
+                                    "Generate audio of someone facilitating a short discussion. Ask retell of invitations and summary. B2+ depth: 3 views → synthesis question → decision check; presentation closes with So we're deciding… and explicit commitment ask."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_retell'. Set response_mode to 'written'. Provide audio_script, passage_to_retell, target_words, and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_email_facilitating_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_EMAIL",
+                                activity="write",
+                                task_widget="write_email",
+                                topic_override="Email summarising a discussion — synthesis question and decision check",
+                                generation_instructions=(
+                                    "Ask the learner to write an email summarising a discussion with next steps. B2+ depth: 3 views → synthesis question → decision check; presentation closes with So we're deciding… and explicit commitment ask."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_email'. Provide prompt, grammar_rule, target_words, minimum_words 45, sample_answer (with To and Subject lines), and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_present_facilitating_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PRESENT",
+                                activity="speak",
+                                task_widget="speak_present",
+                                topic_override="Present a short facilitated summary — synthesis question and decision check",
+                                generation_instructions=(
+                                    "Ask the learner to deliver a 45-second spoken summary after a facilitated discussion scenario. B2+ depth: 3 views → synthesis question → decision check; presentation closes with So we're deciding… and explicit commitment ask."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_present'. Provide grammar_rule, target_words (we discussed, on one hand, on the other hand, in the end), a visual_prompt_description, an optional model_presentation, and speaking_duration_seconds: 60."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
         ),
     ),
@@ -7049,6 +12557,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Method & Limitation Phrases",
+                    description=(
+                        "Building on yesterday's science and research vocabulary, learners use method and limitation phrases (hypothesis, data, limitation) in a short research-style paragraph."
+                    ),
+                    focus="Method and limitation phrases in a research mini-paragraph.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen science lexis with method and limitation collocations.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce science and research words.",
+                                instruction=(
+                                    "Welcome the learner and note they practised hypothesis and experiment yesterday. Explain in two sentences that B2+ depth adds limitation phrases (the data suggest…, one limitation is…) in formal research tone. Ask what topic they would research."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more science and research words.",
+                                instruction=(
+                                    "Use their topic to model hypothesis → data → limitation in one chain. Ask them to add one limitation phrase to their idea."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used a limitation phrase once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_word_match_science_research_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_WORD_MATCH",
+                                activity="read",
+                                task_widget="read_word_match",
+                                topic_override="Science & Research Vocabulary — method and limitation phrases",
+                                generation_instructions=(
+                                    "Ask the learner to match science and research words (hypothesis, data, evidence) to short definitions or context clues. B2+ depth: hypothesis/data/limitation in cohesive research paragraph; assume base science words from yesterday."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_word_match'. Provide options (the environment words) and 4 items, each with prompt (the definition), correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_science_research_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="A talk about science and research — method and limitation phrases",
+                                generation_instructions=(
+                                    "Generate a short scenario where someone discusses science and research, using at least three target words. Ask comprehension questions. B2+ depth: hypothesis/data/limitation in cohesive research paragraph; assume base science words from yesterday."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_science_research_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override="science and research vocabulary in writing — method and limitation phrases",
+                                generation_instructions=(
+                                    "Give wordy descriptions of science and research ideas and ask the learner to rewrite each using precise vocabulary (hypothesis, data, evidence). B2+ depth: hypothesis/data/limitation in cohesive research paragraph; assume base science words from yesterday."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 2-3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_science_research_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override="Describe a lab or research setting — method and limitation phrases",
+                                generation_instructions=(
+                                    "Ask the learner to describe a photo of research lab with scientists reviewing data on screens aloud using science and research vocabulary naturally. B2+ depth: hypothesis/data/limitation in cohesive research paragraph; assume base science words from yesterday."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a wind farm beside a smoggy city skyline, grammar_rule, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Arts & Creativity - Exhibition, Medium & Inspiration",
@@ -7198,6 +12834,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Critique & Interpretation Chunks",
+                    description=(
+                        "Building on yesterday's arts vocabulary, learners use critique and interpretation chunks (exhibition, medium, curator) in evaluative speech."
+                    ),
+                    focus="Critique and interpretation chunks for exhibitions and media.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen arts lexis with critique and interpretation language.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce arts and creativity words.",
+                                instruction=(
+                                    "Greet the learner and note they worked on exhibition and medium yesterday. Explain in two sentences that B2+ critique uses interpretation chunks (the curator argues…, the medium suggests…). Ask about a recent exhibition or artwork."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more arts and creativity words.",
+                                instruction=(
+                                    "Affirm their example. Model one critique sentence with interpretation chunk and ask them to evaluate one design choice using medium or curator."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used a critique or interpretation chunk once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_context_mcq_arts_creativity_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CONTEXT_MCQ",
+                                activity="read",
+                                task_widget="read_context_mcq",
+                                topic_override="Arts & Creativity Vocabulary — critique and interpretation chunks",
+                                generation_instructions=(
+                                    "Ask the learner to match arts and creativity words (exhibition, medium, inspiration) to short definitions or context clues. B2+ depth: exhibition/medium/curator in evaluative critique; timed speech sounds like a brief gallery review."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_context_mcq'. Provide passage_title, passage, and at least 1 MCQ item with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_dictation_arts_creativity_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_DICTATION",
+                                activity="listen",
+                                task_widget="listen_dictation",
+                                topic_override="A talk about arts and creativity — critique and interpretation chunks",
+                                generation_instructions=(
+                                    "Generate a short scenario where someone discusses arts and creativity, using at least three target words. Ask comprehension questions. B2+ depth: exhibition/medium/curator in evaluative critique; timed speech sounds like a brief gallery review."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_dictation'. Provide audio_script, target_words (the key education words), and 1 dictation item with prompt, correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_word_upgrade_arts_creativity_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_WORD_UPGRADE",
+                                activity="write",
+                                task_widget="write_word_upgrade",
+                                topic_override="arts and creativity vocabulary in writing — critique and interpretation chunks",
+                                generation_instructions=(
+                                    "Give wordy descriptions of arts and creativity ideas and ask the learner to rewrite each using precise vocabulary (exhibition, medium, inspiration). B2+ depth: exhibition/medium/curator in evaluative critique; timed speech sounds like a brief gallery review."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_word_upgrade'. Provide 3 items, each with source_sentence, target_upgrade_word, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_arts_creativity_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override="Describe a gallery or studio — critique and interpretation chunks",
+                                generation_instructions=(
+                                    "Ask the learner to describe a photo of art gallery with paintings and a sculptor at work aloud using arts and creativity vocabulary naturally. B2+ depth: exhibition/medium/curator in evaluative critique; timed speech sounds like a brief gallery review."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (enrol, assignment, revise, qualification), and speaking_duration_seconds: 60."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Ethics & Global Issues - Justice, Rights & Responsibility",
@@ -7349,6 +13113,136 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Stakeholder & Principle Language",
+                    description=(
+                        "Building on yesterday's ethics vocabulary, learners discuss global issues with stakeholder and principle language (rights, responsibility, equity)."
+                    ),
+                    focus="Stakeholder and principle language on ethics topics.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen ethics lexis with stakeholders and principles.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce ethics and global issues words.",
+                                instruction=(
+                                    "Greet the learner and note they discussed ethics and global issues yesterday. Explain in two sentences that B2+ depth names stakeholders and principles (stakeholders expect…, the principle of fairness…). Ask which global issue they care about."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more ethics and global issues words.",
+                                instruction=(
+                                    "Use their issue to model stakeholder + principle in one sentence. Ask them to name two stakeholders and one principle for that issue."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has named a stakeholder and principle once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_word_match_ethics_global_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_WORD_MATCH",
+                                activity="read",
+                                task_widget="read_word_match",
+                                topic_override="Ethics & Global Issues Vocabulary — stakeholder and principle language",
+                                generation_instructions=(
+                                    "Ask the learner to match ethics and global issues words (justice, rights, responsibility) to short definitions or context clues. B2+ depth: rights/responsibility/equity with named stakeholders; avoid loaded labels; picture description uses principle framing."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_word_match'. Provide options (the culture words) and 4 items, each with prompt (the definition), correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_ethics_global_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="A talk about ethics and global issues — stakeholder and principle language",
+                                generation_instructions=(
+                                    "Generate a short scenario where someone discusses ethics and global issues, using at least three target words. Ask comprehension questions. B2+ depth: rights/responsibility/equity with named stakeholders; avoid loaded labels; picture description uses principle framing."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_para_ethics_global_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARA",
+                                activity="write",
+                                task_widget="write_paragraph",
+                                topic_override=(
+                                    "ethics and global issues vocabulary in writing — stakeholder and principle language"
+                                ),
+                                generation_instructions=(
+                                    "Give wordy descriptions of ethics and global issues ideas and ask the learner to rewrite each using precise vocabulary (justice, rights, responsibility). B2+ depth: rights/responsibility/equity with named stakeholders; avoid loaded labels; picture description uses principle framing."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (tradition, community, heritage, celebrate), minimum_words 20, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_ethics_global_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override="Describe a community or policy context — stakeholder and principle language",
+                                generation_instructions=(
+                                    "Ask the learner to describe a photo of community meeting about a social campaign poster aloud using ethics and global issues vocabulary naturally. B2+ depth: rights/responsibility/equity with named stakeholders; avoid loaded labels; picture description uses principle framing."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a street festival with people in traditional dress, grammar_rule, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Business & Economics - Revenue, Market & Investment",
@@ -7499,6 +13393,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Forecast & Risk Brief",
+                    description=(
+                        "Building on yesterday's business vocabulary, learners deliver a short forecast and risk brief using revenue, volatility, and mitigation language."
+                    ),
+                    focus="Forecast and risk brief with revenue and volatility language.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen business lexis with forecast and risk framing.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce business and economics words.",
+                                instruction=(
+                                    "Greet the learner and note they practised business and economics words yesterday. Explain in two sentences that B2+ briefs pair forecasts (revenue is projected to…) with risks (volatility, downside). Ask what market or product they follow."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more business and economics words.",
+                                instruction=(
+                                    "React to their choice. Model one forecast line and one risk line with mitigation (we could hedge / diversify). Ask for a two-sentence mini-brief."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has given forecast and risk once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_context_mcq_business_economics_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CONTEXT_MCQ",
+                                activity="read",
+                                task_widget="read_context_mcq",
+                                topic_override="Business & Economics Vocabulary — forecast and risk brief",
+                                generation_instructions=(
+                                    "Ask the learner to match business and economics words (revenue, market, investment) to short definitions or context clues. B2+ depth: revenue/volatility forecast plus one mitigation; timed speech like a 45s executive snapshot."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_context_mcq'. Provide passage_title, passage, and at least 1 MCQ item with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_dictation_business_economics_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_DICTATION",
+                                activity="listen",
+                                task_widget="listen_dictation",
+                                topic_override="A talk about business and economics — forecast and risk brief",
+                                generation_instructions=(
+                                    "Generate a short scenario where someone discusses business and economics, using at least three target words. Ask comprehension questions. B2+ depth: revenue/volatility forecast plus one mitigation; timed speech like a 45s executive snapshot."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_dictation'. Provide audio_script, target_words (the key work words), and 1 dictation item with prompt, correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_paraphrase_business_economics_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARAPHRASE",
+                                activity="write",
+                                task_widget="write_paraphrase",
+                                topic_override="business and economics vocabulary in writing — forecast and risk brief",
+                                generation_instructions=(
+                                    "Give wordy descriptions of business and economics ideas and ask the learner to rewrite each using precise vocabulary (revenue, market, investment). B2+ depth: revenue/volatility forecast plus one mitigation; timed speech like a 45s executive snapshot."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paraphrase'. Provide 2 items, each with incorrect_sentence (the plain sentence), sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_business_economics_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override="Describe a business or market scene — forecast and risk brief",
+                                generation_instructions=(
+                                    "Ask the learner to describe a photo of office dashboard showing market trends and budget charts aloud using business and economics vocabulary naturally. B2+ depth: revenue/volatility forecast plus one mitigation; timed speech like a 45s executive snapshot."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (promote, resign, collaborate, deadline), and speaking_duration_seconds: 60."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Media Literacy - Source, Bias & Fact-check",
@@ -7642,6 +13664,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Bias & Verification Steps",
+                    description=(
+                        "Building on yesterday's media literacy vocabulary, learners separate bias from fact with verification steps (source, corroborate, primary)."
+                    ),
+                    focus="Bias labels and verification steps for media claims.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen media literacy with bias and verification language.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce media literacy words.",
+                                instruction=(
+                                    "Greet the learner and note they worked on media and sources yesterday. Explain in two sentences that B2+ depth types sources and lists verification steps (check the primary source, corroborate with…). Ask about a headline they doubted."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more media literacy words.",
+                                instruction=(
+                                    "Use their headline to model bias label plus two verification steps. Ask them to say what they would check first and second."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has named bias or a verification step once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_word_match_media_literacy_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_WORD_MATCH",
+                                activity="read",
+                                task_widget="read_word_match",
+                                topic_override="Media Literacy Vocabulary — bias and verification steps",
+                                generation_instructions=(
+                                    "Ask the learner to match media literacy words (source, bias, credible) to short definitions or context clues. B2+ depth: source typing + verification steps (primary, corroborate); writing tasks contrast claim vs verified fact."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_word_match'. Provide options (the news words) and 4 items, each with prompt (the meaning), correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_media_literacy_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="A talk about media literacy — bias and verification steps",
+                                generation_instructions=(
+                                    "Generate a short scenario where someone discusses media literacy, using at least three target words. Ask comprehension questions. B2+ depth: source typing + verification steps (primary, corroborate); writing tasks contrast claim vs verified fact."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_media_literacy_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override="media literacy vocabulary in writing — bias and verification steps",
+                                generation_instructions=(
+                                    "Give wordy descriptions of media literacy ideas and ask the learner to rewrite each using precise vocabulary (source, bias, credible). B2+ depth: source typing + verification steps (primary, corroborate); writing tasks contrast claim vs verified fact."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_media_literacy_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override="Describe news and online media — bias and verification steps",
+                                generation_instructions=(
+                                    "Ask the learner to describe a photo of person comparing two news headlines on a laptop aloud using media literacy vocabulary naturally. B2+ depth: source typing + verification steps (primary, corroborate); writing tasks contrast claim vs verified fact."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a news studio with a reporter and a headline on the screen, grammar_rule, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Leadership & Influence - Vision, Delegate & Motivate",
@@ -7793,6 +13943,136 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Delegate & Motivate in Message",
+                    description=(
+                        "Building on yesterday's leadership vocabulary, learners write a short message that delegates clearly and motivates the team."
+                    ),
+                    focus="Delegate and motivate in a leadership message.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen leadership lexis with delegate and motivate chunks.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce leadership and influence words.",
+                                instruction=(
+                                    "Greet the learner and note they practised vision and delegate yesterday. Explain in two sentences that B2+ messages assign owners (I'll delegate X to…) and motivate (thanks for…, this matters because…). Ask about a team task they lead."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more leadership and influence words.",
+                                instruction=(
+                                    "Use their task to model delegate + motivate in two sentences. Ask them to delegate one action with a deadline and add one motivating line."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has delegated and motivated once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_context_mcq_leadership_influence_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_CONTEXT_MCQ",
+                                activity="read",
+                                task_widget="read_context_mcq",
+                                topic_override="Leadership & Influence Vocabulary — delegate and motivate in message",
+                                generation_instructions=(
+                                    "Ask the learner to match leadership and influence words (vision, delegate, motivate) to short definitions or context clues. B2+ depth: vision/team note with delegate + motivate; word upgrade and timed speech sound like a brief leadership update."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_context_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_dictation_leadership_influence_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_DICTATION",
+                                activity="listen",
+                                task_widget="listen_dictation",
+                                topic_override="A talk about leadership and influence — delegate and motivate in message",
+                                generation_instructions=(
+                                    "Generate a short scenario where someone discusses leadership and influence, using at least three target words. Ask comprehension questions. B2+ depth: vision/team note with delegate + motivate; word upgrade and timed speech sound like a brief leadership update."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_dictation'. Provide audio_script, target_words (the quality words), and 2 dictation items, each with a prompt sentence containing a blank, correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_word_upgrade_leadership_influence_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_WORD_UPGRADE",
+                                activity="write",
+                                task_widget="write_word_upgrade",
+                                topic_override=(
+                                    "leadership and influence vocabulary in writing — delegate and motivate in message"
+                                ),
+                                generation_instructions=(
+                                    "Give wordy descriptions of leadership and influence ideas and ask the learner to rewrite each using precise vocabulary (vision, delegate, motivate). B2+ depth: vision/team note with delegate + motivate; word upgrade and timed speech sound like a brief leadership update."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_word_upgrade'. Provide 3 items, each with source_sentence, target_upgrade_word, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_leadership_influence_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override="Describe a team leadership moment — delegate and motivate in message",
+                                generation_instructions=(
+                                    "Ask the learner to describe a photo of team leader motivating colleagues around a shared goal board aloud using leadership and influence vocabulary naturally. B2+ depth: vision/team note with delegate + motivate; word upgrade and timed speech sound like a brief leadership update."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (integrity, resilience, perspective, empathy, ambition), and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Review & Word Building - Consolidate the week's vocab",
@@ -7945,6 +14225,140 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Formal Argument Paragraph",
+                    description=(
+                        "Building on the week's vocabulary, learners recycle week 7 lexis in one formal argument paragraph across science, arts, ethics, business, media, and leadership topics."
+                    ),
+                    focus="Recycle week 7 lexis in one formal argument paragraph.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Consolidate week 7 vocabulary in a formal argument paragraph.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Introduce review and word building words.",
+                                instruction=(
+                                    "Greet the learner for the vocabulary review depth day. Note they built lexis across science, arts, ethics, business, media, and leadership this week. Explain that today they weave those words into one formal argument paragraph. Ask for two words they will definitely include."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="more_words",
+                                goal="Practise more review and word building words.",
+                                instruction=(
+                                    "Affirm their choices. Ask them to link two topics in one sentence (for example data limitation and stakeholder responsibility), then preview match, listening, paragraph, and timed recall."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has linked two topics once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_word_match_review_w15_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_WORD_MATCH",
+                                activity="read",
+                                task_widget="read_word_match",
+                                topic_override="Review & Word Building Vocabulary — week 7 lexis in formal argument paragraph",
+                                generation_instructions=(
+                                    "Ask the learner to match review and word building words (review, prefix, suffix) to short definitions or context clues. B2+ depth: recycle week 7 collocations (limitation, medium, stakeholder, volatility, corroborate, delegate) in one formal argument paragraph; speaking uses cross-topic lexis naturally."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_word_match'. Provide options (the 6 words) and 6 items, each with prompt (the definition), correct_answer, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_review_w15_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override=(
+                                    "A talk about review and word building — week 7 lexis in formal argument paragraph"
+                                ),
+                                generation_instructions=(
+                                    "Generate a short scenario where someone discusses review and word building, using at least three target words. Ask comprehension questions. B2+ depth: recycle week 7 collocations (limitation, medium, stakeholder, volatility, corroborate, delegate) in one formal argument paragraph; speaking uses cross-topic lexis naturally."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_para_review_w15_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_PARA",
+                                activity="write",
+                                task_widget="write_paragraph",
+                                topic_override=(
+                                    "review and word building vocabulary in writing — week 7 lexis in formal argument paragraph"
+                                ),
+                                generation_instructions=(
+                                    "Give wordy descriptions of review and word building ideas and ask the learner to rewrite each using precise vocabulary (review, prefix, suffix). B2+ depth: recycle week 7 collocations (limitation, medium, stakeholder, volatility, corroborate, delegate) in one formal argument paragraph; speaking uses cross-topic lexis naturally."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (the week's words), minimum_words 25, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_review_w15_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override=(
+                                    "Describe mixed professional contexts — week 7 lexis in formal argument paragraph"
+                                ),
+                                generation_instructions=(
+                                    "Ask the learner to describe a photo of collage of work, lab, gallery, and news scenes aloud using review and word building vocabulary naturally. B2+ depth: recycle week 7 collocations (limitation, medium, stakeholder, volatility, corroborate, delegate) in one formal argument paragraph; speaking uses cross-topic lexis naturally."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (the week's words), and speaking_duration_seconds: 90."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
         ),
     ),
@@ -8100,6 +14514,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Stakes & Boundary Setting",
+                    description=(
+                        "Building on yesterday's difficult-conversation practice, learners set stakes and time boundaries before facilitating tense talks."
+                    ),
+                    focus="Name stakes and set time boundaries in difficult conversations.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen facilitation with purpose and boundary language.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Frame the skill as small steps.",
+                                instruction=(
+                                    "Welcome the learner and note they practised ground rules yesterday. Explain in two sentences that B2+ depth names stakes (what matters here) and boundaries (we have 20 minutes; let's focus on X). Ask one situation where they must facilitate tension."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="preview",
+                                goal="Preview the day and reassure.",
+                                instruction=(
+                                    "Affirm their situation. Model opening with purpose + time boundary and ask them to invite one respectful turn after naming the issue."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has set a boundary or named stakes once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_difficult_conv_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="Difficult conversation story — stakes and boundary setting",
+                                generation_instructions=(
+                                    "Write a short story about someone facilitating a tense conversation: they set ground rules, name the issue, and invite respectful turns. Then comprehension questions. B2+ depth: purpose + time boundary before facilitation; read-aloud and transforms use calm boundary phrases."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_shadow_difficult_conv_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_SHADOW",
+                                activity="listen",
+                                task_widget="listen_shadow",
+                                topic_override="Calm facilitation shadowing — stakes and boundary setting",
+                                generation_instructions=(
+                                    "Generate a warm 15-second clip inviting respectful turns in a difficult conversation for shadowing. B2+ depth: purpose + time boundary before facilitation; read-aloud and transforms use calm boundary phrases."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow (a sentence or two from the script), target_words, and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_difficult_conv_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override="Reframe avoidance into facilitation language — stakes and boundary setting",
+                                generation_instructions=(
+                                    "Give 3 avoidance statements and ask the learner to reframe each into calm facilitation language. B2+ depth: purpose + time boundary before facilitation; read-aloud and transforms use calm boundary phrases."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_read_aloud_difficult_conv_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_READ_ALOUD",
+                                activity="speak",
+                                task_widget="read_aloud",
+                                topic_override="Read a facilitation passage aloud — stakes and boundary setting",
+                                generation_instructions=(
+                                    "Give a 55-70 word passage about facilitating a difficult conversation to read aloud. B2+ depth: purpose + time boundary before facilitation; read-aloud and transforms use calm boundary phrases."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_aloud'. Provide text_to_read_aloud, grammar_rule about clear pronunciation and breathing pauses, target_words, and speaking_duration_seconds: 30."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Counterarguments & Rebuttals",
@@ -8247,6 +14789,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Concede Partially Then Undermine",
+                    description=(
+                        "Building on yesterday's rebuttal work, learners concede partially (While it's true…) then undermine with however and evidence."
+                    ),
+                    focus="Partial concession then undermine with however-layer.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen rebuttals with concede-then-undermine structure.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Frame the skill as small steps.",
+                                instruction=(
+                                    "Greet the learner and note they practised acknowledge-refute yesterday. Explain in two sentences that B2+ depth concedes fairly (While it's true…) then undermines with however and one evidence point. Ask for an opinion they defend at work."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="preview",
+                                goal="Preview the day and reassure.",
+                                instruction=(
+                                    "Use their opinion. Model partial concession + however + evidence and ask them to concede one fair point then push back once."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has conceded partially and used however once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tone_id_counterarguments_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TONE_ID",
+                                activity="read",
+                                task_widget="read_tone_id",
+                                topic_override="Tone in a rebuttal — concede partially then undermine",
+                                generation_instructions=(
+                                    "Provide two short arguments with counterpoints; ask which rebuttal is respectful and evidence-based. B2+ depth: While it's true…, however… + evidence; timed speak and debate tasks require partial concession before rebuttal."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options (Weak / Unsupported, Well-built / Supported), correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_counterarguments_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Rebuttal listening — concede partially then undermine",
+                                generation_instructions=(
+                                    "Generate audio with a claim and counterargument; ask inference questions. B2+ depth: While it's true…, however… + evidence; timed speak and debate tasks require partial concession before rebuttal."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and at least 1 MCQ item with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_timed_counterarguments_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_TIMED",
+                                activity="write",
+                                task_widget="write_timed",
+                                topic_override="Timed rebuttal writing — concede partially then undermine",
+                                generation_instructions=(
+                                    "Ask for a timed paragraph acknowledging a counterargument then rebutting with one reason. B2+ depth: While it's true…, however… + evidence; timed speak and debate tasks require partial concession before rebuttal."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (I argue that, because, for instance, therefore), writing_duration_seconds: 180, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_timed_counterarguments_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_TIMED",
+                                activity="speak",
+                                task_widget="speak_timed",
+                                topic_override="Timed rebuttal speaking — concede partially then undermine",
+                                generation_instructions=(
+                                    "Three timed speaking prompts to rebut calmly with evidence. B2+ depth: While it's true…, however… + evidence; timed speak and debate tasks require partial concession before rebuttal."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (I believe, because, for example, overall), and speaking_duration_seconds: 60."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Vision & Long-Term Narrative",
@@ -8394,6 +15064,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Milestones & Metrics",
+                    description=(
+                        "Building on yesterday's vision language, learners narrate past milestones and future metrics in a vision story."
+                    ),
+                    focus="Past milestones and future metrics in a vision narrative.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen vision talks with measurable milestones.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Frame the skill as small steps.",
+                                instruction=(
+                                    "Greet the learner and note they described vision yesterday. Explain in two sentences that B2+ vision stories anchor past milestones (By Q2 we had…) and future metrics (we aim to reach…). Ask for a goal they are pursuing."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="preview",
+                                goal="Preview the day and reassure.",
+                                instruction=(
+                                    "Affirm the goal. Ask for one past milestone and one measurable metric with a timeframe, then preview today's integrated tasks."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has named a milestone and metric once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_vision_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="Vision narrative comprehension — milestones and metrics in vision narrative",
+                                generation_instructions=(
+                                    "Write a story about someone explaining a long-term vision with trade-offs; comprehension MCQs. B2+ depth: past→future measurable arc; picture description and timed write include at least one number or date."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_tone_vision_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_TONE",
+                                activity="listen",
+                                task_widget="listen_tone",
+                                topic_override="Tone in a vision talk — milestones and metrics in vision narrative",
+                                generation_instructions=(
+                                    "Audio of a leader sharing vision; tone and detail questions. B2+ depth: past→future measurable arc; picture description and timed write include at least one number or date."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_tone'. Provide two intros (each with id, label, speaker, audio_script) and 2 MCQ items, each with prompt, options (Unrealistic / Vague, Realistic / Grounded), correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_vision_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override="Vision sentence transforms — milestones and metrics in vision narrative",
+                                generation_instructions=(
+                                    "Transform vague future sentences into a clear vision statement with signposting. B2+ depth: past→future measurable arc; picture description and timed write include at least one number or date."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_vision_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override="Vision picture description — milestones and metrics in vision narrative",
+                                generation_instructions=(
+                                    "Describe a photo of a team planning a long-term goal using vision vocabulary. B2+ depth: past→future measurable arc; picture description and timed write include at least one number or date."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing a person studying late at a desk covered in plans, grammar_rule about speculative language, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Giving & Receiving Critical Feedback",
@@ -8540,6 +15338,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Clarify & Paraphrase Under Challenge",
+                    description=(
+                        "Building on yesterday's critical feedback practice, learners clarify and paraphrase under challenge before responding."
+                    ),
+                    focus="Clarify and paraphrase before responding under challenge.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen critical feedback exchanges with clarify–paraphrase–respond.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Frame the skill as small steps.",
+                                instruction=(
+                                    "Greet the learner and note they reframed avoidance language yesterday. Explain in two sentences that B2+ depth clarifies (Just to confirm…) and paraphrases (So you're saying…) before answering criticism. Ask what feedback feels hardest to hear."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="preview",
+                                goal="Preview the day and reassure.",
+                                instruction=(
+                                    "Reassure them. Model clarify + paraphrase on sample criticism and ask them to paraphrase one point before giving a brief response."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has clarified or paraphrased once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tone_id_critical_feedback_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TONE_ID",
+                                activity="read",
+                                task_widget="read_tone_id",
+                                topic_override="Critical feedback tone — clarify and paraphrase under challenge",
+                                generation_instructions=(
+                                    "Two feedback messages; identify which balances honesty and support. B2+ depth: structured response with clarify/paraphrase first; smalltalk pushback uses So you're saying… before answer."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options describing tone shifts, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_shadow_critical_feedback_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_SHADOW",
+                                activity="listen",
+                                task_widget="listen_shadow",
+                                topic_override="Receiving feedback shadow — clarify and paraphrase under challenge",
+                                generation_instructions=(
+                                    "Short clip of receiving criticism calmly for shadowing. B2+ depth: structured response with clarify/paraphrase first; smalltalk pushback uses So you're saying… before answer."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow, target_words (That's a fair point, I see what you mean, Let me explain), and grammar_rule."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_timed_critical_feedback_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_TIMED",
+                                activity="write",
+                                task_widget="write_timed",
+                                topic_override="Timed critical feedback writing — clarify and paraphrase under challenge",
+                                generation_instructions=(
+                                    "Timed response to critical feedback that clarifies and commits to one action. B2+ depth: structured response with clarify/paraphrase first; smalltalk pushback uses So you're saying… before answer."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (Usually, Instead of, In future), writing_duration_seconds: 180, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_smalltalk_critical_feedback_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_SMALLTALK",
+                                activity="speak",
+                                task_widget="speak_smalltalk",
+                                topic_override="Critical feedback small talk — clarify and paraphrase under challenge",
+                                generation_instructions=(
+                                    "Small talk practicing thanking someone for direct feedback. B2+ depth: structured response with clarify/paraphrase first; smalltalk pushback uses So you're saying… before answer."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (That's fair, I understand, even so), and speaking_duration_seconds: 30."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Strong Close & Call to Action",
@@ -8682,6 +15608,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Urgency Without Pressure",
+                    description=(
+                        "Building on yesterday's strong-close practice, learners close with urgency that respects the listener (timeline + benefit, not pressure)."
+                    ),
+                    focus="Urgent close with timeline and benefit, without pressure.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen closes with urgency without aggressive pressure.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Frame the skill as small steps.",
+                                instruction=(
+                                    "Greet the learner and note they practised call-to-action language yesterday. Explain in two sentences that B2+ closes add urgency with timeline and benefit (If we decide by Friday, we gain…) without pushy tone. Ask what they want someone to decide."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="preview",
+                                goal="Preview the day and reassure.",
+                                instruction=(
+                                    "Use their decision. Model one urgent-but-respectful close and ask them to add a timeline and one benefit in two sentences."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has used timeline and benefit once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_strong_close_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="Strong close comprehension — urgency without pressure",
+                                generation_instructions=(
+                                    "Short talk text; questions about summary and call to action. B2+ depth: timeline + benefit CTA without aggressive modals; picture description ends with respectful urgency."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_mcq_strong_close_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_MCQ",
+                                activity="listen",
+                                task_widget="listen_mcq",
+                                topic_override="Listening for call to action — urgency without pressure",
+                                generation_instructions=(
+                                    "Audio ending with summary and clear next step; MCQs. B2+ depth: timeline + benefit CTA without aggressive modals; picture description ends with respectful urgency."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_sent_trans_strong_close_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_SENT_TRANS",
+                                activity="write",
+                                task_widget="sentence_transform",
+                                topic_override="Closing sentence transforms — urgency without pressure",
+                                generation_instructions=(
+                                    "Rewrite weak endings into strong closes with calls to action. B2+ depth: timeline + benefit CTA without aggressive modals; picture description ends with respectful urgency."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_pic_desc_strong_close_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PIC_DESC",
+                                activity="speak",
+                                task_widget="speak_pic_desc",
+                                topic_override="Closing with call to action — urgency without pressure",
+                                generation_instructions=(
+                                    "Describe persuading an audience to take one specific next step. B2+ depth: timeline + benefit CTA without aggressive modals; picture description ends with respectful urgency."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_pic_desc'. Provide image_alt describing an overflowing recycling area outside an office, grammar_rule, and speaking_duration_seconds: 45."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Presentation with Brief Q&A",
@@ -8830,6 +15884,134 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Bridge & Buy-Time Phrases",
+                    description=(
+                        "Building on yesterday's presentation Q&A, learners bridge tough questions to key messages and buy time politely."
+                    ),
+                    focus="Bridge and buy-time phrases in presentation Q&A.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Deepen Q&A with bridge and buy-time language.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Frame the skill as small steps.",
+                                instruction=(
+                                    "Greet the learner and note they practised presentation Q&A yesterday. Explain in two sentences that B2+ Q&A bridges (That's an important question — the core issue is…) and buys time (Let me think for a moment…). Ask what hard question they fear in presentations."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="preview",
+                                goal="Preview the day and reassure.",
+                                instruction=(
+                                    "Use their question. Model bridge + buy-time + short answer and ask them to try one bridge phrase toward their main message."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction=(
+                                    "If the learner has bridged or bought time once, ask only: Ready to try the practice task?"
+                                ),
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_tone_id_presentation_qa_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_TONE_ID",
+                                activity="read",
+                                task_widget="read_tone_id",
+                                topic_override="Presentation with Q&A tone — bridge and buy-time phrases",
+                                generation_instructions=(
+                                    "Identify formal presentation and Q&A tone in two excerpts. B2+ depth: bridge/buy-time before key message; speak_present includes one hard question with bridge to thesis."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options including Well-structured and clear and Rambling and unclear, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_tone_presentation_qa_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_TONE",
+                                activity="listen",
+                                task_widget="listen_tone",
+                                topic_override="Q&A tone listening — bridge and buy-time phrases",
+                                generation_instructions=(
+                                    "Audio of presentation plus one question; tone and content MCQs. B2+ depth: bridge/buy-time before key message; speak_present includes one hard question with bridge to thesis."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_tone'. Provide two intros (each with id, label, speaker, audio_script) and 2 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_timed_presentation_qa_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_TIMED",
+                                activity="write",
+                                task_widget="write_timed",
+                                topic_override="Timed presentation writing — bridge and buy-time phrases",
+                                generation_instructions=(
+                                    "Timed mini presentation paragraph with intro, two points, conclusion. B2+ depth: bridge/buy-time before key message; speak_present includes one hard question with bridge to thesis."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_timed'. Provide prompt, grammar_rule describing the intro-points-conclusion structure, target_words (To begin, My first point, secondly, to conclude), writing_duration_seconds: 180, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_present_presentation_qa_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_PRESENT",
+                                activity="speak",
+                                task_widget="speak_present",
+                                topic_override="Presentation with Q&A — bridge and buy-time phrases",
+                                generation_instructions=(
+                                    "45-second presentation excerpt plus brief answer to one audience question. B2+ depth: bridge/buy-time before key message; speak_present includes one hard question with bridge to thesis."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_present'. Provide a visual_prompt_description outlining the intro, two points, and conclusion, an optional model_presentation, grammar_rule, target_words (To begin, firstly, secondly, to conclude), and speaking_duration_seconds: 90."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
             DaySource(
                 title="Full Confidence Showcase (B1+)",
@@ -8980,6 +16162,132 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
+                depth_day=DaySource(
+                    title="Chair + Pitch Combined",
+                    description=(
+                        "B2 confidence showcase depth: learners chair a short discussion and deliver a 45-second pitch close with less scaffold than the base day."
+                    ),
+                    focus="Integrated chairing plus pitch close with less scaffold.",
+                    teacher=TeacherBlueprint(
+                        lesson_goal="Showcase integrated B2 confidence: facilitate and pitch.",
+                        steps=(
+                            TeacherStep(
+                                id="open",
+                                goal="Frame the skill as small steps.",
+                                instruction=(
+                                    "Greet the learner for the B2 showcase depth. Note they built difficult conversations, rebuttals, vision, and Q&A skills this week. Explain that today combines chairing with a 45-second pitch close and less scaffolding. Ask how their confidence changed this cycle."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="preview",
+                                goal="Preview the day and reassure.",
+                                instruction=(
+                                    "Celebrate progress. Preview integrated reading, shadowing, timed writing, and debate with synthesis question, partial concession, and pitch close in one flow."
+                                ),
+                            ),
+                            TeacherStep(
+                                id="wrap_up",
+                                goal="Move to practice.",
+                                instruction="Once the learner sounds ready, ask only: Ready to try the practice task?",
+                            ),
+                        ),
+                    ),
+                    activities=(
+                        ActivityBlueprint(
+                            id="read_comp_mcq_showcase_w16_depth",
+                            sequence=1,
+                            task=TaskBlueprint(
+                                archetype_id="READ_COMP_MCQ",
+                                activity="read",
+                                task_widget="read_comp_mcq",
+                                topic_override="B1+ confidence integration story — chair and pitch combined — less scaffold",
+                                generation_instructions=(
+                                    "Write an encouraging story where the speaker handles a counterargument, states a vision, and closes with a call to action. Then MCQ comprehension. B2+ depth: facilitate with synthesis + 45s pitch close; showcase debate uses However / on the other hand with decision check and CTA."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="rule_based",
+                                evaluation_widget="read_listen_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_listen_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="listen_shadow_showcase_w16_depth",
+                            sequence=2,
+                            task=TaskBlueprint(
+                                archetype_id="LISTEN_SHADOW",
+                                activity="listen",
+                                task_widget="listen_shadow",
+                                topic_override="Showcase shadowing clip — chair and pitch combined — less scaffold",
+                                generation_instructions=(
+                                    "Generate a confident 20-second clip mixing summary and call to action for shadowing. B2+ depth: facilitate with synthesis + 45s pitch close; showcase debate uses However / on the other hand with decision check and CTA."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow, target_words (proud of, growing, confidence), and grammar_rule about intonation."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="read_aloud_assessment",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="read_aloud_assessment",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="write_timed_showcase_w16_depth",
+                            sequence=3,
+                            task=TaskBlueprint(
+                                archetype_id="WRITE_TIMED",
+                                activity="write",
+                                task_widget="write_timed",
+                                topic_override="Timed integrated confidence writing — chair and pitch combined — less scaffold",
+                                generation_instructions=(
+                                    "Ask for a timed paragraph integrating argument, rebuttal, and a strong close. B2+ depth: facilitate with synthesis + 45s pitch close; showcase debate uses However / on the other hand with decision check and CTA."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (discovered, moreover, in the future), writing_duration_seconds: 180, sample_answer, and answer_hints."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="llm_writing",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                        ActivityBlueprint(
+                            id="speak_debate_showcase_w16_depth",
+                            sequence=4,
+                            task=TaskBlueprint(
+                                archetype_id="SPEAK_DEBATE",
+                                activity="speak",
+                                task_widget="speak_debate",
+                                topic_override="Debate-style showcase speaking — chair and pitch combined — less scaffold",
+                                generation_instructions=(
+                                    "Set up a short debate-style speaking task where the learner rebuts one point and ends with a call to action. B2+ depth: facilitate with synthesis + 45s pitch close; showcase debate uses However / on the other hand with decision check and CTA."
+                                ),
+                                widget_requirements=(
+                                    "Target widget 'speak_debate'. Provide a debate_context with an AI moderator turn, an AI opponent turn, and a learner turn, target_words (strongly believe, however, on the other hand), and speaking_duration_seconds: 60."
+                                ),
+                            ),
+                            evaluation=EvaluationBlueprint(
+                                evaluator="speaking_eval",
+                                evaluation_widget="write_speak_evaluation",
+                            ),
+                            feedback=FeedbackBlueprint(
+                                feedback_widget="write_speak_feedback",
+                            ),
+                        ),
+                    ),
+                ),
+
             ),
         ),
     ),

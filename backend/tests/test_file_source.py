@@ -213,7 +213,7 @@ def test_get_day_48w_w1_d2_is_depth_pass_with_a2() -> None:
     day = file_source.get_day_by_id("day_48_01_02")
     assert day.cefr_level == "A2"
     assert day.day_id == "day_48_01_02"
-    assert day.topic.startswith("Simple Present Tense")
+    assert day.topic == "Simple Present — Questions, Negatives & Short Answers"
 
 
 def test_get_day_48w_w1_d1_is_base_pass_with_a1() -> None:

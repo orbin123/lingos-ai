@@ -69,13 +69,14 @@ def test_compose_weeks_24w_has_populated_first_day() -> None:
     assert weeks[0].days[0].title.startswith("Simple Present Tense")
 
 
-def test_compose_weeks_48w_first_depth_pass_uses_base_fallback() -> None:
+def test_compose_weeks_48w_first_depth_pass_uses_depth_day() -> None:
     weeks = compose_weeks(CourseLength.WEEKS_48)
     assert len(weeks) == 48
     base = weeks[0].days[0]
     depth = weeks[0].days[1]
     assert base.title
-    assert depth.title == base.title
+    assert depth.title != base.title
+    assert "Questions" in depth.title or "Negatives" in depth.title
     assert weeks[0].cefr_level == "A1"
     assert weeks[1].cefr_level == "A2"
 

@@ -101,7 +101,8 @@ def test_48w_cefr_follows_level_pairing_bands() -> None:
 def test_48w_days_have_populated_topics_from_composed_bands() -> None:
     weeks = load_weeks(CourseLength.WEEKS_48)
     assert weeks[0].days[0].topic.startswith("Simple Present Tense")
-    assert weeks[0].days[1].topic.startswith("Simple Present Tense")
+    assert weeks[0].days[1].topic.startswith("Simple Present")
+    assert weeks[0].days[1].topic != weeks[0].days[0].topic
 
 
 # ── ID format and uniqueness ───────────────────────────────────────

@@ -1,40 +1,154 @@
-Use this as a **fixed preamble** you paste every time. Below it, add your **batch block** (week numbers, topic table, or “mirror topics from spec X”).
+# Curriculum source files
+
+How LingosAI curriculum is authored, stored, and assembled at runtime.
 
 ---
 
-## Preamble: Author the next 4-week block in a level-band source file
+## What changed (old vs current)
 
-### Role
+| Before | Now |
+|--------|-----|
+| One monolithic authored file (`source_24w.py` with `WEEKS_24` as **source of truth**) | **Three level-band modules** are the source of truth; `source_24w.py` / `source_48w.py` are **composed shims** |
+| 24 calendar weeks authored directly (weeks 1–24 in one tuple) | Each band holds **8 local source weeks**; `composer.py` maps them onto 24w or 48w calendars |
+| One `DaySource` per slot — 48w reused the same content twice | Each parent `DaySource` has an optional nested **`depth_day`**; 48w **pass 2** uses `depth_day` when present |
+| Authoring batches targeted global weeks (e.g. 9–12, 13–16) in one file | Authoring targets **one band file** and **local** `week_number` 1–8 only |
 
-You are filling in **exactly four consecutive source weeks** in one level-band file for the LingosAI 24-week course. Band files live under `backend/app/modules/curriculum/data/`:
-
-| Global 24w weeks | Band file | Local source weeks | CEFR (24w) |
-|------------------|-----------|-------------------|------------|
-| 1–8 | `source_L_A1A2.py` | 1–8 | 1–4 A1, 5–8 A2 |
-| 9–16 | `source_L_B1B2.py` | 1–8 | 1–4 B1, 5–8 B2 |
-| 17–24 | `source_L_C1C2.py` | 1–8 | 1–4 C1, 5–8 C2 |
-
-Runtime assembly is via `composer.py` (48w doubles each day into two consecutive calendar days). `source_24w.py` is a composed re-export for tests and seeders.
-
-This is a **working prototype**: replicate proven structure, change topics and level only. Do not redesign the curriculum system.
+**Do not edit** `source_24w.py` or `source_48w.py` for content — they call `compose_weeks()` and re-export the result. All content changes go into the band files under `backend/app/modules/curriculum/data/`.
 
 ---
 
-### Batch I am asking for (filled in below this preamble)
+## Three-level architecture
 
-- **Target weeks:** `___` through `___` (must be a block of 4: e.g. 9–12, 13–16).
-- **Do not edit** any week outside this range (except fixing syntax errors you introduce).
-- **Topic plan:** see the section **immediately below** this preamble.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Level 1 — Schema (`types.py`)                                  │
+│  DaySource, WeekSource, ActivityBlueprint, TeacherBlueprint, … │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│  Level 2 — Canonical band sources (YOU EDIT THESE)              │
+│  source_L_A1A2.py  →  WEEKS_A1A2  (8 local weeks)             │
+│  source_L_B1B2.py   →  WEEKS_B1B2  (8 local weeks)             │
+│  source_L_C1C2.py   →  WEEKS_C1C2  (8 local weeks)             │
+│  Each DaySource: base fields + optional depth_day=DaySource(…)  │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────────┐
+│  Level 3 — Runtime assembly (read-only for authors)             │
+│  composer.py      → resolve_day / compose_weeks                 │
+│  source_24w.py    → WEEKS_24 = compose_weeks(WEEKS_24)          │
+│  source_48w.py    → WEEKS_48 = compose_weeks(WEEKS_48)          │
+│  file_source.py   → day IDs, hydration for sessions             │
+│  loader.py        → WeekRecord / DayRecord for seeders          │
+│  blueprint_adapter.py → DaySource → session runtime shape       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Rule of thumb:** import types from `types.py` only inside band files; never import `WEEKS_24` / `WEEKS_48` when authoring.
 
 ---
 
-### Course structure (non-negotiable)
+## Band files and global calendar mapping
 
-- **24 weeks = 6 cycles × 4 theme weeks.** Theme order every cycle: `grammar` → `communication` → `vocabulary` → `confidence`.
-- **7 days per week** (`DaySource` × 7). Each day must be fully authored (not empty stubs).
-- **File:** the band module for your global week range (see table above). Edit **local** `week_number` 1–8 inside that file only (no registry, scoring, frontend, or 48w `depth_day` unless explicitly asked).
+Each band covers **two CEFR halves** (lower + upper) × **four theme weeks** = **8 local weeks**.
 
-**CEFR on `WeekSource` shells** (band-local week numbers):
+| Band file | Tuple | Global 24w weeks | Global 48w calendar weeks | Local weeks | CEFR (24w) |
+|-----------|-------|------------------|---------------------------|-------------|------------|
+| `source_L_A1A2.py` | `WEEKS_A1A2` | 1–8 | 1–16 | 1–8 | 1–4 A1, 5–8 A2 |
+| `source_L_B1B2.py` | `WEEKS_B1B2` | 9–16 | 17–32 | 1–8 | 1–4 B1, 5–8 B2 |
+| `source_L_C1C2.py` | `WEEKS_C1C2` | 17–24 | 33–48 | 1–8 | 1–4 C1, 5–8 C2 |
+
+Within every band, **local weeks 1–4** use the lower CEFR label on `WeekSource`; **local weeks 5–8** use the upper label (see CEFR table below).
+
+### Theme cycle (every band, every half)
+
+Local weeks 1–4 and 5–8 each repeat the same theme order:
+
+| Local week mod 4 | `theme_type` |
+|------------------|--------------|
+| 1 | `grammar` |
+| 2 | `communication` |
+| 3 | `vocabulary` |
+| 4 | `confidence` |
+
+So local weeks 5–8 mirror the theme *types* of 1–4 at a higher CEFR band.
+
+---
+
+## `DaySource`: base day and `depth_day`
+
+A **parent** `DaySource` in a band file is the **base day**. An optional sibling field attaches 48w depth content:
+
+```python
+DaySource(
+    title="...",           # BASE — seen on 24w and 48w pass 1 (pass_index=0)
+    description=(...),
+    focus="...",
+    teacher=TeacherBlueprint(...),
+    activities=(...),      # exactly 4 activities, sequences 1–4
+    final_review=FinalReviewBlueprint(...),  # defaults OK
+    depth_day=DaySource(   # DEPTH — 48w pass 2 only (pass_index=1)
+        title="...",       # must differ from base title
+        description=(...),
+        focus="...",
+        teacher=TeacherBlueprint(...),
+        activities=(...),  # same archetype order/widgets as parent
+        # no nested depth_day
+    ),
+),
+```
+
+### Who sees what
+
+| Course | Calendar slot | Content used | CEFR |
+|--------|---------------|--------------|------|
+| **24w** | any day | **base** `DaySource` only | from `_cefr_for_24w` |
+| **48w** | odd pass (day 1, 3, 5… within each source pair) | **base** | see 48w table below |
+| **48w** | even pass (day 2, 4, 6…) | **`depth_day`** if set, else base (logged fallback) | see 48w table below |
+
+24w learners **never** see `depth_day`. If `depth_day` is missing on a parent, 48w pass 2 falls back to base content (debug log only — all 168 depth slots are authored in production data).
+
+### 48w mapping (two calendar days per source day)
+
+For each band, calendar weeks `BAND_START_48 … BAND_START_48+15` map onto local source weeks 1–8. **Each source day becomes two consecutive calendar days:**
+
+- **Pass 0** (`pass_index=0`): base `DaySource`
+- **Pass 1** (`pass_index=1`): `parent.depth_day`
+
+Example (A1A2): `day_48_01_01` = base simple present agreement (A1); `day_48_01_02` = depth “Questions, Negatives & Short Answers” (A2).
+
+### 48w CEFR on depth pass
+
+| Local source week | Base pass CEFR | Depth pass CEFR |
+|-------------------|----------------|-----------------|
+| 1–4 | Lower (A1 / B1 / C1) | **Upper** (A2 / B2 / C2) |
+| 5–8 | Upper (A2 / B2 / C2) | **Same label** — content must go **deeper**, not a new code |
+
+Depth topic plans live in [`docs/depth_topic_table.md`](depth_topic_table.md) (56 rows per band).
+
+---
+
+## Datamodel reference (`types.py`)
+
+| Type | Role |
+|------|------|
+| `WeekSource` | `week_number`, `theme_type`, `cefr_level`, `sub_level_min/max`, `days` (7× `DaySource`) |
+| `DaySource` | `title`, `description`, `focus`, `tags`, `teacher`, `activities`, `final_review`, `depth_day?` |
+| `TeacherBlueprint` | `style`, `lesson_goal`, `steps`, `readiness_prompt` |
+| `TeacherStep` | `id`, `goal`, `instruction`, `stop_after` |
+| `ActivityBlueprint` | `id`, `sequence` (1–4), `task`, `evaluation`, `feedback`, `mandatory` |
+| `TaskBlueprint` | `archetype_id`, `activity`, `task_widget`, `topic_override`, `generation_instructions`, `widget_requirements`, `static_payload?` |
+| `EvaluationBlueprint` | `evaluator`, `evaluation_widget`, `rubric`, `overrides` |
+| `FeedbackBlueprint` | `generator`, `feedback_widget`, `overrides` |
+| `FinalReviewBlueprint` | `scorecard_widget`, `rag_feedback_widget` |
+
+Activity order at runtime is **`read` → `listen` → `write` → `speak`** (sequences 1–4). This is enforced in tests and `blueprint_adapter._ordered_activities`.
+
+---
+
+## CEFR on `WeekSource` shells
+
+Set on each `WeekSource` in the band file (composer may override on composed calendar weeks):
 
 | Band | Local weeks | `cefr_level` | `sub_level_min`–`max` |
 |------|-------------|--------------|------------------------|
@@ -42,221 +156,181 @@ This is a **working prototype**: replicate proven structure, change topics and l
 | B1B2 | 1–4 / 5–8 | B1 / B2 | 4–5 / 6–7 |
 | C1C2 | 1–4 / 5–8 | C1 / C2 | 8 / 8 |
 
-Within your batch, each `WeekSource` must keep its `theme_type`, `cefr_level`, and `sub_level_*` shell values.
-
 ---
 
-### Mirror rule (structural copy — saves time)
+## Authoring base days
 
-For **every** target week `W` and day index `D` (0 = Monday … 6 = Sunday):
+### Mirror rule (within a band)
 
-> **Copy activity structure from week `W − 4`, day `D`.**
+For **local week W ≥ 5**, day index **D** (0 = Monday … 6 = Sunday):
 
-- Same four `archetype_id` values in the same order.
-- Same `activity` kinds: **`read` → `listen` → `write` → `speak`** (sequences 1–4).
-- Same `task_widget`, `evaluator`, `evaluation_widget`, `feedback_widget`, `mandatory`.
-- Same **number of teacher steps** and step **roles** (`open` → teaching steps → `wrap_up`) as the mirror day.
+> Copy **activity structure** from **local week W − 4**, same day **D**.
 
-**Change only:** `title`, `description`, `focus`, `lesson_goal`, teacher `instruction` text, `activity.id` suffixes, `topic_override`, `generation_instructions`, `widget_requirements` (topic/level wording).
+- Same four `archetype_id` values, same order, same widgets, evaluators, feedback widgets.
+- Same teacher **step count** and step **ids** (`open` → … → `wrap_up`).
+- **Change:** titles, descriptions, focus, teacher instructions, activity ids, `topic_override`, generation text.
 
-**Do not:** new archetypes, reorder activities, new widgets, or different evaluator types.
+Local weeks **1–4** are authored from scratch (or from an external spec); **5–8 mirror 1–4** structurally with harder topics.
 
-**Structural mirror chain:** 5–8 mirror 1–4; 9–12 mirror 5–8; 13–16 mirror 9–12; etc. Earlier weeks in the chain must already be authored before you rely on them.
+### Teacher behaviour (all levels today)
 
----
+1. **Step 1 (`open`):** Greet; two short sentences on today’s focus; **one** open question.
+2. **Middle steps:** One pattern per step; use the learner’s answer when possible; **one** `?` per step instruction (~60 words).
+3. **Final step (`wrap_up`):** After the learner has shown the pattern once, instruction must ask **only:** `Ready to try the practice task?`
 
-### Teacher behavior (same every cycle — prevents drift)
+Defaults: `readiness_prompt = "Ready to try the practice task?"`, `style = "strict_kind_a1_friendly"`.
 
-Teacher steps become the **scripted plan** (one AI turn per step). The live teacher agent requires:
-
-1. **Intro (step 1, `id="open"`):** Greet; explain in **two short sentences** what today’s lesson is about; end with **one open question** (personal example, opinion, or short production). One question only.
-2. **Teaching steps (middle):** **One rule/pattern per step.** Use the learner’s last answer when possible. End each step instruction with **one** engagement ask (produce, transform, correct, or share). Open-ended dialogue, but each step’s instruction must imply **one** question mark in the model output.
-3. **Exit (final step, `id="wrap_up"`):** After the learner has shown the target pattern at least once, the instruction must say to ask **only:** `Ready to try the practice task?` — no new teaching, no recap, no “any other questions?”
-
-**Authoring rules for `TeacherStep.instruction` text:**
-
-- Mirror the **sentence patterns** of the `W−4` day’s steps; swap in the new topic/grammar only.
-- **3 or 4 steps** total (match the mirror day’s count).
-- Keep `TeacherBlueprint.readiness_prompt = "Ready to try the practice task?"` unless the mirror day differs.
-- Keep `style="strict_kind_a1_friendly"` (used for all levels today).
-- Do **not** put the target answer inside the question (no spoiling).
-- Do **not** add extra steps (review, doubt-check, second readiness).
-
-The runtime enforces: one message per turn, **at most one `?`**, ~60 words, readiness alone on the last turn. Write instructions so the LLM can comply.
-
----
+Teacher steps become the **scripted plan** at runtime (`teacher_instructions["teacher_steps"]` via `blueprint_adapter`).
 
 ### Task generator alignment
 
-For each activity, `generation_instructions` and `widget_requirements` must:
-
-- Target the **new day topic** and **current cycle CEFR** (slightly richer than the previous cycle, not C2).
-- Preserve **counts and widget contracts** from the mirror day (e.g. number of blanks, MCQs, errors, passage length bands).
-
-`topic_override` must describe the new day skill, not the mirror week’s topic.
+- `generation_instructions` / `widget_requirements` target the **new day topic** and **current CEFR**.
+- Preserve **counts and widget contracts** from the mirror day (blanks, MCQs, durations, etc.).
+- `topic_override` describes **this** day’s skill, not the mirror week’s topic.
 
 ---
 
-### Level progression (topics get harder each cycle)
+## Authoring `depth_day`
 
-- **Same day slot, harder content:** Day 1 grammar in cycle 3 should be harder than day 1 grammar in cycle 2, which was harder than cycle 1 — but **same archetype layout** as `W−4`.
-- Use the **batch topic table below** when provided; otherwise propose topics that fit the mirror day’s activity types and CEFR band.
-- Teacher language stays short and concrete; tasks may be slightly longer at B1+.
+Add **`depth_day=DaySource(...)`** on the **parent** only — never nest `depth_day` inside `depth_day`.
+
+| Field | Base | Depth |
+|-------|------|-------|
+| `title` | Intro topic | **Distinct** title (same topic family, deeper angle) |
+| `description` / `focus` | First exposure | What **extra** depth the learner gets |
+| `teacher` | Teach from zero | Assume learner **saw base yesterday** (48w) |
+| `activities` | 4 slots | **Same** archetypes/widgets as parent; new ids (e.g. `_depth` suffix) |
+| Content tone | Base CEFR | Depth pass CEFR (see table above) |
+
+Each depth day should include at least one of: error spotting, contrast with a neighbour structure, longer production, register / “when it sounds wrong”.
+
+Full 56-row plans per band: [`docs/depth_topic_table.md`](depth_topic_table.md).
+
+Optional one-off injectors live in `backend/scripts/` (e.g. `inject_depth_w*_a1a2.py`, `patch_b1b2_depth_w*.py`, `patch_c1c2_depth_w*.py`). Prefer editing the band file directly for small fixes; scripts are for bulk/reproducible inserts.
+
+**Patch-script note:** when inserting `depth_day` before `WeekSource` boundaries, scope regex per week — week-ending days close with extra `),` layers; blind global patches break at week 2+.
 
 ---
 
-### Per-day checklist (repeat × 28 days in a 4-week batch)
+## Day IDs and runtime access
 
-For target week `W`, day index `D`:
+| Pattern | Meaning |
+|---------|---------|
+| `day_24_WW_DD` | 24w course, calendar week `WW`, day `DD` (1–7) |
+| `day_48_WW_DD` | 48w course, calendar week `WW`, day `DD` (1–7) |
 
-1. Open mirror: `WEEKS_24[W-1].days[D]` and `WEEKS_24[W-5].days[D]` (week `W−4`).
-2. Copy mirror `DaySource` skeleton.
-3. Update metadata + teacher steps (patterns from mirror, new topic).
-4. Update each `ActivityBlueprint` (ids + topic-specific generation text).
-5. Confirm: 4 activities, sequences 1–4, order read/listen/write/speak.
+```python
+from app.modules.curriculum import file_source
+from app.scoring import CourseLength
+
+day = file_source.get_day(1, 0, course_length=CourseLength.WEEKS_48)  # week 1, Monday
+day = file_source.get_day_by_id("day_48_01_02")
+```
+
+`file_source` resolves through `composer.resolve_day`, then `blueprint_adapter.adapt_day_source` flattens into task specs, teacher script, and override dicts for the session engine.
 
 ---
 
-### Verification before done
+## Verification
+
+### One band — all `depth_day` present
+
+```bash
+cd backend
+uv run python -c "
+from app.modules.curriculum.data.source_L_A1A2 import WEEKS_A1A2  # or B1B2 / C1C2
+missing = []
+for w in WEEKS_A1A2:
+    for di, d in enumerate(w.days):
+        if d.depth_day is None:
+            missing.append((w.week_number, di+1))
+        elif len(d.depth_day.activities) != 4:
+            missing.append((w.week_number, di+1, 'incomplete depth'))
+assert not missing, missing
+print('depth_day count:', sum(1 for w in WEEKS_A1A2 for d in w.days if d.depth_day))
+"
+```
+
+### 48w — depth topic ≠ previous calendar day
 
 ```bash
 cd backend
 uv run python -c "
 from app.modules.curriculum import file_source
-START, END = ___ , ___   # your batch
-for w in range(START, END+1):
-  for d in range(7):
-    day = file_source.get_day(w, d)
-    assert len(day.task_archetypes_used) == 4
-    acts = [file_source.task_spec_for(day,i)['activity'] for i in range(4)]
-    assert acts == ['read','listen','write','speak'], (w,d+1,acts)
-    print(f'W{w} D{d+1}:', day.topic[:50], '->', day.task_archetypes_used)
+from app.modules.curriculum.data.composer import resolve_day
+from app.scoring import CourseLength
+
+BAND_START = 1  # A1A2=1, B1B2=17, C1C2=33
+dupes = []
+for cw in range(BAND_START, BAND_START + 16):
+    for di in range(7):
+        r = resolve_day(CourseLength.WEEKS_48, cw, di)
+        if r.pass_index != 1:
+            continue
+        day = file_source.get_day(cw, di, course_length=CourseLength.WEEKS_48)
+        prev = file_source.get_day(cw, di-1, course_length=CourseLength.WEEKS_48) if di else file_source.get_day(cw-1, 6, course_length=CourseLength.WEEKS_48)
+        if day.topic == prev.topic:
+            dupes.append((cw, di+1))
+assert not dupes, dupes
+print('48w depth topics distinct OK')
 "
-uv run pytest tests/test_file_source.py tests/test_curriculum_v2_data.py -q
 ```
 
-If a `test_cycle1_day_integrity`-style test exists for your week range, run it too.
+### Base-day batch (local weeks in one band)
+
+```bash
+cd backend
+uv run python -c "
+from app.modules.curriculum import file_source
+from app.scoring import CourseLength
+
+# Example: global 24w weeks 1–4 → band A1A2, local weeks 1–4
+GLOBAL_START, GLOBAL_END = 1, 4
+for gw in range(GLOBAL_START, GLOBAL_END + 1):
+    for d in range(7):
+        day = file_source.get_day(gw, d, course_length=CourseLength.WEEKS_24)
+        assert len(day.task_archetypes_used) == 4
+        acts = [file_source.task_spec_for(day, i)['activity'] for i in range(4)]
+        assert acts == ['read','listen','write','speak'], (gw, d+1, acts)
+        print(f'W{gw} D{d+1}:', day.topic[:50])
+"
+
+uv run pytest tests/test_composer.py tests/test_file_source.py tests/test_curriculum_v2_data.py -q
+```
+
+Cycle integrity tests (`test_cycle1_day_integrity.py`, etc.) read composed `WEEKS_24` — they still validate structure after band edits.
 
 ---
 
-### Out of scope
+## Out of scope for source authoring
 
-- Weeks outside the batch; rewriting prior cycles “for quality.”
-- New archetypes, contracts, or teacher system prompts.
-- `source_48w.py`, frontend, migrations.
-
-**Deliverable:** Replace empty `DaySource()` stubs in the target weeks with **28 complete days** that pass `file_source.get_day` for every day in the batch.
-
----
-
-## How to use it
-
-**1. Learn the preamble above.**
-
-**2. Check the batch blocks topics for new batch pasted:**
-
-**3. Rewrite the band source file for the new batch (local weeks 1–8)**
-
-Here’s **17–20** (B2, Cycle 5 — Reasoning). Mirror **13–16** day-for-day for structure (`W17→W13` … `W20→W16`). Topics step up from the **13–16 plan** (and your authored **9–12**).
+- `composer.py`, `loader.py`, `blueprint_adapter.py` (unless changing assembly logic deliberately)
+- Archetype registry / session contracts (new activity **kinds** need code changes elsewhere)
+- Frontend, DB migrations, scoring math
+- Editing `source_24w.py` / `source_48w.py` content (shims only)
 
 ---
 
-## Week 17 — Grammar (B2) ← mirror Week 13
+## Agent brief: author a 4-week base batch in one band
 
-| Day | Week 13 (B1+) | Week 17 (B2) — topic |
-|-----|---------------|----------------------|
-| 1 | Past perfect continuous | **Narrative tense control** — mix past simple, past perfect, and past perfect continuous in one story |
-| 2 | Third conditional | **Mixed conditionals** — past condition → present result (*If I had…, I would… now*) |
-| 3 | Causative have/get | **Impersonal & advanced passive** — *It is said that…, He is believed to have…, The decision was made…* |
-| 4 | Reduced & non-defining relatives | **Participle & adverbial clauses** — *Having finished…, Written in 2020…, Although tired,…* |
-| 5 | Reporting verbs & patterns | **Stance & distancing in reporting** — *It is argued/claimed/suggested that…, According to…* |
-| 6 | Wish & regret | **Inversion for emphasis** — *Never have I…, Had I known…, Not only… but also…* |
-| 7 | Formal linkers & nuance | **Academic & professional cohesion** — *thereby, thus, consequently, in light of, with regard to* |
+Use this block when asking an agent to fill **local weeks** in a single band file.
 
-**Progression:** B1+ = advanced patterns; B2 = **control in long discourse, mixed hypotheticals, impersonal style, dense clauses, stance, rhetoric-level grammar**.
-
----
-
-## Week 18 — Communication (B2) ← mirror Week 14
-
-| Day | Week 14 (B1+) | Week 18 (B2) — topic |
-|-----|---------------|----------------------|
-| 1 | Conflict resolution & middle ground | **Diplomatic mediation** — two sides, neutral language, workable outcome |
-| 2 | Giving constructive feedback | **Upward & sensitive feedback** — to a manager, senior peer, or client |
-| 3 | Pros, cons & recommending an option | **Strategic recommendation** — option, risks, mitigation, clear recommendation |
-| 4 | Leading a short meeting | **Chairing with disagreement** — keep agenda, manage conflict, assign actions |
-| 5 | Handling objections | **Formal advocacy** — defend a position with evidence under challenge |
-| 6 | Stakeholder communication | **Executive summary** — compress complex info for different seniority levels |
-| 7 | Facilitating discussion | **Panel-style discussion** — multiple views, synthesise, land a shared takeaway |
-
----
-
-## Week 19 — Vocabulary (B2) ← mirror Week 15
-
-| Day | Week 15 (B1+) | Week 19 (B2) — topic |
-|-----|---------------|----------------------|
-| 1 | Science & research | **Innovation & future tech** — automation, algorithm, disruption, ethical AI |
-| 2 | Arts & creativity | **Law & justice** — legislation, verdict, precedent, plaintiff, appeal |
-| 3 | Ethics & global issues | **Politics & governance** — coalition, reform, referendum, mandate, austerity |
-| 4 | Business & economics | **Finance & markets (advanced)** — equity, liability, portfolio, volatility, stakeholder |
-| 5 | Media literacy | **Psychology & behaviour** — cognitive, perception, motivation, implicit, resilience |
-| 6 | Leadership & influence | **Rhetoric & argumentation** — rhetoric, concede, undermine, compelling, nuance |
-| 7 | Review & word building | **Review & word building** — consolidate week 19 |
-
----
-
-## Week 20 — Confidence (B2) ← mirror Week 16
-
-| Day | Week 16 (B1+) | Week 20 (B2) — topic |
-|-----|---------------|----------------------|
-| 1 | Facilitating difficult conversations | **High-stakes conversations** — pressure, stakes, stay composed |
-| 2 | Counterarguments & rebuttals | **Evidence-based debate** — claim, evidence, partial concession, rebuttal |
-| 3 | Vision & long-term narrative | **Professional brand story** — arc: past → present → direction |
-| 4 | Giving & receiving critical feedback | **Public challenge** — tough question, stay clear, don’t get defensive |
-| 5 | Strong close & call to action | **Stakeholder pitch** — problem, solution, proof point, ask |
-| 6 | Presentation with brief Q&A | **Keynote-style segment** — ~90s structured talk + one hard question |
-| 7 | Full confidence showcase (B1+) | **Full confidence showcase (B2)** — Cycle 5 wrap-up |
-
----
-
-## Paste block
+**Assignment template**
 
 ```markdown
-### Batch specifics — weeks 17–20
-
-**Target weeks:** 17–20 | **Mirror structure from:** 13–16 (day-for-day; author 13–16 first)
-**CEFR:** B2 | **sub_level:** 6–7
-
-| W | D | Theme | Title / topic |
-|---|----|-------|----------------|
-| 17 | 1 | grammar | Narrative tense control |
-| 17 | 2 | grammar | Mixed conditionals |
-| 17 | 3 | grammar | Impersonal & advanced passive |
-| 17 | 4 | grammar | Participle & adverbial clauses |
-| 17 | 5 | grammar | Stance & distancing in reporting |
-| 17 | 6 | grammar | Inversion for emphasis |
-| 17 | 7 | grammar | Academic & professional cohesion |
-| 18 | 1 | communication | Diplomatic mediation |
-| 18 | 2 | communication | Upward & sensitive feedback |
-| 18 | 3 | communication | Strategic recommendation |
-| 18 | 4 | communication | Chairing with disagreement |
-| 18 | 5 | communication | Formal advocacy |
-| 18 | 6 | communication | Executive summary |
-| 18 | 7 | communication | Panel-style discussion |
-| 19 | 1 | vocabulary | Innovation & future tech |
-| 19 | 2 | vocabulary | Law & justice |
-| 19 | 3 | vocabulary | Politics & governance |
-| 19 | 4 | vocabulary | Finance & markets (advanced) |
-| 19 | 5 | vocabulary | Psychology & behaviour |
-| 19 | 6 | vocabulary | Rhetoric & argumentation |
-| 19 | 7 | vocabulary | Review & word building |
-| 20 | 1 | confidence | High-stakes conversations |
-| 20 | 2 | confidence | Evidence-based debate |
-| 20 | 3 | confidence | Professional brand story |
-| 20 | 4 | confidence | Public challenge |
-| 20 | 5 | confidence | Stakeholder pitch |
-| 20 | 6 | confidence | Keynote-style segment |
-| 20 | 7 | confidence | Full confidence showcase (B2) |
+Band file: `backend/app/modules/curriculum/data/source_L_B1B2.py`
+Tuple: `WEEKS_B1B2`
+Local weeks: 5–8 (mirror structure from local weeks 1–4, new topics)
+Do NOT edit other bands or `depth_day` unless asked.
+Topic plan: [table or link]
 ```
 
-**Note:** Weeks **13–16 are still empty** in the repo — author those before **17–20**, or structurally mirror **9–12** only if you skip 13–16 (not recommended; breaks the `W−4` chain). **21–24** (C1) would mirror **17–20** next.
+**Non-negotiable**
+
+- 7 fully authored `DaySource` rows per week (no empty stubs).
+- 4 activities per day: read → listen → write → speak.
+- Mirror **local W−4** for weeks 5–8 (same archetypes/widgets/evaluators).
+- Teacher: 3–4 steps, one `?` per step, wrap_up = readiness only.
+- Deliverable: `file_source.get_day` succeeds for every global week in the batch (24w).
+
+For **depth** batches, use [`docs/depth_topic_table.md`](depth_topic_table.md) and attach `depth_day=DaySource(...)` on existing parents only — do not rewrite base fields except fixing syntax you introduce.
