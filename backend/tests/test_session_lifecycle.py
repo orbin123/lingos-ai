@@ -101,9 +101,9 @@ def _seed_world(db):
     db.flush()
     seed_archetypes(db)
     week = CurriculumWeek(
-        week_id="wk_24_05",
+        week_id="wk_24_09",
         course_length="24w",
-        week_number=5,
+        week_number=9,
         theme_type=ThemeType.GRAMMAR,
         title="What I Did and What I'll Do",
         cefr_level="A2",
@@ -114,7 +114,7 @@ def _seed_world(db):
     db.add(week)
     db.flush()
     day = CurriculumDay(
-        day_id="day_24_05_03",
+        day_id="day_24_09_03",
         week_id=week.id,
         day_number=3,
         topic="Past negative and questions",
@@ -192,9 +192,10 @@ class TestStartSession:
     @pytest.mark.asyncio
     async def test_creates_session_with_mandatory_attempts(self, db_session):
         service = SessionService(db_session, evaluator=StubEvaluator(default_score=7.0))
+        source_day = file_source.get_day(9, 2)
         session = await service.start_session(
             user_id=_user_id(db_session),
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
             course_length=CourseLength.WEEKS_24,
             tasks_per_day=4,
             allowed_activities={"read", "write", "listen", "speak"},
@@ -202,13 +203,12 @@ class TestStartSession:
         assert session.status is SessionStatus.IN_PROGRESS
         assert session.is_first_attempt is True
         assert len(session.attempts) == 4
-        assert [a.archetype_id for a in session.attempts] == [
-            "READ_CLOZE",
-            "WRITE_SENT_TRANS",
-            "LISTEN_CLOZE",
-            "SPEAK_TIMED",
+        assert [a.archetype_id for a in session.attempts] == list(
+            source_day.task_archetypes_used
+        )
+        assert [a.is_mandatory for a in session.attempts] == [
+            c["mandatory"] for c in source_day.activity_contracts
         ]
-        assert [a.is_mandatory for a in session.attempts] == [True, True, False, False]
 
     @pytest.mark.asyncio
     async def test_authored_w1d1_uses_source_file_content_in_db_mode(
@@ -283,7 +283,7 @@ class TestStartSession:
         service = SessionService(db_session)
         await service.start_session(
             user_id=_user_id(db_session),
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
             course_length=CourseLength.WEEKS_24,
             tasks_per_day=2,
             allowed_activities={"read", "write"},
@@ -291,7 +291,7 @@ class TestStartSession:
         with pytest.raises(SessionAlreadyOpen):
             await service.start_session(
                 user_id=_user_id(db_session),
-                day_id="day_24_05_03",
+                day_id="day_24_09_03",
                 course_length=CourseLength.WEEKS_24,
                 tasks_per_day=2,
                 allowed_activities={"read", "write"},
@@ -300,20 +300,26 @@ class TestStartSession:
     @pytest.mark.asyncio
     async def test_attempts_carry_stub_task_content(self, db_session):
         service = SessionService(db_session)
+        source_day = file_source.get_day(9, 2)
         session = await service.start_session(
             user_id=_user_id(db_session),
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
             course_length=CourseLength.WEEKS_24,
             tasks_per_day=2,
             allowed_activities={"read", "write"},
         )
         content = session.attempts[0].task_content
-        assert content["archetype_id"] == "READ_CLOZE"
-        assert content["topic"] == "Past negative and questions"
-        assert content["ui_widget"] == ARCHETYPE_REGISTRY["READ_CLOZE"].ui_widget
-        assert content["activity_contract"]["task_widget"] == "fill_in_blanks"
-        assert content["activity_contract"]["evaluation_widget"] == "activity_score"
-        assert content["activity_contract"]["feedback_widget"] == "feedback_card"
+        archetype_id = source_day.task_archetypes_used[0]
+        contract = source_day.activity_contracts[0]
+        assert content["archetype_id"] == archetype_id
+        assert content["topic"] == source_day.task_specs[0]["topic_override"]
+        assert content["ui_widget"] == ARCHETYPE_REGISTRY[archetype_id].ui_widget
+        assert content["activity_contract"]["task_widget"] == contract["task_widget"]
+        assert (
+            content["activity_contract"]["evaluation_widget"]
+            == contract["evaluation_widget"]
+        )
+        assert content["activity_contract"]["feedback_widget"] == contract["feedback_widget"]
 
 
 # ── lifecycle ──────────────────────────────────────────────────────
@@ -328,7 +334,7 @@ class TestSessionLifecycle:
         )
         session = await service.start_session(
             user_id=_user_id(db),
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
             course_length=CourseLength.WEEKS_24,
             tasks_per_day=tasks_per_day,
             allowed_activities={"read", "write", "listen", "speak"},
@@ -483,7 +489,7 @@ class TestResetActivity:
         )
         session = await service.start_session(
             user_id=_user_id(db),
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
             course_length=CourseLength.WEEKS_24,
             tasks_per_day=tasks_per_day,
             allowed_activities={"read", "write", "listen", "speak"},
@@ -634,7 +640,7 @@ class TestRestartRescoring:
         )
         session = await service.start_session(
             user_id=_user_id(db),
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
             course_length=CourseLength.WEEKS_24,
             tasks_per_day=4,
             allowed_activities={"read", "write", "listen", "speak"},
@@ -732,29 +738,29 @@ class TestAdvanceDay:
 
     def test_advance_day_after_completed_current_day(self, db_session):
         user_id = _user_id(db_session)
-        self._set_preference(db_session, user_id=user_id, week=5, day=3)
+        self._set_preference(db_session, user_id=user_id, week=9, day=3)
         _add_completed_daily_session(
             db_session,
             user_id=user_id,
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
         )
 
         service = SessionService(db_session)
         week, day = service.advance_day(user_id=user_id)
 
-        assert (week, day) == (5, 4)
+        assert (week, day) == (9, 4)
         pref = db_session.query(UserCoursePreference).filter_by(user_id=user_id).one()
-        assert pref.current_week == 5
+        assert pref.current_week == 9
         assert pref.current_day_in_week == 4
         assert pref.last_completed_on is not None
 
     def test_advance_day_blocks_when_current_day_is_not_completed(self, db_session):
         user_id = _user_id(db_session)
-        self._set_preference(db_session, user_id=user_id, week=5, day=3)
+        self._set_preference(db_session, user_id=user_id, week=9, day=3)
         _add_completed_daily_session(
             db_session,
             user_id=user_id,
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
             status=SessionStatus.IN_PROGRESS,
         )
 
@@ -764,12 +770,12 @@ class TestAdvanceDay:
 
     def test_advance_day_rolls_day_7_into_next_week(self, db_session):
         user_id = _user_id(db_session)
-        week5 = db_session.query(CurriculumWeek).filter_by(week_number=5).one()
-        _add_curriculum_day(db_session, week=week5, day_number=7)
-        week6 = CurriculumWeek(
-            week_id="wk_24_06",
+        week9 = db_session.query(CurriculumWeek).filter_by(week_number=9).one()
+        _add_curriculum_day(db_session, week=week9, day_number=7)
+        week10 = CurriculumWeek(
+            week_id="wk_24_10",
             course_length="24w",
-            week_number=6,
+            week_number=10,
             theme_type=ThemeType.VOCABULARY,
             title="Next week",
             cefr_level="A2",
@@ -777,29 +783,29 @@ class TestAdvanceDay:
             sub_level_max=3,
             learning_goal="More practice.",
         )
-        db_session.add(week6)
+        db_session.add(week10)
         db_session.flush()
-        _add_curriculum_day(db_session, week=week6, day_number=1)
+        _add_curriculum_day(db_session, week=week10, day_number=1)
         db_session.commit()
-        self._set_preference(db_session, user_id=user_id, week=5, day=7)
+        self._set_preference(db_session, user_id=user_id, week=9, day=7)
         _add_completed_daily_session(
             db_session,
             user_id=user_id,
-            day_id="day_24_05_07",
+            day_id="day_24_09_07",
         )
 
         service = SessionService(db_session)
-        assert service.advance_day(user_id=user_id) == (6, 1)
+        assert service.advance_day(user_id=user_id) == (10, 1)
 
     def test_advance_day_blocks_at_course_end(self, db_session):
         user_id = _user_id(db_session)
-        week5 = db_session.query(CurriculumWeek).filter_by(week_number=5).one()
+        week5 = db_session.query(CurriculumWeek).filter_by(week_number=9).one()
         _add_curriculum_day(db_session, week=week5, day_number=7)
-        self._set_preference(db_session, user_id=user_id, week=5, day=7)
+        self._set_preference(db_session, user_id=user_id, week=9, day=7)
         _add_completed_daily_session(
             db_session,
             user_id=user_id,
-            day_id="day_24_05_07",
+            day_id="day_24_09_07",
         )
 
         service = SessionService(db_session)
@@ -822,7 +828,7 @@ class TestOwnership:
         service = SessionService(db_session)
         session = await service.start_session(
             user_id=_user_id(db_session),
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
             course_length=CourseLength.WEEKS_24,
             tasks_per_day=2,
             allowed_activities={"read", "write"},
@@ -902,7 +908,7 @@ class TestAttemptDeliveryRepair:
         )
         session = await service.start_session(
             user_id=_user_id(db_session),
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
             course_length=CourseLength.WEEKS_24,
             tasks_per_day=4,
             allowed_activities={"read", "write", "listen", "speak"},
@@ -944,7 +950,7 @@ class TestAttemptDeliveryRepair:
         )
         session = await service.start_session(
             user_id=_user_id(db_session),
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
             course_length=CourseLength.WEEKS_24,
             tasks_per_day=4,
             allowed_activities={"read", "write", "listen", "speak"},
@@ -1050,7 +1056,7 @@ class TestRagResilience:
         )
         session = await service.start_session(
             user_id=_user_id(db),
-            day_id="day_24_05_03",
+            day_id="day_24_09_03",
             course_length=CourseLength.WEEKS_24,
             tasks_per_day=tasks_per_day,
             allowed_activities={"read", "write", "listen", "speak"},

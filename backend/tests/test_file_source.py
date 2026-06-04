@@ -75,9 +75,9 @@ def test_get_day_by_id_returns_populated_w1_d2() -> None:
 
 
 def test_get_day_blank_entry_raises() -> None:
-    # Cycle 1 (weeks 1-4) is fully authored; week 5 is still blank.
+    # All 24 weeks are file-authored; out-of-range week raises DayNotFound.
     with pytest.raises(DayNotFound):
-        file_source.get_day(5, 0)
+        file_source.get_day(25, 0)
 
 
 def test_get_day_out_of_range_raises() -> None:

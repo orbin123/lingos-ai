@@ -94,9 +94,9 @@ def test_persona_from_file_returns_w1d2_and_stashes_scripted_plan() -> None:
 
 def test_persona_from_file_blank_day_raises() -> None:
     persona = LearningSessionService._persona_from_file
-    # Cycle 1 (weeks 1-4) is authored; W5D1 is still blank, so file_source must refuse it.
+    # All 24 weeks are authored; invalid day_id is refused by file_source.
     with pytest.raises(DayNotFound):
-        persona(None, "day_24_05_01")  # type: ignore[arg-type]
+        persona(None, "day_24_99_01")  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
