@@ -8,6 +8,10 @@ from app.ai.agents import teacher
 from app.ai.agents.teacher import (
     TeachingOutput,
     _build_user_prompt,
+    _collapse_to_single_question,
+    _deterministic_repair,
+    _question_positions_outside_quotes,
+    _format_profile,
     _system_prompt,
     generate_teaching_turn,
     stream_teaching_turn,
@@ -108,6 +112,38 @@ def test_teacher_prompt_includes_learner_profile() -> None:
     assert "speak in standups" in prompt
     assert "daily standup" in prompt
     assert "I work every day." in prompt
+
+
+def test_system_prompt_includes_formatting_rules() -> None:
+    prompt = _system_prompt()
+    assert "FORMATTING" in prompt
+    assert "double asterisks" in prompt
+    assert "No headings" in prompt or "No headings, bullet lists" in prompt
+
+
+def test_validate_teaching_message_accepts_markdown_bold() -> None:
+    msg = (
+        "You used **smoke** in your question — we use **do** for I/you/we/they. "
+        "Can you make one negative sentence?"
+    )
+    assert validate_teaching_message(msg) == []
+
+
+def test_format_profile_includes_native_language() -> None:
+    profile = _format_profile({"native_language": "Italian", "interests": "travel"})
+    assert "Native language: Italian" in profile
+
+
+def test_teacher_prompt_includes_native_language_from_profile() -> None:
+    prompt = _build_user_prompt(
+        topic="Simple Present",
+        sub_skill="grammar",
+        task_type="read",
+        user_level=1,
+        learner_profile={"native_language": "Italian"},
+        conversation=[],
+    )
+    assert "Native language: Italian" in prompt
 
 
 def test_system_prompt_advances_after_correct_frequency_adverb_sentence() -> None:
@@ -243,6 +279,14 @@ def test_validate_flags_multiple_questions() -> None:
     assert "multiple_questions" in violations
 
 
+def test_validate_allows_question_inside_learner_quote() -> None:
+    msg = (
+        'Nice — you asked "Do you usually hike?" clearly. '
+        "Can you answer it with Yes, I do?"
+    )
+    assert validate_teaching_message(msg) == []
+
+
 def test_validate_flags_too_long() -> None:
     msg = " ".join(["word"] * 100) + "?"
     violations = validate_teaching_message(msg)
@@ -287,10 +331,67 @@ def test_teaching_output_rejects_multiple_questions() -> None:
         TeachingOutput(messages=["A? B?"])
 
 
+def test_question_marks_inside_quotes_do_not_count_as_extra_questions() -> None:
+    msg = (
+        'You wrote "Do you usually hike?" — that is a good wh-question! '
+        "Now, can you give me a short answer for it?"
+    )
+    assert _question_positions_outside_quotes(msg) == [len(msg) - 1]
+    assert validate_teaching_message(msg) == []
+    assert _deterministic_repair(msg) == msg
+
+
+def test_repair_closes_dangling_quote_before_final_question() -> None:
+    raw = (
+        "For example, you could say, \"Do you usually smoke?"
+    )
+    repaired = _deterministic_repair(raw)
+    assert repaired.count('"') % 2 == 0
+    assert repaired.endswith('smoke?"')
+
+
+def test_repair_strips_orphan_leading_quote_before_em_dash() -> None:
+    raw = '" — that is a great question! Now, can you give me a short answer?'
+    repaired = _deterministic_repair(raw)
+    assert not repaired.startswith('"')
+    assert repaired.startswith("—") or repaired.startswith("that")
+
+
+def test_collapse_keeps_longest_probe_not_illustrative_example() -> None:
+    """Depth-day opener: inline ``Do you…?`` must not beat the real ask."""
+
+    raw = (
+        "Hello! Yesterday, you practiced simple present routines. Today, we "
+        "will add questions like Do you...? Can you ask one yes/no question "
+        "about a daily routine?"
+    )
+    collapsed = _collapse_to_single_question(raw)
+    assert collapsed.count("?") == 1
+    assert "yes/no question" in collapsed
+    assert collapsed.endswith("about a daily routine?")
+
+
+def test_collapse_keeps_primary_probe_over_follow_up() -> None:
+    bad = (
+        "Great sentence! For 'I' use the base verb 'analyze'. For 'he' add an "
+        "s to make 'analyzes'. Now can you say it with he? Also what about she?"
+    )
+    collapsed = _collapse_to_single_question(bad)
+    assert collapsed.count("?") == 1
+    assert "say it with he" in collapsed
+    assert "Also what about she" not in collapsed
+
+
+def test_deterministic_repair_uses_longest_question() -> None:
+    repaired = _deterministic_repair(
+        "Today we add Do you...? Can you ask one routine question?"
+    )
+    assert repaired.count("?") == 1
+    assert repaired.endswith("routine question?")
+
+
 @pytest.mark.asyncio
-async def test_repair_truncates_extra_questions(monkeypatch) -> None:
-    # LLM dumps teaching + two questions in one turn — the exact bug the user
-    # reported. Repair must keep only up to and including the first question.
+async def test_repair_collapses_extra_questions(monkeypatch) -> None:
     bad = (
         "Great sentence! For 'I' use the base verb 'analyze'. For 'he' add an "
         "s to make 'analyzes'. Now can you say it with he? Also what about she?"
@@ -312,7 +413,42 @@ async def test_repair_truncates_extra_questions(monkeypatch) -> None:
     msg = result.messages[0]
     assert msg.count("?") == 1
     assert msg.endswith("?")
+    assert "say it with he" in msg
     assert "Also what about she" not in msg
+
+
+@pytest.mark.asyncio
+async def test_repair_depth_day_opener_pattern(monkeypatch) -> None:
+    """Regression for day_48_01_02-style multi-question openers."""
+
+    bad = (
+        "Hello! Yesterday, you practiced simple present routines. Today, we "
+        "will add questions like Do you...? Can you ask one yes/no question "
+        "about a daily routine?"
+    )
+    fake = FakeTextLLM(text=bad)
+    monkeypatch.setattr(teacher, "get_default_llm_client", lambda: fake)
+
+    result = await generate_teaching_turn(
+        topic="Simple Present — Questions, Negatives & Short Answers",
+        sub_skill="grammar",
+        task_type="read",
+        user_level=1,
+        learner_profile={},
+        conversation=[],
+        lesson_description=(
+            "Learners build on yesterday's routines: yes/no and wh-questions."
+        ),
+        scripted_plan=[
+            "Greet the learner and note they practised simple present routines "
+            "yesterday. Ask for one yes/no question about a daily routine.",
+        ],
+    )
+
+    msg = result.messages[0]
+    assert msg.count("?") == 1
+    assert "yes/no question" in msg
+    assert msg.endswith("about a daily routine?")
 
 
 @pytest.mark.asyncio
@@ -370,6 +506,7 @@ async def test_repair_falls_back_when_retry_also_fails(monkeypatch) -> None:
 
     msg = result.messages[0]
     assert msg.count("?") == 1
+    assert msg == "Info three?"
 
 
 @pytest.mark.asyncio

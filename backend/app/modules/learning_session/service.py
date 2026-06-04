@@ -2232,6 +2232,7 @@ class LearningSessionService:
                 "primary_goals": "",
                 "personalisation_context": "",
                 "self_assessed_level": "beginner",
+                "native_language": "",
                 "structured_personalisation": None,
             }
         return {
@@ -2248,6 +2249,9 @@ class LearningSessionService:
                 profile.self_assessed_level.value
                 if profile.self_assessed_level
                 else "beginner"
+            ),
+            "native_language": (
+                profile.native_language.strip() if profile.native_language else ""
             ),
             "structured_personalisation": profile.structured_personalisation,
         }

@@ -14,6 +14,9 @@ on:
       - "backend/tests/test_curriculum_v2_data.py"
       - "backend/tests/test_curriculum_seed_smoke.py"
       - "backend/tests/test_file_source.py"
+      - "backend/tests/test_a1a2_teacher_integrity.py"
+      - "backend/app/ai/agents/teacher.py"
+      - "backend/tests/test_teacher_agent_prompt.py"
       - ".github/workflows/backend-curriculum.yml"
   pull_request:
     paths:
@@ -22,6 +25,9 @@ on:
       - "backend/tests/test_curriculum_v2_data.py"
       - "backend/tests/test_curriculum_seed_smoke.py"
       - "backend/tests/test_file_source.py"
+      - "backend/tests/test_a1a2_teacher_integrity.py"
+      - "backend/app/ai/agents/teacher.py"
+      - "backend/tests/test_teacher_agent_prompt.py"
       - ".github/workflows/backend-curriculum.yml"
 
 jobs:
@@ -51,10 +57,12 @@ jobs:
           print('load_weeks OK: 24w=24/168, 48w=48/336')
           "
 
-      - name: Seed + composer + file-source tests
+      - name: Seed + composer + file-source + teacher tests
         run: |
           uv run pytest \
             tests/test_curriculum_seed_smoke.py \
             tests/test_curriculum_v2_data.py \
             tests/test_composer.py \
-            tests/test_file_source.py -q
+            tests/test_file_source.py \
+            tests/test_a1a2_teacher_integrity.py \
+            tests/test_teacher_agent_prompt.py -q

@@ -48,7 +48,7 @@ def validate_teaching_message(
         violations.append("empty")
         return violations
 
-    if text.count("?") > 1:
+    if len(_question_positions_outside_quotes(text)) > 1:
         violations.append("multiple_questions")
 
     if len(text.split()) > _MAX_WORDS_PER_TURN:
@@ -131,6 +131,19 @@ TURN CONTRACT (MANDATORY — never violate):
 3. The message is short: 60 words or less. Two to four sentences is ideal.
 4. After your question, STOP. Do not preview the next step, do not add a
    second teaching point, do not ask "and also...". Wait for the learner.
+
+FORMATTING (inline emphasis only — keep the chat conversational):
+Use lightweight Markdown in the message text. No headings, bullet lists,
+numbered lists, links, or code blocks.
+- Wrap the one or two grammar tokens or contrast pairs the learner must notice
+  in double asterisks, e.g. **do**, **doesn't**, **-s**, or a short quoted
+  learner phrase like **I walk**.
+- At most two bold spans per turn. Do not bold whole sentences.
+- If the learner profile lists a native language, you may add a very short
+  L1 gloss (1–3 words) in single asterisks immediately after a tricky English
+  word, e.g. *fumo* after "smoke". Skip L1 glosses when native language is
+  unknown or English.
+- Italics are only for those brief L1 glosses, not for English teaching text.
 
 ACKNOWLEDGE-THEN-PROBE (every turn after the opener):
 Begin by referring to something SPECIFIC the learner just said — quote a word
@@ -222,6 +235,13 @@ TYPO HANDLING:
 If the learner's response has only a small typo but the meaning is correct,
 gently correct it, then advance — do not ask the same type of question
 twice.
+
+QUOTING RULE:
+When you quote the learner, use straight quotes and always close them. Prefer
+"You used hike — that works." over a leading " — praise fragment. Never leave
+an open quote before your final question. Example sentences inside your turn
+may use single quotes or no quotes; do not put a question mark inside a quoted
+example if your turn already ends with a real question for the learner.
 """
 
 
@@ -247,6 +267,7 @@ def _format_profile(learner_profile: dict[str, Any]) -> str:
         f"{_stringify(learner_profile.get('personalisation_context')) or 'none'}",
         "Self-assessed level: "
         f"{_stringify(learner_profile.get('self_assessed_level')) or 'beginner'}",
+        f"Native language: {_stringify(learner_profile.get('native_language')) or 'unknown'}",
     ]
     if isinstance(structured, dict):
         domain = _stringify(structured.get("domain"))
@@ -365,11 +386,111 @@ def _last_assistant_message(conversation: list[dict[str, Any]]) -> str:
     return ""
 
 
-def _truncate_at_first_question(text: str) -> str:
-    idx = text.find("?")
-    if idx == -1:
-        return text.strip()
-    return text[: idx + 1].strip()
+def _is_contraction_apostrophe(text: str, index: int) -> bool:
+    if text[index] != "'":
+        return False
+    if index > 0 and text[index - 1].isalpha():
+        return True
+    if index + 1 < len(text) and text[index + 1].isalpha():
+        return True
+    return False
+
+
+def _question_positions_outside_quotes(text: str) -> list[int]:
+    """Indices of ``?`` that count toward the one-question turn contract."""
+
+    positions: list[int] = []
+    in_double = False
+    in_single = False
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == '"':
+            in_double = not in_double
+        elif char == "'" and not in_double:
+            if not _is_contraction_apostrophe(text, index):
+                in_single = not in_single
+        elif char == "?" and not in_double and not in_single:
+            positions.append(index)
+        index += 1
+    return positions
+
+
+def _balance_double_quotes(text: str) -> str:
+    """Close a single dangling double-quote so repair logic sees a full clause."""
+
+    if text.count('"') % 2 == 0:
+        return text
+    question_index = text.rfind("?")
+    if question_index != -1:
+        return text[: question_index + 1] + '"' + text[question_index + 1 :]
+    return f'{text}"'
+
+
+def _fix_orphan_leading_quote(text: str) -> str:
+    """Remove a stray opening quote before em-dash praise (``" — Great!``)."""
+
+    stripped = text.lstrip()
+    if stripped.startswith(('" —', '" -', "' —", "' -")):
+        return stripped[1:].lstrip()
+    if stripped.startswith('"') and stripped.count('"') == 1:
+        return stripped[1:].lstrip()
+    return text
+
+
+def _clause_for_question_mark(text: str, question_end: int) -> tuple[int, str]:
+    """Return (start_index, clause) for the question ending at question_end."""
+
+    prev_q = text.rfind("?", 0, question_end)
+    if prev_q != -1:
+        start = prev_q + 1
+        while start < len(text) and text[start] in " \n":
+            start += 1
+    else:
+        prev_period = text.rfind(". ", 0, question_end)
+        start = 0 if prev_period == -1 else prev_period + 2
+    return start, text[start : question_end + 1].strip()
+
+
+def _collapse_to_single_question(text: str) -> str:
+    """When the model emits multiple questions, keep one complete probe.
+
+    Truncating at the *first* ``?`` drops the real learner-facing question when
+    an earlier clause only illustrates a pattern (e.g. depth-day ``Do you…?``).
+    We keep the longest question *clause* (split on ``?``, not only ``. ``) and
+    preserve teaching preamble before dropped illustrative questions.
+    """
+
+    text = text.strip()
+    positions = _question_positions_outside_quotes(text)
+    if not text or len(positions) <= 1:
+        return text
+    candidates: list[tuple[int, int, str, int]] = []
+    for q_end in positions:
+        start, clause = _clause_for_question_mark(text, q_end)
+        candidates.append((start, q_end, clause, len(clause.split())))
+
+    # Prefer the longest probe; on a tie, keep the last question (usually the
+    # authored ask rather than an earlier chained prompt).
+    best_start, best_end, best_clause, _ = max(
+        candidates, key=lambda item: (item[3], item[1])
+    )
+
+    if best_end == positions[0]:
+        return text[: best_end + 1].strip()
+
+    pre_first_q = text[: positions[0]].rstrip()
+    last_period = pre_first_q.rfind(". ")
+    if last_period != -1:
+        preamble = pre_first_q[: last_period + 1].strip()
+    elif pre_first_q.endswith((".", "!")):
+        preamble = pre_first_q
+    else:
+        # No completed sentence before the dropped question (e.g. "Info one?").
+        preamble = ""
+    if preamble:
+        return f"{preamble} {best_clause}".strip()
+    return best_clause
 
 
 def _retry_instruction(violations: list[str], previous_assistant: str) -> str:
@@ -489,9 +610,13 @@ def _deterministic_repair(text: str) -> str:
     if not text:
         return ""
     text = text.strip()
-    if text.count("?") > 1:
-        text = _truncate_at_first_question(text)
-        logger.warning("teacher repair: truncated extra questions")
+    text = _balance_double_quotes(text)
+    text = _fix_orphan_leading_quote(text)
+    if len(_question_positions_outside_quotes(text)) > 1:
+        text = _collapse_to_single_question(text)
+        logger.warning("teacher repair: collapsed extra questions to one probe")
+    text = _balance_double_quotes(text)
+    text = _fix_orphan_leading_quote(text)
     return text
 
 

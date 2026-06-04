@@ -223,6 +223,13 @@ body {
 .tw-passage-md p + p { margin-top: 0.5em; }
 .tw-passage-md strong { font-weight: 700; }
 
+/* TEACHER CHAT MARKDOWN (inline emphasis only) */
+.chat-md { display: inline; }
+.chat-md .chat-md-block { display: inline; }
+.chat-md .chat-md-block + .chat-md-block::before { content: " "; }
+.chat-md-strong { font-weight: 800; color: oklch(42% 0.14 240); }
+.chat-md-em { font-style: italic; font-size: 0.92em; color: oklch(48% 0.1 155); font-weight: 600; }
+
 /* INLINE BLANKS */
 .tw-blank-mcq { display: inline-flex; gap: 3px; padding: 2px; background: white; border: 1.5px solid var(--tw-primary); border-radius: 8px; vertical-align: -2px; margin: 0 2px; }
 .tw-blank-mcq-btn { font-size: 12px; font-weight: 700; padding: 3px 7px; border-radius: 5px; color: var(--tw-primary); cursor: pointer; transition: all 0.12s; border: none; background: none; }

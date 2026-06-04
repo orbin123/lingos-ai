@@ -63,6 +63,7 @@ import {
   LessonMetaCard,
   SectionMarker,
 } from "@/components/chat/ChatChrome";
+import { ChatFormattedText } from "@/components/chat/ChatFormattedText";
 
 /* ── Score / Feedback payloads (rendered by chat session, not by widgets) ── */
 interface ScorecardPayload {
@@ -2187,6 +2188,11 @@ export default function ChatSessionPage() {
                 retrySequence !== null;
               const isLatestNavigationPrompt =
                 isNavigationPrompt && i === navigationPromptChatIndex;
+              const useFormatted =
+                phase === "teaching" &&
+                evt.role === "ai" &&
+                !evt.streaming &&
+                !isNavigationPrompt;
               return (
                 <ChatBubble
                   key={i}
@@ -2209,7 +2215,11 @@ export default function ChatSessionPage() {
                   }
                   retrying={retryingSequence !== null}
                 >
-                  {evt.content}
+                  {useFormatted ? (
+                    <ChatFormattedText>{evt.content}</ChatFormattedText>
+                  ) : (
+                    evt.content
+                  )}
                 </ChatBubble>
               );
             }
