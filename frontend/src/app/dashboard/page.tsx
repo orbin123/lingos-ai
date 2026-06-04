@@ -748,13 +748,13 @@ function NoEnrollmentView({
               <PlanCard
                 weeks={24}
                 label="Accelerated plan"
-                taskFrequency="5 tasks / week"
+                dayTypes="Base day"
                 onClick={onChoosePlan}
               />
               <PlanCard
                 weeks={48}
                 label="Steady plan"
-                taskFrequency="3 tasks / week"
+                dayTypes="Base + Depth day"
                 onClick={onChoosePlan}
               />
             </div>
@@ -913,12 +913,12 @@ function NoEnrollmentView({
 function PlanCard({
   weeks,
   label,
-  taskFrequency,
+  dayTypes,
   onClick,
 }: {
   weeks: number;
   label: string;
-  taskFrequency: string;
+  dayTypes: string;
   onClick: () => void;
 }) {
   return (
@@ -968,7 +968,7 @@ function PlanCard({
           width: "fit-content",
         }}
       >
-        {taskFrequency}
+        {dayTypes}
       </span>
       <button
         onClick={(e) => {

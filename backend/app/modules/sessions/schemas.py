@@ -51,8 +51,9 @@ class SessionStartRequest(BaseModel):
     """Body for `POST /sessions/start`.
 
     `day_id` is required and identifies the curriculum day to start.
-    For file-authored days, the archetype order and task specs are read
-    from ``source_24w.py`` automatically.
+    For file-authored days (24w ``day_24_*`` or 48w ``day_48_*``), the
+    archetype order and task specs are read from the composed level-band
+    source files (via ``file_source``) automatically.
     """
 
     day_id: str | None = Field(
@@ -104,7 +105,12 @@ class DashboardPlanActivity(BaseModel):
 
 
 class DashboardTodayPlanResponse(BaseModel):
-    """Read-only dashboard view of today's v2 plan."""
+    """Read-only dashboard view of today's v2 plan.
+
+    `topic` / `explanation_brief` / `cefr_level` prefer the file source for
+    authored days so the dashboard matches the chat session without a re-seed.
+    `is_depth_day` is true only on 48w even-pass (depth) days.
+    """
 
     day_id: str
     topic: str
@@ -112,6 +118,10 @@ class DashboardTodayPlanResponse(BaseModel):
     status: SessionStatus | None = None
     is_preview: bool
     activities: list[DashboardPlanActivity]
+    explanation_brief: str | None = None
+    cefr_level: str | None = None
+    course_length: str | None = None
+    is_depth_day: bool = False
 
 
 class DashboardStartResponse(DashboardTodayPlanResponse):

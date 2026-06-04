@@ -524,7 +524,7 @@ function FeatureBreakdown() {
                 marginBottom: 20,
               }}
             >
-              Stop guessing what's holding you back
+              Stop guessing what&apos;s holding you back
             </h3>
             <p
               style={{
@@ -533,7 +533,7 @@ function FeatureBreakdown() {
                 lineHeight: 1.65,
               }}
             >
-              LingosAI doesn't just test your vocabulary. We map your exact skill profile across 7 distinct dimensions. Our initial diagnosis uncovers the hidden grammar patterns and pronunciation hurdles that prevent you from sounding fluent.
+              LingosAI doesn&apos;t just test your vocabulary. We map your exact skill profile across 7 distinct dimensions. Our initial diagnosis uncovers the hidden grammar patterns and pronunciation hurdles that prevent you from sounding fluent.
             </p>
           </div>
           <div style={{ position: "relative" }}>
@@ -607,7 +607,7 @@ function FeatureBreakdown() {
                 lineHeight: 1.65,
               }}
             >
-              Every morning, your AI coach generates a unique task designed to target the specific skills you need to improve. Whether it's practicing present continuous tenses or formatting a professional email, every task is purposeful.
+              Every morning, your AI coach generates a unique task designed to target the specific skills you need to improve. Whether it&apos;s practicing present continuous tenses or formatting a professional email, every task is purposeful.
             </p>
           </div>
           <div style={{ order: 1 }}>
@@ -716,7 +716,7 @@ function FeatureBreakdown() {
                 marginBottom: 20,
               }}
             >
-              Learn exactly why it's wrong
+              Learn exactly why it&apos;s wrong
             </h3>
             <p
               style={{
@@ -725,7 +725,7 @@ function FeatureBreakdown() {
                 lineHeight: 1.65,
               }}
             >
-              Say goodbye to generic "good job" messages. Our AI acts like a strict human tutor. It breaks down every single sentence, flags the error, explains the underlying linguistic rule, and provides a corrected version so you never make the same mistake twice.
+              Say goodbye to generic &ldquo;good job&rdquo; messages. Our AI acts like a strict human tutor. It breaks down every single sentence, flags the error, explains the underlying linguistic rule, and provides a corrected version so you never make the same mistake twice.
             </p>
           </div>
           <div>

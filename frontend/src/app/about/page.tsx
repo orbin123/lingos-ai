@@ -409,7 +409,7 @@ export default function AboutPage() {
             Why LingosAI exists
           </h2>
           <p style={{ fontSize: 20, color: "rgba(255,255,255,0.9)", lineHeight: 1.7 }}>
-            "Many learners practice English every day but still struggle to communicate confidently. LingosAI was created to make improvement more structured, personalized, and feedback-driven."
+            &ldquo;Many learners practice English every day but still struggle to communicate confidently. LingosAI was created to make improvement more structured, personalized, and feedback-driven.&rdquo;
           </p>
         </div>
       </section>

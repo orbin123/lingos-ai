@@ -1,0 +1,60 @@
+name: backend-curriculum
+
+# Pre-deploy guard (Phase 2): a fresh environment must always be able to seed
+# both the 24w and 48w calendars from the band source files. These checks run
+# offline — tests/conftest.py sets dummy env vars + a SQLite DATABASE_URL, so no
+# Postgres/Redis/OpenAI keys are needed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/app/modules/curriculum/**"
+      - "backend/scripts/seed_curriculum.py"
+      - "backend/tests/test_curriculum_v2_data.py"
+      - "backend/tests/test_curriculum_seed_smoke.py"
+      - "backend/tests/test_file_source.py"
+      - ".github/workflows/backend-curriculum.yml"
+  pull_request:
+    paths:
+      - "backend/app/modules/curriculum/**"
+      - "backend/scripts/seed_curriculum.py"
+      - "backend/tests/test_curriculum_v2_data.py"
+      - "backend/tests/test_curriculum_seed_smoke.py"
+      - "backend/tests/test_file_source.py"
+      - ".github/workflows/backend-curriculum.yml"
+
+jobs:
+  curriculum-seed-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync deps
+        run: uv sync
+
+      - name: Both calendars import cleanly
+        run: |
+          uv run python -c "
+          from app.modules.curriculum.data import load_weeks
+          from app.scoring import CourseLength
+          w24 = load_weeks(CourseLength.WEEKS_24)
+          w48 = load_weeks(CourseLength.WEEKS_48)
+          assert (len(w24), sum(len(w.days) for w in w24)) == (24, 168), 'bad 24w shape'
+          assert (len(w48), sum(len(w.days) for w in w48)) == (48, 336), 'bad 48w shape'
+          print('load_weeks OK: 24w=24/168, 48w=48/336')
+          "
+
+      - name: Seed + composer + file-source tests
+        run: |
+          uv run pytest \
+            tests/test_curriculum_seed_smoke.py \
+            tests/test_curriculum_v2_data.py \
+            tests/test_composer.py \
+            tests/test_file_source.py -q

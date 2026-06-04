@@ -5,7 +5,7 @@ import type { FeedbackRead, EvaluationRead, PronunciationResult } from "@/lib/se
 interface Props {
   feedback: FeedbackRead;
   evaluation: EvaluationRead;
-  taskContent?: Record<string, any>;
+  taskContent?: Record<string, unknown>;
   onContinue?: () => void;
 }
 
@@ -18,12 +18,12 @@ export function PronunciationFeedbackCard({ feedback, evaluation, taskContent, o
       if (parsed.task_type === "speak_read_aloud" && parsed.pronunciation) {
         pronunciation = parsed.pronunciation;
       }
-    } catch (e) {
+    } catch {
       // Not JSON or missing pronunciation data
     }
   }
 
-  const referenceText = taskContent?.text_to_read_aloud || taskContent?.passage || "";
+  const referenceText = String(taskContent?.text_to_read_aloud || taskContent?.passage || "");
 
   return (
     <section
@@ -203,7 +203,7 @@ export function PronunciationFeedbackCard({ feedback, evaluation, taskContent, o
       {/* Tutor Feedback Section */}
       {(feedback.did_well.length > 0 || feedback.mistakes.length > 0 || feedback.next_tip) && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16, borderTop: "1px solid oklch(92% 0.01 245)", paddingTop: 20 }}>
-          <h4 style={sectionHeaderStyle}>Tutor's Recommendations</h4>
+          <h4 style={sectionHeaderStyle}>Tutor&apos;s Recommendations</h4>
           
           {feedback.did_well.length > 0 && (
             <div>

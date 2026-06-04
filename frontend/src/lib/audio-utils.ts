@@ -8,7 +8,10 @@
  */
 export async function blobToWav(blob: Blob): Promise<Blob> {
   const arrayBuffer = await blob.arrayBuffer();
-  const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+  const AudioCtx =
+    window.AudioContext ||
+    (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  const audioContext = new AudioCtx();
 
   try {
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);

@@ -186,8 +186,9 @@ class SessionService:
     ) -> DailySession:
         """Create a new session for `(user_id, day_id)`. Raises if one is open.
 
-        If the day is file-authored in ``source_24w.py``, the archetype order
-        and task specs come from the file instead of the planner.
+        If the day is file-authored (24w ``day_24_*`` or 48w ``day_48_*``,
+        resolved via ``file_source``), the archetype order and task specs come
+        from the composed band source files instead of the planner.
         """
         now = now or datetime.now(timezone.utc)
 
@@ -1298,8 +1299,9 @@ class SessionService:
         """Return evaluator/feedback overrides from the file-authored day, if any.
 
         Returns ``{"evaluator": {...}, "feedback": {...}}`` when the day is
-        file-authored in ``source_24w.py`` and has non-empty override dicts.
-        Returns ``{}`` for non-authored days or when ``file_source`` raises.
+        file-authored (24w/48w, resolved via ``file_source``) and has non-empty
+        override dicts. Returns ``{}`` for non-authored days or when
+        ``file_source`` raises.
         """
         try:
             file_day = file_get_day_by_id(day_id)

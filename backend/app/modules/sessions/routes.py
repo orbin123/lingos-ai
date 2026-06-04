@@ -23,6 +23,7 @@ from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.curriculum.exceptions import EnrollmentNotActive, NotEnrolled
 from app.modules.curriculum.file_source import (
+    FileDayRecord,
     get_day_by_id as file_get_day_by_id,
     resolve_archetypes as file_resolve_archetypes,
 )
@@ -227,10 +228,46 @@ def _preview_activities_for_day(
     return [_activity_from_plan(a) for a in planned]
 
 
+def _resolve_file_day_metadata(day_id: str) -> FileDayRecord | None:
+    """Return the file-source record for ``day_id``, or None if not authored."""
+    try:
+        return file_get_day_by_id(day_id)
+    except DayNotFound:
+        return None
+
+
+def _dashboard_display_fields(
+    *,
+    day: CurriculumDay,
+    course_length: str,
+) -> dict:
+    """Prefer file-authored topic/CEFR/depth metadata, falling back to the DB row.
+
+    Keeps the dashboard title aligned with the chat session even when the band
+    files have been edited but the DB has not yet been re-seeded.
+    """
+    file_day = _resolve_file_day_metadata(day.day_id)
+    if file_day is not None:
+        return {
+            "topic": file_day.topic,
+            "explanation_brief": file_day.explanation_brief,
+            "cefr_level": file_day.cefr_level,
+            "course_length": course_length,
+            "is_depth_day": file_day.is_depth_day,
+        }
+    return {
+        "topic": day.topic,
+        "explanation_brief": day.explanation_brief,
+        "cefr_level": None,
+        "course_length": course_length,
+        "is_depth_day": False,
+    }
+
+
 def _serialize_dashboard_plan(
     *,
     day_id: str,
-    topic: str,
+    display: dict,
     session: DailySession | None,
     activities: list[DashboardPlanActivity],
     is_preview: bool,
@@ -238,7 +275,11 @@ def _serialize_dashboard_plan(
 ) -> DashboardTodayPlanResponse | DashboardStartResponse:
     payload = {
         "day_id": day_id,
-        "topic": topic,
+        "topic": display["topic"],
+        "explanation_brief": display.get("explanation_brief"),
+        "cefr_level": display.get("cefr_level"),
+        "course_length": display.get("course_length"),
+        "is_depth_day": display.get("is_depth_day", False),
         "session_id": session.session_id if session is not None else None,
         "status": session.status if session is not None else None,
         "is_preview": is_preview,
@@ -358,6 +399,7 @@ def today_plan(
         day, pref = _resolve_day_from_preference(db, current_user.id)
         day_id = day.day_id
         allowed = _allowed_for_pref(pref)
+        display = _dashboard_display_fields(day=day, course_length=pref.course_length)
         existing = _load_existing_today_session(db, user_id=current_user.id, day_id=day_id)
         if _abandon_stale_file_session_if_unstarted(
             db,
@@ -368,14 +410,14 @@ def today_plan(
         if existing is not None:
             return _serialize_dashboard_plan(
                 day_id=day_id,
-                topic=day.topic,
+                display=display,
                 session=existing,
                 activities=[_activity_from_attempt(a) for a in existing.attempts],
                 is_preview=False,
             )
         return _serialize_dashboard_plan(
             day_id=day_id,
-            topic=day.topic,
+            display=display,
             session=None,
             activities=_preview_activities_for_day(
                 day,
@@ -419,6 +461,7 @@ async def start_or_continue_today(
     try:
         day, pref = _resolve_day_from_preference(db, current_user.id)
         day_id = day.day_id
+        display = _dashboard_display_fields(day=day, course_length=pref.course_length)
         existing = _load_existing_today_session(db, user_id=current_user.id, day_id=day_id)
         if existing is not None:
             mode = (
@@ -428,7 +471,7 @@ async def start_or_continue_today(
             )
             return _serialize_dashboard_plan(
                 day_id=day_id,
-                topic=day.topic,
+                display=display,
                 session=existing,
                 activities=[_activity_from_attempt(a) for a in existing.attempts],
                 is_preview=False,
@@ -445,7 +488,7 @@ async def start_or_continue_today(
         )
         return _serialize_dashboard_plan(
             day_id=day_id,
-            topic=day.topic,
+            display=display,
             session=session,
             activities=[_activity_from_attempt(a) for a in session.attempts],
             is_preview=False,

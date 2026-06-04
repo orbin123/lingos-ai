@@ -1,5 +1,7 @@
 import axios from "axios";
 
+import { useAuthStore } from "@/store/authStore";
+
 // One axios instance,used everywhere in the app
 export const api = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
@@ -30,7 +32,6 @@ api.interceptors.response.use(
             if (!isAuthEndpoint) {
                 // Token is expired or invalid on a protected route — force logout
                 localStorage.removeItem("token");
-                const { useAuthStore } = require("@/store/authStore");
                 useAuthStore.getState().logout();
                 window.location.href = "/login";
             }

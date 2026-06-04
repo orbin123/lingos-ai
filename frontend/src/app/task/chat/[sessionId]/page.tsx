@@ -261,7 +261,7 @@ function retrySequenceFromEvents(events: ChatEvent[]): number | null {
   for (let i = events.length - 1; i >= 0; i -= 1) {
     const evt = events[i];
     if (evt.kind !== "scorecard" && evt.kind !== "pronunciation") continue;
-    const seq = sequenceFromMeta(evt.payload as Record<string, unknown>);
+    const seq = sequenceFromMeta(evt.payload as unknown as Record<string, unknown>);
     if (seq !== null) return seq;
   }
   return null;

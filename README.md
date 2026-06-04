@@ -32,9 +32,16 @@ Backend:
 cd backend
 uv sync
 uv run alembic upgrade head
+uv run python -m scripts.seed_curriculum     # seed 24w + 48w curriculum (idempotent)
 uv run uvicorn app.main:app --reload   # API at http://127.0.0.1:8000
 uv run pytest tests/test_admin_api.py
 ```
+
+> **Curriculum seed is required on every fresh environment.** The chat/today-plan
+> APIs 404 until both the 24-week and 48-week calendars exist in the DB.
+> `scripts.seed_curriculum` is idempotent (safe to re-run) and must be run after
+> any curriculum content change so DB topics/IDs stay aligned with the band
+> source files. See [`docs/SOURCE_FILE.md`](docs/SOURCE_FILE.md) § Deploy & operations.
 
 From the repo root you can also run `./scripts/dev-backend.sh` (must `chmod +x` once).
 

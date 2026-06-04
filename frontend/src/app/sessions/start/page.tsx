@@ -26,6 +26,17 @@ export default function StartSessionPage() {
 
   const start = useStartSession();
 
+  // The day_id prefix encodes the calendar it belongs to (day_24_* / day_48_*).
+  // Starting a 24w day under a 48w course (or vice-versa) resolves the wrong
+  // source day, so warn before the user submits.
+  const trimmedDayId = dayId.trim();
+  const dayIdPrefix = trimmedDayId.startsWith("day_48_")
+    ? "48w"
+    : trimmedDayId.startsWith("day_24_")
+    ? "24w"
+    : null;
+  const courseMismatch = dayIdPrefix !== null && dayIdPrefix !== courseLength;
+
   return (
     <main style={pageStyle}>
       <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Start a session</h1>
@@ -39,7 +50,7 @@ export default function StartSessionPage() {
           e.preventDefault();
           start.mutate(
             {
-              day_id: dayId.trim(),
+              day_id: trimmedDayId,
               course_length: courseLength,
               tasks_per_day: tasksPerDay,
             },
@@ -86,6 +97,23 @@ export default function StartSessionPage() {
             <option value={4}>4</option>
           </select>
         </label>
+
+        {courseMismatch && (
+          <p
+            style={{
+              background: "oklch(96% 0.05 75)",
+              color: "oklch(38% 0.13 70)",
+              padding: 12,
+              borderRadius: 8,
+              fontSize: 13,
+              margin: 0,
+            }}
+          >
+            This <code>day_id</code> is a <strong>{dayIdPrefix}</strong> day, but the
+            selected course length is <strong>{courseLength}</strong>. They should match —
+            starting anyway will resolve the wrong calendar day.
+          </p>
+        )}
 
         <button
           type="submit"

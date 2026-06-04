@@ -46,6 +46,8 @@ class FileDayRecord:
     cefr_level: str
     sub_level_min: int
     sub_level_max: int
+    pass_index: int
+    is_depth_day: bool
     task_archetypes_used: tuple[str, ...]
     teacher_agent_behaviour: tuple[str, ...]
     teacher_instructions: dict
@@ -124,6 +126,8 @@ def get_day(
         cefr_level=resolved.cefr_level,
         sub_level_min=resolved.sub_level_min,
         sub_level_max=resolved.sub_level_max,
+        pass_index=resolved.pass_index,
+        is_depth_day=resolved.pass_index == 1,
         task_archetypes_used=adapted.task_archetypes_used,
         teacher_agent_behaviour=adapted.teacher_agent_behaviour,
         teacher_instructions=adapted.teacher_instructions,

@@ -20,7 +20,7 @@ from app.modules.curriculum.models import (
     EnrollmentStatus,
     UserEnrollment,
 )
-from app.modules.curriculum.v2_models import (
+from app.modules.curriculum.models import (
     CurriculumDay,
     CurriculumWeek,
     TaskArchetype,
@@ -177,11 +177,15 @@ def test_today_plan_previews_without_creating_session(dashboard_client):
     assert body["day_id"] == "day_24_05_03"
     assert body["session_id"] is None
     assert body["is_preview"] is True
+    # day_24_05_03 is file-authored: the preview uses the file archetype order
+    # (read → listen → write → speak), not the DB suggested_archetypes.
     assert [a["archetype_id"] for a in body["activities"]] == [
-        "READ_CLOZE",
+        "READ_COMP_MCQ",
+        "LISTEN_DICTATION",
         "WRITE_SENT_TRANS",
-        "LISTEN_CLOZE",
+        "SPEAK_TIMED",
     ]
+    assert body["topic"] == "Future Forms - Will and Going To"
     assert db.query(DailySession).count() == 0
 
 
@@ -238,6 +242,63 @@ def test_today_plan_uses_file_source_archetypes_when_day_is_authored(dashboard_c
         "Error Correction",
         "Read Aloud",
     ]
+    # Topic/CEFR come from the file source, not the stale DB row.
+    assert body["topic"] == "Simple Past Tense — Regular and Irregular Verbs"
+    assert body["topic"] != "DB fallback topic"
+    assert body["cefr_level"] == "A1"
+    assert body["course_length"] == "24w"
+    assert body["is_depth_day"] is False
+    assert db.query(DailySession).count() == 0
+
+
+def test_today_plan_uses_file_source_depth_topic_for_48w_even_pass(dashboard_client):
+    client, db, user = dashboard_client
+    pref = db.query(UserCoursePreference).filter(UserCoursePreference.user_id == user.id).one()
+    pref.course_length = "48w"
+    pref.current_week = 1
+    pref.current_day_in_week = 2
+    week = CurriculumWeek(
+        week_id="wk_48_01",
+        course_length="48w",
+        week_number=1,
+        theme_type=ThemeType.GRAMMAR,
+        title="Foundation grammar",
+        cefr_level="A1",
+        sub_level_min=1,
+        sub_level_max=2,
+        learning_goal="Use basic tense patterns.",
+    )
+    db.add(week)
+    db.flush()
+    db.add(
+        CurriculumDay(
+            day_id="day_48_01_02",
+            week_id=week.id,
+            day_number=2,
+            topic="DB fallback topic",
+            explanation_brief="DB fallback brief",
+            default_activities=["read", "write", "listen", "speak"],
+            mandatory_activities=["read", "write"],
+            suggested_archetypes={
+                "read": ["READ_CLOZE"],
+                "write": ["WRITE_OPEN_SENT"],
+                "listen": ["LISTEN_MCQ"],
+                "speak": ["SPEAK_TIMED"],
+            },
+        )
+    )
+    db.commit()
+
+    resp = client.get("/api/sessions/today-plan")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    # 48w even pass (day 2) resolves to the depth day: distinct topic + A2 CEFR.
+    assert body["topic"] == "Simple Present — Questions, Negatives & Short Answers"
+    assert body["topic"] != "DB fallback topic"
+    assert body["cefr_level"] == "A2"
+    assert body["course_length"] == "48w"
+    assert body["is_depth_day"] is True
     assert db.query(DailySession).count() == 0
 
 

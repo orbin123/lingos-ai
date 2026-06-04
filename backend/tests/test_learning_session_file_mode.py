@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.modules.curriculum.data.source_24w import WEEKS_24
+from app.modules.curriculum.data.source_L_A1A2 import WEEKS_A1A2
 from app.modules.curriculum.file_source import get_day_by_id as file_get_day_by_id
 from app.modules.learning_session.service import (
     LearningSessionService,
@@ -90,6 +91,28 @@ def test_persona_from_file_returns_w1d2_and_stashes_scripted_plan() -> None:
     assert instr["__scripted_plan"] == _teacher_script(w1d2)
     assert instr["lesson_description"] == w1d2.description
     assert "Simple Past Tense" in topic
+
+
+def test_persona_from_file_returns_day_48_01_02_depth_and_stashes_scripted_plan() -> None:
+    """48w even-pass parity with W1D1: the depth day persona must carry the
+    distinct depth title, the A2 sub-level, and the depth teacher script."""
+    persona = LearningSessionService._persona_from_file
+    topic, skill_name, sub_level, instr = persona(None, "day_48_01_02")  # type: ignore[arg-type]
+
+    # `day_48_01_02` is the depth pass of source week 1, day 1 (A1A2 band).
+    depth = WEEKS_A1A2[0].days[0].depth_day
+    assert depth is not None
+    assert topic == depth.title
+    assert topic != WEEKS_A1A2[0].days[0].title  # distinct from the base day
+    assert skill_name == "grammar"
+    # Depth pass of a local week 1-4 day steps up to the upper CEFR (A1 → A2).
+    assert sub_level == 3
+
+    assert isinstance(instr, dict)
+    assert instr["__scripted_plan"] == _teacher_script(depth)
+    assert instr["lesson_description"] == depth.description
+    assert "learning_goal" not in instr
+    assert "sub_skill_context" not in instr
 
 
 def test_persona_from_file_blank_day_raises() -> None:
@@ -360,6 +383,87 @@ def _assert_w1d1_blueprint_event(message) -> None:  # noqa: ANN001
     }
 
 
+# ── Generalised day builders (parity for any file-authored day_id) ──────────
+
+
+def _task_queue_for_day(day_id: str) -> list[dict]:
+    day = file_get_day_by_id(day_id)
+    queue = []
+    for contract in day.activity_contracts:
+        queue.append(
+            {
+                "sequence": contract["sequence"],
+                "archetype_id": contract["archetype_id"],
+                "is_mandatory": contract["mandatory"],
+                "status": "pending",
+                "activity_id": contract["activity_id"],
+                "task_widget": contract["task_widget"],
+                "evaluator_type": contract["evaluator_type"],
+                "evaluation_widget": contract["evaluation_widget"],
+                "feedback_type": contract["feedback_type"],
+                "feedback_widget": contract["feedback_widget"],
+                "activity_contract": dict(contract),
+            }
+        )
+    return queue
+
+
+def _chat_for_day(day_id: str, *, session_id: str, phase: str = "teaching") -> MagicMock:
+    day = file_get_day_by_id(day_id)
+    chat = MagicMock()
+    chat.session_id = session_id
+    chat.daily_session_id = 42
+    chat.user_id = 7
+    chat.phase = phase
+    chat.topic = day.topic
+    chat.skill_name = day.theme_type
+    chat.task_type = "read"
+    chat.activity_type = "read"
+    chat.user_level = day.sub_level_min
+    chat.teacher_instructions = dict(day.teacher_instructions)
+    chat.task_queue = _task_queue_for_day(day_id)
+    chat.current_task_index = 0
+    chat.messages = []
+    chat.pre_generated_tasks = {}
+    chat.user_submission = None
+    chat.evaluation = None
+    chat.feedback = None
+    chat.understanding_confirmed = False
+    chat.current_activity_order = 1
+    return chat
+
+
+def _daily_for_day(day_id: str, *, session_id: str) -> MagicMock:
+    daily = MagicMock()
+    daily.id = 42
+    daily.session_id = session_id
+    daily.day_id = day_id
+    daily.status = SessionStatus.IN_PROGRESS
+    return daily
+
+
+def _assert_blueprint_event(message, day_id: str) -> None:  # noqa: ANN001
+    day = file_get_day_by_id(day_id)
+
+    assert message.type == "ui_event"
+    assert message.widget == "session_blueprint"
+    assert message.phase == "teaching"
+    assert message.payload_kind == "session_blueprint"
+    assert message.event_id
+
+    payload = message.payload
+    blueprint = payload["blueprint"]
+    assert blueprint["version"] == "learning_session.event.v1"
+    assert blueprint["teaching"]["teacher_style"] == day.teacher_instructions[
+        "teacher_style"
+    ]
+    assert blueprint["teaching"]["lesson_goal"] == day.teacher_instructions[
+        "lesson_goal"
+    ]
+    assert len(blueprint["teaching"]["steps"]) == len(day.teacher_agent_behaviour)
+    assert blueprint["activities"] == list(day.activity_contracts)
+
+
 def test_queue_from_attempts_remembers_runtime_blueprint_contract() -> None:
     queue = LearningSessionService._queue_from_attempts(
         [
@@ -399,6 +503,40 @@ async def test_initial_stream_emits_session_blueprint_before_teaching() -> None:
     ]
 
     _assert_w1d1_blueprint_event(messages[0])
+    assert messages[1].type == "chat_message"
+
+
+@pytest.mark.asyncio
+async def test_initial_stream_emits_session_blueprint_for_48w_depth_day() -> None:
+    """Parity check: a 48w depth day (`day_48_01_02`) emits a session_blueprint
+    with the depth teacher persona + the same four activity contracts before
+    teaching, exactly like the 24w W1D1 path."""
+    day_id = "day_48_01_02"
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service._load_session = MagicMock(
+        return_value=_chat_for_day(day_id, session_id="chat-48w-d2")
+    )
+    service._state_from_row = MagicMock()
+    service._enrich_state_with_profile = MagicMock()
+    service._auto_complete_daily_if_ready = AsyncMock(
+        return_value=_daily_for_day(day_id, session_id="daily-48w-d2")
+    )
+    service._stream_teaching_turn = _one_teaching_message
+    service.db.get.return_value = _daily_for_day(day_id, session_id="daily-48w-d2")
+
+    state = {
+        "task_queue": _task_queue_for_day(day_id),
+        "messages": [],
+        "daily_plan": {},
+    }
+    service._state_from_row.return_value = state
+
+    messages = [
+        msg async for msg in service.initial_messages_stream("chat-48w-d2")
+    ]
+
+    _assert_blueprint_event(messages[0], day_id)
     assert messages[1].type == "chat_message"
 
 

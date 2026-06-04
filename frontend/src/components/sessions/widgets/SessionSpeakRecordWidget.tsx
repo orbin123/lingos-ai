@@ -34,6 +34,7 @@ interface SpeakAndRecordPayload {
   speaking_items?: string[];
   sample_responses?: string[];
   text_to_read_aloud?: string;
+  primary_text?: string;
   passage?: string;
   retelling_prompt?: string;
   sample_response?: string | null;

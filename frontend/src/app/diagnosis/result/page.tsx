@@ -85,9 +85,13 @@ export default function DiagnosisResultPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { result, clear } = useDiagnosisStore();
+  // Set when the user intentionally leaves for the dashboard. Without this,
+  // clearing the store (below) nulls `result`, which would re-trigger the
+  // guard effect and bounce the user back to the diagnosis form.
+  const leavingRef = React.useRef(false);
 
   useEffect(() => {
-    if (!result) router.replace("/diagnosis");
+    if (!result && !leavingRef.current) router.replace("/diagnosis");
   }, [result, router]);
 
   if (!result) return null;
@@ -97,6 +101,9 @@ export default function DiagnosisResultPage() {
   const ra = read_aloud_analysis ?? null;
 
   const continueToDashboard = () => {
+    // Mark that we're navigating away so the guard effect doesn't redirect
+    // back to /diagnosis when clear() nulls the result below.
+    leavingRef.current = true;
     // Invalidate /me and the freshly-seeded skill scores only after the user
     // has seen the result, so the dashboard renders them on arrival.
     queryClient.invalidateQueries({ queryKey: ["me"] });

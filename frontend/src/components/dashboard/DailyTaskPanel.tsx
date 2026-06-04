@@ -150,6 +150,16 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
         <Tag bg="oklch(96% 0.04 60)" color="oklch(45% 0.14 60)">
           {activityCount(preference, plan)} activities
         </Tag>
+        {plan?.cefr_level && (
+          <Tag bg="oklch(96% 0.04 155)" color="oklch(40% 0.14 155)">
+            {plan.cefr_level}
+          </Tag>
+        )}
+        {plan?.is_depth_day && (
+          <Tag bg="oklch(95% 0.06 300)" color="oklch(42% 0.18 300)">
+            Depth day
+          </Tag>
+        )}
       </div>
 
       {isLoading && <LoadingBlock />}
@@ -178,6 +188,8 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
           activities={plan.activities}
           topic={plan.topic}
           isPreview={plan.is_preview}
+          isDepthDay={plan.is_depth_day}
+          explanationBrief={plan.explanation_brief}
           sessionStatus={plan.status}
           isStarting={startMutation.isPending}
           startError={startMutation.error}
@@ -260,6 +272,8 @@ function ActiveSessionBlock({
   activities,
   topic,
   isPreview,
+  isDepthDay,
+  explanationBrief,
   sessionStatus,
   isStarting,
   startError,
@@ -268,6 +282,8 @@ function ActiveSessionBlock({
   activities: DashboardPlanActivity[];
   topic: string;
   isPreview: boolean;
+  isDepthDay: boolean;
+  explanationBrief: string | null;
   sessionStatus: string | null;
   isStarting: boolean;
   startError: Error | null;
@@ -293,6 +309,21 @@ function ActiveSessionBlock({
           }}
         >
           {topic}
+        </div>
+      )}
+
+      {isDepthDay && (
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: "oklch(42% 0.16 300)",
+            lineHeight: 1.45,
+          }}
+        >
+          {explanationBrief?.trim()
+            ? explanationBrief
+            : "Today's lesson builds on yesterday — same topic, deeper practice."}
         </div>
       )}
 

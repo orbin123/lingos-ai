@@ -66,7 +66,11 @@ export function useStartOrContinueTodaySession() {
         setSession({
           session_id: session.session_id,
           day_id: session.day_id,
-          course_length: session.day_id.startsWith("day_48_") ? "48w" : "24w",
+          // Prefer the API's course_length (Phase 1) over day_id-prefix
+          // inference, falling back to the prefix only when absent.
+          course_length:
+            (session.course_length as "24w" | "48w" | null) ??
+            (session.day_id.startsWith("day_48_") ? "48w" : "24w"),
           status: session.status ?? "in_progress",
           is_first_attempt: session.mode === "start",
           started_at: new Date().toISOString(),

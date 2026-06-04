@@ -302,6 +302,64 @@ Cycle integrity tests (`test_cycle1_day_integrity.py`, etc.) read composed `WEEK
 
 ---
 
+## Deploy & operations
+
+The band files are the source of truth at runtime, but the DB still holds an
+**index + fallback** copy (FK navigation, `today-plan` rows, planner fallback).
+A fresh or content-changed environment must be seeded so both copies agree.
+
+### Required deploy step
+
+Run the idempotent seeder after migrations **and after every curriculum content
+change** (band edits don't reach the DB until you re-seed):
+
+```bash
+cd backend && uv run python -m scripts.seed_curriculum
+```
+
+It upserts the archetype registry plus **both** the 24w (24 weeks / 168 days)
+and 48w (48 weeks / 336 days) calendars. Existing rows are updated in place;
+rows absent from the source are left untouched. Until it runs on a fresh DB,
+`GET /api/sessions/today-plan` and `POST /api/sessions/today/start-or-continue`
+return 404.
+
+### Pre-deploy / CI checks
+
+- **`tests/test_curriculum_seed_smoke.py`** — runs the real `seed_course` against
+  an in-memory SQLite DB and asserts both calendars land (24/168, 48/336) and that
+  seeded `topic`s match `file_source` for sample authored days (incl. the 48w
+  depth day `day_48_01_02`). This is the fresh-env guarantee.
+- **`.github/workflows/backend-curriculum.yml`** — CI job that imports
+  `load_weeks(24w)` + `load_weeks(48w)` and runs the seed/composer/file-source
+  suites on any change under `app/modules/curriculum/**`. Offline (SQLite + dummy
+  env via `tests/conftest.py`); no Postgres/keys needed.
+- **`scripts/verify_curriculum_seed_parity.py`** — post-deploy drift check against
+  a **live** DB: compares DB `topic` to `file_source` for the first N weeks of each
+  course (default 4) and exits non-zero on drift. Run it after a content deploy to
+  confirm the seeder actually ran:
+  ```bash
+  cd backend && uv run python -m scripts.verify_curriculum_seed_parity --weeks 4
+  ```
+
+### Subscription → `course_length` onboarding
+
+The chat/today-plan track (24w vs 48w) is driven by
+`UserCoursePreference.course_length`, **not** by the `day_id` prefix. When a
+learner subscribes to the 48-week plan, the subscription flow must set
+`preference.course_length = "48w"` (via the existing `subscriptions/` route /
+`PreferenceService`). Onboarding checklist:
+
+1. Create the user's `UserCoursePreference` (defaults to `24w`).
+2. On 48w plan selection, update `course_length` to `48w` **before** the first
+   `today-plan` call so day resolution emits `day_48_*` ids.
+3. `advance_day` then walks two calendar days per source day; the even pass
+   (`day_48_WW_02`, `_04`, …) resolves to the authored `depth_day`.
+
+A user left on the default `24w` after buying the 48w plan will silently get the
+24-week calendar — verify the preference write in the subscription handler.
+
+---
+
 ## Out of scope for source authoring
 
 - `composer.py`, `loader.py`, `blueprint_adapter.py` (unless changing assembly logic deliberately)

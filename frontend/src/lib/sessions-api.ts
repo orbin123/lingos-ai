@@ -53,6 +53,12 @@ export interface DashboardTodayPlanResponse {
   status: SessionStatus | null;
   is_preview: boolean;
   activities: DashboardPlanActivity[];
+  /** File-authored fields — prefer over DB when present. */
+  explanation_brief: string | null;
+  cefr_level: string | null;
+  course_length: string | null;
+  /** True only on 48w even-pass (depth) days. */
+  is_depth_day: boolean;
 }
 
 export interface DashboardStartResponse extends DashboardTodayPlanResponse {

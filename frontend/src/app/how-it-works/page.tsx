@@ -651,7 +651,7 @@ export default function HowItWorksPage() {
                 marginBottom: 32,
               }}
             >
-              We don't waste your time with single-focus drills. Our 4 core activity types are designed so that each action you take targets and strengthens multiple sub-skills simultaneously.
+              We don&apos;t waste your time with single-focus drills. Our 4 core activity types are designed so that each action you take targets and strengthens multiple sub-skills simultaneously.
             </p>
 
             <div style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(255,255,255,0.7)", padding: "16px 20px", borderRadius: 12, border: "1px solid rgba(0,0,0,0.05)" }}>
@@ -705,7 +705,7 @@ export default function HowItWorksPage() {
                 marginBottom: 32,
               }}
             >
-              Every week consists of a 7-day loop, and each day targets a specific subskill. You'll complete daily task bundles that are structured but flexible enough for your busy schedule.
+              Every week consists of a 7-day loop, and each day targets a specific subskill. You&apos;ll complete daily task bundles that are structured but flexible enough for your busy schedule.
             </p>
 
             <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 16 }}>
@@ -947,7 +947,7 @@ export default function HowItWorksPage() {
             <div style={{ display: "flex", gap: 12 }}>
               <div style={{ background: "rgba(245, 250, 255, 1)", padding: "16px 20px", borderRadius: 12, border: "1px solid rgba(0,0,0,0.05)", flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 15, color: "oklch(20% 0.05 240)", marginBottom: 4 }}>Strengths</div>
-                <div style={{ fontSize: 13, color: "oklch(45% 0.05 240)" }}>See what you've mastered.</div>
+                <div style={{ fontSize: 13, color: "oklch(45% 0.05 240)" }}>See what you&apos;ve mastered.</div>
               </div>
               <div style={{ background: "rgba(255, 245, 245, 1)", padding: "16px 20px", borderRadius: 12, border: "1px solid rgba(0,0,0,0.05)", flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 15, color: "oklch(20% 0.05 240)", marginBottom: 4 }}>Weaknesses</div>
@@ -1002,7 +1002,7 @@ export default function HowItWorksPage() {
               marginBottom: 20,
             }}
           >
-            This is not just practice — it's guided improvement
+            This is not just practice — it&apos;s guided improvement
           </h2>
           <p
             style={{
