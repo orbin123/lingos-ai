@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, Search, Bell, ChevronLeft } from 'lucide-react';
-import { useQuery } from "@tanstack/react-query";
+import { ChevronLeft } from 'lucide-react';
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { authApi } from "@/lib/auth-api";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuthStore } from "@/store/authStore";
+import { a2zApi } from "@/lib/a2z-api";
 import { A2Z_LETTERS, A2Z_LEVELS } from './data';
 import { A2ZHome } from './components/A2ZHome';
 import { A2ZSpin } from './components/A2ZSpin';
@@ -15,101 +16,81 @@ import { A2ZSpeak } from './components/A2ZSpeak';
 import { A2ZResult } from './components/A2ZResult';
 import './a2z.css';
 
-const STORE_KEY = 'lingosai_a2z_progress_v1';
-
-function loadProgress() {
-  if (typeof window === 'undefined') return { cleared: { 1: [], 2: [], 3: [] } };
-  try {
-    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
-    if (raw && raw.cleared) return raw;
-  } catch (e) {}
-  // Default believable starting state
-  return { cleared: { 1: ['A','B','C','D','E','G','H'], 2: [], 3: [] } };
-}
-
-function saveProgress(p: any) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(p));
-  } catch (e) {}
-}
-
 export default function A2ZGamePage() {
   const router = useRouter();
   const { logout } = useAuthStore();
   const { isReady } = useRequireAuth();
+  const queryClient = useQueryClient();
 
-  const { data: user, isLoading: userLoading } = useQuery({
+  const { data: user } = useQuery({
     queryKey: ["me"],
     queryFn: authApi.me,
     enabled: isReady,
   });
 
-  const [progress, setProgress] = useState<{ cleared: Record<number, string[]> }>({ cleared: { 1: [], 2: [], 3: [] } });
+  const { data: progressData, isLoading: progressLoading } = useQuery({
+    queryKey: ["a2zProgress"],
+    queryFn: a2zApi.getProgress,
+    enabled: isReady,
+  });
+
   const [screen, setScreen] = useState<'home' | 'spin' | 'speak' | 'result'>('home');
   const [activeLetter, setActiveLetter] = useState<string | null>(null);
+  const [activeRoundId, setActiveRoundId] = useState<number | null>(null);
   const [result, setResult] = useState<{ pass: boolean; words: string[]; target: number; levelId: number; letter: string | null } | null>(null);
-  
-  // Simulation settings (would normally be in TweaksPanel)
-  const [simSpeed] = useState(1);
-  const [outcome] = useState('auto');
   const [reduceMotion] = useState(false);
-  const [jumpLevel] = useState('current');
+  const [isStartingRound, setIsStartingRound] = useState(false);
 
   useEffect(() => {
     if (user && !user.diagnosis_completed) router.replace("/diagnosis");
   }, [user, router]);
 
-  useEffect(() => {
-    setProgress(loadProgress());
+  const clearedHere = progressData ? (progressData.cleared_by_level[progressData.current_level_number] || []) : [];
+  const allCleared = progressData ? progressData.cleared_by_level : { 1: [], 2: [], 3: [] };
+  const levelIdx = progressData ? Math.min(progressData.current_level_number - 1, A2Z_LEVELS.length - 1) : 0;
+  const level = A2Z_LEVELS[levelIdx];
+
+  const startSpin = useCallback(async (forced: string | null) => {
+    try {
+      setIsStartingRound(true);
+      const mode = forced ? "pick" : "spin";
+      const res = await a2zApi.startRound(mode, forced || undefined);
+      setActiveLetter(res.letter);
+      setActiveRoundId(res.round_id);
+      setScreen('spin');
+    } catch (e) {
+      console.error("Failed to start round", e);
+    } finally {
+      setIsStartingRound(false);
+    }
   }, []);
 
-  useEffect(() => {
-    if (Object.keys(progress.cleared).length > 0) {
-      saveProgress(progress);
-    }
-  }, [progress]);
-
-  // derive the level being played: first level not fully cleared
-  const naturalLevelIdx = (() => {
-    for (let i = 0; i < A2Z_LEVELS.length; i++) {
-      if ((progress.cleared[A2Z_LEVELS[i].id] || []).length < A2Z_LETTERS.length) return i;
-    }
-    return A2Z_LEVELS.length - 1;
-  })();
-  
-  const levelIdx = jumpLevel === 'current' ? naturalLevelIdx
-    : Math.max(0, Math.min(A2Z_LEVELS.length - 1, parseInt(jumpLevel, 10) - 1));
-    
-  const level = A2Z_LEVELS[levelIdx];
-  const clearedHere = progress.cleared[level.id] || [];
-  const openLetters = A2Z_LETTERS.filter(l => !clearedHere.includes(l));
-
-  const startSpin = useCallback((forced: string | null) => {
-    const pool = openLetters.length ? openLetters : A2Z_LETTERS;
-    const letter = forced || pool[Math.floor(Math.random() * pool.length)];
-    setActiveLetter(letter);
-    setScreen('spin');
-  }, [openLetters]);
-
-  const onSpinDone = useCallback((letter: string) => { 
-    setActiveLetter(letter); 
+  const onSpinDone = useCallback(() => { 
     setScreen('speak'); 
   }, []);
 
-  const onRoundFinish = useCallback(({ pass, words }: { pass: boolean, words: string[] }) => {
-    setResult({ pass, words, target: level.words, levelId: level.id, letter: activeLetter });
-    if (pass && activeLetter) {
-      setProgress(p => {
-        const set = new Set(p.cleared[level.id] || []);
-        set.add(activeLetter);
-        return { ...p, cleared: { ...p.cleared, [level.id]: Array.from(set) } };
+  const onRoundFinish = useCallback(async ({ pass, words }: { pass: boolean, words: string[] }) => {
+    if (activeRoundId === null) return;
+    
+    try {
+      const finishRes = await a2zApi.finishRound(activeRoundId);
+      setResult({ 
+        pass: finishRes.passed, 
+        words: finishRes.valid_words, 
+        target: finishRes.target_words, 
+        levelId: finishRes.level_number, 
+        letter: finishRes.letter 
       });
+      queryClient.setQueryData(["a2zProgress"], finishRes.progress);
+      setScreen('result');
+    } catch (e) {
+      console.error("Failed to finish round", e);
+      setResult({ pass, words, target: level.words, levelId: level.id, letter: activeLetter });
+      setScreen('result');
     }
-    setScreen('result');
-  }, [level, activeLetter]);
+  }, [activeRoundId, level, activeLetter, queryClient]);
 
-  if (!isReady) return null;
+  if (!isReady || progressLoading) return null;
 
   const handleLogout = () => {
     logout();
@@ -130,7 +111,6 @@ export default function A2ZGamePage() {
         href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
       />
 
-      {/* Dot grid overlay */}
       <div
         aria-hidden="true"
         style={{
@@ -158,6 +138,7 @@ export default function A2ZGamePage() {
           className="a2z-back-link"
           onClick={() => router.push("/challenges")}
           style={{ border: 'none', background: 'none', padding: 0, margin: '0 0 20px 0', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600, color: '#0f172a', cursor: 'pointer' }}
+          disabled={isStartingRound}
         >
           <ChevronLeft size={18} />
           Challenges
@@ -168,7 +149,7 @@ export default function A2ZGamePage() {
           level={level} 
           levelIdx={levelIdx} 
           clearedHere={clearedHere}
-          allCleared={progress.cleared}
+          allCleared={allCleared}
           onSpin={() => startSpin(null)} 
           onPick={(l) => startSpin(l)} 
           levels={A2Z_LEVELS}
@@ -185,10 +166,9 @@ export default function A2ZGamePage() {
       )}
       {screen === 'speak' && (
         <A2ZSpeak 
+          roundId={activeRoundId!}
           letter={activeLetter} 
           level={level}
-          outcome={outcome} 
-          simSpeed={simSpeed} 
           reduceMotion={reduceMotion}
           onFinish={onRoundFinish} 
           onClose={() => setScreen('home')} 

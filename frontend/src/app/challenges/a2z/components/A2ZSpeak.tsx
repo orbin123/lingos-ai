@@ -1,94 +1,140 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Mic } from 'lucide-react';
+import { a2zApi } from '@/lib/a2z-api';
 
 interface A2ZSpeakProps {
+  roundId: number;
   letter: string | null;
   level: { id: number; name: string; words: number; time: number };
-  outcome: string;
-  simSpeed: number;
   reduceMotion: boolean;
   onFinish: (result: { pass: boolean; words: string[] }) => void;
   onClose: () => void;
 }
 
-export function A2ZSpeak({ letter, level, outcome, simSpeed, reduceMotion, onFinish, onClose }: A2ZSpeakProps) {
-  const [phase, setPhase] = useState<'idle' | 'listening'>('idle');
+export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClose }: A2ZSpeakProps) {
+  const [phase, setPhase] = useState<'idle' | 'listening' | 'finishing'>('idle');
   const [timeLeft, setTimeLeft] = useState(level.time);
   const [words, setWords] = useState<string[]>([]);
+  
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const dataIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunkIndexRef = useRef(0);
+  const pendingRequestsRef = useRef(0);
+  const isFinishingRef = useRef(false);
+  const allChunksRef = useRef<BlobPart[]>([]);
 
-  // Simulated word lists for the demo
-  const mockWords: Record<string, string[]> = {
-    A: ['apple', 'avocado', 'airport', 'animal', 'awesome', 'alien', 'anchor', 'artist', 'arrow', 'autumn', 'athlete', 'avenue', 'alert', 'amount', 'angle', 'alarm', 'answer', 'attack', 'author', 'award', 'action', 'active'],
-    B: ['banana', 'butterfly', 'basket', 'button', 'bottle', 'bubble', 'bridge', 'branch', 'breeze', 'bronze', 'bakery', 'bamboo', 'barrel', 'beacon', 'beauty', 'beaver', 'beetle', 'biscuit', 'blanket', 'blizzard', 'blossom', 'border'],
-    O: ['ocean', 'orange', 'octopus', 'orbit', 'onion', 'oasis', 'object', 'office', 'oxygen', 'oyster', 'oatmeal', 'obvious', 'ocelot', 'octagon', 'offense', 'officer', 'olympic', 'omelet', 'ongoing', 'opinion', 'optimal', 'orchard']
+  // Clean up function
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (dataIntervalRef.current) clearInterval(dataIntervalRef.current);
   };
 
-  const getMockWord = () => {
-    const list = mockWords[letter || 'A'] || mockWords['A'];
-    // For random simulation
-    return list[Math.floor(Math.random() * list.length)];
+  const handleFinish = (currentWords: string[]) => {
+    if (isFinishingRef.current) return;
+    isFinishingRef.current = true;
+    setPhase('finishing');
+    stopRecording();
+    
+    // We need to wait for any pending audio chunks to finish uploading
+    // before we inform the parent to call finishRound.
+    const checkPendingAndFinish = () => {
+      if (pendingRequestsRef.current > 0) {
+        setTimeout(checkPendingAndFinish, 100);
+      } else {
+        const pass = currentWords.length >= level.words;
+        onFinish({ pass, words: currentWords });
+      }
+    };
+    checkPendingAndFinish();
   };
 
-  useEffect(() => {
-    if (phase === 'listening') {
+  const startListening = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      mediaRecorderRef.current = mediaRecorder;
+      chunkIndexRef.current = 0;
+      allChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = async (e) => {
+        if (e.data && e.data.size > 0 && !isFinishingRef.current) {
+          allChunksRef.current.push(e.data);
+          
+          // Create a blob containing all audio up to this point
+          const currentBlob = new Blob(allChunksRef.current, { type: mediaRecorder.mimeType });
+          const index = chunkIndexRef.current++;
+          pendingRequestsRef.current++;
+          try {
+            const res = await a2zApi.sendAudioChunk(roundId, currentBlob, index);
+            if (!isFinishingRef.current) {
+              setWords(res.accepted_words);
+              if (res.passed_so_far) {
+                handleFinish(res.accepted_words);
+              }
+            }
+          } catch (err) {
+            console.error("Failed to send audio chunk", err);
+          } finally {
+            pendingRequestsRef.current--;
+          }
+        }
+      };
+
+      mediaRecorder.start(); // Start without timeslice
+      setPhase('listening');
+      
+      // Request data every 3 seconds
+      dataIntervalRef.current = setInterval(() => {
+        if (mediaRecorder.state === 'recording') {
+          mediaRecorder.requestData();
+        }
+      }, 3000);
+      
+      // Start timer
       timerRef.current = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
             clearInterval(timerRef.current!);
+            if (dataIntervalRef.current) clearInterval(dataIntervalRef.current);
             return 0;
           }
           return prev - 1;
         });
       }, 1000);
 
-      // Simulation of speech recognition
-      const simInterval = setInterval(() => {
-        setWords(prev => {
-          const newWord = getMockWord();
-          if (!prev.includes(newWord)) {
-            const next = [...prev, newWord];
-            // If they reached the target, we can end early or keep going until time's up.
-            // Let's end early if outcome='pass' or auto and reached target.
-            return next;
-          }
-          return prev;
-        });
-      }, 2000 / simSpeed);
-
-      return () => {
-        if (timerRef.current) clearInterval(timerRef.current);
-        clearInterval(simInterval);
-      };
+    } catch (err) {
+      console.error("Microphone access denied or error", err);
     }
-  }, [phase, simSpeed, letter]);
+  };
 
-  // Check win/loss condition
   useEffect(() => {
-    if (phase === 'listening') {
-      const isPass = outcome === 'pass' || (outcome === 'auto' && words.length >= level.words);
-      const isFail = outcome === 'fail' || (outcome === 'auto' && timeLeft === 0 && words.length < level.words);
-
-      if (isPass || isFail || timeLeft === 0) {
-        if (timerRef.current) clearInterval(timerRef.current);
-        // Add a slight delay before showing result
-        const t = setTimeout(() => {
-          onFinish({
-            pass: words.length >= level.words || outcome === 'pass',
-            words: words
-          });
-        }, 800);
-        return () => clearTimeout(t);
-      }
+    if (timeLeft === 0 && phase === 'listening') {
+      handleFinish(words);
     }
-  }, [words.length, timeLeft, phase, outcome, level.words, onFinish]);
+  }, [timeLeft, phase, words]);
+
+  useEffect(() => {
+    return () => {
+      stopRecording();
+    };
+  }, []);
 
   const progressPct = Math.min(100, (words.length / level.words) * 100);
   const timePct = Math.max(0, (timeLeft / level.time) * 100);
 
   return (
     <div className="a2z-stage fade-in">
-      <button className="a2z-icon-btn-square a2z-stage-close" onClick={onClose} aria-label="Close">
+      <button className="a2z-icon-btn-square a2z-stage-close" onClick={onClose} aria-label="Close" disabled={phase === 'finishing'}>
         <X size={20} />
       </button>
 
@@ -108,7 +154,7 @@ export function A2ZSpeak({ letter, level, outcome, simSpeed, reduceMotion, onFin
       <div className={`a2z-mic-wrap ${phase === 'listening' ? 'live' : ''}`}>
         <svg className="a2z-ring-svg" viewBox="0 0 200 200">
           <circle className="a2z-ring-bg" cx="100" cy="100" r="90" />
-          {phase === 'listening' && (
+          {(phase === 'listening' || phase === 'finishing') && (
              <circle className="a2z-ring-fg" cx="100" cy="100" r="90" strokeDasharray="565.48" strokeDashoffset={565.48 * (1 - timePct / 100)} />
           )}
         </svg>
@@ -124,13 +170,17 @@ export function A2ZSpeak({ letter, level, outcome, simSpeed, reduceMotion, onFin
         <div 
           className={`a2z-mic-core ${phase === 'idle' ? 'idle' : 'listening'}`}
           onClick={() => {
-            if (phase === 'idle') setPhase('listening');
+            if (phase === 'idle') startListening();
           }}
         >
           {phase === 'idle' ? (
             <>
               <Mic size={36} strokeWidth={2.5} />
               <div className="a2z-mic-start-cta">Tap to start</div>
+            </>
+          ) : phase === 'finishing' ? (
+            <>
+              <div className="a2z-mic-label">Finishing...</div>
             </>
           ) : (
             <>
@@ -158,10 +208,6 @@ export function A2ZSpeak({ letter, level, outcome, simSpeed, reduceMotion, onFin
           <div key={i} className="a2z-word-chip">{w}</div>
         ))}
       </div>
-
-      {phase === 'idle' && (
-        <div className="a2z-demo-tag">✨ Simulated Speech Demo</div>
-      )}
     </div>
   );
 }

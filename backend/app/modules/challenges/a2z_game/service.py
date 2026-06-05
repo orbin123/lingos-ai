@@ -299,15 +299,12 @@ class A2ZService:
         )
         chunk_text = result.get("text", "").strip()
 
-        # Update running transcript
+        # Replace running transcript with the full transcription
         response = attempt.response_payload or {}
-        running_transcript = response.get("running_transcript", "")
-        if chunk_text:
-            running_transcript = (running_transcript + " " + chunk_text).strip()
-        response["running_transcript"] = running_transcript
+        response["running_transcript"] = chunk_text
 
         # Extract all valid words from the full transcript
-        all_valid = evaluator.extract_valid_words(running_transcript, letter)
+        all_valid = evaluator.extract_valid_words(response["running_transcript"], letter)
 
         # Determine new words (not yet in accepted_words)
         prev_accepted = set(response.get("accepted_words", []))

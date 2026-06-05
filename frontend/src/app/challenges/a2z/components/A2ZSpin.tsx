@@ -6,7 +6,7 @@ interface A2ZSpinProps {
   target: string | null;
   level: { id: number; name: string; words: number; time: number };
   reduceMotion: boolean;
-  onDone: (letter: string) => void;
+  onDone: () => void;
   onClose: () => void;
 }
 
@@ -71,7 +71,7 @@ export function A2ZSpin({ target, level, reduceMotion, onDone, onClose }: A2ZSpi
             <div className="a2z-spin-target-note">
               You drew <b>{displayLetter}</b> — name <b>{level.words}</b> words in <b>{level.time}s</b>.
             </div>
-            <button className="a2z-btn-primary-lg green" style={{ marginTop: 14 }} onClick={() => onDone(displayLetter)}>
+            <button className="a2z-btn-primary-lg green" style={{ marginTop: 14 }} onClick={onDone}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               Start round <span style={{ marginLeft: 6 }}>›</span>
             </button>

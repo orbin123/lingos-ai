@@ -62,11 +62,11 @@ const PREFIX = "/api/v1/challenges/a2z";
 export const a2zApi = {
   /** Get alphabet progress for the home screen. */
   getProgress: () =>
-    api.get<A2ZProgressRead>(`${PREFIX}/progress`),
+    api.get<A2ZProgressRead>(`${PREFIX}/progress`).then(r => r.data),
 
   /** Start a new round — spin for a random letter or pick one. */
   startRound: (mode: "spin" | "pick", letter?: string) =>
-    api.post<StartRoundResponse>(`${PREFIX}/rounds`, { mode, letter }),
+    api.post<StartRoundResponse>(`${PREFIX}/rounds`, { mode, letter }).then(r => r.data),
 
   /** Upload an audio chunk and receive new valid words. */
   sendAudioChunk: (roundId: number, audioBlob: Blob, chunkIndex: number) => {
@@ -77,14 +77,14 @@ export const a2zApi = {
       `${PREFIX}/rounds/${roundId}/audio-chunks`,
       formData,
       { headers: { "Content-Type": "multipart/form-data" } },
-    );
+    ).then(r => r.data);
   },
 
   /** Finish a round — get final grading and updated progress. */
   finishRound: (roundId: number) =>
-    api.post<FinishRoundResponse>(`${PREFIX}/rounds/${roundId}/finish`),
+    api.post<FinishRoundResponse>(`${PREFIX}/rounds/${roundId}/finish`).then(r => r.data),
 
   /** Restart the game (only after full completion). */
   restart: () =>
-    api.post<A2ZProgressRead>(`${PREFIX}/restart`),
+    api.post<A2ZProgressRead>(`${PREFIX}/restart`).then(r => r.data),
 };
