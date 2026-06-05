@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import AsyncIterator
 from typing import Any, TypeAlias
 
@@ -24,6 +25,19 @@ _MAX_WORDS_PER_TURN = 80
 _DUPLICATE_JACCARD_THRESHOLD = 0.85
 _READINESS_SENTENCE = "ready to try the practice task?"
 _EMPTY_PRAISE_PREFIXES = ("great!", "good job!", "nice sentence!")
+_EXTENDED_PRODUCTION_PATTERNS = (
+    re.compile(r"\b\d+\s*(?:–|-)\s*\d+\s+sentences?\b", re.I),
+    re.compile(
+        r"\b(?:two|three|four|five|2|3|4|5)\s+sentences?\b",
+        re.I,
+    ),
+    re.compile(r"\b(?:short|mini[- ]?)story\b", re.I),
+    re.compile(r"\btell (?:me )?(?:a |your )?(?:short )?story\b", re.I),
+    re.compile(r"\bwrite a paragraph\b", re.I),
+    re.compile(r"\bpair of sentences\b", re.I),
+    re.compile(r"\bseveral sentences\b", re.I),
+    re.compile(r"\bmultiple sentences\b", re.I),
+)
 _PLANNER_ONLY_KEYS = {
     "learning_goal",
     "sub_skill_context",
@@ -74,7 +88,23 @@ def validate_teaching_message(
     ):
         violations.append("duplicate_of_previous")
 
+    if _asks_for_extended_production(text):
+        violations.append("extended_production_ask")
+
     return violations
+
+
+def _asks_for_extended_production(text: str) -> bool:
+    """True when the teacher asks the learner for multi-sentence output."""
+
+    positions = _question_positions_outside_quotes(text)
+    probe = text
+    if positions:
+        _, probe = _clause_for_question_mark(text, positions[-1])
+    lowered = probe.lower()
+    if "one sentence" in lowered or "in one sentence" in lowered:
+        return False
+    return any(pattern.search(probe) for pattern in _EXTENDED_PRODUCTION_PATTERNS)
 
 
 def _is_near_duplicate(a: str, b: str) -> bool:
@@ -128,7 +158,10 @@ TURN CONTRACT (MANDATORY — never violate):
 1. Output exactly ONE message per turn.
 2. The message contains AT MOST ONE question mark (?), and that question is
    the final sentence. Never bundle two questions in one turn.
-3. The message is short: 60 words or less. Two to four sentences is ideal.
+3. The message is short: target 60 words or less (two to four sentences is
+   ideal); 80 words is a hard ceiling. If a draft runs long, REWRITE it
+   shorter — finish every sentence. A turn is always a COMPLETE message: never
+   truncate or cut off mid-sentence, so the learner never sees a clipped reply.
 4. After your question, STOP. Do not preview the next step, do not add a
    second teaching point, do not ask "and also...". Wait for the learner.
 
@@ -158,6 +191,16 @@ ONE IDEA PER TURN:
 Introduce at most one new rule, pattern, or example per turn. If the learner
 has NOT yet demonstrated the previous point, do not add another — re-probe
 the same point with a smaller, easier question instead.
+
+LEARNER PRODUCTION RULE (MANDATORY during teaching):
+Every question you ask the learner must expect ONE short sentence (or a
+single word/phrase) — never a paragraph, story, list, or multi-sentence
+answer. Focus only on the current step's main grammar point.
+Never ask for "4-5 sentences", "a short story", "tell me about…" in depth,
+"a paragraph", "several sentences", or "a pair of sentences". If an authored
+step mentions longer writing, that happens only in the practice task — not
+in chat teaching. When previewing practice, say the task will use a short
+passage; do not ask the learner to produce that passage now.
 
 CONFUSION HANDLER:
 If the learner's last message signals confusion ("I don't understand",
@@ -510,6 +553,11 @@ def _retry_instruction(violations: list[str], previous_assistant: str) -> str:
         parts.append(
             "- Send the readiness question by itself, with no extra teaching "
             "content in the same turn."
+        )
+    if "extended_production_ask" in violations:
+        parts.append(
+            "- Ask for ONE short sentence (or one word/phrase) only. Never ask "
+            "for a story, paragraph, or multiple sentences during teaching."
         )
     parts.append("Rewrite the message now, following every rule.")
     return "\n".join(parts)

@@ -273,6 +273,32 @@ def test_validate_allows_specific_positive_feedback() -> None:
     assert validate_teaching_message(msg) == []
 
 
+def test_validate_flags_extended_production_ask() -> None:
+    msg = (
+        "Good fix. Can you tell me a short story with 4-5 sentences "
+        "about your graduation day?"
+    )
+    violations = validate_teaching_message(msg)
+    assert "extended_production_ask" in violations
+
+
+def test_validate_allows_one_sentence_ask() -> None:
+    msg = (
+        "You fixed **go** after **did**. "
+        "Can you say one sentence about your graduation day?"
+    )
+    assert validate_teaching_message(msg) == []
+
+
+def test_teaching_output_rejects_extended_production_ask() -> None:
+    with pytest.raises(ValueError, match="extended_production_ask"):
+        TeachingOutput(
+            messages=[
+                "Nice. Can you write a paragraph about yesterday?"
+            ]
+        )
+
+
 def test_validate_flags_multiple_questions() -> None:
     msg = "Good. Can you say it with he? And what about she?"
     violations = validate_teaching_message(msg)

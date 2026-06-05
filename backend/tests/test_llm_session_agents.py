@@ -798,6 +798,17 @@ class TestLLMTaskGenerator:
             instructions="Write a 4–5 sentence email apologising for missing standup.",
             primary_text="Scenario: You missed today's daily standup. Email your team lead.",
             target_words=["apologise", "standup", "async"],
+            items=[
+                {
+                    "item_id": "email_1",
+                    "prompt": "Write the apology email to your team lead.",
+                    "sample_answer": (
+                        "Hi Alex, I'm sorry I missed standup today. "
+                        "I will share my update async."
+                    ),
+                    "answer_hints": ["Use a polite greeting and apology."],
+                }
+            ],
         )
         fake = FakeLLMClient([canned])
         agent = LLMTaskGenerator(fake)
@@ -818,6 +829,7 @@ class TestLLMTaskGenerator:
         assert "Write a 4–5 sentence email" in c["instructions"]
         assert c["primary_text"].startswith("Scenario:")
         assert c["target_words"] == ["apologise", "standup", "async"]
+        assert len(c["items"]) == 1
         assert c["cefr_level"] == "A2"
         assert c["sub_level"] == 3
 
@@ -1166,6 +1178,29 @@ class TestLLMTaskGenerator:
                 sub_level=1,
             )
         assert exc_info.value.archetype_id == "WRITE_ERROR_CORR"
+        assert len(fake.calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_read_comp_mcq_malformed_output_retries_then_raises(self):
+        spec = get_archetype("READ_COMP_MCQ")
+        invalid = TaskGenOutput(
+            topic="Read about daily routines",
+            instructions="Answer the questions about the passage.",
+            passage="Maria wakes up at seven every morning.",
+            items=[],
+        )
+        fake = FakeLLMClient([invalid, invalid])
+        agent = LLMTaskGenerator(fake)
+
+        with pytest.raises(TaskGenerationFailed) as exc_info:
+            await agent.generate(
+                archetype=spec,
+                day_topic="Simple present routines",
+                explanation_brief="Routine sentences with frequency adverbs.",
+                cefr_level="A1",
+                sub_level=1,
+            )
+        assert exc_info.value.archetype_id == "READ_COMP_MCQ"
         assert len(fake.calls) == 2
 
 

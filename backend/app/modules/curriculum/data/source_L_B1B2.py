@@ -213,7 +213,7 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 id="signal_words",
                                 goal="Teach already, just, by the time, before, and after.",
                                 instruction=(
-                                    "Affirm the time words. Ask for a 3-sentence mini-story ordering three events with at least two past perfect clauses."
+                                    "Affirm the time words. Ask for one sentence ordering two past events with already or just."
                                 ),
                             ),
                             TeacherStep(
@@ -233,12 +233,12 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CLOZE",
                                 activity="read",
                                 task_widget="fill_blanks",
-                                topic_override="Past perfect earlier actions — narrative ordering — already and just",
+                                topic_override="Past Perfect in Narratives — reading cloze",
                                 generation_instructions=(
-                                    "Write a 4-5 blank connected passage about a person's day where several things had already happened before a key moment. Focus on the past perfect with had + past participle. B2 depth: past perfect narratives with already, just, by the time; clear before-ordering; assume base had + PP from yesterday."
+                                    "Write one connected 4–5-blank passage (a short workplace or travel backstory) where every blank tests Clear before-ordering in narratives with already, just, and by the time. Include at least two distinct facets of the depth angle in the passage. Do not drill only the parent base lesson pattern; the passage must read as a depth task on Past Perfect in Narratives."
                                 ),
                                 widget_requirements=(
-                                    "Always include base_verb for every blank so the learner forms had + past participle. Do not repeat base_verb inline in the passage after each ___ — the UI shows it separately."
+                                    "Always include base_verb for every blank so the learner forms the target form. Do not repeat base_verb inline in the passage after each ___ — the UI shows it separately."
                                 ),
                             ),
                             evaluation=EvaluationBlueprint(
@@ -256,9 +256,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Listening for past perfect order — narrative ordering — already and just",
+                                topic_override="Past Perfect in Narratives — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a 70-100 word spoken passage about a person describing a past situation where earlier actions had already happened, using the past perfect with had and time words like already, just, and by the time. B2 depth: past perfect narratives with already, just, by the time; clear before-ordering; assume base had + PP from yesterday."
+                                    "Generate a 70–100 word spoken script (a short workplace or travel backstory) using Clear before-ordering in narratives with already, just, and by the time. Then 3–4 MCQs: at least two must test understanding of Clear before-ordering in narratives with already, just, and by the time (form, stance, or structure), not single-fact recall."
                                 ),
                                 widget_requirements="Generate 3-4 MCQ items with prompt, options, correct_index, and explanation.",
                             ),
@@ -277,9 +277,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_OPEN_SENT",
                                 activity="write",
                                 task_widget="open_text",
-                                topic_override="Write past perfect sentences — narrative ordering — already and just",
+                                topic_override="Past Perfect in Narratives — open sentences",
                                 generation_instructions=(
-                                    "Ask for affirmative past perfect sentences using I, he, and she, describing what had happened before another past action, with correct past participles and time words like already, just, and by the time. B2 depth: past perfect narratives with already, just, by the time; clear before-ordering; assume base had + PP from yesterday."
+                                    "Ask for exactly 3 learner sentences (a short workplace or travel backstory) that each demonstrate a different facet of Clear before-ordering in narratives with already, just, and by the time. Do not ask for practice that only repeats the parent base lesson focus."
                                 ),
                             ),
                             evaluation=EvaluationBlueprint(
@@ -297,11 +297,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override=(
-                                    "Say what had happened before a past moment — narrative ordering — already and just"
-                                ),
+                                topic_override="Past Perfect in Narratives — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to say short past perfect sentences about what had happened before a past moment using correct had and a past participle. B2 depth: past perfect narratives with already, just, by the time; clear before-ordering; assume base had + PP from yesterday."
+                                    "Create exactly 3 speaking prompts (a short workplace or travel backstory) each forcing production of Clear before-ordering in narratives with already, just, and by the time. Model answers must satisfy the prompt."
                                 ),
                                 widget_requirements=(
                                     "Create exactly 3 speaking prompts: one with I, one with he, and one with she. Include speaking_duration_seconds: 45."
@@ -635,9 +633,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_ERROR_SPOT",
                                 activity="read",
                                 task_widget="error_spotting",
-                                topic_override="Spot second conditional errors — unless, provided, and softer tone",
+                                topic_override="Second Conditional — error spotting",
                                 generation_instructions=(
-                                    "Generate a 5-sentence passage about imaginary situations and their results. Each sentence must contain exactly one grammatical error, so there are exactly 5 error tokens for the learner to tap. Make the mistakes diverse across second-conditional usage: include a present-tense verb where the if-clause needs the past simple, a missing would in the result clause, will instead of would, a wrong verb form after would, and a condition-marker mismatch. Do not make all errors the same kind of mistake. B2 depth: second conditional with unless/provided; softer would probably tone; error-spotting includes unless/provided forms."
+                                    "Write a 5-sentence passage (an imaginary career or lifestyle change) with exactly five single-token errors, all illustrating Unless/provided if-clauses and softer would probably tone in unreal scenarios. Diversify error types across sentences."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'error_spotting'. Return exactly 5 `passage_sentences`. Each sentence must include `sentence_id`, `tokens`, and one `error` object. Each token needs stable `token_id`, `text`, and `is_error`; exactly one token per sentence must have `is_error: true`. Each `error` must include token_id, incorrect_phrase, correction, error_type, rule, and explanation. Set `total_errors` to 5. Allowed error_type values: irregular_past, missing_past_auxiliary, passive_helper_missing, time_marker_mismatch, object_or_complement_mismatch, past_participle_form, regular_past_ending."
@@ -658,9 +656,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_CLOZE",
                                 activity="listen",
                                 task_widget="listen_cloze",
-                                topic_override="Listen and fill second conditional forms — unless, provided, and softer tone",
+                                topic_override="Second Conditional — listen and complete",
                                 generation_instructions=(
-                                    "Listen to the short daydream audio, then complete the paraphrased notes with the missing second-conditional verbs from the clip. B2 depth: second conditional with unless/provided; softer would probably tone; error-spotting includes unless/provided forms."
+                                    "Create a 40–60 word audio script (an imaginary career or lifestyle change) dense with Unless/provided if-clauses and softer would probably tone in unreal scenarios. Provide a gapped written version; blanks test Unless/provided if-clauses and softer would probably tone in unreal scenarios only."
                                 ),
                                 widget_requirements=(
                                     "Set inner_widget to 'fill_in_blanks'. Use the authored audio_script, passage, and 5 BlankItems exactly as provided so rule-based scoring can compare each typed verb phrase with correct_answer."
@@ -699,9 +697,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_ERROR_CORR",
                                 activity="write",
                                 task_widget="error_correction",
-                                topic_override="Correct second conditional mistakes — unless, provided, and softer tone",
+                                topic_override="Second Conditional — error correction",
                                 generation_instructions=(
-                                    "Give the learner 3 sentences that each contain one second conditional error — mix wrong tense in the if-clause (e.g. 'If I have time, I would help') and will/would mistakes (e.g. 'If it rained, we will stay home'). Ask the learner to rewrite each sentence correctly. B2 depth: second conditional with unless/provided; softer would probably tone; error-spotting includes unless/provided forms."
+                                    "Provide 3 sentences (an imaginary career or lifestyle change) with one error each, all tied to Unless/provided if-clauses and softer would probably tone in unreal scenarios; the learner rewrites each correctly."
                                 ),
                             ),
                             evaluation=EvaluationBlueprint(
@@ -719,9 +717,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_READ_ALOUD",
                                 activity="speak",
                                 task_widget="read_aloud",
-                                topic_override="Read second conditional passage aloud — unless, provided, and softer tone",
+                                topic_override="Second Conditional — read aloud",
                                 generation_instructions=(
-                                    "Give the learner a connected second conditional narrative passage of 55-70 words to read aloud, describing several imaginary situations and their results, mixing if-clauses in the past simple and result clauses with would. B2 depth: second conditional with unless/provided; softer would probably tone; error-spotting includes unless/provided forms."
+                                    "Write a 50–60 word passage (an imaginary career or lifestyle change) dense with Unless/provided if-clauses and softer would probably tone in unreal scenarios for read-aloud; not an introductory lesson on the parent base form."
                                 ),
                                 widget_requirements=(
                                     "Populate `text_to_read_aloud` with a single connected second conditional passage (55-70 words) describing imaginary situations and their results. Set `task_intro` to 'Read the passage above out loud.' Include `grammar_rule_to_practice` explaining the second conditional with if + past simple and would + base verb, and `speaking_duration_seconds: 45`."
@@ -957,9 +955,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="Understand a process in the passive — report-style passive and agent choice",
+                                topic_override="Passive in Reports — reading comprehension",
                                 generation_instructions=(
-                                    "Write a 60-75 word passage describing how a product is made or how a process works, mixing active and passive sentences (the beans are picked, the coffee is shipped). Then ask comprehension questions about the steps, and include one item asking which sentence uses the correct passive form. B2 depth: short news-style passives; include when to add by; timed speech sounds like a brief process or incident report."
+                                    "Write a 120–150 word passage (a brief incident or product launch report) rich in Short news-style passives; when to name the agent with by. Add 3–4 comprehension MCQs where at least two require applying Short news-style passives; when to name the agent with by, not only locating a noun or date."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -980,9 +978,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_DICTATION",
                                 activity="listen",
                                 task_widget="listen_dictation",
-                                topic_override="Hear passive-form chunks — report-style passive and agent choice",
+                                topic_override="Passive in Reports — dictation",
                                 generation_instructions=(
-                                    "Generate a 35-45 word process audio script of 4 short sentences with varied passive forms (is made, was sent, are delivered, will be repaired). The learner types each sentence exactly as heard. B2 depth: short news-style passives; include when to add by; timed speech sounds like a brief process or incident report."
+                                    "Generate 4 short audio lines (a brief incident or product launch report) that exemplify Short news-style passives; when to name the agent with by for exact dictation. Each line should highlight one feature of Short news-style passives; when to name the agent with by."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_dictation'. Provide audio_script and 4 dictation items, each with prompt, correct_answer, and explanation. Set target_words to the passive chunks (for example 'is made', 'was sent', 'are delivered', 'will be repaired')."
@@ -1003,9 +1001,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override="Rewrite active into passive — report-style passive and agent choice",
+                                topic_override="Passive in Reports — sentence transformation",
                                 generation_instructions=(
-                                    "Give the learner 3 active sentences with varied tenses and ask them to rewrite each in the passive, keeping the same meaning and using by only when the doer matters. B2 depth: short news-style passives; include when to add by; timed speech sounds like a brief process or incident report."
+                                    "Provide 3 transform items (a brief incident or product launch report) where source and target practice Short news-style passives; when to name the agent with by (e.g. direct to reported, active to passive, clause reduction)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints (for example 'present -> is/are + past participle', 'past -> was/were + past participle')."
@@ -1026,9 +1024,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override="Describe a process with the passive — report-style passive and agent choice",
+                                topic_override="Passive in Reports — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to say one passive sentence per prompt, choosing the right form of be for the tense and using a correct past participle. B2 depth: short news-style passives; include when to add by; timed speech sounds like a brief process or incident report."
+                                    "Create exactly 3 speaking prompts (a brief incident or product launch report) each forcing production of Short news-style passives; when to name the agent with by. Model answers must satisfy the prompt."
                                 ),
                                 widget_requirements=(
                                     "Create exactly 3 speaking prompts: one present passive about how something is made, one past passive about something that was built or sent, and one about something that will be done. Include speaking_duration_seconds: 45."
@@ -1242,11 +1240,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_WORD_MATCH",
                                 activity="read",
                                 task_widget="read_word_match",
-                                topic_override=(
-                                    "Match nouns to the right relative pronoun — defining vs non-defining — commas and flow"
-                                ),
+                                topic_override="Defining vs Non-Defining — word–definition match",
                                 generation_instructions=(
-                                    "Ask the learner to match each noun phrase or clue to the correct relative pronoun (a person -> who, a thing -> which, a place -> where, either person or thing -> that). B2 depth: defining vs non-defining relative clauses; comma control; picture description mixes both types without ambiguity."
+                                    "Create 6–8 target words/phrases for Defining vs non-defining relative clauses with commas; reduce repetition and short definitions (describing colleagues, projects, or places at work). Learners match each term to the definition that fits the depth collocation or usage."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_word_match'. Provide options (the relative pronouns who, which, that, where) and 3-4 items, each with prompt (a noun phrase with a clue), correct_answer, and explanation."
@@ -1267,11 +1263,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override=(
-                                    "Hearing relative clauses in speech — defining vs non-defining — commas and flow"
-                                ),
+                                topic_override="Defining vs Non-Defining — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a 35-45 word short description that uses at least two relative clauses (the woman who runs the cafe, the phone which broke). Include comprehension questions about which person did what and which thing is described. B2 depth: defining vs non-defining relative clauses; comma control; picture description mixes both types without ambiguity."
+                                    "Generate a 70–100 word spoken script (describing colleagues, projects, or places at work) using Defining vs non-defining relative clauses with commas; reduce repetition. Then 3–4 MCQs: at least two must test understanding of Defining vs non-defining relative clauses with commas; reduce repetition (form, stance, or structure), not single-fact recall."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 2-3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -1292,11 +1286,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_OPEN_SENT",
                                 activity="write",
                                 task_widget="open_text",
-                                topic_override=(
-                                    "Write sentences with relative clauses — defining vs non-defining — commas and flow"
-                                ),
+                                topic_override="Defining vs Non-Defining — open sentences",
                                 generation_instructions=(
-                                    "Ask for three short sentences: one describing a person with who, one describing a thing with which or that, and one describing a place with where. Remind the learner to put the relative pronoun right after the noun. B2 depth: defining vs non-defining relative clauses; comma control; picture description mixes both types without ambiguity."
+                                    "Ask for exactly 3 learner sentences (describing colleagues, projects, or places at work) that each demonstrate a different facet of Defining vs non-defining relative clauses with commas; reduce repetition. Do not ask for practice that only repeats the parent base lesson focus."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'open_text'. Provide target_words (who, which, that, where), common_mistakes, and 3 items, each with prompt, sample_answer, and answer_hints."
@@ -1317,11 +1309,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override=(
-                                    "Identify people in a picture with relative clauses — defining vs non-defining — commas and flow"
-                                ),
+                                topic_override="Defining vs Non-Defining — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe a simple scene aloud, using relative clauses to identify the people and things (the man who is reading, the bag which is on the table). B2 depth: defining vs non-defining relative clauses; comma control; picture description mixes both types without ambiguity."
+                                    "Describe an image scene (describing colleagues, projects, or places at work) using Defining vs non-defining relative clauses with commas; reduce repetition in 4–5 connected sentences; include at least one depth-specific structure from Defining vs non-defining relative clauses with commas; reduce repetition."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a busy cafe with several people doing different things, grammar_rule, and speaking_duration_seconds: 45."
@@ -1545,12 +1535,12 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CLOZE",
                                 activity="read",
                                 task_widget="fill_blanks",
-                                topic_override="Fill reported speech blanks — reported questions, commands, and time shifts",
+                                topic_override="Reported Qs, Commands & Time Shifts — reading cloze",
                                 generation_instructions=(
-                                    "Write a short 4-5 sentence passage that reports a conversation, with blanks that each need the correct reported-speech word (said, told, asked, was, had), so the learner backshifts by meaning. B2 depth: wh-/yes-no reported questions, imperative reporting (told to), time and pronoun shifts; roleplay includes mixed statement and question reporting."
+                                    "Write one connected 4–5-blank passage (a manager–team conversation recap) where every blank tests Reported questions, commands, and time-shift patterns. Include at least two distinct facets of the depth angle in the passage. Do not drill only the parent base lesson pattern; the passage must read as a depth task on Reported Qs, Commands & Time Shifts."
                                 ),
                                 widget_requirements=(
-                                    "Target widget 'fill_blanks'. Provide passage_title and a passage with ___ markers only — no inline hints in parentheses after blanks. Provide a BlankItem per blank with correct_answer and explanation. Omit base_verb; these are reporting blanks, not verb inflection."
+                                    "Omit base_verb on every blank. Do not include base_verb. correct_answer is the word or phrase for the blank (e.g. Unless, doesn't, said, Nevertheless)."
                                 ),
                             ),
                             evaluation=EvaluationBlueprint(
@@ -1568,11 +1558,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_INFER",
                                 activity="listen",
                                 task_widget="listen_infer",
-                                topic_override=(
-                                    "Infer the original words behind a report — reported questions, commands, and time shifts"
-                                ),
+                                topic_override="Reported Qs, Commands & Time Shifts — listening inference",
                                 generation_instructions=(
-                                    "Generate a 35-45 word audio clip where one person reports what another said and asked (She said she was busy, he asked if I could help). Ask the learner to infer the original words and the meaning. B2 depth: wh-/yes-no reported questions, imperative reporting (told to), time and pronoun shifts; roleplay includes mixed statement and question reporting."
+                                    "Generate a 50–70 word spoken exchange (a manager–team conversation recap) where Reported questions, commands, and time-shift patterns is implied. Ask 3 inference questions about stance, intent, or implied meaning tied to Reported questions, commands, and time-shift patterns."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 2 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -1593,11 +1581,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARA",
                                 activity="write",
                                 task_widget="write_paragraph",
-                                topic_override=(
-                                    "Write a paragraph in reported speech — reported questions, commands, and time shifts"
-                                ),
+                                topic_override="Reported Qs, Commands & Time Shifts — paragraph writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a 3-4 sentence paragraph reporting a short conversation they had, using said that, told me that, and asked, with the verbs correctly shifted back. B2 depth: wh-/yes-no reported questions, imperative reporting (told to), time and pronoun shifts; roleplay includes mixed statement and question reporting."
+                                    "Ask for one 80–110 word paragraph (a manager–team conversation recap) that must show Reported questions, commands, and time-shift patterns with clear organisation (topic sentence, support, close)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (said that, told me, asked if, would), minimum_words 25, sample_answer, and answer_hints."
@@ -1618,9 +1604,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_ROLEPLAY",
                                 activity="speak",
                                 task_widget="speak_roleplay",
-                                topic_override="Pass on a message roleplay — reported questions, commands, and time shifts",
+                                topic_override="Reported Qs, Commands & Time Shifts — roleplay",
                                 generation_instructions=(
-                                    "Set up a roleplay where the learner passes on a message (for example telling a colleague what the manager said). The partner's opening should be 2-3 sentences that give the original message and ask the learner to report it. The learner's spoken response must be 2-3 connected sentences using reported speech (he said that, she asked if, they told me) — not a one-line answer. B2 depth: wh-/yes-no reported questions, imperative reporting (told to), time and pronoun shifts; roleplay includes mixed statement and question reporting."
+                                    "Roleplay (a manager–team conversation recap) where the learner must use Reported questions, commands, and time-shift patterns in at least two turns; include a partner cue that elicits the depth move."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_roleplay'. Provide dialogue_context with alternating partner and learner turns (4-6 turns total). Partner lines set the scene in 2-3 sentences; each learner line is 2-3 connected sentences (roughly 15-30 words). Include target_words (said that, told me, asked if, would), speaking_prompts with one instruction to respond aloud, sample_responses with the learner's model answer (same text as the learner dialogue turn), grammar_rule_to_practice, and speaking_duration_seconds: 45."
@@ -1837,9 +1823,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TFNG",
                                 activity="read",
                                 task_widget="read_tfng",
-                                topic_override="Past habits in text — used to vs would — meaning and negatives",
+                                topic_override="Used To vs Would — true/false/not given",
                                 generation_instructions=(
-                                    "Write a short profile of how someone's life used to be different (where they used to live, what they would do every summer), rich in used to and would for past habits and states. Then give True / False / Not Given statements about how things used to be. B2 depth: contrast used to (state/habit) vs would (repeated action); include didn't use to; email and small talk use past habit narrative."
+                                    "Write a 100–130 word passage (past habits and routines in personal narrative) about Contrast used to vs would for past habits; negatives and meaning. Provide 4–5 True/False/Not Given statements testing nuanced understanding of Contrast used to vs would for past habits; negatives and meaning, including one subtle distractor."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tfng'. Provide passage_title, passage, and 5 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
@@ -1860,11 +1846,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_SHADOW",
                                 activity="listen",
                                 task_widget="listen_shadow",
-                                topic_override=(
-                                    "Repeat used to / would phrases in connected speech — used to vs would — meaning and negatives"
-                                ),
+                                topic_override="Used To vs Would — shadowing",
                                 generation_instructions=(
-                                    "Generate a short, natural monologue (about 20 seconds) in which used to and would phrases describing past habits are blended into connected speech (I used to walk to school, we would play outside for hours), for the learner to shadow and reproduce smoothly. B2 depth: contrast used to (state/habit) vs would (repeated action); include didn't use to; email and small talk use past habit narrative."
+                                    "Provide a 50–60 word script (past habits and routines in personal narrative) dense with Contrast used to vs would for past habits; negatives and meaning for shadowing practice. Rhythm and phrasing should model natural B2 delivery."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow (identical to the script), target_words highlighting the used to / would chunks, and grammar_rule."
@@ -1885,9 +1869,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_EMAIL",
                                 activity="write",
                                 task_widget="write_email",
-                                topic_override="Tell a friend how life used to be — used to vs would — meaning and negatives",
+                                topic_override="Used To vs Would — email writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a short email to a friend describing how their life or hometown used to be different, using used to and would for past habits and states (I used to..., we would...). B2 depth: contrast used to (state/habit) vs would (repeated action); include didn't use to; email and small talk use past habit narrative."
+                                    "Ask for a short professional email (past habits and routines in personal narrative) applying Contrast used to vs would for past habits; negatives and meaning with appropriate opening, body moves, and close."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_email'. Provide prompt, grammar_rule, target_words (used to, would, no longer, back then), minimum_words 25, sample_answer (with To and Subject lines), and answer_hints."
@@ -1908,11 +1892,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_SMALLTALK",
                                 activity="speak",
                                 task_widget="speak_smalltalk",
-                                topic_override=(
-                                    "Casual chat about how things used to be — used to vs would — meaning and negatives"
-                                ),
+                                topic_override="Used To vs Would — small talk",
                                 generation_instructions=(
-                                    "Set up casual small talk about childhood and the past where the learner answers using used to and would naturally to describe old habits (I used to..., we would...). B2 depth: contrast used to (state/habit) vs would (repeated action); include didn't use to; email and small talk use past habit narrative."
+                                    "Small-talk prompts (past habits and routines in personal narrative) requiring Contrast used to vs would for past habits; negatives and meaning (echo, register shift, paraphrase, or inclusive invite) in natural replies."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (used to, would, as a child, back then), and speaking_duration_seconds: 30."
@@ -2143,9 +2125,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CONTEXT_MCQ",
                                 activity="read",
                                 task_widget="read_context_mcq",
-                                topic_override="Contrast linkers in context — although vs however — placement",
+                                topic_override="Although vs However — vocabulary in context",
                                 generation_instructions=(
-                                    "Write a short 60-75 word passage about a person's choices or a comparison with 4 blanks that each need a contrast linker chosen from context: despite or in spite of before a noun or -ing, whereas to compare two clauses, and however to contrast two sentences. B2 depth: 4-sentence argument with although (mid-clause) and However (sentence initial); paraphrase and speak_present test placement not just linker list."
+                                    "Write a 80–110 word passage (a balanced opinion on a work or study topic) using Although vs however placement in a four-sentence argument. Create 4 MCQs choosing the best word/phrase for each gap to demonstrate Although vs however placement in a four-sentence argument."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_context_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options (despite, in spite of, whereas, however), correct_index, and explanation."
@@ -2166,9 +2148,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_RETELL",
                                 activity="listen",
                                 task_widget="listen_retell",
-                                topic_override="Listen and summarize with contrast linkers — although vs however — placement",
+                                topic_override="Although vs However — listen and retell",
                                 generation_instructions=(
-                                    "Generate a ~40 second monologue telling a short story or comparison that uses contrast linkers (despite, in spite of, whereas, however) to connect opposing ideas. Ask the learner to retell the main ideas in their own words, keeping the contrast linkers correct. B2 depth: 4-sentence argument with although (mid-clause) and However (sentence initial); paraphrase and speak_present test placement not just linker list."
+                                    "Generate a 60–80 word monologue (a balanced opinion on a work or study topic) modeling Although vs however placement in a four-sentence argument. Ask the learner to retell including the key depth moves from Although vs however placement in a four-sentence argument."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_retell'. Provide: audio_script (the full spoken monologue text), passage_to_retell (a 2-3 sentence model retell — shorter than the audio, showing how a good student would summarise the key points using contrast linkers), sample_responses (list containing that same model retell), target_words (list of the key contrast linkers from the audio), and grammar_rule."
@@ -2189,9 +2171,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARAPHRASE",
                                 activity="write",
                                 task_widget="write_paraphrase",
-                                topic_override="Joining contrasting ideas with linkers — although vs however — placement",
+                                topic_override="Although vs However — paraphrase",
                                 generation_instructions=(
-                                    "Give the learner 3 pairs of contrasting sentences and ask them to rewrite each pair as one smooth sentence using a contrast linker (despite, in spite of, whereas, or however) that fits the meaning, with correct grammar after each linker. B2 depth: 4-sentence argument with although (mid-clause) and However (sentence initial); paraphrase and speak_present test placement not just linker list."
+                                    "Give 3 source sentences (a balanced opinion on a work or study topic) that are blunt, vague, or off-register; ask the learner to paraphrase for Although vs however placement in a four-sentence argument."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paraphrase'. Provide 3 items, each with incorrect_sentence (the contrasting sentence pair), sample_answer, and watch_hints (the target contrast linker)."
@@ -2212,9 +2194,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PRESENT",
                                 activity="speak",
                                 task_widget="speak_present",
-                                topic_override="Compare two options with contrast linkers — although vs however — placement",
+                                topic_override="Although vs However — presentation",
                                 generation_instructions=(
-                                    "Ask the learner to compare two options or opinions aloud, using at least three contrast linkers (despite, in spite of, whereas, however) to connect the opposing ideas. B2 depth: 4-sentence argument with although (mid-clause) and However (sentence initial); paraphrase and speak_present test placement not just linker list."
+                                    "Presentation task (a balanced opinion on a work or study topic): structured spoken segment showing Although vs however placement in a four-sentence argument with signposts and a clear close."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_present'. Provide: prompts as a list with one general question asking the learner to compare two choices and say which they prefer using contrast linkers (e.g. 'Compare living in a city and the countryside, and say which you prefer.'); visual_prompt_description as a short sample spoken answer that uses at least three contrast linkers (e.g. 'A city is exciting, whereas the countryside is calm. Despite the noise, I prefer the city. However, I visit the countryside often, so I get both.'); grammar_rule, target_words, and speaking_duration_seconds: 45."
@@ -2439,9 +2421,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="Negotiating to an agreement — deadlocks — trade-offs and conditional offers",
+                                topic_override="Deadlocks — reading comprehension",
                                 generation_instructions=(
-                                    "Write a short message exchange in which two people negotiate a shared decision, propose trade-offs, and agree on a final compromise. Then ask comprehension questions about what each side wanted, the trade-off, and the final agreement. B2 depth: deadlock language with If you…, then we… and explicit trade-offs; roleplay reaches agreement via conditional offer not only meet halfway."
+                                    "Write a 120–150 word passage (a negotiation between two parties) rich in Conditional offers and trade-offs (If you…, then we…). Add 3–4 comprehension MCQs where at least two require applying Conditional offers and trade-offs (If you…, then we…), not only locating a noun or date."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -2462,9 +2444,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Listening to a negotiation — deadlocks — trade-offs and conditional offers",
+                                topic_override="Deadlocks — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a 35-45 word dialogue between two people negotiating: one proposes an idea, they discuss two trade-offs, and agree on a compromise. The learner answers questions about each side's wish, the trade-off, and the agreement. B2 depth: deadlock language with If you…, then we… and explicit trade-offs; roleplay reaches agreement via conditional offer not only meet halfway."
+                                    "Generate a 70–100 word spoken script (a negotiation between two parties) using Conditional offers and trade-offs (If you…, then we…). Then 3–4 MCQs: at least two must test understanding of Conditional offers and trade-offs (If you…, then we…) (form, stance, or structure), not single-fact recall."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -2485,9 +2467,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override="Polite negotiation phrases — deadlocks — trade-offs and conditional offers",
+                                topic_override="Deadlocks — sentence transformation",
                                 generation_instructions=(
-                                    "Give the learner 3 blunt demands (We do it my way. Lower the price. Change the date.) and ask them to rewrite each as a polite negotiation move using forms like 'Would you be willing to...?', 'How about we...?', and 'Could we meet halfway on...?'. B2 depth: deadlock language with If you…, then we… and explicit trade-offs; roleplay reaches agreement via conditional offer not only meet halfway."
+                                    "Provide 3 transform items (a negotiation between two parties) where source and target practice Conditional offers and trade-offs (If you…, then we…) (e.g. direct to reported, active to passive, clause reduction)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -2508,9 +2490,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_ROLEPLAY",
                                 activity="speak",
                                 task_widget="speak_roleplay",
-                                topic_override="Negotiate with a colleague — deadlocks — trade-offs and conditional offers",
+                                topic_override="Deadlocks — roleplay",
                                 generation_instructions=(
-                                    "Set up a friendly roleplay where a colleague proposes a plan the learner cannot fully accept. The learner reacts, proposes a trade-off, and confirms a compromise using phrases like 'How about...?' and 'Let's meet halfway.' B2 depth: deadlock language with If you…, then we… and explicit trade-offs; roleplay reaches agreement via conditional offer not only meet halfway."
+                                    "Roleplay (a negotiation between two parties) where the learner must use Conditional offers and trade-offs (If you…, then we…) in at least two turns; include a partner cue that elicits the depth move."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_roleplay'. Provide a dialogue_context alternating partner and learner turns, target_words (How about, meet halfway, that works, agreed), and speaking_duration_seconds: 30."
@@ -2700,7 +2682,7 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 id="open",
                                 goal="Introduce telling and reacting to news.",
                                 instruction=(
-                                    "Greet the learner and note they shared news reactions yesterday. Explain in two sentences that B2 reactions show stance (That's surprising / I'm concerned that…) then ask two follow-ups (What happened next? How do you feel about…?). Ask how they would react to surprising work news."
+                                    "Greet the learner and note they shared news reactions yesterday. Explain in two sentences that B2 reactions show stance (That's surprising / I'm concerned that…). Ask how they would react to surprising work news."
                                 ),
                             ),
                             TeacherStep(
@@ -2727,9 +2709,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TFNG",
                                 activity="read",
                                 task_widget="read_tfng",
-                                topic_override="A piece of shared news — breaking news — stance and follow-ups",
+                                topic_override="Breaking News — true/false/not given",
                                 generation_instructions=(
-                                    "Write a short first-person message sharing recent news (a new job, a move) together with the warm reactions of a friend. Then give True / False / Not Given statements based only on the message. B2 depth: surprise/concern stance plus two follow-up probes; interview and email tasks require stance before detail questions."
+                                    "Write a 100–130 word passage (sharing unexpected news with a colleague) about Surprise stance plus two follow-up probes. Provide 4–5 True/False/Not Given statements testing nuanced understanding of Surprise stance plus two follow-up probes, including one subtle distractor."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tfng'. Provide passage_title, passage, and 4 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
@@ -2750,9 +2732,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_INFER",
                                 activity="listen",
                                 task_widget="listen_infer",
-                                topic_override="Infer feelings behind news — breaking news — stance and follow-ups",
+                                topic_override="Breaking News — listening inference",
                                 generation_instructions=(
-                                    "Generate a conversation (about 45 seconds) where someone shares news and a friend reacts with surprise and concern. Ask the learner to infer how each speaker feels and what they imply, not only what they state. B2 depth: surprise/concern stance plus two follow-up probes; interview and email tasks require stance before detail questions."
+                                    "Generate a 50–70 word spoken exchange (sharing unexpected news with a colleague) where Surprise stance plus two follow-up probes is implied. Ask 3 inference questions about stance, intent, or implied meaning tied to Surprise stance plus two follow-up probes."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -2773,9 +2755,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_EMAIL",
                                 activity="write",
                                 task_widget="write_email",
-                                topic_override="Reply to a friend's news — breaking news — stance and follow-ups",
+                                topic_override="Breaking News — email writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a short message to a friend who shared some news. It must include a warm greeting, one reaction (surprise or congratulations), two follow-up questions, and a close. B2 depth: surprise/concern stance plus two follow-up probes; interview and email tasks require stance before detail questions."
+                                    "Ask for a short professional email (sharing unexpected news with a colleague) applying Surprise stance plus two follow-up probes with appropriate opening, body moves, and close."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_email'. Provide prompt, grammar_rule, target_words, minimum_words 25, sample_answer (with To and Subject lines), and answer_hints."
@@ -2796,9 +2778,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_INTERVIEW",
                                 activity="speak",
                                 task_widget="speak_interview",
-                                topic_override="React to news in a mini chat — breaking news — stance and follow-ups",
+                                topic_override="Breaking News — interview",
                                 generation_instructions=(
-                                    "Run a friendly mini interview where the learner reacts to three pieces of news (a promotion, a small problem, a holiday plan) in one or two full sentences each, with a reaction and a follow-up question. B2 depth: surprise/concern stance plus two follow-up probes; interview and email tasks require stance before detail questions."
+                                    "Interview prompts (sharing unexpected news with a colleague) where answers must demonstrate Surprise stance plus two follow-up probes (stance, follow-ups, or documented feedback moves)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_interview'. Provide interview_context, grammar_rule, target_words (That's wonderful, Oh no, How did, What about), 3 questions each with interviewer_prompt, sample_answer, and answer_hint, and speaking_duration_seconds: 35."
@@ -3001,7 +2983,7 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 id="structure_order",
                                 goal="Teach signposting the order.",
                                 instruction=(
-                                    "Affirm their story. Ask them to state root cause and impact in two sentences with signposting."
+                                    "Affirm their story. Ask them to state the root cause and its impact in one sentence with signposting."
                                 ),
                             ),
                             TeacherStep(
@@ -3028,9 +3010,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_STRUCTURE_ID",
                                 activity="read",
                                 task_widget="read_structure",
-                                topic_override="Identify parts of a problem-solution text — root cause and measurable fix",
+                                topic_override="Root Cause & Measurable Fix — text structure",
                                 generation_instructions=(
-                                    "Provide a 3-paragraph problem-solution passage and ask the learner to label each paragraph as the Situation (background), Problem (what went wrong), or Solution (the action and result). B2 depth: cause → impact → measurable solution; paragraph and opinion speak include metric or deadline in the fix."
+                                    "Provide a 4–5 paragraph outline or short text (a workplace problem and proposed fix) about Root cause, impact, and measurable solution. Ask the learner to identify structure elements (problem, cause, solution, recommendation) aligned with Root cause, impact, and measurable solution."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_structure'. Provide passage_title, structure_labels ['Situation', 'Problem', 'Solution'], and 3 items, each with paragraph, correct_answer, and explanation."
@@ -3051,9 +3033,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_RETELL",
                                 activity="listen",
                                 task_widget="listen_retell",
-                                topic_override="Retell a problem and solution — root cause and measurable fix",
+                                topic_override="Root Cause & Measurable Fix — listen and retell",
                                 generation_instructions=(
-                                    "Generate a problem-solution monologue (about 50 seconds) describing a situation, a problem, and how it was solved. Ask the learner to retell the key points in order using signposting words and the final result. B2 depth: cause → impact → measurable solution; paragraph and opinion speak include metric or deadline in the fix."
+                                    "Generate a 60–80 word monologue (a workplace problem and proposed fix) modeling Root cause, impact, and measurable solution. Ask the learner to retell including the key depth moves from Root cause, impact, and measurable solution."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_retell'. Provide audio_script, passage_to_retell, target_words (the situation was, the problem, so, as a result), and grammar_rule."
@@ -3074,9 +3056,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARA",
                                 activity="write",
                                 task_widget="write_paragraph",
-                                topic_override="Write about a problem you solved — root cause and measurable fix",
+                                topic_override="Root Cause & Measurable Fix — paragraph writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a 5-7 sentence paragraph about a problem they solved, describing the situation, the problem, the action, and the result, using at least three signposting words and one reason with because. B2 depth: cause → impact → measurable solution; paragraph and opinion speak include metric or deadline in the fix."
+                                    "Ask for one 80–110 word paragraph (a workplace problem and proposed fix) that must show Root cause, impact, and measurable solution with clear organisation (topic sentence, support, close)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (first, the problem was, so, as a result, because), minimum_words 45, sample_answer, and answer_hints."
@@ -3097,9 +3079,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_OPINION",
                                 activity="speak",
                                 task_widget="speak_present",
-                                topic_override="Recommend the best solution — root cause and measurable fix",
+                                topic_override="Root Cause & Measurable Fix — opinion",
                                 generation_instructions=(
-                                    "Ask the learner to answer in two or three sentences what the best solution to a common problem is, giving their recommendation and one reason with because. B2 depth: cause → impact → measurable solution; paragraph and opinion speak include metric or deadline in the fix."
+                                    "Opinion task (a workplace problem and proposed fix): state a position, support with cause→impact→solution or measurable fix aligned with Root cause, impact, and measurable solution."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_present'. Provide grammar_rule, target_words (I would suggest, because, the best way, however), a visual_prompt_description or prompt for the recommendation, and speaking_duration_seconds: 40."
@@ -3316,9 +3298,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="Workplace Update — blockers, owners, and next steps",
+                                topic_override="Blockers, Owners & Next Steps — reading comprehension",
                                 generation_instructions=(
-                                    "Write a short work email or message thread where a colleague gives a status update, confirms a deadline, and clarifies a task. Then ask comprehension questions about the progress, the deadline, and what is still needed. B2 depth: professional status with blocker/owner/next-step language; roleplay sounds like a brief stand-up or manager check-in."
+                                    "Write a 120–150 word passage (a project stand-up or status update) rich in Professional status: blockers, owners, and next steps. Add 3–4 comprehension MCQs where at least two require applying Professional status: blockers, owners, and next steps, not only locating a noun or date."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -3339,9 +3321,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Voicemail update details — blockers, owners, and next steps",
+                                topic_override="Blockers, Owners & Next Steps — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a short workplace voicemail (about 40 seconds) about a project update, a changed deadline, and a request. Ask comprehension questions about the update, the new deadline, and the request. B2 depth: professional status with blocker/owner/next-step language; roleplay sounds like a brief stand-up or manager check-in."
+                                    "Generate a 70–100 word spoken script (a project stand-up or status update) using Professional status: blockers, owners, and next steps. Then 3–4 MCQs: at least two must test understanding of Professional status: blockers, owners, and next steps (form, stance, or structure), not single-fact recall."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -3362,9 +3344,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_BULLETS_TO_PARA",
                                 activity="write",
                                 task_widget="write_bullets_to_para",
-                                topic_override="Write a work update from notes — blockers, owners, and next steps",
+                                topic_override="Blockers, Owners & Next Steps — bullets to paragraph",
                                 generation_instructions=(
-                                    "Give the learner a 4-item task-notes list (task, progress, blocker, next step) and ask them to turn it into a clear, polite update message to a manager, using complete sentences and professional phrasing. B2 depth: professional status with blocker/owner/next-step language; roleplay sounds like a brief stand-up or manager check-in."
+                                    "Provide bullet notes (a project stand-up or status update) about Professional status: blockers, owners, and next steps; ask for one cohesive paragraph with owners, blockers, or next steps as required by the angle."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_bullets_to_para'. Provide bullets (4 work items), prompt, grammar_rule, target_words, minimum_words 25, sample_answer, and answer_hints."
@@ -3385,9 +3367,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_ROLEPLAY",
                                 activity="speak",
                                 task_widget="speak_roleplay",
-                                topic_override="Check in with a manager — blockers, owners, and next steps",
+                                topic_override="Blockers, Owners & Next Steps — roleplay",
                                 generation_instructions=(
-                                    "Set up a check-in roleplay where a manager greets the learner and asks for a progress update. The learner gives a clear update using 'So far I've...' and answers the manager's questions about timing and next steps politely and directly. B2 depth: professional status with blocker/owner/next-step language; roleplay sounds like a brief stand-up or manager check-in."
+                                    "Roleplay (a project stand-up or status update) where the learner must use Professional status: blockers, owners, and next steps in at least two turns; include a partner cue that elicits the depth move."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_roleplay'. Provide a dialogue_context alternating partner and learner turns, target_words (so far, on track, by Friday, next step), and speaking_duration_seconds: 30."
@@ -3607,9 +3589,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TFNG",
                                 activity="read",
                                 task_widget="read_tfng",
-                                topic_override="A persuasive message — acknowledge then refute",
+                                topic_override="Acknowledge Then Refute — true/false/not given",
                                 generation_instructions=(
-                                    "Write a short, persuasive message that argues for one idea using a clear reason, a piece of evidence, and a polite acknowledgement of the other side. Then give True / False / Not Given statements based only on the message. B2 depth: Yes, but / That's a fair point; however… with evidence; picture persuasion includes polite refutation not only claim-reason."
+                                    "Write a 100–130 word passage (persuading a skeptical stakeholder) about Acknowledge-then-refute with yes-but and evidence. Provide 4–5 True/False/Not Given statements testing nuanced understanding of Acknowledge-then-refute with yes-but and evidence, including one subtle distractor."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tfng'. Provide passage_title, passage, and 4 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
@@ -3630,9 +3612,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_INFER",
                                 activity="listen",
                                 task_widget="listen_infer",
-                                topic_override="Infer the argument behind a pitch — acknowledge then refute",
+                                topic_override="Acknowledge Then Refute — listening inference",
                                 generation_instructions=(
-                                    "Generate a persuasive dialogue (about 40 seconds) where one person makes a case, gives a reason and evidence, and the other raises a doubt. Ask the learner to infer the main claim, the evidence, and the doubt. B2 depth: Yes, but / That's a fair point; however… with evidence; picture persuasion includes polite refutation not only claim-reason."
+                                    "Generate a 50–70 word spoken exchange (persuading a skeptical stakeholder) where Acknowledge-then-refute with yes-but and evidence is implied. Ask 3 inference questions about stance, intent, or implied meaning tied to Acknowledge-then-refute with yes-but and evidence."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -3653,9 +3635,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_IDEA_PARA",
                                 activity="write",
                                 task_widget="write_paragraph",
-                                topic_override="Write a persuasive case — acknowledge then refute",
+                                topic_override="Acknowledge Then Refute — idea paragraph",
                                 generation_instructions=(
-                                    "Ask the learner to write a short persuasive paragraph arguing for a four-day work week, including a clear claim, one reason, one piece of evidence, and a polite acknowledgement of the other side. B2 depth: Yes, but / That's a fair point; however… with evidence; picture persuasion includes polite refutation not only claim-reason."
+                                    "Ask for a 90–120 word paragraph (persuading a skeptical stakeholder) arguing Acknowledge-then-refute with yes-but and evidence with claim, evidence, and explicit recommendation."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (I believe, because, for example, admittedly), minimum_words 25, sample_answer, and answer_hints."
@@ -3676,9 +3658,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override="Describe and argue about a scene — acknowledge then refute",
+                                topic_override="Acknowledge Then Refute — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe a picture of a public choice (for example a crowded car park next to an empty bus stop) aloud, and make a short case for one solution using a reason and evidence. B2 depth: Yes, but / That's a fair point; however… with evidence; picture persuasion includes polite refutation not only claim-reason."
+                                    "Describe an image scene (persuading a skeptical stakeholder) using Acknowledge-then-refute with yes-but and evidence in 4–5 connected sentences; include at least one depth-specific structure from Acknowledge-then-refute with yes-but and evidence."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a busy car park beside an empty bus lane, grammar_rule, and speaking_duration_seconds: 40."
@@ -3892,9 +3874,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TONE_ID",
                                 activity="read",
                                 task_widget="read_tone_id",
-                                topic_override="Professional vs casual in messages — register repair — manager vs teammate",
+                                topic_override="Register Repair — tone identification",
                                 generation_instructions=(
-                                    "Provide two short messages, one clearly professional and one clearly casual, and ask the learner to label each as Professional or Casual based on word choice and punctuation. B2 depth: repair blunt/vague messages for manager vs teammate; paraphrase and small talk switch register deliberately."
+                                    "Provide 3 short messages (the same message rewritten for two audiences) demonstrating Repair blunt or vague messages for manager vs teammate. Ask the learner to identify tone/register problems or best repair choice."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options (Professional, Casual), correct_index, and explanation."
@@ -3915,9 +3897,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_TONE",
                                 activity="listen",
                                 task_widget="listen_tone",
-                                topic_override="Professional vs casual in speech — register repair — manager vs teammate",
+                                topic_override="Register Repair — listening for tone",
                                 generation_instructions=(
-                                    "Generate a short spoken message (about 28 seconds) with clear register cues. Ask the learner to choose whether the speaker sounds professional or casual and why. B2 depth: repair blunt/vague messages for manager vs teammate; paraphrase and small talk switch register deliberately."
+                                    "Generate two 30–40 word clips (the same message rewritten for two audiences) showing contrasting tone for Repair blunt or vague messages for manager vs teammate. Ask which clip fits the required register and why."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_tone'. Provide audio_script and at least 1 MCQ item with prompt, options (Professional, Casual), correct_index, and explanation."
@@ -3938,9 +3920,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARAPHRASE",
                                 activity="write",
                                 task_widget="write_paraphrase",
-                                topic_override="Change message register — register repair — manager vs teammate",
+                                topic_override="Register Repair — paraphrase",
                                 generation_instructions=(
-                                    "Give the learner one professional message to rewrite as a casual note and one casual note to rewrite as a polite professional message, keeping the meaning the same while changing the register. B2 depth: repair blunt/vague messages for manager vs teammate; paraphrase and small talk switch register deliberately."
+                                    "Give 3 source sentences (the same message rewritten for two audiences) that are blunt, vague, or off-register; ask the learner to paraphrase for Repair blunt or vague messages for manager vs teammate."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paraphrase'. Provide 2 items, each with incorrect_sentence (the message to convert), sample_answer, and watch_hints."
@@ -3961,9 +3943,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_SMALLTALK",
                                 activity="speak",
                                 task_widget="speak_smalltalk",
-                                topic_override="Casual catch-up chat — register repair — manager vs teammate",
+                                topic_override="Register Repair — small talk",
                                 generation_instructions=(
-                                    "Set up relaxed small talk about plans for the weekend where the learner answers two turns in a friendly casual tone with one simple detail each. B2 depth: repair blunt/vague messages for manager vs teammate; paraphrase and small talk switch register deliberately."
+                                    "Small-talk prompts (the same message rewritten for two audiences) requiring Repair blunt or vague messages for manager vs teammate (echo, register shift, paraphrase, or inclusive invite) in natural replies."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (That sounds great, I might, probably, weekend), and speaking_duration_seconds: 35."
@@ -4181,9 +4163,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_STRUCTURE_ID",
                                 activity="read",
                                 task_widget="read_structure",
-                                topic_override="Discussion structure — paraphrase and invite quieter voice",
+                                topic_override="Paraphrase & Invite Quieter Voice — text structure",
                                 generation_instructions=(
-                                    "Provide a short focused discussion thread in 3 parts and ask the learner to label each part as the Opening (topic and first view), Building (agreeing, adding, and questioning), or Closing (summary and next step). B2 depth: paraphrase (So you mean…) plus inclusive invite; retell and spoken summary include one paraphrase and one invitation phrase."
+                                    "Provide a 4–5 paragraph outline or short text (a guided team discussion) about Paraphrase others' points and invite quieter voices. Ask the learner to identify structure elements (problem, cause, solution, recommendation) aligned with Paraphrase others' points and invite quieter voices."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_structure'. Provide passage_title, structure_labels ['Opening', 'Building', 'Closing'], and 3 items, each with label, paragraph, correct_answer, and explanation."
@@ -4204,9 +4186,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_RETELL",
                                 activity="listen",
                                 task_widget="listen_retell",
-                                topic_override="Retell a discussion — paraphrase and invite quieter voice",
+                                topic_override="Paraphrase & Invite Quieter Voice — listen and retell",
                                 generation_instructions=(
-                                    "Generate a focused discussion (about 55 seconds) where two people debate a topic, build on each other's points, and reach a conclusion. Ask the learner to retell the key points in writing in their own words (the topic, each view, the conclusion). B2 depth: paraphrase (So you mean…) plus inclusive invite; retell and spoken summary include one paraphrase and one invitation phrase."
+                                    "Generate a 60–80 word monologue (a guided team discussion) modeling Paraphrase others' points and invite quieter voices. Ask the learner to retell including the key depth moves from Paraphrase others' points and invite quieter voices."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_retell'. Set response_mode to 'written'. Provide audio_script, passage_to_retell, target_words, and grammar_rule."
@@ -4227,9 +4209,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_EMAIL",
                                 activity="write",
                                 task_widget="write_email",
-                                topic_override="Reply to a group thread — paraphrase and invite quieter voice",
+                                topic_override="Paraphrase & Invite Quieter Voice — email writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a short reply (45-60 words) to a group message thread discussing a shared decision, including a clear opinion, one point that builds on someone else's, one question, and a natural closing. B2 depth: paraphrase (So you mean…) plus inclusive invite; retell and spoken summary include one paraphrase and one invitation phrase."
+                                    "Ask for a short professional email (a guided team discussion) applying Paraphrase others' points and invite quieter voices with appropriate opening, body moves, and close."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_email'. Provide prompt, grammar_rule, target_words, minimum_words 45, sample_answer (with To and Subject lines), and answer_hints."
@@ -4250,9 +4232,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PRESENT",
                                 activity="speak",
                                 task_widget="speak_present",
-                                topic_override="Summarise a discussion — paraphrase and invite quieter voice",
+                                topic_override="Paraphrase & Invite Quieter Voice — presentation",
                                 generation_instructions=(
-                                    "Ask the learner to speak for up to 60 seconds summarising a recent discussion using a simple structure: the topic, the main views, and the conclusion they reached. B2 depth: paraphrase (So you mean…) plus inclusive invite; retell and spoken summary include one paraphrase and one invitation phrase."
+                                    "Presentation task (a guided team discussion): structured spoken segment showing Paraphrase others' points and invite quieter voices with signposts and a clear close."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_present'. Provide grammar_rule, target_words (we discussed, on one hand, on the other hand, in the end), a visual_prompt_description, an optional model_presentation, and speaking_duration_seconds: 60."
@@ -4474,9 +4456,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_WORD_MATCH",
                                 activity="read",
                                 task_widget="read_word_match",
-                                topic_override="Environment & Climate Vocabulary — policy collocations — offset and net zero",
+                                topic_override="Environment Collocations — word–definition match",
                                 generation_instructions=(
-                                    "Ask the learner to match environment words (pollution, renewable, drought, sustainable) to short definitions about the planet, energy, and the climate. B2 depth: environment collocations (carbon offset, net zero, emissions target) in a cohesive policy mini-paragraph; assume base environment words from yesterday."
+                                    "Create 6–8 target words/phrases for Policy collocations: carbon offset, net zero, emissions target and short definitions (a city or company sustainability policy note). Learners match each term to the definition that fits the depth collocation or usage."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_word_match'. Provide options (the environment words) and 4 items, each with prompt (the definition), correct_answer, and explanation."
@@ -4497,9 +4479,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="A talk about the climate — policy collocations — offset and net zero",
+                                topic_override="Environment Collocations — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a short scenario (about 30 seconds) where someone describes a local environmental problem, its cause, and one sustainable solution. Ask the learner what the problem is, the cause, and the solution. B2 depth: environment collocations (carbon offset, net zero, emissions target) in a cohesive policy mini-paragraph; assume base environment words from yesterday."
+                                    "Generate a 70–100 word spoken script (a city or company sustainability policy note) using Policy collocations: carbon offset, net zero, emissions target. Then 3–4 MCQs: at least two must test understanding of Policy collocations: carbon offset, net zero, emissions target (form, stance, or structure), not single-fact recall."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -4520,11 +4502,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override=(
-                                    "Environment vocabulary sentence transformation — policy collocations — offset and net zero"
-                                ),
+                                topic_override="Environment Collocations — sentence transformation",
                                 generation_instructions=(
-                                    "Give the learner 2-3 wordy descriptions of environmental ideas (energy that never runs out, a long time without rain, harmful waste in the air) and ask them to rewrite each using the precise word (renewable, drought, pollution). B2 depth: environment collocations (carbon offset, net zero, emissions target) in a cohesive policy mini-paragraph; assume base environment words from yesterday."
+                                    "Provide 3 transform items (a city or company sustainability policy note) where source and target practice Policy collocations: carbon offset, net zero, emissions target (e.g. direct to reported, active to passive, clause reduction)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 2-3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -4545,9 +4525,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override="Describe an environment scene — policy collocations — offset and net zero",
+                                topic_override="Environment Collocations — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe a photo of an environmental scene aloud (for example a city under smog or a wind farm), naming what is happening using environment words such as pollution, renewable, and sustainable. B2 depth: environment collocations (carbon offset, net zero, emissions target) in a cohesive policy mini-paragraph; assume base environment words from yesterday."
+                                    "Describe an image scene (a city or company sustainability policy note) using Policy collocations: carbon offset, net zero, emissions target in 4–5 connected sentences; include at least one depth-specific structure from Policy collocations: carbon offset, net zero, emissions target."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a wind farm beside a smoggy city skyline, grammar_rule, and speaking_duration_seconds: 45."
@@ -4760,9 +4740,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CONTEXT_MCQ",
                                 activity="read",
                                 task_widget="read_context_mcq",
-                                topic_override="Education & Learning — study journey verbs — enrol and assess",
+                                topic_override="Study Journey Verbs — vocabulary in context",
                                 generation_instructions=(
-                                    "Write a short passage about a student who enrols on a course, works on an assignment, and revises for an exam, then ask the learner to infer the meaning of 'revise' from context. B2 depth: course narrative with study verbs (enrol, assess, submit, graduate); dictation and timed speech use connected journey order."
+                                    "Write a 80–110 word passage (a learner's education path) using Study-journey verbs in a course narrative (enrol, assess, submit). Create 4 MCQs choosing the best word/phrase for each gap to demonstrate Study-journey verbs in a course narrative (enrol, assess, submit)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_context_mcq'. Provide passage_title, passage, and at least 1 MCQ item with prompt, options, correct_index, and explanation."
@@ -4783,9 +4763,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_DICTATION",
                                 activity="listen",
                                 task_widget="listen_dictation",
-                                topic_override="Course Announcement — study journey verbs — enrol and assess",
+                                topic_override="Study Journey Verbs — dictation",
                                 generation_instructions=(
-                                    "Generate a short, clear course announcement (about 12 seconds) with precise education vocabulary (assignment, deadline, qualification), and ask the learner to type the exact sentence they hear. B2 depth: course narrative with study verbs (enrol, assess, submit, graduate); dictation and timed speech use connected journey order."
+                                    "Generate 4 short audio lines (a learner's education path) that exemplify Study-journey verbs in a course narrative (enrol, assess, submit) for exact dictation. Each line should highlight one feature of Study-journey verbs in a course narrative (enrol, assess, submit)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_dictation'. Provide audio_script, target_words (the key education words), and 1 dictation item with prompt, correct_answer, and explanation."
@@ -4806,9 +4786,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_WORD_UPGRADE",
                                 activity="write",
                                 task_widget="write_word_upgrade",
-                                topic_override="Vocabulary Word Upgrade — study journey verbs — enrol and assess",
+                                topic_override="Study Journey Verbs — word upgrade",
                                 generation_instructions=(
-                                    "Give the learner 3 plain education sentences (I signed up for a class, I will study again before the test, the work is due on Friday) and ask them to rewrite each using a precise education word (enrolled, revise, deadline). B2 depth: course narrative with study verbs (enrol, assess, submit, graduate); dictation and timed speech use connected journey order."
+                                    "Give 3 informal or vague sentences (a learner's education path); ask the learner to upgrade vocabulary to precise terms that express Study-journey verbs in a course narrative (enrol, assess, submit)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_word_upgrade'. Provide 3 items, each with source_sentence, target_upgrade_word, sample_answer, and watch_hints."
@@ -4829,9 +4809,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override="Timed Monologue Speech — study journey verbs — enrol and assess",
+                                topic_override="Study Journey Verbs — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to describe how they study for an exam for up to 60 seconds, covering the course, an assignment, how they revise, and the deadline, using education words. B2 depth: course narrative with study verbs (enrol, assess, submit, graduate); dictation and timed speech use connected journey order."
+                                    "Create exactly 3 speaking prompts (a learner's education path) each forcing production of Study-journey verbs in a course narrative (enrol, assess, submit). Model answers must satisfy the prompt."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (enrol, assignment, revise, qualification), and speaking_duration_seconds: 60."
@@ -5041,9 +5021,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_WORD_MATCH",
                                 activity="read",
                                 task_widget="read_word_match",
-                                topic_override="Culture & Society — respectful framing and nuanced adjectives",
+                                topic_override="Respectful Framing & Nuanced Adjectives — word–definition match",
                                 generation_instructions=(
-                                    "Ask the learner to match culture words (tradition, community, diversity, heritage) to short definitions. B2 depth: sensitive culture topics with respectful framing and nuanced adjectives; avoid stereotypes in prompts and sample answers."
+                                    "Create 6–8 target words/phrases for Respectful framing and nuanced adjectives on sensitive topics and short definitions (culture and society in a community profile). Learners match each term to the definition that fits the depth collocation or usage."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_word_match'. Provide options (the culture words) and 4 items, each with prompt (the definition), correct_answer, and explanation."
@@ -5064,9 +5044,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Describing a local festival — respectful framing and nuanced adjectives",
+                                topic_override="Respectful Framing & Nuanced Adjectives — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a short monologue (about 25 seconds) where someone describes a community festival, a tradition, and why it matters. Ask comprehension questions about the festival, how often it happens, and why people value it. B2 depth: sensitive culture topics with respectful framing and nuanced adjectives; avoid stereotypes in prompts and sample answers."
+                                    "Generate a 70–100 word spoken script (culture and society in a community profile) using Respectful framing and nuanced adjectives on sensitive topics. Then 3–4 MCQs: at least two must test understanding of Respectful framing and nuanced adjectives on sensitive topics (form, stance, or structure), not single-fact recall."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -5087,9 +5067,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARA",
                                 activity="write",
                                 task_widget="write_paragraph",
-                                topic_override="Describe a tradition — respectful framing and nuanced adjectives",
+                                topic_override="Respectful Framing & Nuanced Adjectives — paragraph writing",
                                 generation_instructions=(
-                                    "Ask the learner to write 3-4 sentences about a tradition or community event in their culture, including the words tradition and heritage. B2 depth: sensitive culture topics with respectful framing and nuanced adjectives; avoid stereotypes in prompts and sample answers."
+                                    "Ask for one 80–110 word paragraph (culture and society in a community profile) that must show Respectful framing and nuanced adjectives on sensitive topics with clear organisation (topic sentence, support, close)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (tradition, community, heritage, celebrate), minimum_words 20, sample_answer, and answer_hints."
@@ -5110,9 +5090,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override="Describe a cultural scene — respectful framing and nuanced adjectives",
+                                topic_override="Respectful Framing & Nuanced Adjectives — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe a cultural scene aloud, naming what people are doing using 'There is' or 'I can see' and culture words. B2 depth: sensitive culture topics with respectful framing and nuanced adjectives; avoid stereotypes in prompts and sample answers."
+                                    "Describe an image scene (culture and society in a community profile) using Respectful framing and nuanced adjectives on sensitive topics in 4–5 connected sentences; include at least one depth-specific structure from Respectful framing and nuanced adjectives on sensitive topics."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a street festival with people in traditional dress, grammar_rule, and speaking_duration_seconds: 45."
@@ -5324,9 +5304,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CONTEXT_MCQ",
                                 activity="read",
                                 task_widget="read_context_mcq",
-                                topic_override="Working Life — career move collocations — HR-style chat",
+                                topic_override="Career Move Collocations — vocabulary in context",
                                 generation_instructions=(
-                                    "Write a short passage describing how a team collaborates on a project, meets a deadline, and how one member is promoted, and ask the learner to infer the meaning of 'collaborate' from context. B2 depth: HR-style micro-dialogues with career collocations (apply for, hand in notice, get promoted, collaborate on); timed speech sounds like a brief career check-in."
+                                    "Write a 80–110 word passage (a career change conversation) using HR-style career-move collocations. Create 4 MCQs choosing the best word/phrase for each gap to demonstrate HR-style career-move collocations."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_context_mcq'. Provide passage_title, passage, and at least 1 MCQ item with prompt, options, correct_index, and explanation."
@@ -5347,9 +5327,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_DICTATION",
                                 activity="listen",
                                 task_widget="listen_dictation",
-                                topic_override="Talking about a job — career move collocations — HR-style chat",
+                                topic_override="Career Move Collocations — dictation",
                                 generation_instructions=(
-                                    "Generate a short sentence (about 14 seconds) using work vocabulary (promote, collaborate, deadline), and ask the learner to type the exact sentence. B2 depth: HR-style micro-dialogues with career collocations (apply for, hand in notice, get promoted, collaborate on); timed speech sounds like a brief career check-in."
+                                    "Generate 4 short audio lines (a career change conversation) that exemplify HR-style career-move collocations for exact dictation. Each line should highlight one feature of HR-style career-move collocations."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_dictation'. Provide audio_script, target_words (the key work words), and 1 dictation item with prompt, correct_answer, and explanation."
@@ -5370,9 +5350,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARAPHRASE",
                                 activity="write",
                                 task_widget="write_paraphrase",
-                                topic_override="Rewrite with work vocabulary — career move collocations — HR-style chat",
+                                topic_override="Career Move Collocations — paraphrase",
                                 generation_instructions=(
-                                    "Give the learner 2 plain sentences about work (we all worked together on the report, she left her job last month) and ask them to rewrite each using more precise work vocabulary (collaborated, resigned). B2 depth: HR-style micro-dialogues with career collocations (apply for, hand in notice, get promoted, collaborate on); timed speech sounds like a brief career check-in."
+                                    "Give 3 source sentences (a career change conversation) that are blunt, vague, or off-register; ask the learner to paraphrase for HR-style career-move collocations."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paraphrase'. Provide 2 items, each with incorrect_sentence (the plain sentence), sample_answer, and watch_hints."
@@ -5393,9 +5373,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override="Timed Work Speech — career move collocations — HR-style chat",
+                                topic_override="Career Move Collocations — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to talk for up to 60 seconds about their work or studies, describing what they do, who they collaborate with, and an important deadline. B2 depth: HR-style micro-dialogues with career collocations (apply for, hand in notice, get promoted, collaborate on); timed speech sounds like a brief career check-in."
+                                    "Create exactly 3 speaking prompts (a career change conversation) each forcing production of HR-style career-move collocations. Model answers must satisfy the prompt."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (promote, resign, collaborate, deadline), and speaking_duration_seconds: 60."
@@ -5604,11 +5584,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_WORD_MATCH",
                                 activity="read",
                                 task_widget="read_word_match",
-                                topic_override=(
-                                    "News & Current Issues Vocabulary — claim vs evidence — reportedly and allegedly"
-                                ),
+                                topic_override="Claim vs Evidence — word–definition match",
                                 generation_instructions=(
-                                    "Ask the learner to match news words (headline, policy, debate, impact) to their meanings. B2 depth: separate opinion from fact; use reportedly, allegedly, according to; MCQ and picture description test evidence vs speculation."
+                                    "Create 6–8 target words/phrases for Distinguish claim vs evidence with reportedly/allegedly and short definitions (a news item or opinion piece). Learners match each term to the definition that fits the depth collocation or usage."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_word_match'. Provide options (the news words) and 4 items, each with prompt (the meaning), correct_answer, and explanation."
@@ -5629,9 +5607,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="A news report — claim vs evidence — reportedly and allegedly",
+                                topic_override="Claim vs Evidence — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a monologue (about 40 seconds) where a reporter summarises a story, a new policy, and its impact. Ask comprehension questions about the story, the policy, and the impact. B2 depth: separate opinion from fact; use reportedly, allegedly, according to; MCQ and picture description test evidence vs speculation."
+                                    "Generate a 70–100 word spoken script (a news item or opinion piece) using Distinguish claim vs evidence with reportedly/allegedly. Then 3–4 MCQs: at least two must test understanding of Distinguish claim vs evidence with reportedly/allegedly (form, stance, or structure), not single-fact recall."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -5652,11 +5630,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override=(
-                                    "News vocabulary sentence transformation — claim vs evidence — reportedly and allegedly"
-                                ),
+                                topic_override="Claim vs Evidence — sentence transformation",
                                 generation_instructions=(
-                                    "Give the learner 3 wordy news phrases (the title of the story, a plan made by the government, the effect it had on people) and ask them to rewrite each using a precise news word (headline, policy, impact). B2 depth: separate opinion from fact; use reportedly, allegedly, according to; MCQ and picture description test evidence vs speculation."
+                                    "Provide 3 transform items (a news item or opinion piece) where source and target practice Distinguish claim vs evidence with reportedly/allegedly (e.g. direct to reported, active to passive, clause reduction)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -5677,9 +5653,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override="Describe a news scene — claim vs evidence — reportedly and allegedly",
+                                topic_override="Claim vs Evidence — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe a news scene aloud, using news words (headline, policy, debate, impact) to talk about what is happening and why it matters. B2 depth: separate opinion from fact; use reportedly, allegedly, according to; MCQ and picture description test evidence vs speculation."
+                                    "Describe an image scene (a news item or opinion piece) using Distinguish claim vs evidence with reportedly/allegedly in 4–5 connected sentences; include at least one depth-specific structure from Distinguish claim vs evidence with reportedly/allegedly."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a news studio with a reporter and a headline on the screen, grammar_rule, and speaking_duration_seconds: 45."
@@ -5896,9 +5872,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CONTEXT_MCQ",
                                 activity="read",
                                 task_widget="read_context_mcq",
-                                topic_override="Infer values from context — values in action — define plus micro-scenario",
+                                topic_override="Values in Action — vocabulary in context",
                                 generation_instructions=(
-                                    "Write a short profile of a person whose actions reveal their values (keeps promises even when it is hard, recovers after setbacks, listens to other views). Ask the learner to infer the quality word that best fits at each point. B2 depth: each value word needs a definition plus a concrete micro-scenario; timed speech uses integrity/resilience/perspective with brief examples."
+                                    "Write a 80–110 word passage (workplace or civic values in action) using Define abstract values with micro-scenario examples. Create 4 MCQs choosing the best word/phrase for each gap to demonstrate Define abstract values with micro-scenario examples."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_context_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -5919,9 +5895,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_DICTATION",
                                 activity="listen",
                                 task_widget="listen_dictation",
-                                topic_override="Dictate values words — values in action — define plus micro-scenario",
+                                topic_override="Values in Action — dictation",
                                 generation_instructions=(
-                                    "Generate a short personal description (about 45 seconds) in which the speaker names abstract qualities (integrity, resilience). Ask the learner to type the exact quality word that completes each blanked sentence. B2 depth: each value word needs a definition plus a concrete micro-scenario; timed speech uses integrity/resilience/perspective with brief examples."
+                                    "Generate 4 short audio lines (workplace or civic values in action) that exemplify Define abstract values with micro-scenario examples for exact dictation. Each line should highlight one feature of Define abstract values with micro-scenario examples."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_dictation'. Provide audio_script, target_words (the quality words), and 2 dictation items, each with a prompt sentence containing a blank, correct_answer, and explanation."
@@ -5942,9 +5918,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_WORD_UPGRADE",
                                 activity="write",
                                 task_widget="write_word_upgrade",
-                                topic_override="Upgrade values vocabulary — values in action — define plus micro-scenario",
+                                topic_override="Values in Action — word upgrade",
                                 generation_instructions=(
-                                    "Give the learner 3 plain sentences about values (he is always honest and fair, she keeps going after problems, he understands how others feel) and ask them to rewrite each using a stronger quality word (integrity, resilience, empathy). B2 depth: each value word needs a definition plus a concrete micro-scenario; timed speech uses integrity/resilience/perspective with brief examples."
+                                    "Give 3 informal or vague sentences (workplace or civic values in action); ask the learner to upgrade vocabulary to precise terms that express Define abstract values with micro-scenario examples."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_word_upgrade'. Provide 3 items, each with source_sentence, target_upgrade_word, sample_answer, and watch_hints."
@@ -5965,9 +5941,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override="Talk about a value you admire — values in action — define plus micro-scenario",
+                                topic_override="Values in Action — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to talk about a person they admire using at least one strong quality word and explaining why that value matters. B2 depth: each value word needs a definition plus a concrete micro-scenario; timed speech uses integrity/resilience/perspective with brief examples."
+                                    "Create exactly 3 speaking prompts (workplace or civic values in action) each forcing production of Define abstract values with micro-scenario examples. Model answers must satisfy the prompt."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (integrity, resilience, perspective, empathy, ambition), and speaking_duration_seconds: 45."
@@ -6181,9 +6157,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_WORD_MATCH",
                                 activity="read",
                                 task_widget="read_word_match",
-                                topic_override="Weekly Review Match — week 3 lexis in one review paragraph",
+                                topic_override="Week Review Paragraph — word–definition match",
                                 generation_instructions=(
-                                    "Ask the learner to match 6 words from across the week (one per topic, for example sustainable, qualification, heritage, collaborate, policy, resilience) to their definitions. B2 depth: recycle week 3 collocations (offset, enrol, inclusive, promoted, reportedly, integrity) in one cohesive paragraph; speaking challenge uses cross-topic collocations naturally."
+                                    "Create 6–8 target words/phrases for Recycle week 3 vocabulary in one cohesive paragraph and short definitions (a week-in-review vocabulary consolidation). Learners match each term to the definition that fits the depth collocation or usage."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_word_match'. Provide options (the 6 words) and 6 items, each with prompt (the definition), correct_answer, and explanation."
@@ -6204,9 +6180,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Weekly consolidation story — week 3 lexis in one review paragraph",
+                                topic_override="Week Review Paragraph — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a short personal story (about 28 seconds) that weaves in vocabulary from all six topics (sustainable, qualification, heritage, collaborate, policy, resilience). Ask comprehension questions that depend on those words. B2 depth: recycle week 3 collocations (offset, enrol, inclusive, promoted, reportedly, integrity) in one cohesive paragraph; speaking challenge uses cross-topic collocations naturally."
+                                    "Generate a 70–100 word spoken script (a week-in-review vocabulary consolidation) using Recycle week 3 vocabulary in one cohesive paragraph. Then 3–4 MCQs: at least two must test understanding of Recycle week 3 vocabulary in one cohesive paragraph (form, stance, or structure), not single-fact recall."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -6227,9 +6203,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARA",
                                 activity="write",
                                 task_widget="write_paragraph",
-                                topic_override="Free recall writing — week 3 lexis in one review paragraph",
+                                topic_override="Week Review Paragraph — paragraph writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a short paragraph (3-5 sentences) on any topic that uses at least 5 words learned this week, integrating them smoothly. B2 depth: recycle week 3 collocations (offset, enrol, inclusive, promoted, reportedly, integrity) in one cohesive paragraph; speaking challenge uses cross-topic collocations naturally."
+                                    "Ask for one 80–110 word paragraph (a week-in-review vocabulary consolidation) that must show Recycle week 3 vocabulary in one cohesive paragraph with clear organisation (topic sentence, support, close)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (the week's words), minimum_words 25, sample_answer, and answer_hints."
@@ -6250,9 +6226,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override="Playful end-of-week recall challenge — week 3 lexis in one review paragraph",
+                                topic_override="Week Review Paragraph — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to talk for up to 90 seconds on any topic, using as many of this week's vocabulary words as they can in natural, spontaneous speech. B2 depth: recycle week 3 collocations (offset, enrol, inclusive, promoted, reportedly, integrity) in one cohesive paragraph; speaking challenge uses cross-topic collocations naturally."
+                                    "Create exactly 3 speaking prompts (a week-in-review vocabulary consolidation) each forcing production of Recycle week 3 vocabulary in one cohesive paragraph. Model answers must satisfy the prompt."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (the week's words), and speaking_duration_seconds: 90."
@@ -6474,9 +6450,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="Leading a group discussion story — timebox and decision recap",
+                                topic_override="Timebox & Decision Recap — reading comprehension",
                                 generation_instructions=(
-                                    "Write a short, encouraging story about someone who guides a group discussion: they open the topic, invite a quiet member to share, and summarise the group's decision. Then ask comprehension questions about how they opened, who they invited, and the result. B2 depth: steer with timeboxing; close with So we agreed / action recap; read-aloud paragraph models facilitation language."
+                                    "Write a 120–150 word passage (leading a short team discussion) rich in Timebox discussion and close with decision recap and actions. Add 3–4 comprehension MCQs where at least two require applying Timebox discussion and close with decision recap and actions, not only locating a noun or date."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -6497,9 +6473,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_SHADOW",
                                 activity="listen",
                                 task_widget="listen_shadow",
-                                topic_override="Confident invitation shadowing — timebox and decision recap",
+                                topic_override="Timebox & Decision Recap — shadowing",
                                 generation_instructions=(
-                                    "Generate a short, warm clip (about 15 seconds) of a person inviting others into a discussion (What do you think, Priya? / Let's hear another view.), for the learner to shadow with natural pacing and confidence. B2 depth: steer with timeboxing; close with So we agreed / action recap; read-aloud paragraph models facilitation language."
+                                    "Provide a 50–60 word script (leading a short team discussion) dense with Timebox discussion and close with decision recap and actions for shadowing practice. Rhythm and phrasing should model natural B2 delivery."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow (a sentence or two from the script), target_words, and grammar_rule."
@@ -6520,9 +6496,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override="Reframe passive language into leadership language — timebox and decision recap",
+                                topic_override="Timebox & Decision Recap — sentence transformation",
                                 generation_instructions=(
-                                    "Give the learner 3 passive statements (I just follow what others decide, I never lead anything, nobody listens to me) and ask them to reframe each into confident leadership language using verbs like guide, invite, and summarise. B2 depth: steer with timeboxing; close with So we agreed / action recap; read-aloud paragraph models facilitation language."
+                                    "Provide 3 transform items (leading a short team discussion) where source and target practice Timebox discussion and close with decision recap and actions (e.g. direct to reported, active to passive, clause reduction)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -6543,9 +6519,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_READ_ALOUD",
                                 activity="speak",
                                 task_widget="read_aloud",
-                                topic_override="Leadership paragraph read aloud — timebox and decision recap",
+                                topic_override="Timebox & Decision Recap — read aloud",
                                 generation_instructions=(
-                                    "Give the learner a short, positive paragraph (about 35 words) about guiding a group and inviting every voice in, to read aloud with clear pronunciation and steady pacing. B2 depth: steer with timeboxing; close with So we agreed / action recap; read-aloud paragraph models facilitation language."
+                                    "Write a 50–60 word passage (leading a short team discussion) dense with Timebox discussion and close with decision recap and actions for read-aloud; not an introductory lesson on the parent base form."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_aloud'. Provide text_to_read_aloud, grammar_rule about clear pronunciation and breathing pauses, target_words, and speaking_duration_seconds: 30."
@@ -6761,9 +6737,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TONE_ID",
                                 activity="read",
                                 task_widget="read_tone_id",
-                                topic_override="Strong vs weak argument — counterclaim and one rebuttal",
+                                topic_override="Counterclaim & One Rebuttal — tone identification",
                                 generation_instructions=(
-                                    "Provide two short responses to the same question, one a well-built argument (claim, reason, example) and one a weak opinion with no support, and ask the learner to label each as Well-built or Weak. B2 depth: include counterclaim (While it's true / Some argue) and one rebuttal (However…); timed write and speak use however-layer."
+                                    "Provide 3 short messages (a clear argument on a work topic) demonstrating Counterclaim with however and one rebuttal. Ask the learner to identify tone/register problems or best repair choice."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options (Weak / Unsupported, Well-built / Supported), correct_index, and explanation."
@@ -6784,9 +6760,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Argument structure patterns — counterclaim and one rebuttal",
+                                topic_override="Counterclaim & One Rebuttal — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a clip (about 22 seconds) of two speakers answering the same question: one gives only an opinion, one gives a claim with a reason and an example. Ask the learner which speaker builds a clearer argument. B2 depth: include counterclaim (While it's true / Some argue) and one rebuttal (However…); timed write and speak use however-layer."
+                                    "Generate a 70–100 word spoken script (a clear argument on a work topic) using Counterclaim with however and one rebuttal. Then 3–4 MCQs: at least two must test understanding of Counterclaim with however and one rebuttal (form, stance, or structure), not single-fact recall."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and at least 1 MCQ item with prompt, options, correct_index, and explanation."
@@ -6807,9 +6783,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_TIMED",
                                 activity="write",
                                 task_widget="write_timed",
-                                topic_override="Timed Argument Write — counterclaim and one rebuttal",
+                                topic_override="Counterclaim & One Rebuttal — timed writing",
                                 generation_instructions=(
-                                    "Ask the learner to argue in writing whether students should learn a second language, in at least 25 words under a short time limit, including a claim, a reason, and an example. B2 depth: include counterclaim (While it's true / Some argue) and one rebuttal (However…); timed write and speak use however-layer."
+                                    "Timed writing (a clear argument on a work topic): produce a structured response demonstrating Counterclaim with however and one rebuttal within the time limit; include clear signposts or moves from the depth angle."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (I argue that, because, for instance, therefore), writing_duration_seconds: 180, sample_answer, and answer_hints."
@@ -6830,9 +6806,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override="Timed Improvised Argument Speech — counterclaim and one rebuttal",
+                                topic_override="Counterclaim & One Rebuttal — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to speak for up to 60 seconds on whether technology makes life easier, building a clear argument with a claim, a reason, and an example. B2 depth: include counterclaim (While it's true / Some argue) and one rebuttal (However…); timed write and speak use however-layer."
+                                    "Create exactly 3 speaking prompts (a clear argument on a work topic) each forcing production of Counterclaim with however and one rebuttal. Model answers must satisfy the prompt."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (I believe, because, for example, overall), and speaking_duration_seconds: 60."
@@ -7050,9 +7026,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="A personal goals bio — prioritising with whereas and on the other hand",
+                                topic_override="Prioritising with Whereas/On the other hand — reading comprehension",
                                 generation_instructions=(
-                                    "Write a short first-person bio of someone who describes a clear goal, the trade-off it involves, and their plan to reach it. Then ask comprehension questions about their goal, the trade-off, their plan, and their motivation. B2 depth: compare goals with whereas / on the other hand; picture description speculates on ambition with contrast connectors."
+                                    "Write a 120–150 word passage (personal or professional goal trade-offs) rich in Compare goals with whereas and on the other hand. Add 3–4 comprehension MCQs where at least two require applying Compare goals with whereas and on the other hand, not only locating a noun or date."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -7073,11 +7049,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_TONE",
                                 activity="listen",
                                 task_widget="listen_tone",
-                                topic_override=(
-                                    "Realistic vs unrealistic ambition — prioritising with whereas and on the other hand"
-                                ),
+                                topic_override="Prioritising with Whereas/On the other hand — listening for tone",
                                 generation_instructions=(
-                                    "Generate two versions of the same person describing their goals: a grounded-realistic version (I'm working toward..., step by step) and an unrealistic version (I'll be famous next month, no effort needed). Ask the learner to label each version's tone. B2 depth: compare goals with whereas / on the other hand; picture description speculates on ambition with contrast connectors."
+                                    "Generate two 30–40 word clips (personal or professional goal trade-offs) showing contrasting tone for Compare goals with whereas and on the other hand. Ask which clip fits the required register and why."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_tone'. Provide two intros (each with id, label, speaker, audio_script) and 2 MCQ items, each with prompt, options (Unrealistic / Vague, Realistic / Grounded), correct_index, and explanation."
@@ -7098,11 +7072,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override=(
-                                    "Richer goal-statement transforms — prioritising with whereas and on the other hand"
-                                ),
+                                topic_override="Prioritising with Whereas/On the other hand — sentence transformation",
                                 generation_instructions=(
-                                    "Give the learner 3 plain goal statements (I want a better job, I hope to travel, I would like to study more) and ask them to rewrite each into a clearer, grounded goal with a trade-off or step (I'm aiming to..., which means...). B2 depth: compare goals with whereas / on the other hand; picture description speculates on ambition with contrast connectors."
+                                    "Provide 3 transform items (personal or professional goal trade-offs) where source and target practice Compare goals with whereas and on the other hand (e.g. direct to reported, active to passive, clause reduction)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -7123,11 +7095,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override=(
-                                    "Describe a person working toward a goal — prioritising with whereas and on the other hand"
-                                ),
+                                topic_override="Prioritising with Whereas/On the other hand — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe a picture of a person working toward a goal, saying what they are doing and what ambition they might be pursuing, using speculative phrases like looks like, seems to be, and might be. B2 depth: compare goals with whereas / on the other hand; picture description speculates on ambition with contrast connectors."
+                                    "Describe an image scene (personal or professional goal trade-offs) using Compare goals with whereas and on the other hand in 4–5 connected sentences; include at least one depth-specific structure from Compare goals with whereas and on the other hand."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a person studying late at a desk covered in plans, grammar_rule about speculative language, and speaking_duration_seconds: 45."
@@ -7344,9 +7314,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TONE_ID",
                                 activity="read",
                                 task_widget="read_tone_id",
-                                topic_override="Responding tone shift — clarify, agree partly, plan fix",
+                                topic_override="Clarify, Agree Partly, Plan Fix — tone identification",
                                 generation_instructions=(
-                                    "Provide two short messages where a speaker first reacts defensively and then responds calmly to criticism, and ask the learner to identify the tone shift in each (for example defensive to open, annoyed to composed). B2 depth: non-defensive 3-step (clarify, That's fair and…, I'll fix by…); smalltalk pushback requires partial agreement plus action plan."
+                                    "Provide 3 short messages (receiving feedback on performance) demonstrating Non-defensive three-step response to criticism. Ask the learner to identify tone/register problems or best repair choice."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options describing tone shifts, correct_index, and explanation."
@@ -7367,9 +7337,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_SHADOW",
                                 activity="listen",
                                 task_widget="listen_shadow",
-                                topic_override="Calm response phrases — clarify, agree partly, plan fix",
+                                topic_override="Clarify, Agree Partly, Plan Fix — shadowing",
                                 generation_instructions=(
-                                    "Generate a short clip (about 20 seconds) where a speaker responds calmly to criticism using phrases like 'That's a fair point', 'I see what you mean', and 'Let me explain my thinking', for the learner to shadow with the same calm flow. B2 depth: non-defensive 3-step (clarify, That's fair and…, I'll fix by…); smalltalk pushback requires partial agreement plus action plan."
+                                    "Provide a 50–60 word script (receiving feedback on performance) dense with Non-defensive three-step response to criticism for shadowing practice. Rhythm and phrasing should model natural B2 delivery."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow, target_words (That's a fair point, I see what you mean, Let me explain), and grammar_rule."
@@ -7390,9 +7360,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_TIMED",
                                 activity="write",
                                 task_widget="write_timed",
-                                topic_override="Reflecting on criticism — clarify, agree partly, plan fix",
+                                topic_override="Clarify, Agree Partly, Plan Fix — timed writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a short personal reflection under a short time limit on how they respond when someone criticises their work, using transition words to organise their thoughts. B2 depth: non-defensive 3-step (clarify, That's fair and…, I'll fix by…); smalltalk pushback requires partial agreement plus action plan."
+                                    "Timed writing (receiving feedback on performance): produce a structured response demonstrating Non-defensive three-step response to criticism within the time limit; include clear signposts or moves from the depth angle."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (Usually, Instead of, In future), writing_duration_seconds: 180, sample_answer, and answer_hints."
@@ -7413,9 +7383,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_SMALLTALK",
                                 activity="speak",
                                 task_widget="speak_smalltalk",
-                                topic_override="Unpredictable pushback — clarify, agree partly, plan fix",
+                                topic_override="Clarify, Agree Partly, Plan Fix — small talk",
                                 generation_instructions=(
-                                    "Set up an unpredictable exchange where the partner pushes back on the learner's idea and the learner stays calm, acknowledges the point, and responds without getting defensive. B2 depth: non-defensive 3-step (clarify, That's fair and…, I'll fix by…); smalltalk pushback requires partial agreement plus action plan."
+                                    "Small-talk prompts (receiving feedback on performance) requiring Non-defensive three-step response to criticism (echo, register shift, paraphrase, or inclusive invite) in natural replies."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (That's fair, I understand, even so), and speaking_duration_seconds: 30."
@@ -7608,7 +7578,7 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 id="give_reasons",
                                 goal="Model a clear pitch structure.",
                                 instruction=(
-                                    "Affirm the idea. Ask them to anticipate one objection and reply with That's a fair point; however… in two sentences."
+                                    "Affirm the idea. Ask them to answer one objection with That's a fair point; however… in one sentence."
                                 ),
                             ),
                             TeacherStep(
@@ -7628,9 +7598,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="A short pitch — elevator pitch plus one objection",
+                                topic_override="Elevator Pitch + One Objection — reading comprehension",
                                 generation_instructions=(
-                                    "Write a warm first-person passage where someone pitches an idea to improve their community (for example a shared tool library), covering the problem, the idea, the benefit, and the next step. Then ask comprehension questions about each. B2 depth: ~60s pitch with problem-idea-benefit; picture task includes one objection and brief rebuttal; sentence transforms upgrade to pitch register."
+                                    "Write a 120–150 word passage (pitching an idea to a decision-maker) rich in 60-second pitch plus handling one objection. Add 3–4 comprehension MCQs where at least two require applying 60-second pitch plus handling one objection, not only locating a noun or date."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -7651,9 +7621,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Enthusiasm for an idea — elevator pitch plus one objection",
+                                topic_override="Elevator Pitch + One Objection — listening MCQ",
                                 generation_instructions=(
-                                    "Generate an enthusiastic monologue (about 25 seconds) where someone pitches an idea (the problem it solves, the idea itself, the benefit). Ask comprehension questions about those details. B2 depth: ~60s pitch with problem-idea-benefit; picture task includes one objection and brief rebuttal; sentence transforms upgrade to pitch register."
+                                    "Generate a 70–100 word spoken script (pitching an idea to a decision-maker) using 60-second pitch plus handling one objection. Then 3–4 MCQs: at least two must test understanding of 60-second pitch plus handling one objection (form, stance, or structure), not single-fact recall."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -7674,9 +7644,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override="Upgrade plain ideas into pitches — elevator pitch plus one objection",
+                                topic_override="Elevator Pitch + One Objection — sentence transformation",
                                 generation_instructions=(
-                                    "Give the learner 3 plain idea statements (we need more bins, the app is slow, meetings are too long) and ask them to transform each into a brief pitch naming the problem and the benefit using patterns like 'The problem is..., so I suggest..., which would...'. B2 depth: ~60s pitch with problem-idea-benefit; picture task includes one objection and brief rebuttal; sentence transforms upgrade to pitch register."
+                                    "Provide 3 transform items (pitching an idea to a decision-maker) where source and target practice 60-second pitch plus handling one objection (e.g. direct to reported, active to passive, clause reduction)."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -7697,9 +7667,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override="Describe a scene that needs a solution — elevator pitch plus one objection",
+                                topic_override="Elevator Pitch + One Objection — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe a scene that shows a problem aloud (the scene, what is wrong) and pitch one idea to improve it, using confident problem-idea-benefit language. B2 depth: ~60s pitch with problem-idea-benefit; picture task includes one objection and brief rebuttal; sentence transforms upgrade to pitch register."
+                                    "Describe an image scene (pitching an idea to a decision-maker) using 60-second pitch plus handling one objection in 4–5 connected sentences; include at least one depth-specific structure from 60-second pitch plus handling one objection."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing an overflowing recycling area outside an office, grammar_rule, and speaking_duration_seconds: 45."
@@ -7918,9 +7888,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TONE_ID",
                                 activity="read",
                                 task_widget="read_tone_id",
-                                topic_override="Structure in longer talks — signposting and example handoff",
+                                topic_override="Signposting & Example Handoff — tone identification",
                                 generation_instructions=(
-                                    "Provide two short talks on the same topic, one well-structured (clear intro, signposted points, conclusion) and one rambling (no order, no signposting), and ask the learner to label each. B2 depth: Firstly/Secondly/In short with for instance handoffs; speak_present 90s must signpost and land a clear In short conclusion."
+                                    "Provide 3 short messages (a longer structured talk) demonstrating Firstly/Secondly/In short signposting with example handoff. Ask the learner to identify tone/register problems or best repair choice."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options including Well-structured and clear and Rambling and unclear, correct_index, and explanation."
@@ -7941,9 +7911,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_TONE",
                                 activity="listen",
                                 task_widget="listen_tone",
-                                topic_override="Audio structured talks — signposting and example handoff",
+                                topic_override="Signposting & Example Handoff — listening for tone",
                                 generation_instructions=(
-                                    "Generate two spoken talks on the same topic, one clearly signposted and evenly paced and one rambling with no clear order, and ask the learner which sounds more structured and what signals the structure. B2 depth: Firstly/Secondly/In short with for instance handoffs; speak_present 90s must signpost and land a clear In short conclusion."
+                                    "Generate two 30–40 word clips (a longer structured talk) showing contrasting tone for Firstly/Secondly/In short signposting with example handoff. Ask which clip fits the required register and why."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_tone'. Provide two intros (each with id, label, speaker, audio_script) and 2 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -7964,9 +7934,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_TIMED",
                                 activity="write",
                                 task_widget="write_timed",
-                                topic_override="Structured talk plan — signposting and example handoff",
+                                topic_override="Signposting & Example Handoff — timed writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a short structured talk plan under a short time limit: an intro sentence, two point sentences, and a conclusion sentence on a topic they know well. B2 depth: Firstly/Secondly/In short with for instance handoffs; speak_present 90s must signpost and land a clear In short conclusion."
+                                    "Timed writing (a longer structured talk): produce a structured response demonstrating Firstly/Secondly/In short signposting with example handoff within the time limit; include clear signposts or moves from the depth angle."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_timed'. Provide prompt, grammar_rule describing the intro-points-conclusion structure, target_words (To begin, My first point, secondly, to conclude), writing_duration_seconds: 180, sample_answer, and answer_hints."
@@ -7987,9 +7957,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PRESENT",
                                 activity="speak",
                                 task_widget="speak_present",
-                                topic_override="Structured talk — signposting and example handoff",
+                                topic_override="Signposting & Example Handoff — presentation",
                                 generation_instructions=(
-                                    "Ask the learner to record a 90-second structured talk with a clear intro, two main points, and a conclusion, speaking with even pacing and clear signposting. B2 depth: Firstly/Secondly/In short with for instance handoffs; speak_present 90s must signpost and land a clear In short conclusion."
+                                    "Presentation task (a longer structured talk): structured spoken segment showing Firstly/Secondly/In short signposting with example handoff with signposts and a clear close."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_present'. Provide a visual_prompt_description outlining the intro, two points, and conclusion, an optional model_presentation, grammar_rule, target_words (To begin, firstly, secondly, to conclude), and speaking_duration_seconds: 90."
@@ -8206,9 +8176,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="Growing in confidence — integrated showcase — less scaffold",
+                                topic_override="B1 Showcase Depth — reading comprehension",
                                 generation_instructions=(
-                                    "Write an inspiring first-person passage about someone who grew more confident in English by leading discussions and making clear arguments after a mentor said confidence grows with action, not waiting. Then ask comprehension questions about the early struggle, the mentor's advice, the first step, and the closing message. B2 depth: integrate facilitation, counterclaim, pitch, and signposting in one showcase; debate uses However / on the other hand with decision recap."
+                                    "Write a 120–150 word passage (a showcase scenario combining discussion and pitch) rich in Integrated week-4 confidence skills with less scaffold. Add 3–4 comprehension MCQs where at least two require applying Integrated week-4 confidence skills with less scaffold, not only locating a noun or date."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -8229,9 +8199,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_SHADOW",
                                 activity="listen",
                                 task_widget="listen_shadow",
-                                topic_override="Fluent and energetic shadow session — integrated showcase — less scaffold",
+                                topic_override="B1 Showcase Depth — shadowing",
                                 generation_instructions=(
-                                    "Generate a short, energetic motivational line (about 15 seconds) about being proud of one's growing confidence and speaking up with structure and reasons, for the learner to shadow, matching the rising and falling intonation. B2 depth: integrate facilitation, counterclaim, pitch, and signposting in one showcase; debate uses However / on the other hand with decision recap."
+                                    "Provide a 50–60 word script (a showcase scenario combining discussion and pitch) dense with Integrated week-4 confidence skills with less scaffold for shadowing practice. Rhythm and phrasing should model natural B2 delivery."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow, target_words (proud of, growing, confidence), and grammar_rule about intonation."
@@ -8252,9 +8222,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_TIMED",
                                 activity="write",
                                 task_widget="write_timed",
-                                topic_override="Reflecting on Cycle 3 growth — integrated showcase — less scaffold",
+                                topic_override="B1 Showcase Depth — timed writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a short personal reflection under a short time limit on what they learned about themselves this cycle, using reflective and forward-looking transition markers. B2 depth: integrate facilitation, counterclaim, pitch, and signposting in one showcase; debate uses However / on the other hand with decision recap."
+                                    "Timed writing (a showcase scenario combining discussion and pitch): produce a structured response demonstrating Integrated week-4 confidence skills with less scaffold within the time limit; include clear signposts or moves from the depth angle."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (discovered, moreover, in the future), writing_duration_seconds: 180, sample_answer, and answer_hints."
@@ -8275,11 +8245,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_DEBATE",
                                 activity="speak",
                                 task_widget="speak_debate",
-                                topic_override=(
-                                    "Debate: Lead firmly vs build consensus first — integrated showcase — less scaffold"
-                                ),
+                                topic_override="B1 Showcase Depth — debate",
                                 generation_instructions=(
-                                    "Set up a friendly debate on whether it is better to lead a discussion firmly or build consensus slowly first. The AI argues for building consensus first; the learner records a counter-argument using strong opinion starters and transition markers. B2 depth: integrate facilitation, counterclaim, pitch, and signposting in one showcase; debate uses However / on the other hand with decision recap."
+                                    "Debate scenario (a showcase scenario combining discussion and pitch) integrating Integrated week-4 confidence skills with less scaffold: chair briefly, respond to one challenge, then deliver a timed closing statement."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_debate'. Provide a debate_context with an AI moderator turn, an AI opponent turn, and a learner turn, target_words (strongly believe, however, on the other hand), and speaking_duration_seconds: 60."
@@ -8509,12 +8477,12 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CLOZE",
                                 activity="read",
                                 task_widget="fill_blanks",
-                                topic_override="Past perfect continuous duration — PPC evidence and result in story",
+                                topic_override="PPC — reading cloze",
                                 generation_instructions=(
-                                    "Write a 4-5 blank connected passage about a busy week where several actions had been going on for a period before a key moment. Focus on the past perfect continuous with had been + verb-ing and for or since. B2+ depth: had been …ing → outcome in one story; cloze and speak require duration plus visible result (so/therefore)."
+                                    "Write one connected 4–5-blank passage (a story where ongoing past action leads to a visible outcome) where every blank tests Past perfect continuous showing evidence and result in story. Include at least two distinct facets of the depth angle in the passage. Do not drill only the parent base lesson pattern; the passage must read as a depth task on PPC. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
-                                    "Always include base_verb for every blank so the learner forms had been + verb-ing. Do not repeat base_verb inline in the passage after each ___ — the UI shows it separately."
+                                    "Always include base_verb for every blank so the learner forms the target form. Do not repeat base_verb inline in the passage after each ___ — the UI shows it separately."
                                 ),
                             ),
                             evaluation=EvaluationBlueprint(
@@ -8532,9 +8500,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Listening for past perfect continuous — PPC evidence and result in story",
+                                topic_override="PPC — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a 70-100 word spoken passage about a person describing a past situation where longer actions had been in progress, using had been, for, and since before another event happened. B2+ depth: had been …ing → outcome in one story; cloze and speak require duration plus visible result (so/therefore)."
+                                    "Generate a 70–100 word spoken script (a story where ongoing past action leads to a visible outcome) using Past perfect continuous showing evidence and result in story. Then 3–4 MCQs: at least two must test understanding of Past perfect continuous showing evidence and result in story (form, stance, or structure), not single-fact recall. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements="Generate 3-4 MCQ items with prompt, options, correct_index, and explanation.",
                             ),
@@ -8553,9 +8521,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_OPEN_SENT",
                                 activity="write",
                                 task_widget="open_text",
-                                topic_override="Write past perfect continuous sentences — PPC evidence and result in story",
+                                topic_override="PPC — open sentences",
                                 generation_instructions=(
-                                    "Ask for affirmative past perfect continuous sentences using I, he, and she, describing what had been happening for a period before another past action, with for or since. B2+ depth: had been …ing → outcome in one story; cloze and speak require duration plus visible result (so/therefore)."
+                                    "Ask for exactly 3 learner sentences (a story where ongoing past action leads to a visible outcome) that each demonstrate a different facet of Past perfect continuous showing evidence and result in story. Do not ask for practice that only repeats the parent base lesson focus. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                             ),
                             evaluation=EvaluationBlueprint(
@@ -8573,11 +8541,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override=(
-                                    "Say what had been happening before a past moment — PPC evidence and result in story"
-                                ),
+                                topic_override="PPC — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to say short past perfect continuous sentences about what had been happening before a past moment using had been and verb-ing. B2+ depth: had been …ing → outcome in one story; cloze and speak require duration plus visible result (so/therefore)."
+                                    "Create exactly 3 speaking prompts (a story where ongoing past action leads to a visible outcome) each forcing production of Past perfect continuous showing evidence and result in story. Model answers must satisfy the prompt. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Create exactly 3 speaking prompts: one with I, one with he, and one with she. Include speaking_duration_seconds: 45."
@@ -8880,9 +8846,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_ERROR_SPOT",
                                 activity="read",
                                 task_widget="error_spotting",
-                                topic_override="Spot third conditional errors — regret chains — two if-clauses",
+                                topic_override="Regret Chains — error spotting",
                                 generation_instructions=(
-                                    "Generate a 5-sentence passage about regrets and different past choices. Each sentence must contain exactly one grammatical error, so there are exactly 5 error tokens. Make mistakes diverse across third-conditional usage: wrong tense in the if-clause, missing would have, will instead of would have, wrong past participle after would have, and a condition-marker mismatch. B2+ depth: same past event, two third-conditional regrets; error-spot and read-aloud use connected regret chains."
+                                    "Write a 5-sentence passage (professional regret about a past decision) with exactly five single-token errors, all illustrating Two if-clauses expressing regret about the same event. Diversify error types across sentences. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'error_spotting'. Return exactly 5 `passage_sentences`. Each sentence must include `sentence_id`, `tokens`, and one `error` object. Each token needs stable `token_id`, `text`, and `is_error`; exactly one token per sentence must have `is_error: true`. Each `error` must include token_id, incorrect_phrase, correction, error_type, rule, and explanation. Set `total_errors` to 5. Allowed error_type values: irregular_past, missing_past_auxiliary, passive_helper_missing, time_marker_mismatch, object_or_complement_mismatch, past_participle_form, regular_past_ending."
@@ -8903,9 +8869,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_CLOZE",
                                 activity="listen",
                                 task_widget="listen_cloze",
-                                topic_override="Listen and fill third conditional forms — regret chains — two if-clauses",
+                                topic_override="Regret Chains — listen and complete",
                                 generation_instructions=(
-                                    "Listen to the short regrets audio, then complete the paraphrased notes with the missing third-conditional verb phrases from the clip. B2+ depth: same past event, two third-conditional regrets; error-spot and read-aloud use connected regret chains."
+                                    "Create a 40–60 word audio script (professional regret about a past decision) dense with Two if-clauses expressing regret about the same event. Provide a gapped written version; blanks test Two if-clauses expressing regret about the same event only. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Set inner_widget to 'fill_in_blanks'. Use the authored audio_script, passage, and 5 BlankItems exactly as provided so rule-based scoring can compare each typed verb phrase with correct_answer."
@@ -8944,9 +8910,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_ERROR_CORR",
                                 activity="write",
                                 task_widget="error_correction",
-                                topic_override="Correct third conditional mistakes — regret chains — two if-clauses",
+                                topic_override="Regret Chains — error correction",
                                 generation_instructions=(
-                                    "Give the learner 3 sentences that each contain one third conditional error — mix wrong tense in the if-clause and would have mistakes. Ask the learner to rewrite each sentence correctly. B2+ depth: same past event, two third-conditional regrets; error-spot and read-aloud use connected regret chains."
+                                    "Provide 3 sentences (professional regret about a past decision) with one error each, all tied to Two if-clauses expressing regret about the same event; the learner rewrites each correctly. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                             ),
                             evaluation=EvaluationBlueprint(
@@ -8964,9 +8930,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_READ_ALOUD",
                                 activity="speak",
                                 task_widget="read_aloud",
-                                topic_override="Read third conditional passage aloud — regret chains — two if-clauses",
+                                topic_override="Regret Chains — read aloud",
                                 generation_instructions=(
-                                    "Give the learner a connected third conditional narrative passage of 55-70 words to read aloud, describing several unreal past situations and their imagined results. B2+ depth: same past event, two third-conditional regrets; error-spot and read-aloud use connected regret chains."
+                                    "Write a 50–60 word passage (professional regret about a past decision) dense with Two if-clauses expressing regret about the same event for read-aloud; not an introductory lesson on the parent base form. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Populate `text_to_read_aloud` with a single connected second conditional passage (55-70 words) describing imaginary situations and their results. Set `task_intro` to 'Read the passage above out loud.' Include `grammar_rule_to_practice` explaining the second conditional with if + past simple and would + base verb, and `speaking_duration_seconds: 45`."
@@ -9194,11 +9160,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override=(
-                                    "Understand causative arrangements in context — service contexts — repairs and appointments"
-                                ),
+                                topic_override="Service Contexts — reading comprehension",
                                 generation_instructions=(
-                                    "Write a 60-75 word passage about someone arranging services (repairs, deliveries, appointments) using causative have and get naturally. Then ask comprehension questions and include one item on the correct causative form. B2+ depth: causative have/get in repair and appointment dialogues; tasks name who performs the action (learner vs provider)."
+                                    "Write a 120–150 word passage (arranging repairs or service appointments) rich in Causative have/get in repairs and appointments; who does the action. Add 3–4 comprehension MCQs where at least two require applying Causative have/get in repairs and appointments; who does the action, not only locating a noun or date. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -9219,9 +9183,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_DICTATION",
                                 activity="listen",
                                 task_widget="listen_dictation",
-                                topic_override="Hear causative have/get chunks — service contexts — repairs and appointments",
+                                topic_override="Service Contexts — dictation",
                                 generation_instructions=(
-                                    "Generate a 35-45 word audio script of 4 short sentences with varied causative forms (had my phone fixed, got them to send it, is having the report checked). The learner types each sentence exactly as heard. B2+ depth: causative have/get in repair and appointment dialogues; tasks name who performs the action (learner vs provider)."
+                                    "Generate 4 short audio lines (arranging repairs or service appointments) that exemplify Causative have/get in repairs and appointments; who does the action for exact dictation. Each line should highlight one feature of Causative have/get in repairs and appointments; who does the action. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_dictation'. Provide audio_script and 4 dictation items, each with prompt, correct_answer, and explanation. Set target_words to the passive chunks (for example 'is made', 'was sent', 'are delivered', 'will be repaired')."
@@ -9242,11 +9206,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override=(
-                                    "Rewrite into causative have or get — service contexts — repairs and appointments"
-                                ),
+                                topic_override="Service Contexts — sentence transformation",
                                 generation_instructions=(
-                                    "Give the learner 3 active sentences they did themselves and ask them to rewrite each using causative have or get, keeping the same meaning. B2+ depth: causative have/get in repair and appointment dialogues; tasks name who performs the action (learner vs provider)."
+                                    "Provide 3 transform items (arranging repairs or service appointments) where source and target practice Causative have/get in repairs and appointments; who does the action (e.g. direct to reported, active to passive, clause reduction). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints (for example 'present -> is/are + past participle', 'past -> was/were + past participle')."
@@ -9267,11 +9229,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override=(
-                                    "Describe arranged services with causative forms — service contexts — repairs and appointments"
-                                ),
+                                topic_override="Service Contexts — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to say one causative sentence per prompt about services or tasks arranged for them, using have + object + past participle or get + object + to-infinitive. B2+ depth: causative have/get in repair and appointment dialogues; tasks name who performs the action (learner vs provider)."
+                                    "Create exactly 3 speaking prompts (arranging repairs or service appointments) each forcing production of Causative have/get in repairs and appointments; who does the action. Model answers must satisfy the prompt. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Create exactly 3 speaking prompts: one present passive about how something is made, one past passive about something that was built or sent, and one about something that will be done. Include speaking_duration_seconds: 45."
@@ -9481,11 +9441,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_WORD_MATCH",
                                 activity="read",
                                 task_widget="read_word_match",
-                                topic_override=(
-                                    "Match clause types to their punctuation or form — formal description flow — reduced relatives"
-                                ),
+                                topic_override="Formal Description Flow — word–definition match",
                                 generation_instructions=(
-                                    "Ask the learner to match each sentence stub to whether it needs commas (non-defining), can drop the pronoun (reduced defining), or uses a participle phrase. B2+ depth: reduce relatives without ambiguity; picture description and MCQ test formal flow with commas and reduced phrases."
+                                    "Create 6–8 target words/phrases for Reduced relative clauses in formal description without ambiguity and short definitions (a formal profile or role description). Learners match each term to the definition that fits the depth collocation or usage. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_word_match'. Provide options (the relative pronouns who, which, that, where) and 3-4 items, each with prompt (a noun phrase with a clue), correct_answer, and explanation."
@@ -9506,11 +9464,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override=(
-                                    "Hearing reduced and non-defining clauses — formal description flow — reduced relatives"
-                                ),
+                                topic_override="Formal Description Flow — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a 35-45 word description mixing one non-defining clause with commas and at least one reduced clause. Include comprehension questions. B2+ depth: reduce relatives without ambiguity; picture description and MCQ test formal flow with commas and reduced phrases."
+                                    "Generate a 70–100 word spoken script (a formal profile or role description) using Reduced relative clauses in formal description without ambiguity. Then 3–4 MCQs: at least two must test understanding of Reduced relative clauses in formal description without ambiguity (form, stance, or structure), not single-fact recall. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 2-3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -9531,11 +9487,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_OPEN_SENT",
                                 activity="write",
                                 task_widget="open_text",
-                                topic_override=(
-                                    "Write sentences with reduced or non-defining clauses — formal description flow — reduced relatives"
-                                ),
+                                topic_override="Formal Description Flow — open sentences",
                                 generation_instructions=(
-                                    "Ask for three short sentences: one non-defining with commas, one reduced defining without the pronoun, and one with a participle phrase after the noun. B2+ depth: reduce relatives without ambiguity; picture description and MCQ test formal flow with commas and reduced phrases."
+                                    "Ask for exactly 3 learner sentences (a formal profile or role description) that each demonstrate a different facet of Reduced relative clauses in formal description without ambiguity. Do not ask for practice that only repeats the parent base lesson focus. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'open_text'. Provide target_words (who, which, that, where), common_mistakes, and 3 items, each with prompt, sample_answer, and answer_hints."
@@ -9556,11 +9510,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override=(
-                                    "Describe a scene with reduced relative clauses — formal description flow — reduced relatives"
-                                ),
+                                topic_override="Formal Description Flow — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe a simple scene aloud using at least one non-defining clause and one reduced clause. B2+ depth: reduce relatives without ambiguity; picture description and MCQ test formal flow with commas and reduced phrases."
+                                    "Describe an image scene (a formal profile or role description) using Reduced relative clauses in formal description without ambiguity in 4–5 connected sentences; include at least one depth-specific structure from Reduced relative clauses in formal description without ambiguity. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a busy cafe with several people doing different things, grammar_rule, and speaking_duration_seconds: 45."
@@ -9776,12 +9728,12 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CLOZE",
                                 activity="read",
                                 task_widget="fill_blanks",
-                                topic_override="Fill reporting verb pattern blanks — tone — deny, suggest, claim patterns",
+                                topic_override="Tone — reading cloze",
                                 generation_instructions=(
-                                    "Write a short 4-5 sentence passage reporting a meeting, with blanks for reporting verbs and the correct form after each (admitted, suggested, promised to, denied). B2+ depth: verb strength + grammar pattern (denied doing, suggested that, claimed that); roleplay uses measured professional tone."
+                                    "Write one connected 4–5-blank passage (a disputed workplace or media account) where every blank tests Reporting verb strength: deny, suggest, claim patterns. Include at least two distinct facets of the depth angle in the passage. Do not drill only the parent base lesson pattern; the passage must read as a depth task on Tone. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
-                                    "Target widget 'fill_blanks'. Provide passage_title and a passage with ___ markers only — no inline hints in parentheses after blanks. Provide a BlankItem per blank with correct_answer and explanation. Omit base_verb; these are reporting blanks, not verb inflection."
+                                    "Omit base_verb on every blank. Do not include base_verb. correct_answer is the word or phrase for the blank (e.g. Unless, doesn't, said, Nevertheless)."
                                 ),
                             ),
                             evaluation=EvaluationBlueprint(
@@ -9799,9 +9751,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_INFER",
                                 activity="listen",
                                 task_widget="listen_infer",
-                                topic_override="Infer the reporting verb and pattern — tone — deny, suggest, claim patterns",
+                                topic_override="Tone — listening inference",
                                 generation_instructions=(
-                                    "Generate a 35-45 word audio clip where someone reports what others said using varied reporting verbs and patterns. Ask the learner to infer the original meaning and verb choice. B2+ depth: verb strength + grammar pattern (denied doing, suggested that, claimed that); roleplay uses measured professional tone."
+                                    "Generate a 50–70 word spoken exchange (a disputed workplace or media account) where Reporting verb strength: deny, suggest, claim patterns is implied. Ask 3 inference questions about stance, intent, or implied meaning tied to Reporting verb strength: deny, suggest, claim patterns. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 2 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -9822,11 +9774,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARA",
                                 activity="write",
                                 task_widget="write_paragraph",
-                                topic_override=(
-                                    "Write a paragraph with varied reporting verbs — tone — deny, suggest, claim patterns"
-                                ),
+                                topic_override="Tone — paragraph writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a 3-4 sentence paragraph reporting a short discussion using at least three different reporting verbs with correct patterns after each. B2+ depth: verb strength + grammar pattern (denied doing, suggested that, claimed that); roleplay uses measured professional tone."
+                                    "Ask for one 80–110 word paragraph (a disputed workplace or media account) that must show Reporting verb strength: deny, suggest, claim patterns with clear organisation (topic sentence, support, close). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (said that, told me, asked if, would), minimum_words 25, sample_answer, and answer_hints."
@@ -9847,9 +9797,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_ROLEPLAY",
                                 activity="speak",
                                 task_widget="speak_roleplay",
-                                topic_override="Pass on a message with reporting verbs — tone — deny, suggest, claim patterns",
+                                topic_override="Tone — roleplay",
                                 generation_instructions=(
-                                    "Set up a roleplay where the learner passes on what several people said using reporting verbs (she suggested that, he promised to, they denied) in 2-3 connected sentences. B2+ depth: verb strength + grammar pattern (denied doing, suggested that, claimed that); roleplay uses measured professional tone."
+                                    "Roleplay (a disputed workplace or media account) where the learner must use Reporting verb strength: deny, suggest, claim patterns in at least two turns; include a partner cue that elicits the depth move. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_roleplay'. Provide dialogue_context with alternating partner and learner turns (4-6 turns total). Partner lines set the scene in 2-3 sentences; each learner line is 2-3 connected sentences (roughly 15-30 words). Include target_words (said that, told me, asked if, would), speaking_prompts with one instruction to respond aloud, sample_responses with the learner's model answer (same text as the learner dialogue turn), grammar_rule_to_practice, and speaking_duration_seconds: 45."
@@ -10058,9 +10008,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TFNG",
                                 activity="read",
                                 task_widget="read_tfng",
-                                topic_override="Wishes and regrets in text — apology register — wish and should have",
+                                topic_override="Apology Register — true/false/not given",
                                 generation_instructions=(
-                                    "Write a short profile rich in I wish, If only, and should have sentences about present and past regrets. Then give True / False / Not Given statements about what the person wishes or regrets. B2+ depth: professional apology with I wish I had… and I should have…; smalltalk task stays polite and accountable, not casual."
+                                    "Write a 100–130 word passage (a formal apology or regret message) about Professional regret with wish and should have. Provide 4–5 True/False/Not Given statements testing nuanced understanding of Professional regret with wish and should have, including one subtle distractor. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tfng'. Provide passage_title, passage, and 5 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
@@ -10081,11 +10031,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_SHADOW",
                                 activity="listen",
                                 task_widget="listen_shadow",
-                                topic_override=(
-                                    "Repeat wish / should have phrases in speech — apology register — wish and should have"
-                                ),
+                                topic_override="Apology Register — shadowing",
                                 generation_instructions=(
-                                    "Generate a short natural monologue (about 20 seconds) with I wish and should have phrases blended into connected speech for shadowing. B2+ depth: professional apology with I wish I had… and I should have…; smalltalk task stays polite and accountable, not casual."
+                                    "Provide a 50–60 word script (a formal apology or regret message) dense with Professional regret with wish and should have for shadowing practice. Rhythm and phrasing should model natural B2+ delivery. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow (identical to the script), target_words highlighting the used to / would chunks, and grammar_rule."
@@ -10106,11 +10054,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_EMAIL",
                                 activity="write",
                                 task_widget="write_email",
-                                topic_override=(
-                                    "Email a friend about a wish or regret — apology register — wish and should have"
-                                ),
+                                topic_override="Apology Register — email writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a short email to a friend expressing one wish and one regret using I wish and should have correctly. B2+ depth: professional apology with I wish I had… and I should have…; smalltalk task stays polite and accountable, not casual."
+                                    "Ask for a short professional email (a formal apology or regret message) applying Professional regret with wish and should have with appropriate opening, body moves, and close. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_email'. Provide prompt, grammar_rule, target_words (used to, would, no longer, back then), minimum_words 25, sample_answer (with To and Subject lines), and answer_hints."
@@ -10131,9 +10077,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_SMALLTALK",
                                 activity="speak",
                                 task_widget="speak_smalltalk",
-                                topic_override="Casual chat about wishes and regrets — apology register — wish and should have",
+                                topic_override="Apology Register — small talk",
                                 generation_instructions=(
-                                    "Set up casual small talk where the learner answers with I wish and should have naturally. B2+ depth: professional apology with I wish I had… and I should have…; smalltalk task stays polite and accountable, not casual."
+                                    "Small-talk prompts (a formal apology or regret message) requiring Professional regret with wish and should have (echo, register shift, paraphrase, or inclusive invite) in natural replies. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (used to, would, as a child, back then), and speaking_duration_seconds: 30."
@@ -10350,9 +10296,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CONTEXT_MCQ",
                                 activity="read",
                                 task_widget="read_context_mcq",
-                                topic_override="Formal linkers in a short article — nevertheless and moreover in email",
+                                topic_override="Nevertheless/Moreover in Email — vocabulary in context",
                                 generation_instructions=(
-                                    "Write a short formal paragraph (policy or report style) using moreover, nevertheless, and in addition. Then ask MCQ questions about which linker fits a gap. B2+ depth: nevertheless/moreover in email paragraphs with punctuation control; presentation task sounds like a structured professional update."
+                                    "Write a 80–110 word passage (a formal professional email) using Formal linkers nevertheless and moreover with punctuation control. Create 4 MCQs choosing the best word/phrase for each gap to demonstrate Formal linkers nevertheless and moreover with punctuation control. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_context_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options (despite, in spite of, whereas, however), correct_index, and explanation."
@@ -10373,9 +10319,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_RETELL",
                                 activity="listen",
                                 task_widget="listen_retell",
-                                topic_override="Retell a formal mini-talk — nevertheless and moreover in email",
+                                topic_override="Nevertheless/Moreover in Email — listen and retell",
                                 generation_instructions=(
-                                    "Generate a 40-50 word formal audio clip with clear linker phrases. Ask the learner to retell the main points using at least two formal linkers. B2+ depth: nevertheless/moreover in email paragraphs with punctuation control; presentation task sounds like a structured professional update."
+                                    "Generate a 60–80 word monologue (a formal professional email) modeling Formal linkers nevertheless and moreover with punctuation control. Ask the learner to retell including the key depth moves from Formal linkers nevertheless and moreover with punctuation control. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_retell'. Provide: audio_script (the full spoken monologue text), passage_to_retell (a 2-3 sentence model retell — shorter than the audio, showing how a good student would summarise the key points using contrast linkers), sample_responses (list containing that same model retell), target_words (list of the key contrast linkers from the audio), and grammar_rule."
@@ -10396,9 +10342,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARAPHRASE",
                                 activity="write",
                                 task_widget="write_paraphrase",
-                                topic_override="Paraphrase with formal linkers — nevertheless and moreover in email",
+                                topic_override="Nevertheless/Moreover in Email — paraphrase",
                                 generation_instructions=(
-                                    "Give informal sentences and ask the learner to join or rewrite them using moreover, nevertheless, or on the other hand. B2+ depth: nevertheless/moreover in email paragraphs with punctuation control; presentation task sounds like a structured professional update."
+                                    "Give 3 source sentences (a formal professional email) that are blunt, vague, or off-register; ask the learner to paraphrase for Formal linkers nevertheless and moreover with punctuation control. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paraphrase'. Provide 3 items, each with incorrect_sentence (the contrasting sentence pair), sample_answer, and watch_hints (the target contrast linker)."
@@ -10419,9 +10365,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PRESENT",
                                 activity="speak",
                                 task_widget="speak_present",
-                                topic_override="Short talk using formal linkers — nevertheless and moreover in email",
+                                topic_override="Nevertheless/Moreover in Email — presentation",
                                 generation_instructions=(
-                                    "Ask the learner to give a 45-second mini presentation on a work or study topic using at least two formal linkers naturally. B2+ depth: nevertheless/moreover in email paragraphs with punctuation control; presentation task sounds like a structured professional update."
+                                    "Presentation task (a formal professional email): structured spoken segment showing Formal linkers nevertheless and moreover with punctuation control with signposts and a clear close. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_present'. Provide: prompts as a list with one general question asking the learner to compare two choices and say which they prefer using contrast linkers (e.g. 'Compare living in a city and the countryside, and say which you prefer.'); visual_prompt_description as a short sample spoken answer that uses at least three contrast linkers (e.g. 'A city is exciting, whereas the countryside is calm. Despite the noise, I prefer the city. However, I visit the countryside often, so I get both.'); grammar_rule, target_words, and speaking_duration_seconds: 45."
@@ -10634,9 +10580,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="Conflict resolution in messages — reframe positions and test agreement",
+                                topic_override="Reframe Positions & Test Agreement — reading comprehension",
                                 generation_instructions=(
-                                    "Write a short exchange where two people disagree, acknowledge each other's points, and agree on middle-ground next steps. Ask comprehension questions. B2+ depth: interests + criterion (Would this work if…); roleplay ends with explicit agreement check, not vague compromise."
+                                    "Write a 120–150 word passage (conflict resolution between two sides) rich in Reframe positions on interests and test agreement. Add 3–4 comprehension MCQs where at least two require applying Reframe positions on interests and test agreement, not only locating a noun or date. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -10657,9 +10603,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Listening to a disagreement resolved — reframe positions and test agreement",
+                                topic_override="Reframe Positions & Test Agreement — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a 35-45 word dialogue resolving a conflict with acknowledgement and a compromise. Include MCQs on each side's concern and the agreement. B2+ depth: interests + criterion (Would this work if…); roleplay ends with explicit agreement check, not vague compromise."
+                                    "Generate a 70–100 word spoken script (conflict resolution between two sides) using Reframe positions on interests and test agreement. Then 3–4 MCQs: at least two must test understanding of Reframe positions on interests and test agreement (form, stance, or structure), not single-fact recall. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -10680,9 +10626,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override="Polite conflict-resolution phrases — reframe positions and test agreement",
+                                topic_override="Reframe Positions & Test Agreement — sentence transformation",
                                 generation_instructions=(
-                                    "Give 3 blunt conflicting statements and ask the learner to rewrite each using acknowledgement and middle-ground phrases. B2+ depth: interests + criterion (Would this work if…); roleplay ends with explicit agreement check, not vague compromise."
+                                    "Provide 3 transform items (conflict resolution between two sides) where source and target practice Reframe positions on interests and test agreement (e.g. direct to reported, active to passive, clause reduction). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -10703,9 +10649,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_ROLEPLAY",
                                 activity="speak",
                                 task_widget="speak_roleplay",
-                                topic_override="Roleplay resolving a conflict — reframe positions and test agreement",
+                                topic_override="Reframe Positions & Test Agreement — roleplay",
                                 generation_instructions=(
-                                    "Set up a roleplay where the learner de-escalates a disagreement and proposes a compromise both sides can accept. B2+ depth: interests + criterion (Would this work if…); roleplay ends with explicit agreement check, not vague compromise."
+                                    "Roleplay (conflict resolution between two sides) where the learner must use Reframe positions on interests and test agreement in at least two turns; include a partner cue that elicits the depth move. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_roleplay'. Provide a dialogue_context alternating partner and learner turns, target_words (How about, meet halfway, that works, agreed), and speaking_duration_seconds: 30."
@@ -10912,9 +10858,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TFNG",
                                 activity="read",
                                 task_widget="read_tfng",
-                                topic_override="Constructive feedback in writing — behaviour, impact, measurable request",
+                                topic_override="Behaviour, Impact, Request — true/false/not given",
                                 generation_instructions=(
-                                    "Write a short message giving constructive feedback on work quality with a positive line, one issue, and a suggestion. Then True/False/Not Given items. B2+ depth: behaviour-impact-request with measurable ask; interview and writing tasks require specific timing or frequency."
+                                    "Write a 100–130 word passage (giving constructive feedback to a colleague) about Constructive feedback: behaviour, impact, measurable request. Provide 4–5 True/False/Not Given statements testing nuanced understanding of Constructive feedback: behaviour, impact, measurable request, including one subtle distractor. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tfng'. Provide passage_title, passage, and 4 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
@@ -10935,9 +10881,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_INFER",
                                 activity="listen",
                                 task_widget="listen_infer",
-                                topic_override="Infer tone in feedback conversations — behaviour, impact, measurable request",
+                                topic_override="Behaviour, Impact, Request — listening inference",
                                 generation_instructions=(
-                                    "Generate a conversation where a manager gives constructive feedback. Ask the learner to infer tone and the main suggestion. B2+ depth: behaviour-impact-request with measurable ask; interview and writing tasks require specific timing or frequency."
+                                    "Generate a 50–70 word spoken exchange (giving constructive feedback to a colleague) where Constructive feedback: behaviour, impact, measurable request is implied. Ask 3 inference questions about stance, intent, or implied meaning tied to Constructive feedback: behaviour, impact, measurable request. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -10958,9 +10904,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_EMAIL",
                                 activity="write",
                                 task_widget="write_email",
-                                topic_override="Write constructive feedback — behaviour, impact, measurable request",
+                                topic_override="Behaviour, Impact, Request — email writing",
                                 generation_instructions=(
-                                    "Ask the learner to write feedback to a colleague with praise, one issue, and a concrete suggestion. B2+ depth: behaviour-impact-request with measurable ask; interview and writing tasks require specific timing or frequency."
+                                    "Ask for a short professional email (giving constructive feedback to a colleague) applying Constructive feedback: behaviour, impact, measurable request with appropriate opening, body moves, and close. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_email'. Provide prompt, grammar_rule, target_words, minimum_words 25, sample_answer (with To and Subject lines), and answer_hints."
@@ -10981,11 +10927,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_INTERVIEW",
                                 activity="speak",
                                 task_widget="speak_interview",
-                                topic_override=(
-                                    "React with constructive feedback in chat — behaviour, impact, measurable request"
-                                ),
+                                topic_override="Behaviour, Impact, Request — interview",
                                 generation_instructions=(
-                                    "Run a mini interview where the learner gives constructive feedback on three short scenarios in full sentences. B2+ depth: behaviour-impact-request with measurable ask; interview and writing tasks require specific timing or frequency."
+                                    "Interview prompts (giving constructive feedback to a colleague) where answers must demonstrate Constructive feedback: behaviour, impact, measurable request (stance, follow-ups, or documented feedback moves). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_interview'. Provide interview_context, grammar_rule, target_words (That's wonderful, Oh no, How did, What about), 3 questions each with interviewer_prompt, sample_answer, and answer_hint, and speaking_duration_seconds: 35."
@@ -11187,7 +11131,7 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 id="add_recommendation",
                                 goal="Add a clear recommendation.",
                                 instruction=(
-                                    "Have them close with an explicit recommendation and one reason. Ask them to say the full structure aloud in three sentences."
+                                    "Ask them to close with an explicit recommendation and one reason in a single sentence."
                                 ),
                             ),
                             TeacherStep(
@@ -11207,11 +11151,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_STRUCTURE_ID",
                                 activity="read",
                                 task_widget="read_structure",
-                                topic_override=(
-                                    "Identify pros, cons, and recommendation sections — risk, mitigation, and clear call"
-                                ),
+                                topic_override="Risk, Mitigation & Clear Call — text structure",
                                 generation_instructions=(
-                                    "Provide a 3-paragraph text comparing two options and ask the learner to label paragraphs as Pros, Cons, or Recommendation. B2+ depth: risk + mitigation + explicit I recommend…; opinion task requires clear call after balanced pros/cons."
+                                    "Provide a 4–5 paragraph outline or short text (recommending a course of action to a team) about Pros/cons with risk, mitigation, and explicit recommendation. Ask the learner to identify structure elements (problem, cause, solution, recommendation) aligned with Pros/cons with risk, mitigation, and explicit recommendation. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_structure'. Provide passage_title, structure_labels ['Situation', 'Problem', 'Solution'], and 3 items, each with paragraph, correct_answer, and explanation."
@@ -11232,9 +11174,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_RETELL",
                                 activity="listen",
                                 task_widget="listen_retell",
-                                topic_override="Retell an options comparison — risk, mitigation, and clear call",
+                                topic_override="Risk, Mitigation & Clear Call — listen and retell",
                                 generation_instructions=(
-                                    "Generate a short audio comparing two options with pros, cons, and a final recommendation. Ask the learner to retell the recommendation and main reason. B2+ depth: risk + mitigation + explicit I recommend…; opinion task requires clear call after balanced pros/cons."
+                                    "Generate a 60–80 word monologue (recommending a course of action to a team) modeling Pros/cons with risk, mitigation, and explicit recommendation. Ask the learner to retell including the key depth moves from Pros/cons with risk, mitigation, and explicit recommendation. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_retell'. Provide audio_script, passage_to_retell, target_words (the situation was, the problem, so, as a result), and grammar_rule."
@@ -11255,9 +11197,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARA",
                                 activity="write",
                                 task_widget="write_paragraph",
-                                topic_override="Write a pros-cons recommendation paragraph — risk, mitigation, and clear call",
+                                topic_override="Risk, Mitigation & Clear Call — paragraph writing",
                                 generation_instructions=(
-                                    "Ask the learner to write a paragraph comparing two options and recommending one with reasons. B2+ depth: risk + mitigation + explicit I recommend…; opinion task requires clear call after balanced pros/cons."
+                                    "Ask for one 80–110 word paragraph (recommending a course of action to a team) that must show Pros/cons with risk, mitigation, and explicit recommendation with clear organisation (topic sentence, support, close). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (first, the problem was, so, as a result, because), minimum_words 45, sample_answer, and answer_hints."
@@ -11278,9 +11220,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_OPINION",
                                 activity="speak",
                                 task_widget="speak_present",
-                                topic_override="State a recommendation aloud — risk, mitigation, and clear call",
+                                topic_override="Risk, Mitigation & Clear Call — opinion",
                                 generation_instructions=(
-                                    "Ask the learner to speak for 45 seconds recommending one option with pros, cons, and a clear conclusion. B2+ depth: risk + mitigation + explicit I recommend…; opinion task requires clear call after balanced pros/cons."
+                                    "Opinion task (recommending a course of action to a team): state a position, support with cause→impact→solution or measurable fix aligned with Pros/cons with risk, mitigation, and explicit recommendation. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_present'. Provide grammar_rule, target_words (I would suggest, because, the best way, however), a visual_prompt_description or prompt for the recommendation, and speaking_duration_seconds: 40."
@@ -11484,9 +11426,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="Leading a meeting in writing — parking lot and action owners",
+                                topic_override="Parking Lot & Action Owners — reading comprehension",
                                 generation_instructions=(
-                                    "Write a short meeting transcript with purpose, two agenda items, and action owners. Ask comprehension questions. B2+ depth: digression control + named owners/deadlines; roleplay meeting must list parking lot and at least two owned actions."
+                                    "Write a 120–150 word passage (leading a meeting with tangents) rich in Parking lot digressions and clear action owners. Add 3–4 comprehension MCQs where at least two require applying Parking lot digressions and clear action owners, not only locating a noun or date. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -11507,9 +11449,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Listening to a short meeting — parking lot and action owners",
+                                topic_override="Parking Lot & Action Owners — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a 35-45 word meeting clip with opening, two points, and closing actions. Include MCQs on purpose and next steps. B2+ depth: digression control + named owners/deadlines; roleplay meeting must list parking lot and at least two owned actions."
+                                    "Generate a 70–100 word spoken script (leading a meeting with tangents) using Parking lot digressions and clear action owners. Then 3–4 MCQs: at least two must test understanding of Parking lot digressions and clear action owners (form, stance, or structure), not single-fact recall. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -11530,9 +11472,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_BULLETS_TO_PARA",
                                 activity="write",
                                 task_widget="write_bullets_to_para",
-                                topic_override="Turn notes into a meeting summary — parking lot and action owners",
+                                topic_override="Parking Lot & Action Owners — bullets to paragraph",
                                 generation_instructions=(
-                                    "Give bullet notes from a meeting and ask the learner to write a clear summary paragraph with action items. B2+ depth: digression control + named owners/deadlines; roleplay meeting must list parking lot and at least two owned actions."
+                                    "Provide bullet notes (leading a meeting with tangents) about Parking lot digressions and clear action owners; ask for one cohesive paragraph with owners, blockers, or next steps as required by the angle. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_bullets_to_para'. Provide bullets (4 work items), prompt, grammar_rule, target_words, minimum_words 25, sample_answer, and answer_hints."
@@ -11553,9 +11495,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_ROLEPLAY",
                                 activity="speak",
                                 task_widget="speak_roleplay",
-                                topic_override="Roleplay leading a meeting — parking lot and action owners",
+                                topic_override="Parking Lot & Action Owners — roleplay",
                                 generation_instructions=(
-                                    "Set up a roleplay where the learner opens a short meeting, invites one comment, and closes with next steps. B2+ depth: digression control + named owners/deadlines; roleplay meeting must list parking lot and at least two owned actions."
+                                    "Roleplay (leading a meeting with tangents) where the learner must use Parking lot digressions and clear action owners in at least two turns; include a partner cue that elicits the depth move. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_roleplay'. Provide a dialogue_context alternating partner and learner turns, target_words (so far, on track, by Friday, next step), and speaking_duration_seconds: 30."
@@ -11759,9 +11701,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TFNG",
                                 activity="read",
                                 task_widget="read_tfng",
-                                topic_override="Objection handling in text — evidence stack and concession",
+                                topic_override="Evidence Stack & Concession — true/false/not given",
                                 generation_instructions=(
-                                    "Write a short sales or project update with two objections and calm responses. Then True/False/Not Given items. B2+ depth: acknowledge + data stack + however; picture description handles one objection with concession and evidence."
+                                    "Write a 100–130 word passage (handling objections in a proposal) about Acknowledge objection then stack evidence with concession. Provide 4–5 True/False/Not Given statements testing nuanced understanding of Acknowledge objection then stack evidence with concession, including one subtle distractor. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tfng'. Provide passage_title, passage, and 4 items, each with prompt, correct_answer (True, False, or Not Given), and explanation."
@@ -11782,9 +11724,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_INFER",
                                 activity="listen",
                                 task_widget="listen_infer",
-                                topic_override="Infer concerns behind objections — evidence stack and concession",
+                                topic_override="Evidence Stack & Concession — listening inference",
                                 generation_instructions=(
-                                    "Generate a dialogue with two objections and nuanced responses. Ask inference questions about concerns and agreement. B2+ depth: acknowledge + data stack + however; picture description handles one objection with concession and evidence."
+                                    "Generate a 50–70 word spoken exchange (handling objections in a proposal) where Acknowledge objection then stack evidence with concession is implied. Ask 3 inference questions about stance, intent, or implied meaning tied to Acknowledge objection then stack evidence with concession. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_infer'. Provide audio_script, intent_focus, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -11805,9 +11747,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_IDEA_PARA",
                                 activity="write",
                                 task_widget="write_paragraph",
-                                topic_override="Write a response to objections — evidence stack and concession",
+                                topic_override="Evidence Stack & Concession — idea paragraph",
                                 generation_instructions=(
-                                    "Ask the learner to write a paragraph responding to two objections about an idea. B2+ depth: acknowledge + data stack + however; picture description handles one objection with concession and evidence."
+                                    "Ask for a 90–120 word paragraph (handling objections in a proposal) arguing Acknowledge objection then stack evidence with concession with claim, evidence, and explicit recommendation. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (I believe, because, for example, admittedly), minimum_words 25, sample_answer, and answer_hints."
@@ -11828,9 +11770,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override="Explain handling an objection aloud — evidence stack and concession",
+                                topic_override="Evidence Stack & Concession — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe aloud how they would handle an objection to a proposal, using acknowledge-then-respond language. B2+ depth: acknowledge + data stack + however; picture description handles one objection with concession and evidence."
+                                    "Describe an image scene (handling objections in a proposal) using Acknowledge objection then stack evidence with concession in 4–5 connected sentences; include at least one depth-specific structure from Acknowledge objection then stack evidence with concession. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a busy car park beside an empty bus lane, grammar_rule, and speaking_duration_seconds: 40."
@@ -12036,9 +11978,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TONE_ID",
                                 activity="read",
                                 task_widget="read_tone_id",
-                                topic_override="Identify stakeholder-appropriate tone — same update — two audiences",
+                                topic_override="Same Update, Two Audiences — tone identification",
                                 generation_instructions=(
-                                    "Provide two short messages on the same update for different stakeholders. Ask which is for a senior leader vs a project team. B2+ depth: exec vs team tone on identical facts; smalltalk and transforms rewrite the same update with different detail and register."
+                                    "Provide 3 short messages (a stakeholder update) demonstrating Same update rewritten for executive vs team tone. Ask the learner to identify tone/register problems or best repair choice. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options (Professional, Casual), correct_index, and explanation."
@@ -12059,9 +12001,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_TONE",
                                 activity="listen",
                                 task_widget="listen_tone",
-                                topic_override="Hear tone shifts for stakeholders — same update — two audiences",
+                                topic_override="Same Update, Two Audiences — listening for tone",
                                 generation_instructions=(
-                                    "Generate audio with two versions of the same news for different audiences. Ask tone and detail questions. B2+ depth: exec vs team tone on identical facts; smalltalk and transforms rewrite the same update with different detail and register."
+                                    "Generate two 30–40 word clips (a stakeholder update) showing contrasting tone for Same update rewritten for executive vs team tone. Ask which clip fits the required register and why. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_tone'. Provide audio_script and at least 1 MCQ item with prompt, options (Professional, Casual), correct_index, and explanation."
@@ -12082,9 +12024,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARAPHRASE",
                                 activity="write",
                                 task_widget="write_paraphrase",
-                                topic_override="Rewrite for a different stakeholder — same update — two audiences",
+                                topic_override="Same Update, Two Audiences — paraphrase",
                                 generation_instructions=(
-                                    "Give a detailed team update and ask the learner to rewrite a 2-sentence executive version. B2+ depth: exec vs team tone on identical facts; smalltalk and transforms rewrite the same update with different detail and register."
+                                    "Give 3 source sentences (a stakeholder update) that are blunt, vague, or off-register; ask the learner to paraphrase for Same update rewritten for executive vs team tone. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paraphrase'. Provide 2 items, each with incorrect_sentence (the message to convert), sample_answer, and watch_hints."
@@ -12105,9 +12047,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_SMALLTALK",
                                 activity="speak",
                                 task_widget="speak_smalltalk",
-                                topic_override="Small talk with stakeholder-aware replies — same update — two audiences",
+                                topic_override="Same Update, Two Audiences — small talk",
                                 generation_instructions=(
-                                    "Set up small talk where the learner answers the same news differently for a manager vs a peer. B2+ depth: exec vs team tone on identical facts; smalltalk and transforms rewrite the same update with different detail and register."
+                                    "Small-talk prompts (a stakeholder update) requiring Same update rewritten for executive vs team tone (echo, register shift, paraphrase, or inclusive invite) in natural replies. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (That sounds great, I might, probably, weekend), and speaking_duration_seconds: 35."
@@ -12312,9 +12254,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_STRUCTURE_ID",
                                 activity="read",
                                 task_widget="read_structure",
-                                topic_override="Structure of a facilitated discussion — synthesis question and decision check",
+                                topic_override="Synthesis Question & Decision Check — text structure",
                                 generation_instructions=(
-                                    "Provide a 3-part facilitated discussion transcript (open, contributions, summary) and ask the learner to label each part. B2+ depth: 3 views → synthesis question → decision check; presentation closes with So we're deciding… and explicit commitment ask."
+                                    "Provide a 4–5 paragraph outline or short text (facilitating a decision after multiple opinions) about Synthesize three views into a decision-check question. Ask the learner to identify structure elements (problem, cause, solution, recommendation) aligned with Synthesize three views into a decision-check question. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_structure'. Provide passage_title, structure_labels ['Opening', 'Building', 'Closing'], and 3 items, each with label, paragraph, correct_answer, and explanation."
@@ -12335,9 +12277,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_RETELL",
                                 activity="listen",
                                 task_widget="listen_retell",
-                                topic_override="Retell a facilitated discussion clip — synthesis question and decision check",
+                                topic_override="Synthesis Question & Decision Check — listen and retell",
                                 generation_instructions=(
-                                    "Generate audio of someone facilitating a short discussion. Ask retell of invitations and summary. B2+ depth: 3 views → synthesis question → decision check; presentation closes with So we're deciding… and explicit commitment ask."
+                                    "Generate a 60–80 word monologue (facilitating a decision after multiple opinions) modeling Synthesize three views into a decision-check question. Ask the learner to retell including the key depth moves from Synthesize three views into a decision-check question. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_retell'. Set response_mode to 'written'. Provide audio_script, passage_to_retell, target_words, and grammar_rule."
@@ -12358,9 +12300,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_EMAIL",
                                 activity="write",
                                 task_widget="write_email",
-                                topic_override="Email summarising a discussion — synthesis question and decision check",
+                                topic_override="Synthesis Question & Decision Check — email writing",
                                 generation_instructions=(
-                                    "Ask the learner to write an email summarising a discussion with next steps. B2+ depth: 3 views → synthesis question → decision check; presentation closes with So we're deciding… and explicit commitment ask."
+                                    "Ask for a short professional email (facilitating a decision after multiple opinions) applying Synthesize three views into a decision-check question with appropriate opening, body moves, and close. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_email'. Provide prompt, grammar_rule, target_words, minimum_words 45, sample_answer (with To and Subject lines), and answer_hints."
@@ -12381,9 +12323,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PRESENT",
                                 activity="speak",
                                 task_widget="speak_present",
-                                topic_override="Present a short facilitated summary — synthesis question and decision check",
+                                topic_override="Synthesis Question & Decision Check — presentation",
                                 generation_instructions=(
-                                    "Ask the learner to deliver a 45-second spoken summary after a facilitated discussion scenario. B2+ depth: 3 views → synthesis question → decision check; presentation closes with So we're deciding… and explicit commitment ask."
+                                    "Presentation task (facilitating a decision after multiple opinions): structured spoken segment showing Synthesize three views into a decision-check question with signposts and a clear close. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_present'. Provide grammar_rule, target_words (we discussed, on one hand, on the other hand, in the end), a visual_prompt_description, an optional model_presentation, and speaking_duration_seconds: 60."
@@ -12597,9 +12539,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_WORD_MATCH",
                                 activity="read",
                                 task_widget="read_word_match",
-                                topic_override="Science & Research Vocabulary — method and limitation phrases",
+                                topic_override="Method & Limitation Phrases — word–definition match",
                                 generation_instructions=(
-                                    "Ask the learner to match science and research words (hypothesis, data, evidence) to short definitions or context clues. B2+ depth: hypothesis/data/limitation in cohesive research paragraph; assume base science words from yesterday."
+                                    "Create 6–8 target words/phrases for Hypothesis, data, and limitation phrases in research discourse and short definitions (a short research summary). Learners match each term to the definition that fits the depth collocation or usage. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_word_match'. Provide options (the environment words) and 4 items, each with prompt (the definition), correct_answer, and explanation."
@@ -12620,9 +12562,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="A talk about science and research — method and limitation phrases",
+                                topic_override="Method & Limitation Phrases — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a short scenario where someone discusses science and research, using at least three target words. Ask comprehension questions. B2+ depth: hypothesis/data/limitation in cohesive research paragraph; assume base science words from yesterday."
+                                    "Generate a 70–100 word spoken script (a short research summary) using Hypothesis, data, and limitation phrases in research discourse. Then 3–4 MCQs: at least two must test understanding of Hypothesis, data, and limitation phrases in research discourse (form, stance, or structure), not single-fact recall. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -12643,9 +12585,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override="science and research vocabulary in writing — method and limitation phrases",
+                                topic_override="Method & Limitation Phrases — sentence transformation",
                                 generation_instructions=(
-                                    "Give wordy descriptions of science and research ideas and ask the learner to rewrite each using precise vocabulary (hypothesis, data, evidence). B2+ depth: hypothesis/data/limitation in cohesive research paragraph; assume base science words from yesterday."
+                                    "Provide 3 transform items (a short research summary) where source and target practice Hypothesis, data, and limitation phrases in research discourse (e.g. direct to reported, active to passive, clause reduction). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 2-3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -12666,9 +12608,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override="Describe a lab or research setting — method and limitation phrases",
+                                topic_override="Method & Limitation Phrases — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe a photo of research lab with scientists reviewing data on screens aloud using science and research vocabulary naturally. B2+ depth: hypothesis/data/limitation in cohesive research paragraph; assume base science words from yesterday."
+                                    "Describe an image scene (a short research summary) using Hypothesis, data, and limitation phrases in research discourse in 4–5 connected sentences; include at least one depth-specific structure from Hypothesis, data, and limitation phrases in research discourse. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a wind farm beside a smoggy city skyline, grammar_rule, and speaking_duration_seconds: 45."
@@ -12874,9 +12816,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CONTEXT_MCQ",
                                 activity="read",
                                 task_widget="read_context_mcq",
-                                topic_override="Arts & Creativity Vocabulary — critique and interpretation chunks",
+                                topic_override="Critique & Interpretation Chunks — vocabulary in context",
                                 generation_instructions=(
-                                    "Ask the learner to match arts and creativity words (exhibition, medium, inspiration) to short definitions or context clues. B2+ depth: exhibition/medium/curator in evaluative critique; timed speech sounds like a brief gallery review."
+                                    "Write a 80–110 word passage (reviewing an exhibition or creative work) using Arts critique and interpretation collocations. Create 4 MCQs choosing the best word/phrase for each gap to demonstrate Arts critique and interpretation collocations. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_context_mcq'. Provide passage_title, passage, and at least 1 MCQ item with prompt, options, correct_index, and explanation."
@@ -12897,9 +12839,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_DICTATION",
                                 activity="listen",
                                 task_widget="listen_dictation",
-                                topic_override="A talk about arts and creativity — critique and interpretation chunks",
+                                topic_override="Critique & Interpretation Chunks — dictation",
                                 generation_instructions=(
-                                    "Generate a short scenario where someone discusses arts and creativity, using at least three target words. Ask comprehension questions. B2+ depth: exhibition/medium/curator in evaluative critique; timed speech sounds like a brief gallery review."
+                                    "Generate 4 short audio lines (reviewing an exhibition or creative work) that exemplify Arts critique and interpretation collocations for exact dictation. Each line should highlight one feature of Arts critique and interpretation collocations. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_dictation'. Provide audio_script, target_words (the key education words), and 1 dictation item with prompt, correct_answer, and explanation."
@@ -12920,9 +12862,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_WORD_UPGRADE",
                                 activity="write",
                                 task_widget="write_word_upgrade",
-                                topic_override="arts and creativity vocabulary in writing — critique and interpretation chunks",
+                                topic_override="Critique & Interpretation Chunks — word upgrade",
                                 generation_instructions=(
-                                    "Give wordy descriptions of arts and creativity ideas and ask the learner to rewrite each using precise vocabulary (exhibition, medium, inspiration). B2+ depth: exhibition/medium/curator in evaluative critique; timed speech sounds like a brief gallery review."
+                                    "Give 3 informal or vague sentences (reviewing an exhibition or creative work); ask the learner to upgrade vocabulary to precise terms that express Arts critique and interpretation collocations. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_word_upgrade'. Provide 3 items, each with source_sentence, target_upgrade_word, sample_answer, and watch_hints."
@@ -12943,9 +12885,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override="Describe a gallery or studio — critique and interpretation chunks",
+                                topic_override="Critique & Interpretation Chunks — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to describe a photo of art gallery with paintings and a sculptor at work aloud using arts and creativity vocabulary naturally. B2+ depth: exhibition/medium/curator in evaluative critique; timed speech sounds like a brief gallery review."
+                                    "Create exactly 3 speaking prompts (reviewing an exhibition or creative work) each forcing production of Arts critique and interpretation collocations. Model answers must satisfy the prompt. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (enrol, assignment, revise, qualification), and speaking_duration_seconds: 60."
@@ -13153,9 +13095,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_WORD_MATCH",
                                 activity="read",
                                 task_widget="read_word_match",
-                                topic_override="Ethics & Global Issues Vocabulary — stakeholder and principle language",
+                                topic_override="Stakeholder & Principle Language — word–definition match",
                                 generation_instructions=(
-                                    "Ask the learner to match ethics and global issues words (justice, rights, responsibility) to short definitions or context clues. B2+ depth: rights/responsibility/equity with named stakeholders; avoid loaded labels; picture description uses principle framing."
+                                    "Create 6–8 target words/phrases for Ethics and global issues: stakeholder and principle language and short definitions (an ethical dilemma or policy debate). Learners match each term to the definition that fits the depth collocation or usage. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_word_match'. Provide options (the culture words) and 4 items, each with prompt (the definition), correct_answer, and explanation."
@@ -13176,9 +13118,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="A talk about ethics and global issues — stakeholder and principle language",
+                                topic_override="Stakeholder & Principle Language — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a short scenario where someone discusses ethics and global issues, using at least three target words. Ask comprehension questions. B2+ depth: rights/responsibility/equity with named stakeholders; avoid loaded labels; picture description uses principle framing."
+                                    "Generate a 70–100 word spoken script (an ethical dilemma or policy debate) using Ethics and global issues: stakeholder and principle language. Then 3–4 MCQs: at least two must test understanding of Ethics and global issues: stakeholder and principle language (form, stance, or structure), not single-fact recall. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -13199,11 +13141,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARA",
                                 activity="write",
                                 task_widget="write_paragraph",
-                                topic_override=(
-                                    "ethics and global issues vocabulary in writing — stakeholder and principle language"
-                                ),
+                                topic_override="Stakeholder & Principle Language — paragraph writing",
                                 generation_instructions=(
-                                    "Give wordy descriptions of ethics and global issues ideas and ask the learner to rewrite each using precise vocabulary (justice, rights, responsibility). B2+ depth: rights/responsibility/equity with named stakeholders; avoid loaded labels; picture description uses principle framing."
+                                    "Ask for one 80–110 word paragraph (an ethical dilemma or policy debate) that must show Ethics and global issues: stakeholder and principle language with clear organisation (topic sentence, support, close). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (tradition, community, heritage, celebrate), minimum_words 20, sample_answer, and answer_hints."
@@ -13224,9 +13164,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override="Describe a community or policy context — stakeholder and principle language",
+                                topic_override="Stakeholder & Principle Language — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe a photo of community meeting about a social campaign poster aloud using ethics and global issues vocabulary naturally. B2+ depth: rights/responsibility/equity with named stakeholders; avoid loaded labels; picture description uses principle framing."
+                                    "Describe an image scene (an ethical dilemma or policy debate) using Ethics and global issues: stakeholder and principle language in 4–5 connected sentences; include at least one depth-specific structure from Ethics and global issues: stakeholder and principle language. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a street festival with people in traditional dress, grammar_rule, and speaking_duration_seconds: 45."
@@ -13433,9 +13373,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CONTEXT_MCQ",
                                 activity="read",
                                 task_widget="read_context_mcq",
-                                topic_override="Business & Economics Vocabulary — forecast and risk brief",
+                                topic_override="Forecast & Risk Brief — vocabulary in context",
                                 generation_instructions=(
-                                    "Ask the learner to match business and economics words (revenue, market, investment) to short definitions or context clues. B2+ depth: revenue/volatility forecast plus one mitigation; timed speech like a 45s executive snapshot."
+                                    "Write a 80–110 word passage (an investor or board risk note) using Business forecast and risk brief vocabulary. Create 4 MCQs choosing the best word/phrase for each gap to demonstrate Business forecast and risk brief vocabulary. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_context_mcq'. Provide passage_title, passage, and at least 1 MCQ item with prompt, options, correct_index, and explanation."
@@ -13456,9 +13396,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_DICTATION",
                                 activity="listen",
                                 task_widget="listen_dictation",
-                                topic_override="A talk about business and economics — forecast and risk brief",
+                                topic_override="Forecast & Risk Brief — dictation",
                                 generation_instructions=(
-                                    "Generate a short scenario where someone discusses business and economics, using at least three target words. Ask comprehension questions. B2+ depth: revenue/volatility forecast plus one mitigation; timed speech like a 45s executive snapshot."
+                                    "Generate 4 short audio lines (an investor or board risk note) that exemplify Business forecast and risk brief vocabulary for exact dictation. Each line should highlight one feature of Business forecast and risk brief vocabulary. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_dictation'. Provide audio_script, target_words (the key work words), and 1 dictation item with prompt, correct_answer, and explanation."
@@ -13479,9 +13419,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARAPHRASE",
                                 activity="write",
                                 task_widget="write_paraphrase",
-                                topic_override="business and economics vocabulary in writing — forecast and risk brief",
+                                topic_override="Forecast & Risk Brief — paraphrase",
                                 generation_instructions=(
-                                    "Give wordy descriptions of business and economics ideas and ask the learner to rewrite each using precise vocabulary (revenue, market, investment). B2+ depth: revenue/volatility forecast plus one mitigation; timed speech like a 45s executive snapshot."
+                                    "Give 3 source sentences (an investor or board risk note) that are blunt, vague, or off-register; ask the learner to paraphrase for Business forecast and risk brief vocabulary. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paraphrase'. Provide 2 items, each with incorrect_sentence (the plain sentence), sample_answer, and watch_hints."
@@ -13502,9 +13442,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override="Describe a business or market scene — forecast and risk brief",
+                                topic_override="Forecast & Risk Brief — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to describe a photo of office dashboard showing market trends and budget charts aloud using business and economics vocabulary naturally. B2+ depth: revenue/volatility forecast plus one mitigation; timed speech like a 45s executive snapshot."
+                                    "Create exactly 3 speaking prompts (an investor or board risk note) each forcing production of Business forecast and risk brief vocabulary. Model answers must satisfy the prompt. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (promote, resign, collaborate, deadline), and speaking_duration_seconds: 60."
@@ -13704,9 +13644,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_WORD_MATCH",
                                 activity="read",
                                 task_widget="read_word_match",
-                                topic_override="Media Literacy Vocabulary — bias and verification steps",
+                                topic_override="Bias & Verification Steps — word–definition match",
                                 generation_instructions=(
-                                    "Ask the learner to match media literacy words (source, bias, credible) to short definitions or context clues. B2+ depth: source typing + verification steps (primary, corroborate); writing tasks contrast claim vs verified fact."
+                                    "Create 6–8 target words/phrases for Media literacy: bias labels and verification steps and short definitions (evaluating an online news source). Learners match each term to the definition that fits the depth collocation or usage. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_word_match'. Provide options (the news words) and 4 items, each with prompt (the meaning), correct_answer, and explanation."
@@ -13727,9 +13667,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="A talk about media literacy — bias and verification steps",
+                                topic_override="Bias & Verification Steps — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a short scenario where someone discusses media literacy, using at least three target words. Ask comprehension questions. B2+ depth: source typing + verification steps (primary, corroborate); writing tasks contrast claim vs verified fact."
+                                    "Generate a 70–100 word spoken script (evaluating an online news source) using Media literacy: bias labels and verification steps. Then 3–4 MCQs: at least two must test understanding of Media literacy: bias labels and verification steps (form, stance, or structure), not single-fact recall. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -13750,9 +13690,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override="media literacy vocabulary in writing — bias and verification steps",
+                                topic_override="Bias & Verification Steps — sentence transformation",
                                 generation_instructions=(
-                                    "Give wordy descriptions of media literacy ideas and ask the learner to rewrite each using precise vocabulary (source, bias, credible). B2+ depth: source typing + verification steps (primary, corroborate); writing tasks contrast claim vs verified fact."
+                                    "Provide 3 transform items (evaluating an online news source) where source and target practice Media literacy: bias labels and verification steps (e.g. direct to reported, active to passive, clause reduction). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -13773,9 +13713,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override="Describe news and online media — bias and verification steps",
+                                topic_override="Bias & Verification Steps — picture description",
                                 generation_instructions=(
-                                    "Ask the learner to describe a photo of person comparing two news headlines on a laptop aloud using media literacy vocabulary naturally. B2+ depth: source typing + verification steps (primary, corroborate); writing tasks contrast claim vs verified fact."
+                                    "Describe an image scene (evaluating an online news source) using Media literacy: bias labels and verification steps in 4–5 connected sentences; include at least one depth-specific structure from Media literacy: bias labels and verification steps. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a news studio with a reporter and a headline on the screen, grammar_rule, and speaking_duration_seconds: 45."
@@ -13983,9 +13923,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_CONTEXT_MCQ",
                                 activity="read",
                                 task_widget="read_context_mcq",
-                                topic_override="Leadership & Influence Vocabulary — delegate and motivate in message",
+                                topic_override="Delegate & Motivate in Message — vocabulary in context",
                                 generation_instructions=(
-                                    "Ask the learner to match leadership and influence words (vision, delegate, motivate) to short definitions or context clues. B2+ depth: vision/team note with delegate + motivate; word upgrade and timed speech sound like a brief leadership update."
+                                    "Write a 80–110 word passage (a team note from a leader) using Leadership message: delegate and motivate with vision. Create 4 MCQs choosing the best word/phrase for each gap to demonstrate Leadership message: delegate and motivate with vision. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_context_mcq'. Provide passage_title, passage, and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -14006,9 +13946,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_DICTATION",
                                 activity="listen",
                                 task_widget="listen_dictation",
-                                topic_override="A talk about leadership and influence — delegate and motivate in message",
+                                topic_override="Delegate & Motivate in Message — dictation",
                                 generation_instructions=(
-                                    "Generate a short scenario where someone discusses leadership and influence, using at least three target words. Ask comprehension questions. B2+ depth: vision/team note with delegate + motivate; word upgrade and timed speech sound like a brief leadership update."
+                                    "Generate 4 short audio lines (a team note from a leader) that exemplify Leadership message: delegate and motivate with vision for exact dictation. Each line should highlight one feature of Leadership message: delegate and motivate with vision. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_dictation'. Provide audio_script, target_words (the quality words), and 2 dictation items, each with a prompt sentence containing a blank, correct_answer, and explanation."
@@ -14029,11 +13969,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_WORD_UPGRADE",
                                 activity="write",
                                 task_widget="write_word_upgrade",
-                                topic_override=(
-                                    "leadership and influence vocabulary in writing — delegate and motivate in message"
-                                ),
+                                topic_override="Delegate & Motivate in Message — word upgrade",
                                 generation_instructions=(
-                                    "Give wordy descriptions of leadership and influence ideas and ask the learner to rewrite each using precise vocabulary (vision, delegate, motivate). B2+ depth: vision/team note with delegate + motivate; word upgrade and timed speech sound like a brief leadership update."
+                                    "Give 3 informal or vague sentences (a team note from a leader); ask the learner to upgrade vocabulary to precise terms that express Leadership message: delegate and motivate with vision. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_word_upgrade'. Provide 3 items, each with source_sentence, target_upgrade_word, sample_answer, and watch_hints."
@@ -14054,9 +13992,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override="Describe a team leadership moment — delegate and motivate in message",
+                                topic_override="Delegate & Motivate in Message — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to describe a photo of team leader motivating colleagues around a shared goal board aloud using leadership and influence vocabulary naturally. B2+ depth: vision/team note with delegate + motivate; word upgrade and timed speech sound like a brief leadership update."
+                                    "Create exactly 3 speaking prompts (a team note from a leader) each forcing production of Leadership message: delegate and motivate with vision. Model answers must satisfy the prompt. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (integrity, resilience, perspective, empathy, ambition), and speaking_duration_seconds: 45."
@@ -14265,9 +14203,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_WORD_MATCH",
                                 activity="read",
                                 task_widget="read_word_match",
-                                topic_override="Review & Word Building Vocabulary — week 7 lexis in formal argument paragraph",
+                                topic_override="Formal Argument Paragraph — word–definition match",
                                 generation_instructions=(
-                                    "Ask the learner to match review and word building words (review, prefix, suffix) to short definitions or context clues. B2+ depth: recycle week 7 collocations (limitation, medium, stakeholder, volatility, corroborate, delegate) in one formal argument paragraph; speaking uses cross-topic lexis naturally."
+                                    "Create 6–8 target words/phrases for Week 7 lexis in one formal argument paragraph and short definitions (a formal argument using week 7 vocabulary). Learners match each term to the definition that fits the depth collocation or usage. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_word_match'. Provide options (the 6 words) and 6 items, each with prompt (the definition), correct_answer, and explanation."
@@ -14288,11 +14226,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override=(
-                                    "A talk about review and word building — week 7 lexis in formal argument paragraph"
-                                ),
+                                topic_override="Formal Argument Paragraph — listening MCQ",
                                 generation_instructions=(
-                                    "Generate a short scenario where someone discusses review and word building, using at least three target words. Ask comprehension questions. B2+ depth: recycle week 7 collocations (limitation, medium, stakeholder, volatility, corroborate, delegate) in one formal argument paragraph; speaking uses cross-topic lexis naturally."
+                                    "Generate a 70–100 word spoken script (a formal argument using week 7 vocabulary) using Week 7 lexis in one formal argument paragraph. Then 3–4 MCQs: at least two must test understanding of Week 7 lexis in one formal argument paragraph (form, stance, or structure), not single-fact recall. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -14313,11 +14249,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_PARA",
                                 activity="write",
                                 task_widget="write_paragraph",
-                                topic_override=(
-                                    "review and word building vocabulary in writing — week 7 lexis in formal argument paragraph"
-                                ),
+                                topic_override="Formal Argument Paragraph — paragraph writing",
                                 generation_instructions=(
-                                    "Give wordy descriptions of review and word building ideas and ask the learner to rewrite each using precise vocabulary (review, prefix, suffix). B2+ depth: recycle week 7 collocations (limitation, medium, stakeholder, volatility, corroborate, delegate) in one formal argument paragraph; speaking uses cross-topic lexis naturally."
+                                    "Ask for one 80–110 word paragraph (a formal argument using week 7 vocabulary) that must show Week 7 lexis in one formal argument paragraph with clear organisation (topic sentence, support, close). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_paragraph'. Provide prompt, grammar_rule, target_words (the week's words), minimum_words 25, sample_answer, and answer_hints."
@@ -14338,11 +14272,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override=(
-                                    "Describe mixed professional contexts — week 7 lexis in formal argument paragraph"
-                                ),
+                                topic_override="Formal Argument Paragraph — timed speaking",
                                 generation_instructions=(
-                                    "Ask the learner to describe a photo of collage of work, lab, gallery, and news scenes aloud using review and word building vocabulary naturally. B2+ depth: recycle week 7 collocations (limitation, medium, stakeholder, volatility, corroborate, delegate) in one formal argument paragraph; speaking uses cross-topic lexis naturally."
+                                    "Create exactly 3 speaking prompts (a formal argument using week 7 vocabulary) each forcing production of Week 7 lexis in one formal argument paragraph. Model answers must satisfy the prompt. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (the week's words), and speaking_duration_seconds: 90."
@@ -14554,9 +14486,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="Difficult conversation story — stakes and boundary setting",
+                                topic_override="Stakes & Boundary Setting — reading comprehension",
                                 generation_instructions=(
-                                    "Write a short story about someone facilitating a tense conversation: they set ground rules, name the issue, and invite respectful turns. Then comprehension questions. B2+ depth: purpose + time boundary before facilitation; read-aloud and transforms use calm boundary phrases."
+                                    "Write a 120–150 word passage (a high-stakes one-to-one conversation) rich in State stakes and set a time boundary in a difficult talk. Add 3–4 comprehension MCQs where at least two require applying State stakes and set a time boundary in a difficult talk, not only locating a noun or date. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -14577,9 +14509,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_SHADOW",
                                 activity="listen",
                                 task_widget="listen_shadow",
-                                topic_override="Calm facilitation shadowing — stakes and boundary setting",
+                                topic_override="Stakes & Boundary Setting — shadowing",
                                 generation_instructions=(
-                                    "Generate a warm 15-second clip inviting respectful turns in a difficult conversation for shadowing. B2+ depth: purpose + time boundary before facilitation; read-aloud and transforms use calm boundary phrases."
+                                    "Provide a 50–60 word script (a high-stakes one-to-one conversation) dense with State stakes and set a time boundary in a difficult talk for shadowing practice. Rhythm and phrasing should model natural B2+ delivery. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow (a sentence or two from the script), target_words, and grammar_rule."
@@ -14600,9 +14532,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override="Reframe avoidance into facilitation language — stakes and boundary setting",
+                                topic_override="Stakes & Boundary Setting — sentence transformation",
                                 generation_instructions=(
-                                    "Give 3 avoidance statements and ask the learner to reframe each into calm facilitation language. B2+ depth: purpose + time boundary before facilitation; read-aloud and transforms use calm boundary phrases."
+                                    "Provide 3 transform items (a high-stakes one-to-one conversation) where source and target practice State stakes and set a time boundary in a difficult talk (e.g. direct to reported, active to passive, clause reduction). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -14623,9 +14555,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_READ_ALOUD",
                                 activity="speak",
                                 task_widget="read_aloud",
-                                topic_override="Read a facilitation passage aloud — stakes and boundary setting",
+                                topic_override="Stakes & Boundary Setting — read aloud",
                                 generation_instructions=(
-                                    "Give a 55-70 word passage about facilitating a difficult conversation to read aloud. B2+ depth: purpose + time boundary before facilitation; read-aloud and transforms use calm boundary phrases."
+                                    "Write a 50–60 word passage (a high-stakes one-to-one conversation) dense with State stakes and set a time boundary in a difficult talk for read-aloud; not an introductory lesson on the parent base form. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_aloud'. Provide text_to_read_aloud, grammar_rule about clear pronunciation and breathing pauses, target_words, and speaking_duration_seconds: 30."
@@ -14829,9 +14761,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TONE_ID",
                                 activity="read",
                                 task_widget="read_tone_id",
-                                topic_override="Tone in a rebuttal — concede partially then undermine",
+                                topic_override="Concede Partially Then Undermine — tone identification",
                                 generation_instructions=(
-                                    "Provide two short arguments with counterpoints; ask which rebuttal is respectful and evidence-based. B2+ depth: While it's true…, however… + evidence; timed speak and debate tasks require partial concession before rebuttal."
+                                    "Provide 3 short messages (responding to a strong counterargument) demonstrating While it's true…, however… partial concession then undermine. Ask the learner to identify tone/register problems or best repair choice. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options (Weak / Unsupported, Well-built / Supported), correct_index, and explanation."
@@ -14852,9 +14784,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Rebuttal listening — concede partially then undermine",
+                                topic_override="Concede Partially Then Undermine — listening MCQ",
                                 generation_instructions=(
-                                    "Generate audio with a claim and counterargument; ask inference questions. B2+ depth: While it's true…, however… + evidence; timed speak and debate tasks require partial concession before rebuttal."
+                                    "Generate a 70–100 word spoken script (responding to a strong counterargument) using While it's true…, however… partial concession then undermine. Then 3–4 MCQs: at least two must test understanding of While it's true…, however… partial concession then undermine (form, stance, or structure), not single-fact recall. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and at least 1 MCQ item with prompt, options, correct_index, and explanation."
@@ -14875,9 +14807,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_TIMED",
                                 activity="write",
                                 task_widget="write_timed",
-                                topic_override="Timed rebuttal writing — concede partially then undermine",
+                                topic_override="Concede Partially Then Undermine — timed writing",
                                 generation_instructions=(
-                                    "Ask for a timed paragraph acknowledging a counterargument then rebutting with one reason. B2+ depth: While it's true…, however… + evidence; timed speak and debate tasks require partial concession before rebuttal."
+                                    "Timed writing (responding to a strong counterargument): produce a structured response demonstrating While it's true…, however… partial concession then undermine within the time limit; include clear signposts or moves from the depth angle. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (I argue that, because, for instance, therefore), writing_duration_seconds: 180, sample_answer, and answer_hints."
@@ -14898,9 +14830,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_TIMED",
                                 activity="speak",
                                 task_widget="speak_timed",
-                                topic_override="Timed rebuttal speaking — concede partially then undermine",
+                                topic_override="Concede Partially Then Undermine — timed speaking",
                                 generation_instructions=(
-                                    "Three timed speaking prompts to rebut calmly with evidence. B2+ depth: While it's true…, however… + evidence; timed speak and debate tasks require partial concession before rebuttal."
+                                    "Create exactly 3 speaking prompts (responding to a strong counterargument) each forcing production of While it's true…, however… partial concession then undermine. Model answers must satisfy the prompt. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_timed'. Provide a single prompt, a sample_response, grammar_rule, target_words (I believe, because, for example, overall), and speaking_duration_seconds: 60."
@@ -15104,9 +15036,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="Vision narrative comprehension — milestones and metrics in vision narrative",
+                                topic_override="Vision Narrative — reading comprehension",
                                 generation_instructions=(
-                                    "Write a story about someone explaining a long-term vision with trade-offs; comprehension MCQs. B2+ depth: past→future measurable arc; picture description and timed write include at least one number or date."
+                                    "Write a 120–150 word passage (a vision narrative for a team or project) rich in Past-to-future vision with milestones and measurable metrics. Add 3–4 comprehension MCQs where at least two require applying Past-to-future vision with milestones and measurable metrics, not only locating a noun or date. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -15127,9 +15059,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_TONE",
                                 activity="listen",
                                 task_widget="listen_tone",
-                                topic_override="Tone in a vision talk — milestones and metrics in vision narrative",
+                                topic_override="Vision Narrative — listening for tone",
                                 generation_instructions=(
-                                    "Audio of a leader sharing vision; tone and detail questions. B2+ depth: past→future measurable arc; picture description and timed write include at least one number or date."
+                                    "Generate two 30–40 word clips (a vision narrative for a team or project) showing contrasting tone for Past-to-future vision with milestones and measurable metrics. Ask which clip fits the required register and why. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_tone'. Provide two intros (each with id, label, speaker, audio_script) and 2 MCQ items, each with prompt, options (Unrealistic / Vague, Realistic / Grounded), correct_index, and explanation."
@@ -15150,9 +15082,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override="Vision sentence transforms — milestones and metrics in vision narrative",
+                                topic_override="Vision Narrative — sentence transformation",
                                 generation_instructions=(
-                                    "Transform vague future sentences into a clear vision statement with signposting. B2+ depth: past→future measurable arc; picture description and timed write include at least one number or date."
+                                    "Provide 3 transform items (a vision narrative for a team or project) where source and target practice Past-to-future vision with milestones and measurable metrics (e.g. direct to reported, active to passive, clause reduction). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -15173,9 +15105,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override="Vision picture description — milestones and metrics in vision narrative",
+                                topic_override="Vision Narrative — picture description",
                                 generation_instructions=(
-                                    "Describe a photo of a team planning a long-term goal using vision vocabulary. B2+ depth: past→future measurable arc; picture description and timed write include at least one number or date."
+                                    "Describe an image scene (a vision narrative for a team or project) using Past-to-future vision with milestones and measurable metrics in 4–5 connected sentences; include at least one depth-specific structure from Past-to-future vision with milestones and measurable metrics. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing a person studying late at a desk covered in plans, grammar_rule about speculative language, and speaking_duration_seconds: 45."
@@ -15378,9 +15310,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TONE_ID",
                                 activity="read",
                                 task_widget="read_tone_id",
-                                topic_override="Critical feedback tone — clarify and paraphrase under challenge",
+                                topic_override="Clarify & Paraphrase Under Challenge — tone identification",
                                 generation_instructions=(
-                                    "Two feedback messages; identify which balances honesty and support. B2+ depth: structured response with clarify/paraphrase first; smalltalk pushback uses So you're saying… before answer."
+                                    "Provide 3 short messages (critical feedback exchange) demonstrating Structured clarify-and-paraphrase under challenge. Ask the learner to identify tone/register problems or best repair choice. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options describing tone shifts, correct_index, and explanation."
@@ -15401,9 +15333,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_SHADOW",
                                 activity="listen",
                                 task_widget="listen_shadow",
-                                topic_override="Receiving feedback shadow — clarify and paraphrase under challenge",
+                                topic_override="Clarify & Paraphrase Under Challenge — shadowing",
                                 generation_instructions=(
-                                    "Short clip of receiving criticism calmly for shadowing. B2+ depth: structured response with clarify/paraphrase first; smalltalk pushback uses So you're saying… before answer."
+                                    "Provide a 50–60 word script (critical feedback exchange) dense with Structured clarify-and-paraphrase under challenge for shadowing practice. Rhythm and phrasing should model natural B2+ delivery. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow, target_words (That's a fair point, I see what you mean, Let me explain), and grammar_rule."
@@ -15424,9 +15356,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_TIMED",
                                 activity="write",
                                 task_widget="write_timed",
-                                topic_override="Timed critical feedback writing — clarify and paraphrase under challenge",
+                                topic_override="Clarify & Paraphrase Under Challenge — timed writing",
                                 generation_instructions=(
-                                    "Timed response to critical feedback that clarifies and commits to one action. B2+ depth: structured response with clarify/paraphrase first; smalltalk pushback uses So you're saying… before answer."
+                                    "Timed writing (critical feedback exchange): produce a structured response demonstrating Structured clarify-and-paraphrase under challenge within the time limit; include clear signposts or moves from the depth angle. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (Usually, Instead of, In future), writing_duration_seconds: 180, sample_answer, and answer_hints."
@@ -15447,9 +15379,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_SMALLTALK",
                                 activity="speak",
                                 task_widget="speak_smalltalk",
-                                topic_override="Critical feedback small talk — clarify and paraphrase under challenge",
+                                topic_override="Clarify & Paraphrase Under Challenge — small talk",
                                 generation_instructions=(
-                                    "Small talk practicing thanking someone for direct feedback. B2+ depth: structured response with clarify/paraphrase first; smalltalk pushback uses So you're saying… before answer."
+                                    "Small-talk prompts (critical feedback exchange) requiring Structured clarify-and-paraphrase under challenge (echo, register shift, paraphrase, or inclusive invite) in natural replies. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_smalltalk'. Provide a dialogue_context alternating partner and learner turns, target_words (That's fair, I understand, even so), and speaking_duration_seconds: 30."
@@ -15628,7 +15560,7 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 id="preview",
                                 goal="Preview the day and reassure.",
                                 instruction=(
-                                    "Use their decision. Model one urgent-but-respectful close and ask them to add a timeline and one benefit in two sentences."
+                                    "Use their decision. Model one urgent-but-respectful close, then ask them to add a timeline and one benefit in one sentence."
                                 ),
                             ),
                             TeacherStep(
@@ -15648,9 +15580,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="Strong close comprehension — urgency without pressure",
+                                topic_override="Strong Close & CTA — reading comprehension",
                                 generation_instructions=(
-                                    "Short talk text; questions about summary and call to action. B2+ depth: timeline + benefit CTA without aggressive modals; picture description ends with respectful urgency."
+                                    "Write a 120–150 word passage (closing a pitch or proposal) rich in Urgency without pressure: timeline plus benefit. Add 3–4 comprehension MCQs where at least two require applying Urgency without pressure: timeline plus benefit, not only locating a noun or date. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -15671,9 +15603,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_MCQ",
                                 activity="listen",
                                 task_widget="listen_mcq",
-                                topic_override="Listening for call to action — urgency without pressure",
+                                topic_override="Strong Close & CTA — listening MCQ",
                                 generation_instructions=(
-                                    "Audio ending with summary and clear next step; MCQs. B2+ depth: timeline + benefit CTA without aggressive modals; picture description ends with respectful urgency."
+                                    "Generate a 70–100 word spoken script (closing a pitch or proposal) using Urgency without pressure: timeline plus benefit. Then 3–4 MCQs: at least two must test understanding of Urgency without pressure: timeline plus benefit (form, stance, or structure), not single-fact recall. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_mcq'. Provide audio_script and 3 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -15694,9 +15626,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_SENT_TRANS",
                                 activity="write",
                                 task_widget="sentence_transform",
-                                topic_override="Closing sentence transforms — urgency without pressure",
+                                topic_override="Strong Close & CTA — sentence transformation",
                                 generation_instructions=(
-                                    "Rewrite weak endings into strong closes with calls to action. B2+ depth: timeline + benefit CTA without aggressive modals; picture description ends with respectful urgency."
+                                    "Provide 3 transform items (closing a pitch or proposal) where source and target practice Urgency without pressure: timeline plus benefit (e.g. direct to reported, active to passive, clause reduction). B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'sentence_transform'. Provide 3 items, each with source_sentence, sample_answer, and watch_hints."
@@ -15717,9 +15649,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PIC_DESC",
                                 activity="speak",
                                 task_widget="speak_pic_desc",
-                                topic_override="Closing with call to action — urgency without pressure",
+                                topic_override="Strong Close & CTA — picture description",
                                 generation_instructions=(
-                                    "Describe persuading an audience to take one specific next step. B2+ depth: timeline + benefit CTA without aggressive modals; picture description ends with respectful urgency."
+                                    "Describe an image scene (closing a pitch or proposal) using Urgency without pressure: timeline plus benefit in 4–5 connected sentences; include at least one depth-specific structure from Urgency without pressure: timeline plus benefit. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_pic_desc'. Provide image_alt describing an overflowing recycling area outside an office, grammar_rule, and speaking_duration_seconds: 45."
@@ -15924,9 +15856,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_TONE_ID",
                                 activity="read",
                                 task_widget="read_tone_id",
-                                topic_override="Presentation with Q&A tone — bridge and buy-time phrases",
+                                topic_override="Presentation Q&A — tone identification",
                                 generation_instructions=(
-                                    "Identify formal presentation and Q&A tone in two excerpts. B2+ depth: bridge/buy-time before key message; speak_present includes one hard question with bridge to thesis."
+                                    "Provide 3 short messages (presentation Q&A after a talk) demonstrating Bridge and buy-time phrases for hard questions. Ask the learner to identify tone/register problems or best repair choice. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_tone_id'. Provide passage_title and 2 items, each with sender, message, prompt, options including Well-structured and clear and Rambling and unclear, correct_index, and explanation."
@@ -15947,9 +15879,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_TONE",
                                 activity="listen",
                                 task_widget="listen_tone",
-                                topic_override="Q&A tone listening — bridge and buy-time phrases",
+                                topic_override="Presentation Q&A — listening for tone",
                                 generation_instructions=(
-                                    "Audio of presentation plus one question; tone and content MCQs. B2+ depth: bridge/buy-time before key message; speak_present includes one hard question with bridge to thesis."
+                                    "Generate two 30–40 word clips (presentation Q&A after a talk) showing contrasting tone for Bridge and buy-time phrases for hard questions. Ask which clip fits the required register and why. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_tone'. Provide two intros (each with id, label, speaker, audio_script) and 2 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -15970,9 +15902,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_TIMED",
                                 activity="write",
                                 task_widget="write_timed",
-                                topic_override="Timed presentation writing — bridge and buy-time phrases",
+                                topic_override="Presentation Q&A — timed writing",
                                 generation_instructions=(
-                                    "Timed mini presentation paragraph with intro, two points, conclusion. B2+ depth: bridge/buy-time before key message; speak_present includes one hard question with bridge to thesis."
+                                    "Timed writing (presentation Q&A after a talk): produce a structured response demonstrating Bridge and buy-time phrases for hard questions within the time limit; include clear signposts or moves from the depth angle. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_timed'. Provide prompt, grammar_rule describing the intro-points-conclusion structure, target_words (To begin, My first point, secondly, to conclude), writing_duration_seconds: 180, sample_answer, and answer_hints."
@@ -15993,9 +15925,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_PRESENT",
                                 activity="speak",
                                 task_widget="speak_present",
-                                topic_override="Presentation with Q&A — bridge and buy-time phrases",
+                                topic_override="Presentation Q&A — presentation",
                                 generation_instructions=(
-                                    "45-second presentation excerpt plus brief answer to one audience question. B2+ depth: bridge/buy-time before key message; speak_present includes one hard question with bridge to thesis."
+                                    "Presentation task (presentation Q&A after a talk): structured spoken segment showing Bridge and buy-time phrases for hard questions with signposts and a clear close. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_present'. Provide a visual_prompt_description outlining the intro, two points, and conclusion, an optional model_presentation, grammar_rule, target_words (To begin, firstly, secondly, to conclude), and speaking_duration_seconds: 90."
@@ -16200,9 +16132,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="READ_COMP_MCQ",
                                 activity="read",
                                 task_widget="read_comp_mcq",
-                                topic_override="B1+ confidence integration story — chair and pitch combined — less scaffold",
+                                topic_override="B2 Showcase Depth — reading comprehension",
                                 generation_instructions=(
-                                    "Write an encouraging story where the speaker handles a counterargument, states a vision, and closes with a call to action. Then MCQ comprehension. B2+ depth: facilitate with synthesis + 45s pitch close; showcase debate uses However / on the other hand with decision check and CTA."
+                                    "Write a 120–150 word passage (B2 showcase combining chairing and pitch) rich in Facilitate discussion then deliver a 45-second close. Add 3–4 comprehension MCQs where at least two require applying Facilitate discussion then deliver a 45-second close, not only locating a noun or date. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'read_comp_mcq'. Provide passage_title, passage, and 4 MCQ items, each with prompt, options, correct_index, and explanation."
@@ -16223,9 +16155,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="LISTEN_SHADOW",
                                 activity="listen",
                                 task_widget="listen_shadow",
-                                topic_override="Showcase shadowing clip — chair and pitch combined — less scaffold",
+                                topic_override="B2 Showcase Depth — shadowing",
                                 generation_instructions=(
-                                    "Generate a confident 20-second clip mixing summary and call to action for shadowing. B2+ depth: facilitate with synthesis + 45s pitch close; showcase debate uses However / on the other hand with decision check and CTA."
+                                    "Provide a 50–60 word script (B2 showcase combining chairing and pitch) dense with Facilitate discussion then deliver a 45-second close for shadowing practice. Rhythm and phrasing should model natural B2+ delivery. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'listen_shadow'. Provide audio_script, text_to_shadow, target_words (proud of, growing, confidence), and grammar_rule about intonation."
@@ -16246,9 +16178,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="WRITE_TIMED",
                                 activity="write",
                                 task_widget="write_timed",
-                                topic_override="Timed integrated confidence writing — chair and pitch combined — less scaffold",
+                                topic_override="B2 Showcase Depth — timed writing",
                                 generation_instructions=(
-                                    "Ask for a timed paragraph integrating argument, rebuttal, and a strong close. B2+ depth: facilitate with synthesis + 45s pitch close; showcase debate uses However / on the other hand with decision check and CTA."
+                                    "Timed writing (B2 showcase combining chairing and pitch): produce a structured response demonstrating Facilitate discussion then deliver a 45-second close within the time limit; include clear signposts or moves from the depth angle. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'write_timed'. Provide prompt, grammar_rule, target_words (discovered, moreover, in the future), writing_duration_seconds: 180, sample_answer, and answer_hints."
@@ -16269,9 +16201,9 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 archetype_id="SPEAK_DEBATE",
                                 activity="speak",
                                 task_widget="speak_debate",
-                                topic_override="Debate-style showcase speaking — chair and pitch combined — less scaffold",
+                                topic_override="B2 Showcase Depth — debate",
                                 generation_instructions=(
-                                    "Set up a short debate-style speaking task where the learner rebuts one point and ends with a call to action. B2+ depth: facilitate with synthesis + 45s pitch close; showcase debate uses However / on the other hand with decision check and CTA."
+                                    "Debate scenario (B2 showcase combining chairing and pitch) integrating Facilitate discussion then deliver a 45-second close: chair briefly, respond to one challenge, then deliver a timed closing statement. B2+ level: denser discourse, subtler distractors, and less explicit scaffolding."
                                 ),
                                 widget_requirements=(
                                     "Target widget 'speak_debate'. Provide a debate_context with an AI moderator turn, an AI opponent turn, and a learner turn, target_words (strongly believe, however, on the other hand), and speaking_duration_seconds: 60."

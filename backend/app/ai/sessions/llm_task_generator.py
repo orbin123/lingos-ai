@@ -27,6 +27,7 @@ from app.ai.sessions.prompts import (
 )
 from app.modules.sessions.task_generator import (
     GeneratedTask,
+    authored_error_spotting_content,
     authored_fill_in_blanks_content,
     authored_listen_and_respond_content,
     is_valid_error_spotting_payload,
@@ -36,6 +37,8 @@ from app.modules.sessions.task_generator import (
     is_valid_error_correction_payload,
     is_valid_dialogue_speaking_payload,
     is_valid_interview_speaking_payload,
+    is_valid_task_content,
+    normalize_mcq_payload,
     normalize_interview_speaking_payload,
     normalize_error_spotting_payload,
     normalize_fill_in_blanks_payload,
@@ -353,6 +356,28 @@ class LLMTaskGenerator:
             )
             return GeneratedTask(content=content)
 
+        authored_error_spotting_payload = (
+            authored_error_spotting_content(spec_dict)
+            if self._is_error_spotting_task(archetype)
+            else None
+        )
+        if authored_error_spotting_payload is not None:
+            return GeneratedTask(
+                content={
+                    "phase": "authored",
+                    "archetype_id": archetype.archetype_id,
+                    "archetype_name": archetype.name,
+                    "ui_widget": archetype.ui_widget,
+                    "widget": normalize_widget_key(archetype.ui_widget),
+                    "core_activity": archetype.core_activity,
+                    "topic": spec_dict.get("topic_override") or day_topic,
+                    "explanation_brief": explanation_brief,
+                    "cefr_level": cefr_level,
+                    "sub_level": sub_level,
+                    **authored_error_spotting_payload,
+                }
+            )
+
         last_exc: Exception | None = None
         for attempt_no in range(2):  # initial attempt + one retry
             try:
@@ -543,6 +568,20 @@ class LLMTaskGenerator:
             content = await self._attach_optional_audio(
                 content=content,
                 archetype=archetype,
+            )
+        elif archetype.ui_widget == "MCQList":
+            content = normalize_mcq_payload(content)
+        elif archetype.ui_widget == "TrueFalseNotGiven":
+            content = {**content, "widget": "true_false_not_given"}
+        elif (
+            archetype.ui_widget == "FillInBlanks"
+            and archetype.core_activity == "read"
+        ):
+            content = normalize_fill_in_blanks_payload(content)
+
+        if not is_valid_task_content(archetype.archetype_id, content):
+            raise _TaskContentInvalid(
+                f"task content failed validation for {archetype.archetype_id}"
             )
 
         return content

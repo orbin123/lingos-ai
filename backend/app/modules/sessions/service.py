@@ -82,16 +82,7 @@ from app.modules.sessions.scoring_writer import ApplyReport, apply_session_score
 from app.modules.sessions.task_generator import (
     StubTaskGenerator,
     TaskGenerator,
-    is_valid_dialogue_speaking_payload,
-    is_valid_interview_speaking_payload,
-    is_valid_listening_payload,
-    is_valid_open_text_payload,
-    is_valid_read_aloud_payload,
-    is_valid_read_structure_payload,
-    is_valid_read_tone_id_payload,
-    is_valid_sentence_transform_payload,
-    is_valid_speak_and_record_payload,
-    is_valid_speak_pic_desc_payload,
+    is_valid_task_content,
     normalize_read_aloud_payload,
     normalize_read_structure_payload,
     normalize_sentence_transform_payload,
@@ -391,33 +382,7 @@ class SessionService:
 
     @staticmethod
     def _is_attempt_content_valid(content: dict, spec: ArchetypeSpec) -> bool:
-        if not content:
-            return False
-        if spec.core_activity == "listen":
-            if not is_valid_listening_payload(content):
-                return False
-            audio_script = str(content.get("audio_script") or "").strip()
-            audio_url = str(content.get("audio_url") or "").strip()
-            return bool(audio_url or audio_script)
-        if spec.archetype_id == "WRITE_OPEN_SENT":
-            return is_valid_open_text_payload(content, expected_items=3)
-        if spec.archetype_id == "SPEAK_READ_ALOUD":
-            return is_valid_read_aloud_payload(content)
-        if spec.archetype_id == "SPEAK_TIMED":
-            return is_valid_speak_and_record_payload(content)
-        if spec.archetype_id == "SPEAK_PIC_DESC":
-            return is_valid_speak_pic_desc_payload(content)
-        if spec.archetype_id == "SPEAK_INTERVIEW":
-            return is_valid_interview_speaking_payload(content)
-        if spec.archetype_id in {"SPEAK_ROLEPLAY", "SPEAK_SMALLTALK"}:
-            return is_valid_dialogue_speaking_payload(content)
-        if spec.ui_widget == "SentenceTransform":
-            return is_valid_sentence_transform_payload(content, expected_items=3)
-        if spec.archetype_id == "READ_STRUCTURE_ID":
-            return is_valid_read_structure_payload(content)
-        if spec.archetype_id == "READ_TONE_ID":
-            return is_valid_read_tone_id_payload(content)
-        return True
+        return is_valid_task_content(spec.archetype_id, content)
 
     async def _regenerate_task_content(
         self,

@@ -360,6 +360,22 @@ def authored_listen_and_respond_content(task_spec: dict | None) -> dict | None:
     return normalized if is_valid_listening_payload(normalized) else None
 
 
+def authored_error_spotting_content(task_spec: dict | None) -> dict | None:
+    """Return source-authored error-spotting content from a task spec, if any."""
+    spec = task_spec or {}
+    for key in ("payload", "content"):
+        candidate = spec.get(key)
+        if isinstance(candidate, dict):
+            normalized = normalize_error_spotting_payload(candidate)
+            if is_valid_error_spotting_payload(normalized):
+                return normalized
+
+    if not isinstance(spec.get("passage_sentences"), list):
+        return None
+    normalized = normalize_error_spotting_payload(spec)
+    return normalized if is_valid_error_spotting_payload(normalized) else None
+
+
 _BLANK_HINT_WORDS = frozenset({
     "i", "me", "you", "he", "him", "she", "her", "it", "we", "us", "they", "them",
     "mine", "yours", "his", "hers", "ours", "theirs",
@@ -892,6 +908,101 @@ def is_valid_read_tone_id_payload(content: dict) -> bool:
         return False
     return all(
         isinstance(item, dict) and str(item.get("message") or "").strip()
+        for item in items
+    )
+
+
+_TFNG_ANSWERS = frozenset({"true", "false", "not given", "notgiven"})
+
+
+def normalize_mcq_payload(content: dict) -> dict:
+    """Normalize generated MCQ payloads for the chat widget."""
+    normalized = dict(content or {})
+    normalized["widget"] = "mcq"
+    normalized["items"] = _normalize_mcq_items(normalized.get("items"))
+    return normalized
+
+
+def is_valid_mcq_payload(content: dict) -> bool:
+    """Return True when a reading/listening MCQ payload is safe to render/score."""
+    widget = normalize_widget_key(
+        str(content.get("widget") or content.get("ui_widget") or "")
+    )
+    if widget == "listen_and_respond":
+        return is_valid_listening_payload(content) and content.get("inner_widget") == "mcq"
+    if widget != "mcq":
+        return False
+    items = _normalize_mcq_items(content.get("items"))
+    return len(items) >= 1
+
+
+def is_valid_tfng_payload(content: dict) -> bool:
+    """Return True when a True/False/Not Given payload is safe to render/score."""
+    widget = normalize_widget_key(
+        str(content.get("widget") or content.get("ui_widget") or "")
+    )
+    if widget != "true_false_not_given":
+        return False
+    passage = _first_text(content.get("passage"), content.get("primary_text"))
+    if not passage:
+        return False
+    items = content.get("items")
+    if not isinstance(items, list) or not items:
+        return False
+    return all(
+        isinstance(item, dict)
+        and str(item.get("prompt") or item.get("statement") or "").strip()
+        and str(item.get("correct_answer") or item.get("answer") or "")
+        .strip()
+        .lower()
+        in _TFNG_ANSWERS
+        for item in items
+    )
+
+
+def is_valid_fill_blanks_payload(content: dict) -> bool:
+    """Return True when a cloze/fill-in-blanks payload is safe to render/score."""
+    widget = normalize_widget_key(
+        str(content.get("widget") or content.get("ui_widget") or "")
+    )
+    if widget == "listen_and_respond":
+        return (
+            is_valid_listening_payload(content)
+            and content.get("inner_widget") == "fill_in_blanks"
+        )
+    if widget != "fill_in_blanks":
+        return False
+    normalized = normalize_fill_in_blanks_payload(content)
+    items = normalized.get("items") or normalized.get("blanks")
+    if not isinstance(items, list) or not items:
+        return False
+    return all(
+        isinstance(item, dict)
+        and str(item.get("item_id") or item.get("blank_id") or "").strip()
+        and "___" in str(item.get("sentence_with_blank") or "")
+        and str(item.get("correct_answer") or "").strip()
+        for item in items
+    )
+
+
+def is_valid_dictation_payload(content: dict) -> bool:
+    """Return True when a dictation listening payload is safe to render/score."""
+    widget = normalize_widget_key(
+        str(content.get("widget") or content.get("ui_widget") or "")
+    )
+    if widget != "listen_and_respond":
+        return False
+    if not str(content.get("audio_script") or "").strip():
+        return False
+    if content.get("inner_widget") != "open_text":
+        return False
+    items = content.get("items")
+    if not isinstance(items, list) or not items:
+        return False
+    return all(
+        isinstance(item, dict)
+        and str(item.get("prompt") or "").strip()
+        and str(item.get("sample_answer") or "").strip()
         for item in items
     )
 
@@ -1840,5 +1951,83 @@ def _first_text(*values: object) -> str | None:
             return value.strip()
     return None
 
+
+def is_valid_task_content(archetype_id: str, content: dict) -> bool:
+    """Return True when ``task_content`` is safe to render for the archetype.
+
+    Central dispatcher used by delivery-time healing and LLM task generation.
+    Offline ``phase='stub'`` payloads stay permissive so test stubs are unchanged.
+    """
+    if not content:
+        return False
+
+    from app.modules.sessions.contracts.registry import get_contract
+    from app.modules.sessions.contracts.task_payloads import (
+        ErrorCorrectionPayload,
+        ErrorSpottingPayload,
+        FillBlanksPayload,
+        McqPayload,
+        OpenTextPayload,
+        ReadStructurePayload,
+        SpeakingPayload,
+        TfngPayload,
+        TransformPayload,
+    )
+    from app.scoring import get_archetype
+
+    spec = get_archetype(archetype_id)
+    payload_cls = get_contract(archetype_id).task_payload
+
+    if spec.core_activity == "listen":
+        if archetype_id == "LISTEN_DICTATION":
+            if not is_valid_dictation_payload(content):
+                return False
+        elif not is_valid_listening_payload(content):
+            return False
+        audio_script = str(content.get("audio_script") or "").strip()
+        audio_url = str(content.get("audio_url") or "").strip()
+        return bool(audio_url or audio_script)
+
+    if archetype_id == "READ_TONE_ID":
+        return is_valid_read_tone_id_payload(content)
+    if archetype_id == "WRITE_OPEN_SENT":
+        return is_valid_open_text_payload(content, expected_items=3)
+    if archetype_id == "SPEAK_READ_ALOUD":
+        return is_valid_read_aloud_payload(content)
+    if archetype_id == "SPEAK_TIMED":
+        return is_valid_speak_and_record_payload(content)
+    if archetype_id == "SPEAK_PIC_DESC":
+        return is_valid_speak_pic_desc_payload(content)
+    if archetype_id == "SPEAK_INTERVIEW":
+        return is_valid_interview_speaking_payload(content)
+    if archetype_id in {"SPEAK_ROLEPLAY", "SPEAK_SMALLTALK", "SPEAK_DEBATE"}:
+        return is_valid_dialogue_speaking_payload(content)
+    if archetype_id == "WRITE_SENT_TRANS":
+        return is_valid_sentence_transform_payload(content, expected_items=3)
+    if archetype_id == "WRITE_ERROR_CORR":
+        return is_valid_error_correction_payload(content, expected_items=3)
+    if archetype_id == "READ_STRUCTURE_ID":
+        return is_valid_read_structure_payload(content)
+
+    if payload_cls is McqPayload:
+        return is_valid_mcq_payload(content)
+    if payload_cls is TfngPayload:
+        return is_valid_tfng_payload(content)
+    if payload_cls is FillBlanksPayload:
+        return is_valid_fill_blanks_payload(content)
+    if payload_cls is ErrorSpottingPayload:
+        return is_valid_error_spotting_payload(content)
+    if payload_cls is OpenTextPayload:
+        return is_valid_open_text_payload(content)
+    if payload_cls is TransformPayload:
+        return is_valid_sentence_transform_payload(content)
+    if payload_cls is ErrorCorrectionPayload:
+        return is_valid_error_correction_payload(content)
+    if payload_cls is ReadStructurePayload:
+        return is_valid_read_structure_payload(content)
+    if payload_cls is SpeakingPayload:
+        return is_valid_speak_and_record_payload(content)
+
+    return True
 
 
