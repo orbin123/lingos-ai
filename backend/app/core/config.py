@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # legacy payload is delivered unchanged. When True (set in tests), the same
     # failure raises so contract violations surface loudly instead of silently
     # falling back. Env: STRICT_CONTRACTS.
-    strict_contracts: bool = False
+    strict_contracts: bool = True
 
     # Database
     database_url: str 
@@ -41,6 +41,14 @@ class Settings(BaseSettings):
 
     # Frontend
     frontend_url: str = "http://localhost:3000"
+
+    # Billing / access
+    # A one-time course purchase grants this many years of access from the
+    # purchase date. Surfaced in the admin Subscribers view as access_expires_at.
+    ACCESS_WINDOW_YEARS: int = 2
+    # Free-trial length for users who have not purchased. Used to derive a
+    # trial-end date (signup + TRIAL_DAYS) in the admin Subscribers view.
+    TRIAL_DAYS: int = 7
 
     # AI / LLM
     OPENAI_API_KEY: str

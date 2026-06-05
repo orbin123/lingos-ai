@@ -254,8 +254,8 @@ async def update_me(
         db.commit()
         db.refresh(profile)
 
-    enrollment = EnrollmentService(db).get_for_user(current_user.id)
-    return _build_user_out(user=current_user, profile=profile, enrollment=enrollment)
+    preference = UserCoursePreferenceRepository(db).get_for_user(current_user.id)
+    return _build_user_out(user=current_user, profile=profile, preference=preference)
 
 
 # ---------------------------------------------------------------------------

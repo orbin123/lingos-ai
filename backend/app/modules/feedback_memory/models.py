@@ -9,6 +9,7 @@ into Pinecone is also logged here so that:
 """
 
 from sqlalchemy import (
+    JSON,
     ForeignKey,
     Index,
     Integer,
@@ -54,7 +55,9 @@ class FeedbackMemoryLog(Base, IDMixin, CreatedAtMixin):
     )
     document_text: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_json: Mapped[dict] = mapped_column(
-        JSONB, nullable=False, server_default="'{}'",
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=False,
+        server_default="'{}'",
     )
 
     def __repr__(self) -> str:

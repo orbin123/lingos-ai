@@ -34,7 +34,7 @@ from app.ai.storage import (
     StorageError,
     StorageReadError,
 )
-from app.ai.stt.exceptions import STTError, STTValidationError
+from app.ai.stt.exceptions import STTValidationError
 from app.ai.stt.interface import TranscriptionResult
 from app.ai.stt.openai_client import OpenAISTTClient, get_default_stt_client
 

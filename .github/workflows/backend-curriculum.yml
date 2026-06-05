@@ -15,8 +15,14 @@ on:
       - "backend/tests/test_curriculum_seed_smoke.py"
       - "backend/tests/test_file_source.py"
       - "backend/tests/test_a1a2_teacher_integrity.py"
+      - "backend/tests/test_curriculum_teacher_steps.py"
       - "backend/app/ai/agents/teacher.py"
       - "backend/tests/test_teacher_agent_prompt.py"
+      - "backend/tests/test_contract_validation_gate.py"
+      - "backend/tests/test_curriculum_task_spec_validation.py"
+      - "backend/tests/test_all_calendar_days_integrity.py"
+      - "backend/app/modules/curriculum/day_lint.py"
+      - "backend/app/modules/sessions/contracts/**"
       - ".github/workflows/backend-curriculum.yml"
   pull_request:
     paths:
@@ -26,8 +32,14 @@ on:
       - "backend/tests/test_curriculum_seed_smoke.py"
       - "backend/tests/test_file_source.py"
       - "backend/tests/test_a1a2_teacher_integrity.py"
+      - "backend/tests/test_curriculum_teacher_steps.py"
       - "backend/app/ai/agents/teacher.py"
       - "backend/tests/test_teacher_agent_prompt.py"
+      - "backend/tests/test_contract_validation_gate.py"
+      - "backend/tests/test_curriculum_task_spec_validation.py"
+      - "backend/tests/test_all_calendar_days_integrity.py"
+      - "backend/app/modules/curriculum/day_lint.py"
+      - "backend/app/modules/sessions/contracts/**"
       - ".github/workflows/backend-curriculum.yml"
 
 jobs:
@@ -65,4 +77,8 @@ jobs:
             tests/test_composer.py \
             tests/test_file_source.py \
             tests/test_a1a2_teacher_integrity.py \
-            tests/test_teacher_agent_prompt.py -q
+            tests/test_curriculum_teacher_steps.py \
+            tests/test_teacher_agent_prompt.py \
+            tests/test_contract_validation_gate.py \
+            tests/test_curriculum_task_spec_validation.py \
+            tests/test_all_calendar_days_integrity.py -q

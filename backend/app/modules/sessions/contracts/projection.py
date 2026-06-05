@@ -448,6 +448,33 @@ def _speaking_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]
                 )
             )
         questions = tuple(parsed)
+    if not prompts and questions:
+        prompts = tuple(question.interviewer_prompt for question in questions)
+    if not prompts and archetype_id == "SPEAK_READ_ALOUD":
+        if _str(
+            content.get("text_to_read_aloud")
+            or content.get("passage")
+            or content.get("primary_text")
+        ):
+            prompts = (
+                _str(content.get("instructions")) or "Read the passage aloud.",
+            )
+    if not prompts and dialogue_turns:
+        prompts = (_str(content.get("instructions")) or "Respond in the dialogue.",)
+    _required_prompt_archetypes = frozenset({
+        "SPEAK_TIMED",
+        "SPEAK_PIC_DESC",
+        "SPEAK_OPINION",
+        "SPEAK_PRESENT",
+        "SPEAK_SMALLTALK",
+        "SPEAK_ROLEPLAY",
+        "SPEAK_DEBATE",
+    })
+    if archetype_id in _required_prompt_archetypes and not prompts:
+        raise ContractValidationError(
+            archetype_id,
+            "speaking prompts must not be empty",
+        )
     return {
         "prompts": prompts,
         "interview_context": _str(content.get("interview_context")),

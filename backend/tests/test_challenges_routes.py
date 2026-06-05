@@ -13,14 +13,14 @@ from sqlalchemy.pool import StaticPool
 from app.core.database import Base, get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
-from app.modules.challenges import service as challenges_service
+from app.modules.challenges.ielts_sprint import service as challenges_service
 from app.modules.challenges.models import (
     Challenge,
     ChallengeAttempt,
     ChallengeAttemptStatus,
     ChallengeLevel,
 )
-from app.modules.challenges.evaluation_schemas import (
+from app.modules.challenges.ielts_sprint.evaluation_schemas import (
     IELTSFeedbackReport,
     SectionFeedback,
     SpeakingCriteriaEvaluation,
@@ -456,6 +456,8 @@ def test_all_challenge_read_routes_are_mounted() -> None:
         in paths
     )
     assert "/api/v1/challenges/{slug}/levels/{level_number}/attempts" in paths
+    assert "/api/v1/challenge-attempts/{attempt_id}/begin" in paths
+    assert "/api/v1/challenge-attempts/{attempt_id}/responses" in paths
     assert "/api/v1/challenge-attempts/{attempt_id}/submit" in paths
 
 
@@ -485,6 +487,7 @@ def test_challenge_detail_includes_progress(
     assert body["slug"] == "ielts"
     assert body["levels"][0]["best_score"] == 6.5
     assert body["levels"][0]["attempt_count"] == 1
+    assert body["levels"][0]["in_progress_attempt_id"] is None
     assert body["levels"][1]["unlocked"] is True
 
 
@@ -535,6 +538,8 @@ def test_start_attempt_stores_generated_text_task(
     assert response.status_code == 201
     body = response.json()
     assert body["status"] == "in_progress"
+    assert body["timer_started_at"] is None
+    assert body["expires_at"] is None
     assert body["task_payload"]["meta"]["phase"] == 3
     assert (
         body["task_payload"]["sections"]["reading"]["passage_title"]
@@ -569,6 +574,57 @@ def test_start_attempt_rejects_locked_level(
     assert response.status_code == 403
 
 
+def test_begin_attempt_starts_timer(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    seed_ielts_challenge(db_session)
+    db_session.commit()
+    start_response = client.post("/api/v1/challenges/ielts/levels/1/attempts")
+    attempt_id = start_response.json()["id"]
+
+    begin_response = client.post(f"/api/v1/challenge-attempts/{attempt_id}/begin")
+
+    assert begin_response.status_code == 200
+    body = begin_response.json()
+    assert body["timer_started_at"] is not None
+    assert body["expires_at"] is not None
+
+
+def test_patch_responses_autosaves_draft(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    seed_ielts_challenge(db_session)
+    db_session.commit()
+    start_response = client.post("/api/v1/challenges/ielts/levels/1/attempts")
+    attempt_id = start_response.json()["id"]
+    payload = {"response_payload": {"reading": {"r1": "A"}, "writing": {"w1": "Draft"}}}
+
+    response = client.patch(
+        f"/api/v1/challenge-attempts/{attempt_id}/responses",
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["response_payload"] == payload["response_payload"]
+
+
+def test_start_attempt_rejects_when_level_already_in_progress(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    seed_ielts_challenge(db_session)
+    db_session.commit()
+    first = client.post("/api/v1/challenges/ielts/levels/1/attempts")
+    assert first.status_code == 201
+
+    second = client.post("/api/v1/challenges/ielts/levels/1/attempts")
+
+    assert second.status_code == 409
+    assert second.json()["detail"]["attempt_id"] == first.json()["id"]
+
+
 def test_submit_attempt_persists_payload_and_scores(
     client: TestClient,
     db_session: Session,
@@ -577,6 +633,7 @@ def test_submit_attempt_persists_payload_and_scores(
     db_session.commit()
     start_response = client.post("/api/v1/challenges/ielts/levels/1/attempts")
     attempt_id = start_response.json()["id"]
+    client.post(f"/api/v1/challenge-attempts/{attempt_id}/begin")
     payload = {
         "response_payload": {
             "reading": {"r1": "A", "r2": "B"},
@@ -614,6 +671,7 @@ def test_route_start_upload_speaking_submit_scores_transcript(
     db_session.commit()
     start_response = client.post("/api/v1/challenges/ielts/levels/1/attempts")
     attempt_id = start_response.json()["id"]
+    client.post(f"/api/v1/challenge-attempts/{attempt_id}/begin")
 
     upload_response = client.post(
         f"/api/v1/challenge-attempts/{attempt_id}/speaking/s1/upload",
@@ -663,6 +721,7 @@ def test_submit_attempt_after_grace_marks_timed_out(
     attempt.overall_score = None
     attempt.section_scores = None
     attempt.passed = None
+    attempt.timer_started_at = datetime.now(timezone.utc) - timedelta(minutes=25)
     attempt.expires_at = datetime.now(timezone.utc) - timedelta(seconds=10)
     db_session.commit()
 

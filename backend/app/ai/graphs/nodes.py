@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.ai.agents.planner import generate_daily_plan
-from app.ai.agents.teacher import generate_teaching_turn
+from app.ai.agents.teacher import _count_teacher_chat_turns, generate_teaching_turn
 from app.ai.graphs.state import LearningSessionState
 from app.ai.llm import get_default_llm_client
 from app.modules.curriculum.adapters import v2_course_topic
@@ -144,16 +144,24 @@ async def teach_node(state: LearningSessionState) -> dict[str, Any]:
     if isinstance(raw_description, str) and raw_description.strip():
         lesson_description = raw_description.strip()
 
+    conversation = list(state.get("messages", []))
+    plan_length = len(scripted_plan) if scripted_plan else 0
+    teacher_turns = _count_teacher_chat_turns(conversation)
+    current_step_index = (
+        min(teacher_turns + 1, plan_length) if plan_length else None
+    )
+
     teaching = await generate_teaching_turn(
         topic=topic,
         sub_skill=skill_name,
         task_type=task_type,
         user_level=user_level,
         learner_profile=learner_profile,
-        conversation=list(state.get("messages", [])),
+        conversation=conversation,
         teacher_instructions=teacher_instructions,
         scripted_plan=scripted_plan,
         lesson_description=lesson_description,
+        current_step_index=current_step_index,
     )
     chat_messages = teaching.messages
 

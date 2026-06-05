@@ -6,15 +6,17 @@ import type { CSSProperties, ReactNode } from "react";
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  ArrowLeft,
   Bot,
   ClipboardCheck,
-  ClipboardList,
   CreditCard,
   LayoutDashboard,
   ListChecks,
   LogOut,
   Repeat,
   ShieldCheck,
+  Star,
+  TrendingUp,
   Users,
 } from "lucide-react";
 
@@ -26,11 +28,12 @@ import { useAuthStore } from "@/store/authStore";
 const NAV_ICONS: Record<string, ReactNode> = {
   Dashboard: <LayoutDashboard size={18} />,
   Users: <Users size={18} />,
-  "Task Templates": <ClipboardList size={18} />,
+  "User Progress": <TrendingUp size={18} />,
   Payments: <CreditCard size={18} />,
-  Subscriptions: <Repeat size={18} />,
+  Subscribers: <Repeat size={18} />,
   "AI Logs": <Bot size={18} />,
   "Feedback Review": <ClipboardCheck size={18} />,
+  "User Reviews": <Star size={18} />,
   "Audit Logs": <ListChecks size={18} />,
   "Roles & Permissions": <ShieldCheck size={18} />,
 };
@@ -124,10 +127,16 @@ export function AdminLayout({
           })}
         </nav>
 
-        <button type="button" onClick={handleLogout} style={logoutStyle}>
-          <LogOut size={17} />
-          Sign out
-        </button>
+        <div style={footerStyle}>
+          <Link href="/dashboard" style={backToAppStyle}>
+            <ArrowLeft size={17} />
+            Back to app
+          </Link>
+          <button type="button" onClick={handleLogout} style={logoutStyle}>
+            <LogOut size={17} />
+            Sign out
+          </button>
+        </div>
       </aside>
 
       <main style={mainStyle}>
@@ -230,8 +239,28 @@ const navItemActiveStyle: CSSProperties = {
   color: "#00599e",
 };
 
-const logoutStyle: CSSProperties = {
+const footerStyle: CSSProperties = {
   marginTop: "auto",
+  display: "grid",
+  gap: 8,
+};
+
+const backToAppStyle: CSSProperties = {
+  minHeight: 42,
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  border: "1px solid oklch(88% 0.018 245)",
+  borderRadius: 8,
+  background: "white",
+  color: "oklch(35% 0.055 245)",
+  padding: "0 12px",
+  textDecoration: "none",
+  fontSize: 14,
+  fontWeight: 750,
+};
+
+const logoutStyle: CSSProperties = {
   minHeight: 42,
   display: "flex",
   alignItems: "center",

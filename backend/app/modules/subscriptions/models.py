@@ -40,6 +40,14 @@ class Purchase(Base, IDMixin, TimestampMixin):
         server_default="paid",
         index=True,
     )
+    # A one-time course purchase grants a fixed access window (2 years from the
+    # purchase date). Stored explicitly rather than computed so admins can
+    # extend/override per user and so "expired" is queryable in SQL.
+    access_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
 
     def __repr__(self) -> str:
         return f"<Purchase(user_id={self.user_id}, plan_id={self.plan_id!r})>"

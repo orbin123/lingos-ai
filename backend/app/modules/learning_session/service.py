@@ -2575,9 +2575,12 @@ class LearningSessionService:
             conversation_messages = list(state.get("messages", []))
             teacher_turns_so_far = _count_teacher_chat_turns(conversation_messages)
             plan_length = len(scripted_plan) if scripted_plan else 0
+            current_step_index = (
+                min(teacher_turns_so_far + 1, plan_length) if plan_length else None
+            )
             if teacher_turns_so_far > 0:
                 if plan_length:
-                    next_step = min(teacher_turns_so_far + 1, plan_length)
+                    next_step = current_step_index or plan_length
                     status_hint = (
                         f"Conversation cursor: you have already produced "
                         f"{teacher_turns_so_far} teacher turn(s); the next "
@@ -2608,6 +2611,7 @@ class LearningSessionService:
                 teacher_instructions=teacher_instructions,
                 scripted_plan=scripted_plan,
                 lesson_description=lesson_description,
+                current_step_index=current_step_index,
             )
             async for chunk in self._timed_chunks(
                 teaching_chunks,

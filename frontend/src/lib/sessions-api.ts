@@ -141,7 +141,10 @@ export interface SessionScorecardRead {
   points_applied: boolean;
   activities: ActivityBreakdown[];
   mentor_note?: string | null;
+  rag_rating?: "like" | "dislike" | null;
 }
+
+export type RagRatingValue = "like" | "dislike";
 
 export interface AdvanceDayResponse {
   week: number;
@@ -250,6 +253,23 @@ export const sessionsApi = {
   getScorecard: (sessionId: string) =>
     api
       .get<SessionScorecardRead>(`/api/sessions/${sessionId}/scorecard`)
+      .then((r) => r.data),
+
+  // Learner thumbs up/down on a chat session's RAG Coach's Note. Keyed by
+  // the chat session_id; the backend bridges it to the scorecard.
+  rateRagFeedback: (sessionId: string, value: RagRatingValue) =>
+    api
+      .put<{ value: RagRatingValue | null }>(
+        `/api/learning/sessions/${sessionId}/rag-feedback/rating`,
+        { value },
+      )
+      .then((r) => r.data),
+
+  clearRagFeedbackRating: (sessionId: string) =>
+    api
+      .delete<{ value: RagRatingValue | null }>(
+        `/api/learning/sessions/${sessionId}/rag-feedback/rating`,
+      )
       .then((r) => r.data),
 
   advanceDay: () =>

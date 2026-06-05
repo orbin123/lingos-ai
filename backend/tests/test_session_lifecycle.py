@@ -953,6 +953,38 @@ class TestAttemptDeliveryRepair:
                         "She always eats breakfast at seven.",
                     ],
                 })
+            elif archetype.core_activity == "listen":
+                content.update({
+                    "audio_script": "Maria wakes up at seven every morning.",
+                    "audio_duration_seconds": 8,
+                    "inner_widget": (
+                        "fill_in_blanks"
+                        if archetype.archetype_id == "LISTEN_CLOZE"
+                        else "open_text"
+                        if archetype.archetype_id == "LISTEN_DICTATION"
+                        else "mcq"
+                    ),
+                    "items": (
+                        [
+                            {
+                                "item_id": "d1",
+                                "prompt": "Type sentence 1.",
+                                "correct_answer": "Maria wakes up at seven every morning.",
+                                "explanation": "Listen for the full sentence.",
+                            }
+                        ]
+                        if archetype.archetype_id == "LISTEN_DICTATION"
+                        else [
+                            {
+                                "item_id": "q1",
+                                "prompt": "What time does Maria wake up?",
+                                "options": ["Six", "Seven", "Eight"],
+                                "correct_index": 1,
+                                "explanation": "She wakes at seven.",
+                            }
+                        ]
+                    ),
+                })
             return GeneratedTask(content=content)
 
     @pytest.mark.asyncio
@@ -989,11 +1021,10 @@ class TestAttemptDeliveryRepair:
 
         repaired = await service.prepare_attempt_for_delivery(listening)
         content = repaired.task_content
-        expected_inner = (
-            "fill_in_blanks"
-            if listening.archetype_id == "LISTEN_CLOZE"
-            else "mcq"
-        )
+        expected_inner = {
+            "LISTEN_CLOZE": "fill_in_blanks",
+            "LISTEN_DICTATION": "open_text",
+        }.get(listening.archetype_id, "mcq")
         assert content["inner_widget"] == expected_inner
         assert isinstance(content.get("items"), list)
         assert len(content["items"]) >= 1

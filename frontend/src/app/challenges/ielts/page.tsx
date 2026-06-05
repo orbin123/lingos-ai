@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ChevronLeft,
@@ -17,7 +17,10 @@ import {
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { authApi } from "@/lib/auth-api";
-import { challengesApi } from "@/lib/challenges-api";
+import {
+  challengesApi,
+  getChallengesApiError,
+} from "@/lib/challenges-api";
 import type { ChallengeLevelRead } from "@/lib/challenges-api";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuthStore } from "@/store/authStore";
@@ -30,8 +33,31 @@ function scoreLabel(score: number | null): string {
   return score == null ? "No band yet" : `Best ${score.toFixed(1)}`;
 }
 
+function formatAttemptDate(value: string): string {
+  return new Date(value).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function renderRulesMarkdown(rulesMd: string): string {
+  return rulesMd
+    .replace(/^## (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n\n/g, "</p><p>")
+    .replace(/^(?!<h3|<li)/gm, "")
+    .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>");
+}
+
 export default function IELTSSprintPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const handledQueryRef = useRef<string | null>(null);
   const { logout } = useAuthStore();
   const { isReady } = useRequireAuth();
 
@@ -47,17 +73,70 @@ export default function IELTSSprintPage() {
     enabled: isReady && !!user?.diagnosis_completed,
   });
 
+  const historyQuery = useQuery({
+    queryKey: ["challenge-history", "ielts"],
+    queryFn: () => challengesApi.history("ielts"),
+    enabled: isReady && !!user?.diagnosis_completed,
+  });
+
   const startMutation = useMutation({
     mutationFn: (level: ChallengeLevelRead) =>
       challengesApi.startAttempt("ielts", level.level_number),
+    onMutate: () => {
+      setStartError(null);
+    },
     onSuccess: (attempt) => {
       router.push(`/challenges/ielts/attempt/${attempt.id}`);
+    },
+    onError: (error) => {
+      const parsed = getChallengesApiError(error);
+      if (parsed.status === 409 && parsed.attemptId != null) {
+        router.push(`/challenges/ielts/attempt/${parsed.attemptId}`);
+        return;
+      }
+      setStartError(parsed.message);
     },
   });
 
   useEffect(() => {
     if (user && !user.diagnosis_completed) router.replace("/diagnosis");
   }, [user, router]);
+
+  useEffect(() => {
+    const retryLevel = searchParams.get("retry");
+    const startLevel = searchParams.get("start");
+    const queryKey = `${retryLevel ?? ""}:${startLevel ?? ""}`;
+    if (!challengeQuery.data || startMutation.isPending) return;
+    if (handledQueryRef.current === queryKey) return;
+
+    const parsedStart = Number(startLevel);
+    const parsedRetry = Number(retryLevel);
+    const triggerLevelStart = (level: ChallengeLevelRead | undefined) => {
+      if (!level?.unlocked) return;
+      handledQueryRef.current = queryKey;
+      if (level.in_progress_attempt_id != null) {
+        router.push(`/challenges/ielts/attempt/${level.in_progress_attempt_id}`);
+        return;
+      }
+      startMutation.mutate(level);
+    };
+
+    if (Number.isFinite(parsedStart) && parsedStart >= 1 && parsedStart <= 3) {
+      triggerLevelStart(
+        challengeQuery.data.levels.find((item) => item.level_number === parsedStart),
+      );
+    } else if (Number.isFinite(parsedRetry) && parsedRetry >= 1 && parsedRetry <= 3) {
+      triggerLevelStart(
+        challengeQuery.data.levels.find((item) => item.level_number === parsedRetry),
+      );
+    }
+  }, [
+    challengeQuery.data,
+    searchParams,
+    startMutation.isPending,
+    startMutation.mutate,
+    router,
+  ]);
 
   const handleLogout = () => {
     logout();
@@ -68,18 +147,41 @@ export default function IELTSSprintPage() {
 
   const loading = userLoading || challengeQuery.isLoading;
   const challenge = challengeQuery.data;
+  const history = historyQuery.data?.attempts ?? [];
+  const resumeAttempt = challenge?.levels.find(
+    (level) => level.in_progress_attempt_id != null,
+  );
 
   return (
     <div
       style={{
         minHeight: "100vh",
-        fontFamily: "var(--font-geist-sans), Arial, sans-serif",
-        background: "#eef2f6",
-        backgroundImage: "radial-gradient(rgba(15, 23, 42, 0.08) 1px, transparent 1px)",
-        backgroundSize: "20px 20px",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+        background: "oklch(91% 0.04 245)",
+        position: "relative",
       }}
     >
-      <DashboardLayout
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
+      />
+
+      {/* Dot grid overlay */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          inset: 0,
+          pointerEvents: "none",
+          backgroundImage:
+            "radial-gradient(circle, rgba(90,130,210,0.13) 1px, transparent 1px)",
+          backgroundSize: "22px 22px",
+          zIndex: 0,
+        }}
+      />
+
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <DashboardLayout
         user={user}
         onSignOut={handleLogout}
         mainStyle={{
@@ -231,6 +333,73 @@ export default function IELTSSprintPage() {
           </div>
         </section>
 
+        {resumeAttempt?.in_progress_attempt_id && (
+          <div style={{ ...alertStyle, background: "#eef4ff", borderColor: "#bfd7ff", color: "#0f172a", marginBottom: 16 }}>
+            <History size={18} aria-hidden />
+            <div style={{ flex: 1 }}>
+              You have an in-progress attempt on {resumeAttempt.name}. Resume to continue where
+              you left off.
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                router.push(
+                  `/challenges/ielts/attempt/${resumeAttempt.in_progress_attempt_id}`,
+                )
+              }
+              style={{
+                border: "none",
+                borderRadius: 999,
+                padding: "8px 16px",
+                background: "#0066cc",
+                color: "white",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Resume sprint
+            </button>
+          </div>
+        )}
+
+        {challenge?.rules_md && (
+          <section style={{ marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => setRulesOpen((open) => !open)}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                border: "1px solid #dbeafe",
+                borderRadius: 16,
+                padding: "14px 18px",
+                background: "white",
+                fontWeight: 700,
+                color: "#0f172a",
+                cursor: "pointer",
+              }}
+            >
+              {rulesOpen ? "Hide sprint rules" : "Show sprint rules"}
+            </button>
+            {rulesOpen && (
+              <div
+                style={{
+                  marginTop: 10,
+                  background: "white",
+                  borderRadius: 16,
+                  padding: "18px 20px",
+                  color: "#475569",
+                  lineHeight: 1.6,
+                  fontSize: 14,
+                }}
+                dangerouslySetInnerHTML={{
+                  __html: `<div>${renderRulesMarkdown(challenge.rules_md)}</div>`,
+                }}
+              />
+            )}
+          </section>
+        )}
+
         <section
           style={{
             display: "grid",
@@ -249,10 +418,8 @@ export default function IELTSSprintPage() {
             </div>
           )}
 
-          {startMutation.isError && (
-            <div style={{ ...alertStyle, marginBottom: 14 }}>
-              Could not start this level. Check that it is unlocked.
-            </div>
+          {startError && (
+            <div style={{ ...alertStyle, marginBottom: 14 }}>{startError}</div>
           )}
 
           {challenge && (
@@ -261,6 +428,7 @@ export default function IELTSSprintPage() {
                 const isStarting =
                   startMutation.isPending &&
                   startMutation.variables?.level_number === level.level_number;
+                const resumeId = level.in_progress_attempt_id;
                 return (
                   <div
                     key={level.id}
@@ -330,7 +498,13 @@ export default function IELTSSprintPage() {
                     <button
                       type="button"
                       disabled={!level.unlocked || isStarting}
-                      onClick={() => startMutation.mutate(level)}
+                      onClick={() => {
+                        if (resumeId) {
+                          router.push(`/challenges/ielts/attempt/${resumeId}`);
+                          return;
+                        }
+                        startMutation.mutate(level);
+                      }}
                       style={{
                         display: "inline-flex",
                         alignItems: "center",
@@ -349,7 +523,7 @@ export default function IELTSSprintPage() {
                       }}
                     >
                       <Play size={14} fill="currentColor" />
-                      {isStarting ? "Starting" : "Start"}
+                      {resumeId ? "Resume" : isStarting ? "Starting" : "Start"}
                       <ChevronRight size={16} />
                     </button>
                   </div>
@@ -358,12 +532,72 @@ export default function IELTSSprintPage() {
             </>
           )}
         </section>
+
+        {history.length > 0 && (
+          <section style={{ marginTop: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+              <History size={18} aria-hidden />
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a" }}>
+                Recent attempts
+              </h2>
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {history.slice(0, 5).map((attempt) => (
+                <div
+                  key={attempt.id}
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 12,
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    background: "white",
+                    borderRadius: 16,
+                    padding: "16px 18px",
+                  }}
+                >
+                  <div>
+                    <strong style={{ color: "#0f172a" }}>{attempt.level_name}</strong>
+                    <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>
+                      {formatAttemptDate(attempt.created_at)} · {attempt.status.replace("_", " ")}
+                      {attempt.overall_score != null
+                        ? ` · ${attempt.overall_score.toFixed(1)}`
+                        : ""}
+                      {attempt.is_best_for_level ? " · best" : ""}
+                    </div>
+                  </div>
+                  {attempt.status === "in_progress" && (
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/challenges/ielts/attempt/${attempt.id}`)}
+                      style={{
+                        border: "none",
+                        borderRadius: 999,
+                        padding: "8px 14px",
+                        background: "#0066cc",
+                        color: "white",
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Resume
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </DashboardLayout>
+      </div>
     </div>
   );
 }
 
 const alertStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
   background: "#fff3e0",
   border: "1px solid #ffd08a",
   color: "#68430a",

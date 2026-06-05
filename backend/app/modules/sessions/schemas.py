@@ -8,6 +8,7 @@ contract defined in §19.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -248,3 +249,6 @@ class SessionScorecardRead(BaseModel):
     points_applied: bool
     activities: list[ActivityBreakdown] = Field(default_factory=list)
     mentor_note: str | None = None
+    # The current viewer's thumbs on the Coach's Note, if they rated it.
+    # Populated by the chat scorecard endpoint; None elsewhere.
+    rag_rating: Literal["like", "dislike"] | None = None

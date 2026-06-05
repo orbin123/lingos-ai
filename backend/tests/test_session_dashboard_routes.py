@@ -35,6 +35,7 @@ from app.modules.sessions.models import (
     SessionScorecard,
     SessionStatus,
 )
+from app.modules.sessions.repository import DailySessionRepository
 from app.modules.sessions.service import SessionService
 from scripts.seed_curriculum import seed_archetypes
 
@@ -482,3 +483,38 @@ def _create_session(db, user_id: int, status: SessionStatus) -> DailySession:
     db.commit()
     db.refresh(session)
     return session
+
+
+def test_get_in_progress_dedupes_duplicate_rows(dashboard_client):
+    """Duplicate in-progress rows must not break scalar_one_or_none callers."""
+    _client, db, user = dashboard_client
+    now = datetime.now(timezone.utc)
+    older = DailySession(
+        session_id="dup-older",
+        user_id=user.id,
+        day_id="day_24_05_03",
+        course_length="24w",
+        status=SessionStatus.IN_PROGRESS,
+        is_first_attempt=True,
+        started_at=now,
+    )
+    newer = DailySession(
+        session_id="dup-newer",
+        user_id=user.id,
+        day_id="day_24_05_03",
+        course_length="24w",
+        status=SessionStatus.IN_PROGRESS,
+        is_first_attempt=True,
+        started_at=now,
+    )
+    db.add_all([older, newer])
+    db.commit()
+
+    repo = DailySessionRepository(db)
+    resolved = repo.get_in_progress(user_id=user.id, day_id="day_24_05_03")
+    db.commit()
+
+    assert resolved is not None
+    assert resolved.session_id == "dup-newer"
+    db.refresh(older)
+    assert older.status is SessionStatus.ABANDONED

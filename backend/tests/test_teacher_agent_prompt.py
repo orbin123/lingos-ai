@@ -85,6 +85,61 @@ def test_scripted_teacher_prompt_uses_title_description_and_behavior_only() -> N
     assert "Old planner context" not in prompt
 
 
+def test_user_prompt_includes_current_step_and_turn_budget() -> None:
+    prompt = _build_user_prompt(
+        topic="Simple Present",
+        sub_skill="grammar",
+        task_type="read",
+        user_level=1,
+        learner_profile={},
+        conversation=[{"role": "ai", "content": "Hi!", "type": "chat"}],
+        scripted_plan=[
+            "Greet and ask for a routine.",
+            "Teach he/she -s.",
+            "Ask only: Ready to try the practice task?",
+        ],
+        current_step_index=2,
+    )
+    assert "CURRENT STEP" in prompt
+    assert "2. Teach he/she -s." in prompt
+    assert "TURN BUDGET" in prompt
+    assert "60--80 words" in prompt
+    assert "reference only" in prompt
+
+
+@pytest.mark.asyncio
+async def test_readiness_turn_bypasses_llm(monkeypatch) -> None:
+    fake = FakeTextLLM(text="LLM should not run.")
+    monkeypatch.setattr(teacher, "get_default_llm_client", lambda: fake)
+
+    plan = [
+        "Greet and ask for one routine.",
+        "Teach frequency adverbs.",
+        "Ask only: Ready to try the practice task?",
+    ]
+    conversation = [
+        {"role": "ai", "content": "Step 1.", "type": "chat"},
+        {"role": "user", "content": "I walk every day."},
+        {"role": "ai", "content": "Step 2.", "type": "chat"},
+        {"role": "user", "content": "I usually walk."},
+    ]
+
+    result = await generate_teaching_turn(
+        topic="Simple Present",
+        sub_skill="grammar",
+        task_type="read",
+        user_level=1,
+        learner_profile={},
+        conversation=conversation,
+        scripted_plan=plan,
+        teacher_instructions={"readiness_prompt": "Ready to try the practice task?"},
+        current_step_index=3,
+    )
+
+    assert result.messages == ["Ready to try the practice task?"]
+    assert len(fake.calls) == 0
+
+
 def test_teacher_prompt_includes_learner_profile() -> None:
     prompt = _build_user_prompt(
         topic="Simple Present Tense",

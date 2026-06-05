@@ -23,7 +23,6 @@ from sqlalchemy import (
     DateTime,
     Enum as SQLAlchemyEnum,
     ForeignKey,
-    Index,
     Integer,
     JSON,
     Numeric,
@@ -317,4 +316,40 @@ class SessionScorecard(Base, IDMixin, CreatedAtMixin):
         return (
             f"<SessionScorecard(session_id={self.session_id}, "
             f"earned_skills={len(self.points_earned)}, applied={self.points_applied})>"
+        )
+
+
+# ── FeedbackRating ─────────────────────────────────────────────────
+
+
+class FeedbackRating(Base, IDMixin, TimestampMixin):
+    """Learner thumbs up/down on a session's RAG feedback (Coach's Note).
+
+    Keyed on the scorecard because the mentor note physically lives there.
+    One rating per user per scorecard — toggling like↔dislike upserts in place.
+    Liked notes surface as positive in admin Feedback Review; disliked as flagged.
+    """
+
+    __tablename__ = "feedback_ratings"
+    __table_args__ = (
+        UniqueConstraint("scorecard_id", "user_id", name="uq_feedback_rating_user"),
+    )
+
+    scorecard_id: Mapped[int] = mapped_column(
+        ForeignKey("session_scorecards.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # "like" | "dislike"
+    value: Mapped[str] = mapped_column(String(10), nullable=False)
+
+    def __repr__(self) -> str:
+        return (
+            f"<FeedbackRating(scorecard_id={self.scorecard_id}, "
+            f"user_id={self.user_id}, value={self.value!r})>"
         )

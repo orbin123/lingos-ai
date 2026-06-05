@@ -1,0 +1,125 @@
+"""Pydantic schemas for the challenges read API."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.modules.challenges.models import ChallengeAttemptStatus
+
+
+class ChallengeListItem(BaseModel):
+    """Compact card data for a challenge."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    slug: str
+    name: str
+    short_description: str
+    icon: str | None
+    level_count: int
+
+
+class ChallengeLevelRead(BaseModel):
+    """Challenge level data plus user-specific progress metadata."""
+
+    id: int
+    level_number: int
+    name: str
+    time_limit_seconds: int
+    pass_threshold: float
+    config: dict
+    unlocked: bool
+    best_score: float | None
+    attempt_count: int
+    in_progress_attempt_id: int | None = None
+
+
+class ChallengeDetailRead(BaseModel):
+    """Full challenge details for a learner."""
+
+    id: int
+    slug: str
+    name: str
+    short_description: str
+    rules_md: str
+    icon: str | None
+    levels: list[ChallengeLevelRead]
+
+
+class ChallengeAttemptRead(BaseModel):
+    """Persisted state of one challenge attempt."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    challenge_level_id: int
+    status: ChallengeAttemptStatus
+    started_at: datetime
+    timer_started_at: datetime | None = None
+    completed_at: datetime | None
+    expires_at: datetime | None
+    task_payload: dict
+    response_payload: dict | None
+    overall_score: float | None
+    section_scores: dict | None
+    passed: bool | None
+    evaluation_report: dict | None
+    feedback_report: dict | None
+    created_at: datetime
+    level_number: int | None = None
+    pass_threshold: float | None = None
+    time_limit_seconds: int | None = None
+
+
+class ChallengeAttemptSubmitRequest(BaseModel):
+    """Raw learner responses for one challenge attempt."""
+
+    response_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChallengeAttemptResponsesPatchRequest(BaseModel):
+    """Draft learner responses autosaved during an in-progress attempt."""
+
+    response_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChallengeSpeakingUploadRead(BaseModel):
+    """Protected metadata for one uploaded speaking take."""
+
+    prompt_id: str
+    audio_url: str
+    audio_storage_key: str
+    content_type: str
+    size_bytes: int
+
+
+class ChallengeHistoryAttempt(BaseModel):
+    """One personal attempt row for challenge history."""
+
+    id: int
+    challenge_level_id: int
+    level_number: int
+    level_name: str
+    status: ChallengeAttemptStatus
+    started_at: datetime
+    completed_at: datetime | None
+    expires_at: datetime | None
+    timer_started_at: datetime | None = None
+    overall_score: float | None
+    section_scores: dict | None
+    passed: bool | None
+    is_best_for_level: bool
+    created_at: datetime
+
+
+class ChallengeHistoryRead(BaseModel):
+    """Personal challenge history, newest attempt first."""
+
+    challenge_slug: str
+    challenge_name: str
+    attempts: list[ChallengeHistoryAttempt]

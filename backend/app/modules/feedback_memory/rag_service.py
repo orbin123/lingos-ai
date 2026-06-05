@@ -464,6 +464,73 @@ class FeedbackRAGService:
         patterns.sort(key=lambda p: p["count"], reverse=True)
         return patterns
 
+    def _compute_recurring_strengths(
+        self, user_id: int, *, min_count: int = 1
+    ) -> list[dict]:
+        """Count normalized ``did_well`` themes across the learner's history.
+
+        The mirror image of :meth:`_compute_recurring_patterns`, reading the
+        ``did_well`` strings from ``feedback_memory_logs.metadata_json``. Each
+        theme is counted once per activity. Strengths are sparser than
+        mistakes, so the default threshold is 1 (surface anything that has
+        appeared). Returns ``[{"theme": str, "count": int}, ...]`` sorted by
+        count, most frequent first.
+        """
+        counts: dict[str, int] = {}
+        labels: dict[str, str] = {}
+        try:
+            logs = self._repo.list_for_user(
+                user_id, memory_type="activity_feedback"
+            )
+        except Exception:
+            logger.warning(
+                "Failed to load logs for strengths user=%d", user_id,
+                exc_info=True,
+            )
+            return []
+
+        for log in logs:
+            did_well = (log.metadata_json or {}).get("did_well") or []
+            seen_in_activity: set[str] = set()
+            for item in did_well:
+                key = (item or "").strip().lower()
+                if not key or key in seen_in_activity:
+                    continue
+                seen_in_activity.add(key)
+                counts[key] = counts.get(key, 0) + 1
+                labels.setdefault(key, str(item).strip())
+
+        strengths: list[dict[str, Any]] = [
+            {"theme": labels[key], "count": n}
+            for key, n in counts.items()
+            if n >= min_count
+        ]
+        strengths.sort(key=lambda s: s["count"], reverse=True)
+        return strengths
+
+    def compute_stats_themes(
+        self, user_id: int, *, limit: int = 3
+    ) -> dict[str, list[str]]:
+        """Top recurring strength / focus themes for the stats dashboard.
+
+        Deterministic aggregation over the Postgres feedback-memory mirror —
+        the same recurrence layer the Coach's Note uses, reused here as the
+        RAG-backed source for the stats page (no LLM, no Pinecone round-trip).
+        Returns raw theme phrases; the caller turns them into qualitative,
+        number-free coaching copy.
+        """
+        strengths = [
+            s["theme"]
+            for s in self._compute_recurring_strengths(user_id)[:limit]
+            if s.get("theme")
+        ]
+        focus = [
+            (p.get("issue") or p.get("rule") or "").strip()
+            for p in self._compute_recurring_patterns(user_id, min_count=1)[:limit]
+        ]
+        focus = [f for f in focus if f]
+        return {"strengths": strengths, "focus": focus}
+
     @staticmethod
     def _normalize_mistake(m: dict) -> tuple | None:
         """Normalize a mistake dict to a comparable key.

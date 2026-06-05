@@ -1,6 +1,7 @@
 """Pydantic schemas for the progress module."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -52,7 +53,13 @@ class DifficultyDistribution(BaseModel):
 
 
 class WeeklySnapshot(BaseModel):
-    """Aggregated weekly metrics for the stats page."""
+    """Aggregated weekly metrics for the stats page.
+
+    Deprecated: kept for backward compatibility with the current frontend.
+    New consumers should read ``PeriodSnapshot`` (range-aware). This mirrors
+    the selected period's headline numbers so the legacy card keeps working
+    during the migration.
+    """
 
     overall_score: float
     overall_score_change: float
@@ -61,6 +68,50 @@ class WeeklySnapshot(BaseModel):
     best_skill_name: str | None
     best_skill_display_label: str | None
     best_skill_score: float | None
+
+
+class PeriodSnapshot(BaseModel):
+    """Range-aware headline KPIs for the stats page.
+
+    Everything here is computed against the learner's *curriculum* calendar
+    for the requested ``range`` (see ``curriculum_periods``), not the
+    wall-clock week.
+    """
+
+    range: Literal["week", "month", "all"]
+    overall_score: float
+    overall_score_change: float
+    tasks_completed: int
+    tasks_goal: int
+    completion_pct: float
+    time_practiced_seconds: int
+    time_practiced_change_seconds: int | None
+    best_skill_name: str | None
+    best_skill_display_label: str | None
+    best_skill_score: float | None
+    curriculum_week: int
+    curriculum_day: int
+    weeks_completed: int
+
+
+class CurriculumMilestone(BaseModel):
+    """Where the learner sits in their course — drives the milestone card."""
+
+    current_week: int
+    current_day: int
+    total_weeks: int
+    course_length: str
+    overall_score: float
+
+
+class PracticePatterns(BaseModel):
+    """Behavioural patterns over the selected curriculum period."""
+
+    most_active_day: str | None
+    best_day: str | None
+    avg_session_seconds: int | None
+    sessions_count: int
+    subtitle: str
 
 
 class StatsMistake(BaseModel):
@@ -93,8 +144,18 @@ class StatsFeedback(BaseModel):
 
 
 class StatsDashboard(BaseModel):
-    """Everything the frontend stats page needs in one read-only response."""
+    """Everything the frontend stats page needs in one read-only response.
 
+    Range-dependent sections (``period_snapshot``, ``skill_history*``,
+    ``practice_patterns``, ``recent_activities``) reflect the requested
+    ``range``. ``skill_scores`` and ``difficulty_distribution`` are always
+    all-time (the sub-skill overview and difficulty donut ignore the range).
+    """
+
+    range: Literal["week", "month", "all"]
+    period_snapshot: PeriodSnapshot
+    curriculum_milestone: CurriculumMilestone
+    practice_patterns: PracticePatterns
     weekly_snapshot: WeeklySnapshot
     skill_scores: list[SkillScoreSnapshot]
     weekly_points_by_skill: dict[int, int]

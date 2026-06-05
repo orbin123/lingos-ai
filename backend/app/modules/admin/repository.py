@@ -11,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from app.modules.admin.models import AIRequestLog, AdminAuditLog
+from app.core.config import settings
+from app.modules.admin.models import AIRequestLog, AdminAuditLog, FeedbackReview
 from app.modules.admin.sanitization import mask_sensitive_text, sanitize_for_admin
 from app.modules.admin.schemas import (
     AIRequestLogRead,
@@ -27,9 +28,15 @@ from app.modules.admin.schemas import (
     AdminUserDetail,
     AdminUserListItem,
     AdminUserProfile,
+    AppReviewItem,
+    FeedbackReviewItem,
     PaymentRead,
+    SubscriberItem,
+    SubscribersOverview,
     SubscriptionRead,
+    TrialUserItem,
     UserBillingRead,
+    UserProgressItem,
 )
 from app.modules.auth.models import (
     ROLE_ADMIN,
@@ -48,13 +55,29 @@ from app.modules.sessions.models import (
     ActivityAttempt,
     ActivityFeedback,
     AttemptStatus,
+    DailySession,
+    FeedbackRating,
+    SessionScorecard,
 )
+from app.modules.reviews.models import AppReview
 from app.modules.skills.models import Skill
-from app.modules.subscriptions.models import Payment, Subscription
+from app.modules.subscriptions.models import Payment, Purchase, Subscription
 
 
 def _enum_value(value: object) -> str:
     return getattr(value, "value", str(value))
+
+
+def _as_aware(value: datetime | None) -> datetime | None:
+    """Treat a naive datetime as UTC so comparisons never crash.
+
+    Postgres returns tz-aware datetimes for `timestamptz`; SQLite (tests)
+    returns naive ones. Normalising here keeps the access-window math safe
+    regardless of backend.
+    """
+    if value is not None and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 def _split_csv(value: str | None) -> list[str]:
@@ -133,9 +156,7 @@ class AdminRepository:
             .scalar()
             or 0
         )
-        # The new flow has no per-row review queue. Pending count is zero
-        # until an explicit review surface lands.
-        pending_feedback_reviews = 0
+        pending_feedback_reviews = self.count_pending_feedback_reviews()
         recent_users = [
             AdminRecentUser(
                 id=user.id,
@@ -184,6 +205,77 @@ class AdminRepository:
             recent_tasks=self._recent_tasks(user.id),
             recent_feedback=self._recent_feedback(user.id),
         )
+
+    def list_user_progress(self) -> list[UserProgressItem]:
+        """Per-learner progress: course bought, activities done, how well."""
+        users = (
+            self._base_user_query()
+            .order_by(User.created_at.desc(), User.id.desc())
+            .all()
+        )
+
+        # Completed (evaluated) activity counts, grouped by learner.
+        count_rows = (
+            self.db.query(
+                DailySession.user_id, func.count(ActivityAttempt.id)
+            )
+            .join(ActivityAttempt, ActivityAttempt.session_id == DailySession.id)
+            .filter(ActivityAttempt.status == AttemptStatus.EVALUATED)
+            .group_by(DailySession.user_id)
+            .all()
+        )
+        counts = {user_id: int(count) for user_id, count in count_rows}
+
+        # Per-sub-skill display scores, grouped by learner (one query).
+        skills_by_user: dict[int, list[AdminSkillScore]] = {}
+        for points, skill in (
+            self.db.query(SkillPoints, Skill)
+            .join(Skill, Skill.id == SkillPoints.skill_id)
+            .order_by(Skill.name.asc())
+            .all()
+        ):
+            skills_by_user.setdefault(points.user_id, []).append(
+                AdminSkillScore(
+                    skill_id=points.skill_id,
+                    skill_name=skill.name,
+                    score=float(points.display_score),
+                    source="points",
+                )
+            )
+
+        purchases = {
+            purchase.user_id: purchase
+            for purchase in self.db.query(Purchase).all()
+        }
+
+        items: list[UserProgressItem] = []
+        for user in users:
+            skills = skills_by_user.get(user.id, [])
+            dashboard_score = (
+                round(sum(s.score for s in skills) / len(skills), 1)
+                if skills
+                else None
+            )
+            purchase = purchases.get(user.id)
+            items.append(
+                UserProgressItem(
+                    user_id=user.id,
+                    name=user.name,
+                    email=user.email,
+                    plan_id=purchase.plan_id if purchase else None,
+                    plan_name=purchase.plan_name if purchase else None,
+                    purchase_complete=bool(
+                        purchase and purchase.status == "paid"
+                    ),
+                    access_expires_at=(
+                        purchase.access_expires_at if purchase else None
+                    ),
+                    activities_completed=counts.get(user.id, 0),
+                    dashboard_score=dashboard_score,
+                    subskill_scores=skills,
+                )
+            )
+        return items
 
     def set_user_active(self, user: User, *, is_active: bool) -> User:
         user.is_active = is_active
@@ -240,6 +332,27 @@ class AdminRepository:
             .first()
         )
 
+    def list_app_reviews(self, *, limit: int = 200) -> list[AppReviewItem]:
+        rows = (
+            self.db.query(AppReview)
+            .options(joinedload(AppReview.user))
+            .order_by(AppReview.created_at.desc(), AppReview.id.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            AppReviewItem(
+                id=review.id,
+                user=_log_user(review.user),
+                rating=review.rating,
+                title=review.title,
+                body=review.body,
+                status=review.status,
+                created_at=review.created_at,
+            )
+            for review in rows
+        ]
+
     def list_audit_logs(self, *, limit: int = 100) -> list[AdminAuditLogRead]:
         rows = (
             self.db.query(AdminAuditLog)
@@ -295,19 +408,246 @@ class AdminRepository:
         )
         return [self._payment_out(payment) for payment in rows]
 
-    def list_subscriptions(self, *, limit: int = 100) -> list[SubscriptionRead]:
-        rows = (
-            self.db.query(Subscription)
-            .options(joinedload(Subscription.user))
+    def list_subscribers(self) -> SubscribersOverview:
+        """Paying subscribers (real `Purchase` rows) + derived trial users.
+
+        Paying group: every user with a `Purchase`, status derived from the
+        2-year access window (`access_expires_at`). Trial group: every user
+        WITHOUT a purchase, on a derived signup + TRIAL_DAYS trial.
+        """
+        now = datetime.now(timezone.utc)
+        purchase_rows = (
+            self.db.query(Purchase, User)
+            .join(User, User.id == Purchase.user_id)
             .order_by(
-                Subscription.current_period_end.desc().nullslast(),
-                Subscription.updated_at.desc(),
-                Subscription.id.desc(),
+                Purchase.access_expires_at.desc().nullslast(),
+                Purchase.id.desc(),
             )
+            .all()
+        )
+
+        purchaser_ids: set[int] = set()
+        subscribers: list[SubscriberItem] = []
+        for purchase, user in purchase_rows:
+            purchaser_ids.add(user.id)
+            expires = _as_aware(purchase.access_expires_at)
+            if purchase.status == "paused":
+                status = "paused"
+            elif expires is None or expires > now:
+                status = "active"
+            else:
+                status = "expired"
+            subscribers.append(
+                SubscriberItem(
+                    user_id=user.id,
+                    name=user.name,
+                    email=user.email,
+                    plan_id=purchase.plan_id,
+                    plan_name=purchase.plan_name,
+                    amount_paid=float(purchase.amount_paid),
+                    currency=purchase.currency,
+                    status=status,
+                    purchased_at=purchase.created_at,
+                    access_expires_at=purchase.access_expires_at,
+                )
+            )
+
+        trial_days = timedelta(days=settings.TRIAL_DAYS)
+        trials: list[TrialUserItem] = []
+        for user in (
+            self._base_user_query()
+            .order_by(User.created_at.desc(), User.id.desc())
+            .all()
+        ):
+            if user.id in purchaser_ids:
+                continue
+            trial_ends = _as_aware(user.created_at) + trial_days
+            trials.append(
+                TrialUserItem(
+                    user_id=user.id,
+                    name=user.name,
+                    email=user.email,
+                    status="trial" if trial_ends > now else "expired",
+                    signed_up_at=user.created_at,
+                    trial_ends_at=trial_ends,
+                )
+            )
+
+        return SubscribersOverview(subscribers=subscribers, trials=trials)
+
+    def get_purchase_for_user(self, user_id: int) -> Purchase | None:
+        return (
+            self.db.query(Purchase)
+            .filter(Purchase.user_id == user_id)
+            .first()
+        )
+
+    # ── Feedback review (specific + rag) ─────────────────────────────
+
+    def list_feedback_review(self, *, limit: int = 200) -> list[FeedbackReviewItem]:
+        """Both feedback kinds, each annotated with its review row (if any)."""
+        items: list[FeedbackReviewItem] = []
+
+        # Per-activity "specific" feedback.
+        specific_rows = (
+            self.db.query(ActivityFeedback, ActivityAttempt, User, FeedbackReview)
+            .join(
+                ActivityAttempt,
+                ActivityAttempt.id == ActivityFeedback.attempt_id,
+            )
+            .join(DailySession, DailySession.id == ActivityAttempt.session_id)
+            .join(User, User.id == DailySession.user_id)
+            .outerjoin(
+                FeedbackReview,
+                (FeedbackReview.feedback_type == "specific")
+                & (FeedbackReview.feedback_id == ActivityFeedback.id),
+            )
+            .order_by(ActivityFeedback.created_at.desc())
             .limit(limit)
             .all()
         )
-        return [self._subscription_out(subscription) for subscription in rows]
+        for feedback, attempt, user, review in specific_rows:
+            items.append(
+                FeedbackReviewItem(
+                    feedback_type="specific",
+                    feedback_id=feedback.id,
+                    user=_log_user(user),
+                    context_label=attempt.archetype_id,
+                    score=float(feedback.score),
+                    summary=feedback.summary,
+                    did_well=feedback.did_well,
+                    mistakes=feedback.mistakes,
+                    next_tip=feedback.next_tip,
+                    review_status=review.review_status if review else "pending",
+                    reviewed_by=_log_user(review.reviewer) if review else None,
+                    reviewed_at=review.reviewed_at if review else None,
+                    admin_note=review.admin_note if review else None,
+                    created_at=feedback.created_at,
+                )
+            )
+
+        # Session-level "rag" Coach's Note.
+        rag_rows = (
+            self.db.query(
+                SessionScorecard, DailySession, User, FeedbackReview, FeedbackRating
+            )
+            .join(DailySession, DailySession.id == SessionScorecard.session_id)
+            .join(User, User.id == DailySession.user_id)
+            .outerjoin(
+                FeedbackReview,
+                (FeedbackReview.feedback_type == "rag")
+                & (FeedbackReview.feedback_id == SessionScorecard.id),
+            )
+            .outerjoin(
+                FeedbackRating,
+                FeedbackRating.scorecard_id == SessionScorecard.id,
+            )
+            .filter(SessionScorecard.mentor_note.isnot(None))
+            .order_by(SessionScorecard.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        for scorecard, session, user, review, rating in rag_rows:
+            items.append(
+                FeedbackReviewItem(
+                    feedback_type="rag",
+                    feedback_id=scorecard.id,
+                    user=_log_user(user),
+                    context_label=session.day_id,
+                    mentor_note=scorecard.mentor_note,
+                    rating=rating.value if rating else None,
+                    review_status=review.review_status if review else "pending",
+                    reviewed_by=_log_user(review.reviewer) if review else None,
+                    reviewed_at=review.reviewed_at if review else None,
+                    admin_note=review.admin_note if review else None,
+                    created_at=scorecard.created_at,
+                )
+            )
+
+        # Surface what needs attention first: disliked / flagged, then
+        # not-yet-reviewed, then the rest — newest within each band.
+        def _priority(item: FeedbackReviewItem) -> int:
+            if item.rating == "dislike" or item.review_status == "flagged":
+                return 0
+            if item.review_status == "pending":
+                return 1
+            return 2
+
+        items.sort(key=lambda i: (_priority(i), -i.created_at.timestamp()))
+        return items
+
+    def count_pending_feedback_reviews(self) -> int:
+        """Targets still needing attention (no resolved review row)."""
+        resolved = ("approved", "fixed")
+        specific_total = (
+            self.db.query(func.count(ActivityFeedback.id)).scalar() or 0
+        )
+        specific_resolved = (
+            self.db.query(func.count(FeedbackReview.id))
+            .filter(
+                FeedbackReview.feedback_type == "specific",
+                FeedbackReview.review_status.in_(resolved),
+            )
+            .scalar()
+            or 0
+        )
+        rag_total = (
+            self.db.query(func.count(SessionScorecard.id))
+            .filter(SessionScorecard.mentor_note.isnot(None))
+            .scalar()
+            or 0
+        )
+        rag_resolved = (
+            self.db.query(func.count(FeedbackReview.id))
+            .filter(
+                FeedbackReview.feedback_type == "rag",
+                FeedbackReview.review_status.in_(resolved),
+            )
+            .scalar()
+            or 0
+        )
+        return (specific_total - specific_resolved) + (rag_total - rag_resolved)
+
+    def feedback_target_exists(self, feedback_type: str, feedback_id: int) -> bool:
+        if feedback_type == "specific":
+            model = ActivityFeedback
+        elif feedback_type == "rag":
+            model = SessionScorecard
+        else:
+            return False
+        return (
+            self.db.query(model.id).filter(model.id == feedback_id).first()
+            is not None
+        )
+
+    def upsert_feedback_review(
+        self,
+        *,
+        feedback_type: str,
+        feedback_id: int,
+        review_status: str,
+        admin_note: str | None,
+        reviewer: User,
+    ) -> FeedbackReview:
+        row = (
+            self.db.query(FeedbackReview)
+            .filter(
+                FeedbackReview.feedback_type == feedback_type,
+                FeedbackReview.feedback_id == feedback_id,
+            )
+            .first()
+        )
+        if row is None:
+            row = FeedbackReview(
+                feedback_type=feedback_type, feedback_id=feedback_id
+            )
+            self.db.add(row)
+        row.review_status = review_status
+        row.admin_note = admin_note
+        row.reviewed_by = reviewer.id
+        row.reviewed_at = datetime.now(timezone.utc)
+        self.db.flush()
+        return row
 
     def get_user_billing(self, user_id: int) -> UserBillingRead | None:
         user = self.db.get(User, user_id)
@@ -466,12 +806,62 @@ class AdminRepository:
             for row, skill in points_rows
         ]
 
-    def _recent_tasks(self, user_id: int) -> list[AdminRecentTask]:
-        # Disabled in Phase 8 — reads the legacy `user_tasks` table.
-        # Will be rewired against `activity_attempts` in a follow-up.
-        return []
+    def _recent_tasks(
+        self, user_id: int, *, limit: int = 10
+    ) -> list[AdminRecentTask]:
+        rows = (
+            self.db.query(ActivityAttempt)
+            .join(DailySession, DailySession.id == ActivityAttempt.session_id)
+            .filter(DailySession.user_id == user_id)
+            .order_by(
+                ActivityAttempt.created_at.desc(), ActivityAttempt.id.desc()
+            )
+            .limit(limit)
+            .all()
+        )
+        return [
+            AdminRecentTask(
+                id=attempt.id,
+                task_id=attempt.id,
+                title=attempt.archetype_id,
+                task_type=attempt.archetype_id,
+                status=_enum_value(attempt.status),
+                completed_at=attempt.submitted_at,
+                created_at=attempt.created_at,
+            )
+            for attempt in rows
+        ]
 
-    def _recent_feedback(self, user_id: int) -> list[AdminRecentFeedback]:
-        # Disabled in Phase 8 — reads the legacy `feedbacks` table. Will
-        # be rewired against `activity_feedback` in a follow-up.
-        return []
+    def _recent_feedback(
+        self, user_id: int, *, limit: int = 10
+    ) -> list[AdminRecentFeedback]:
+        rows = (
+            self.db.query(ActivityFeedback, ActivityAttempt)
+            .join(
+                ActivityAttempt,
+                ActivityAttempt.id == ActivityFeedback.attempt_id,
+            )
+            .join(DailySession, DailySession.id == ActivityAttempt.session_id)
+            .filter(DailySession.user_id == user_id)
+            .order_by(
+                ActivityFeedback.created_at.desc(), ActivityFeedback.id.desc()
+            )
+            .limit(limit)
+            .all()
+        )
+        return [
+            AdminRecentFeedback(
+                id=feedback.id,
+                task_title=attempt.archetype_id,
+                task_type=attempt.archetype_id,
+                score=float(feedback.score),
+                body={
+                    "summary": feedback.summary,
+                    "did_well": feedback.did_well,
+                    "mistakes": feedback.mistakes,
+                    "next_tip": feedback.next_tip,
+                },
+                created_at=feedback.created_at,
+            )
+            for feedback, attempt in rows
+        ]

@@ -41,13 +41,30 @@ class DailySessionRepository:
         ).scalar_one_or_none()
 
     def get_in_progress(self, *, user_id: int, day_id: str) -> DailySession | None:
-        return self.db.execute(
-            select(DailySession).where(
-                DailySession.user_id == user_id,
-                DailySession.day_id == day_id,
-                DailySession.status == SessionStatus.IN_PROGRESS,
-            )
-        ).scalar_one_or_none()
+        """Return the newest in-progress session for `(user_id, day_id)`.
+
+        Older duplicate in-progress rows (race / retry leftovers) are abandoned
+        so `scalar_one_or_none` never raises and callers always see one session.
+        """
+        rows = list(
+            self.db.execute(
+                select(DailySession)
+                .where(
+                    DailySession.user_id == user_id,
+                    DailySession.day_id == day_id,
+                    DailySession.status == SessionStatus.IN_PROGRESS,
+                )
+                .order_by(DailySession.id.desc())
+            ).scalars()
+        )
+        if not rows:
+            return None
+        latest = rows[0]
+        if len(rows) > 1:
+            for stale in rows[1:]:
+                stale.status = SessionStatus.ABANDONED
+            self.db.flush()
+        return latest
 
     def get_latest_for_day(
         self, *, user_id: int, day_id: str, status: SessionStatus | None = None

@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.modules.admin.audit_service import AdminAuditService
 from app.modules.auth.dependencies import get_current_user
@@ -41,6 +42,14 @@ PLAN_CATALOG: dict[str, dict[str, object]] = {
         "currency": "INR",
     },
 }
+
+
+def _add_years(moment: datetime, years: int) -> datetime:
+    """Add calendar years, clamping Feb 29 → Feb 28 on non-leap targets."""
+    try:
+        return moment.replace(year=moment.year + years)
+    except ValueError:
+        return moment.replace(year=moment.year + years, day=28)
 
 
 def _settings_from_profile(profile: object) -> NotificationSettings:
@@ -92,6 +101,10 @@ def purchase_plan(
     purchase.amount_paid = float(plan["amount_paid"])
     purchase.currency = str(plan["currency"])
     purchase.status = "paid"
+    # A one-time purchase grants a fixed access window from the purchase date.
+    purchase.access_expires_at = _add_years(
+        datetime.now(timezone.utc), settings.ACCESS_WINDOW_YEARS
+    )
     db.flush()
 
     payment = Payment(

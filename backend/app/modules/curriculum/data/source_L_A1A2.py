@@ -183,7 +183,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                         id="open",
                         goal="Introduce simple present.",
                         instruction=(
-                            "Greet the learner and note they practised simple present routines yesterday. Explain in two sentences that today adds questions (Do you…?), negatives (don't/doesn't), and short answers (Yes, I do / No, she doesn't). Ask for one yes/no question about a daily routine."
+                            "Greet the learner and note they practised simple present routines yesterday. Explain in two sentences that today adds Do-you questions, negatives (don't/doesn't), and short answers (Yes, I do / No, she doesn't). Ask for one yes/no question about a daily routine."
                         ),
                         stop_after=True,
                     ),
@@ -580,7 +580,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                                     id="open",
                                     goal="Introduce simple past.",
                                     instruction=(
-                                        "Greet the learner; they worked on regular and irregular past yesterday. Explain in two sentences that today groups time words (yesterday, last week, in 2020) and practises Did you…? / didn't questions. Ask when something important happened last year."
+                                        "Greet the learner; they worked on regular and irregular past yesterday. Explain in two sentences that today groups time words (yesterday, last week, in 2020) and practises Did-you and didn't questions. Ask when something important happened last year."
                                     ),
                                     stop_after=True,
                                 ),
@@ -596,7 +596,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                                     id="error_awareness",
                                     goal="Spot common past tense mistakes.",
                                     instruction=(
-                                        "Show one question-form mistake (e.g. 'Did you went…') and ask them to fix it in one sentence. Mention that the practice task uses a short connected passage — do not ask them to write that passage now."
+                                        "Show one question-form mistake such as went after did without fixing it, and ask them to fix it in one sentence. Mention that the practice task uses a short connected passage — do not ask them to write that passage now."
                                     ),
                                     stop_after=True,
                                 ),
@@ -942,10 +942,11 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                             ),
                             widget_requirements=(
                                 "Target widget 'listen_dictation'. Provide audio_script and "
-                                "4 dictation items, each with prompt, correct_answer, and "
-                                "explanation. Set target_words to the present continuous verb "
-                                "chunks (for example 'am opening', 'are taking', 'is asking', "
-                                "'is writing')."
+                                "4 dictation items, each with prompt (keyword hints only, e.g. "
+                                "'Write this sentence: eat, breakfast' — never the full spoken "
+                                "sentence), correct_answer, and explanation. Set target_words to "
+                                "the present continuous verb chunks (for example 'am opening', "
+                                "'are taking', 'is asking', 'is writing')."
                             ),
                         ),
                         evaluation=EvaluationBlueprint(
@@ -1094,7 +1095,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                                     "Generate 4 short audio lines (a morning routine contrasting now and habits) that exemplify ongoing actions vs habits; stative verbs; fixing now vs routine confusions for exact dictation. Each line should highlight one feature of ongoing actions vs habits; stative verbs; fixing now vs routine confusions."
                                 ),
                                     widget_requirements=(
-                                    "Target widget 'listen_dictation'. Provide audio_script and 4 dictation items, each with prompt, correct_answer, and explanation. Set target_words to the present continuous verb chunks (for example 'am opening', 'are taking', 'is asking', 'is writing')."
+                                    "Target widget 'listen_dictation'. Provide audio_script and 4 dictation items, each with prompt (keyword hints only, e.g. 'Write this sentence: eat, breakfast' — never the full spoken sentence), correct_answer, and explanation. Set target_words to the present continuous verb chunks (for example 'am opening', 'are taking', 'is asking', 'is writing')."
                                 ),
                                 ),
                                 evaluation=EvaluationBlueprint(
@@ -2385,7 +2386,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                             instruction=(
                                 "Confirm their introduction sounds natural. Explain that "
                                 "after introducing yourself you add one friendly question "
-                                "like 'Are you new here?' or 'What do you do?'. Ask them to "
+                                "like Are you new here or What do you do. Ask them to "
                                 "introduce themselves again and add one follow-up question."
                             ),
                         ),
@@ -2528,7 +2529,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                                     id="open",
                                     goal="Introduce the first-meeting goal.",
                                     instruction=(
-                                        "Welcome the learner; they practised greetings and introductions yesterday. Explain in two sentences that today they add 2–3 follow-up turns (Where are you from? How long have you been here?) after hello and name. Ask them to greet you, introduce themselves, and ask one follow-up."
+                                        "Welcome the learner; they practised greetings and introductions yesterday. Explain in two sentences that today they add two or three follow-up turns such as Where are you from and How long have you been here after hello and name. Ask them to greet you, introduce themselves, and ask one follow-up."
                                     ),
                                     stop_after=True,
                                 ),
@@ -2670,11 +2671,11 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                             instruction=(
                                 "In two sentences, explain that today's lesson is about "
                                 "keeping a conversation moving with simple questions. Give "
-                                "two real-life examples: 'How are you?' and 'Are you using "
-                                "this chair?' Then invite: 'You start — ask me any simple "
-                                "question!' Do NOT echo or repeat anything the learner "
+                                "two real-life examples: How are you and Are you using "
+                                "this chair. Then invite: You start — ask me any simple "
+                                "question. Do NOT echo or repeat anything the learner "
                                 "writes. If they answer or comment instead of asking a "
-                                "question, say only: 'You go first — ask me a question!'"
+                                "question, say only: You go first — ask me a question."
                             ),
                         ),
                         TeacherStep(
@@ -2695,10 +2696,8 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                             instruction=(
                                 "The learner gave a follow-up. Respond to it naturally in "
                                 "one sentence — still in character. Then step out of the "
-                                "roleplay and say: 'Well done — you kept the conversation "
-                                "going! Are you comfortable asking questions like these?' "
-                                "After their reply, say: 'Great — ready for the practice "
-                                "tasks?'"
+                                "roleplay and praise them for keeping the conversation going. "
+                                "After their reply, ask only: Ready to try the practice task?"
                             ),
                         ),
                     ),
@@ -2831,7 +2830,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                                     id="open",
                                     goal="Introduce short clear questions.",
                                     instruction=(
-                                        "Greet the learner; they practised keeping conversations moving yesterday. Explain in two sentences that today they chain 2–3 questions and clarify with So you mean…? or Sorry, do you mean…? Invite them to ask you two linked questions about your week."
+                                        "Greet the learner; they practised keeping conversations moving yesterday. Explain in two sentences that today they chain two or three questions and use short clarifying phrases when something is unclear. Invite them to ask you two linked questions about your week."
                                     ),
                                     stop_after=True,
                                 ),
@@ -2839,7 +2838,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                                     id="answer_then_follow_up",
                                     goal="Teach the question-answer-follow-up loop.",
                                     instruction=(
-                                        "Answer both briefly in character. Ask them to clarify one detail using So you mean…? about your answer."
+                                        "Answer both briefly in character. Ask them to clarify one detail using a so-you-mean phrase about your answer."
                                     ),
                                     stop_after=True,
                                 ),
@@ -4028,7 +4027,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                                     id="open",
                                     goal="Introduce tone in messages.",
                                     instruction=(
-                                        "Greet the learner; they compared formal and casual tone yesterday. Explain in two sentences that today focuses on informal chat: short clear asks (Can you send me…?, Are you free at…?). Ask them to rewrite a formal line as a chat message to a friend."
+                                        "Greet the learner; they compared formal and casual tone yesterday. Explain in two sentences that today focuses on informal chat: short clear asks like Can you send me and Are you free at. Ask them to rewrite a formal line as a chat message to a friend."
                                     ),
                                     stop_after=True,
                                 ),
@@ -5791,7 +5790,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                                     id="open",
                                     goal="Introduce frequency words.",
                                     instruction=(
-                                        "Greet the learner; they practised time-frequency words yesterday. Explain in two sentences that today includes rescheduling (Can we move it to…?, I'm afraid I can't on…) and frequency in plans. Ask how often they have a team meeting."
+                                        "Greet the learner; they practised time-frequency words yesterday. Explain in two sentences that today includes rescheduling phrases like Can we move it to and I'm afraid I can't on that day, plus frequency in plans. Ask how often they have a team meeting."
                                     ),
                                     stop_after=True,
                                 ),
@@ -11005,7 +11004,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                                     id="open",
                                     goal="Introduce making plans.",
                                     instruction=(
-                                        "Welcome the learner; they practised making plans yesterday. Explain in two sentences that today adds if/when backup plans (If it rains, we'll meet inside) and polite rescheduling (Can we move it to…?). Ask about plans for this weekend."
+                                        "Welcome the learner; they practised making plans yesterday. Explain in two sentences that today adds if/when backup plans (If it rains, we'll meet inside) and polite rescheduling (Can we move it to another day). Ask about plans for this weekend."
                                     ),
                                     stop_after=True,
                                 ),
@@ -11750,8 +11749,8 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                             instruction=(
                                 "Welcome the learner to Day 4. Explain in two sentences that "
                                 "travel English means handling tickets, hotels, and delays "
-                                "politely and clearly (Could I book a room? / Is the train "
-                                "delayed?). Ask for a polite way to ask about a train time."
+                                "politely and clearly (Could I book a room / Is the train "
+                                "delayed). Ask for a polite way to ask about a train time."
                             ),
                         ),
                         TeacherStep(
@@ -12057,8 +12056,8 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                                 "Quote one word from the learner's reply to confirm it "
                                 "sounds polite. If it is polite, affirm it briefly; if not, "
                                 "give a gentle one-sentence correction. Then explain that a "
-                                "polite request often softens the ask (Could you possibly...?). "
-                                "Ask: 'Now how would you politely ask for a refund?' Stop and "
+                                "polite request often softens the ask (Could you possibly). "
+                                "Ask them how they would politely ask for a refund. Stop and "
                                 "wait for their answer."
                             ),
                         ),
@@ -12648,7 +12647,7 @@ WEEKS_A1A2: tuple[WeekSource, ...] = (
                             goal="Teach follow-ups and empathy.",
                             instruction=(
                                 "Explain that good follow-ups react to what the other person "
-                                "said (Oh really? How did that go?) and show empathy (That "
+                                "said (Oh really, how did that go) and show empathy (That "
                                 "sounds tough). Ask them to react to this: 'I had a really "
                                 "busy week at work.' Preview today's reading, retell, "
                                 "message, and spoken summary tasks."

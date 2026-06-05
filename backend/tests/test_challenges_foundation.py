@@ -15,7 +15,7 @@ from app.modules.challenges.models import (
     ChallengeAttemptStatus,
     ChallengeLevel,
 )
-from app.modules.challenges.service import ChallengeReadService
+from app.modules.challenges.ielts_sprint.service import ChallengeReadService
 from scripts.seed_ielts_challenge import seed_ielts_challenge
 
 
@@ -97,7 +97,7 @@ def test_seed_ielts_challenge_is_idempotent(db_session: Session) -> None:
     )
 
     assert first == {"inserted": 4, "updated": 0}
-    assert second == {"inserted": 0, "updated": 4}
+    assert second == {"inserted": 0, "updated": 0}
     assert challenge.name == "IELTS Sprint"
     assert challenge.icon == "award"
     assert [level.time_limit_seconds for level in levels] == [1200, 1800, 2400]
@@ -180,4 +180,43 @@ def test_history_marks_best_attempt_per_level(db_session: Session) -> None:
     assert [row.id for row in history.attempts] == [high.id, low.id]
     assert rows_by_id[low.id].is_best_for_level is False
     assert rows_by_id[high.id].is_best_for_level is True
+
+
+def test_timed_out_passing_score_unlocks_next_level(db_session: Session) -> None:
+    seed_ielts_challenge(db_session)
+    user = _make_user(db_session)
+    challenge = db_session.query(Challenge).filter_by(slug="ielts").one()
+    level = (
+        db_session.query(ChallengeLevel)
+        .filter_by(challenge_id=challenge.id, level_number=1)
+        .one()
+    )
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        ChallengeAttempt(
+            user_id=user.id,
+            challenge_level_id=level.id,
+            status=ChallengeAttemptStatus.TIMED_OUT,
+            started_at=now - timedelta(minutes=25),
+            timer_started_at=now - timedelta(minutes=25),
+            completed_at=now - timedelta(minutes=1),
+            expires_at=now - timedelta(minutes=5),
+            task_payload={"sections": {}},
+            response_payload={"reading": {}},
+            overall_score=6.5,
+            section_scores={"reading": 6.5},
+            passed=True,
+            evaluation_report={"overall": "stub"},
+            feedback_report={"summary": "stub"},
+        )
+    )
+    db_session.commit()
+
+    detail = ChallengeReadService(db_session).get_detail(
+        slug="ielts",
+        user_id=user.id,
+    )
+
+    assert detail.levels[0].best_score == 6.5
+    assert detail.levels[1].unlocked is True
 

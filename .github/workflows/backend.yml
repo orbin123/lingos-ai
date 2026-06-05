@@ -1,0 +1,37 @@
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync deps
+        run: uv sync
+
+      - name: Ruff lint
+        run: uv run ruff check app tests
+
+      - name: Core pytest
+        run: |
+          uv run pytest \
+            tests/test_llm_session_agents.py::TestGeneratorOutputProjectsThroughContract \
+            tests/test_contract_validation_gate.py \
+            tests/test_session_lifecycle.py -q

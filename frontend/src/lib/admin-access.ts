@@ -3,11 +3,12 @@ export const ADMIN_ROLES = ["admin", "super_admin"] as const;
 export const ADMIN_NAV_ITEMS = [
   { href: "/admin", label: "Dashboard" },
   { href: "/admin/users", label: "Users" },
-  { href: "/admin/task-templates", label: "Task Templates" },
+  { href: "/admin/user-progress", label: "User Progress" },
   { href: "/admin/payments", label: "Payments" },
-  { href: "/admin/subscriptions", label: "Subscriptions" },
+  { href: "/admin/subscribers", label: "Subscribers" },
   { href: "/admin/ai-logs", label: "AI Logs" },
   { href: "/admin/feedback-review", label: "Feedback Review" },
+  { href: "/admin/user-reviews", label: "User Reviews" },
   { href: "/admin/audit-logs", label: "Audit Logs" },
   { href: "/admin/roles-permissions", label: "Roles & Permissions", superAdminOnly: true },
 ] as const;

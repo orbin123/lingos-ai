@@ -12,14 +12,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.ai.llm import LLMProviderError
 from app.core.database import Base
 from app.modules.auth.models import User
-from app.modules.challenges.generator_schemas import GeneratedIELTSTaskPayload
+from app.modules.challenges.ielts_sprint.generator_schemas import GeneratedIELTSTaskPayload
 from app.modules.challenges.models import (
     Challenge,
     ChallengeAttempt,
     ChallengeAttemptStatus,
     ChallengeLevel,
 )
-from app.modules.challenges.service import ChallengeReadService
+from app.modules.challenges.ielts_sprint.service import ChallengeReadService
 from scripts.seed_ielts_challenge import seed_ielts_challenge
 
 

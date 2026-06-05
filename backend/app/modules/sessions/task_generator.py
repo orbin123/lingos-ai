@@ -169,6 +169,28 @@ class StubTaskGenerator:
                         "explanation": "Third person singular adds -s: she drinks.",
                     },
                 ])
+            elif archetype.archetype_id == "LISTEN_DICTATION":
+                content.setdefault("inner_widget", "open_text")
+                content.setdefault("items", [
+                    {
+                        "item_id": "d1",
+                        "prompt": "Type sentence 1.",
+                        "correct_answer": "Maria wakes up at seven every morning.",
+                        "explanation": "Listen for the full sentence.",
+                    },
+                    {
+                        "item_id": "d2",
+                        "prompt": "Type sentence 2.",
+                        "correct_answer": "She always drinks coffee first.",
+                        "explanation": "Listen for the full sentence.",
+                    },
+                    {
+                        "item_id": "d3",
+                        "prompt": "Type sentence 3.",
+                        "correct_answer": "Then she usually reads the news for ten minutes.",
+                        "explanation": "Listen for the full sentence.",
+                    },
+                ])
             else:
                 content.setdefault("inner_widget", "mcq")
                 content.setdefault("items", [
@@ -206,7 +228,10 @@ class StubTaskGenerator:
                         "explanation": "They walk together when the weather is nice.",
                     },
                 ])
-            content = normalize_listen_and_respond_payload(content)
+            if archetype.archetype_id == "LISTEN_DICTATION":
+                content = normalize_dictation_payload(content)
+            else:
+                content = normalize_listen_and_respond_payload(content)
         if archetype.archetype_id == "SPEAK_READ_ALOUD":
             content = normalize_read_aloud_payload({
                 **content,
@@ -569,6 +594,161 @@ def normalize_listen_and_respond_payload(content: dict) -> dict:
     if isinstance(audio_script, str) and audio_script.strip():
         normalized["audio_script"] = audio_script.strip()
 
+    return normalized
+
+
+_DICTATION_PROMPT_PREFIX_RE = re.compile(
+    r"^(?:write\s+this\s+sentence|type\s+(?:sentence|what\s+you\s+hear)|sentence)\s*:?\s*",
+    re.IGNORECASE,
+)
+
+_DICTATION_STOP_WORDS = frozenset({
+    "i", "you", "he", "she", "it", "we", "they",
+    "am", "is", "are", "was", "were", "be", "been", "being",
+    "a", "an", "the", "to", "at", "in", "on", "for", "of", "and", "or",
+    "my", "your", "his", "her", "its", "our", "their",
+    "this", "that", "these", "those",
+    "now", "right", "usually", "always", "often", "sometimes", "never",
+    "every", "each", "just", "very", "so", "too", "also",
+    "do", "does", "did", "have", "has", "had",
+})
+
+
+def _normalize_dictation_word(token: str) -> str:
+    word = token.lower().strip(".,!?;:'\"")
+    if not word:
+        return ""
+    if word.endswith("ing") and len(word) > 5 and not word.endswith("ning"):
+        bare = word[:-3]
+        if bare + "ing" == word:
+            return bare
+        if bare + "e" + "ing" == word:
+            return bare + "e"
+    if word.endswith("ies") and len(word) > 4:
+        return word[:-3] + "y"
+    if word.endswith("es") and len(word) > 3:
+        return word[:-2]
+    if word.endswith("s") and len(word) > 3 and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
+def _dictation_keyword_hint(answer: str) -> str:
+    tokens = re.findall(r"[a-z']+", answer.lower())
+    keywords: list[str] = []
+    for token in tokens:
+        word = _normalize_dictation_word(token)
+        if not word or word in _DICTATION_STOP_WORDS:
+            continue
+        if word not in keywords:
+            keywords.append(word)
+        if len(keywords) >= 3:
+            break
+    return ", ".join(keywords)
+
+
+def _dictation_prompt_body(prompt: str) -> str:
+    return _DICTATION_PROMPT_PREFIX_RE.sub("", prompt.strip()).strip(" .")
+
+
+def _dictation_prompt_leaks_answer(prompt: str, answer: str) -> bool:
+    if "___" in prompt:
+        return False
+    if not prompt or not answer:
+        return False
+    prompt_body = _dictation_prompt_body(prompt)
+    prompt_norm = re.sub(r"[^a-z0-9']+", "", prompt_body.lower())
+    answer_norm = re.sub(r"[^a-z0-9']+", "", answer.lower())
+    if not prompt_norm or not answer_norm:
+        return False
+    if prompt_norm == answer_norm:
+        return True
+    if len(answer_norm) >= 12 and answer_norm in prompt_norm:
+        return True
+    if len(prompt_norm) >= 12 and prompt_norm in answer_norm:
+        return True
+    answer_words = set(re.findall(r"[a-z']+", answer.lower())) - _DICTATION_STOP_WORDS
+    prompt_words = set(re.findall(r"[a-z']+", prompt_body.lower()))
+    if not answer_words:
+        return False
+    overlap = len(answer_words & prompt_words) / len(answer_words)
+    return overlap >= 0.75
+
+
+def _dictation_display_prompt(
+    prompt: str,
+    answer: str,
+    *,
+    index: int,
+    target_words: list[str] | tuple[str, ...],
+) -> str:
+    if "___" in prompt or not _dictation_prompt_leaks_answer(prompt, answer):
+        return prompt
+    hint = _dictation_keyword_hint(answer)
+    if not hint and index < len(target_words):
+        hint = str(target_words[index]).strip()
+    return f"Write this sentence: {hint}" if hint else f"Sentence {index + 1}"
+
+
+def _dictation_correct_answer(
+    raw: dict,
+    index: int,
+    target_words: list[str] | tuple[str, ...],
+) -> str:
+    """Resolve the reference sentence for a dictation item (mirrors projection)."""
+    prompt = str(raw.get("prompt") or "").strip()
+    answer = str(raw.get("correct_answer") or raw.get("sample_answer") or "").strip()
+    if not answer and index < len(target_words):
+        answer = str(target_words[index]).strip()
+    if not answer:
+        return ""
+    if "___" not in prompt:
+        return answer
+    parts = [part.strip() for part in prompt.split("___") if part.strip()]
+    if parts and all(part.lower() in answer.lower() for part in parts):
+        return answer
+    return prompt.replace("___", answer.strip(), 1).strip()
+
+
+def normalize_dictation_payload(content: dict) -> dict:
+    """Normalize listen-dictation payloads for the chat widget."""
+    normalized = dict(content or {})
+    normalized["widget"] = "listen_and_respond"
+    normalized["inner_widget"] = "open_text"
+
+    audio_script = normalized.get("audio_script") or normalized.get("primary_text")
+    if isinstance(audio_script, str) and audio_script.strip():
+        normalized["audio_script"] = audio_script.strip()
+
+    target_words = normalized.get("target_words") or ()
+    if not isinstance(target_words, (list, tuple)):
+        target_words = ()
+
+    items: list[dict] = []
+    for index, raw in enumerate(normalized.get("items") or [], start=1):
+        if not isinstance(raw, dict):
+            continue
+        prompt = str(raw.get("prompt") or "").strip()
+        if not prompt:
+            continue
+        answer = _dictation_correct_answer(raw, index - 1, target_words)
+        if not answer:
+            continue
+        display_prompt = _dictation_display_prompt(
+            prompt,
+            answer,
+            index=index - 1,
+            target_words=target_words,
+        )
+        item_id = str(raw.get("item_id") or raw.get("id") or f"d{index}").strip()
+        items.append({
+            "item_id": item_id or f"d{index}",
+            "prompt": display_prompt,
+            "correct_answer": answer,
+            "sample_answer": answer,
+            "explanation": str(raw.get("explanation") or "").strip(),
+        })
+    normalized["items"] = items
     return normalized
 
 
@@ -1002,7 +1182,10 @@ def is_valid_dictation_payload(content: dict) -> bool:
     return all(
         isinstance(item, dict)
         and str(item.get("prompt") or "").strip()
-        and str(item.get("sample_answer") or "").strip()
+        and str(
+            item.get("correct_answer") or item.get("sample_answer") or ""
+        ).strip()
+        and str(item.get("explanation") or "").strip()
         for item in items
     )
 
@@ -1750,6 +1933,7 @@ def _normalize_error_correction_items(raw_items: Any) -> list[dict]:
             raw.get("incorrect_sentence")
             or raw.get("incorrect")
             or raw.get("sentence")
+            or raw.get("prompt")
             or ""
         ).strip()
         sample = str(
@@ -1955,79 +2139,26 @@ def _first_text(*values: object) -> str | None:
 def is_valid_task_content(archetype_id: str, content: dict) -> bool:
     """Return True when ``task_content`` is safe to render for the archetype.
 
-    Central dispatcher used by delivery-time healing and LLM task generation.
+    Delegates to the contract-unified projection gate for live payloads.
     Offline ``phase='stub'`` payloads stay permissive so test stubs are unchanged.
     """
     if not content:
         return False
 
-    from app.modules.sessions.contracts.registry import get_contract
-    from app.modules.sessions.contracts.task_payloads import (
-        ErrorCorrectionPayload,
-        ErrorSpottingPayload,
-        FillBlanksPayload,
-        McqPayload,
-        OpenTextPayload,
-        ReadStructurePayload,
-        SpeakingPayload,
-        TfngPayload,
-        TransformPayload,
+    from app.modules.sessions.contracts.projection import (
+        ContractValidationError,
+        project_task_payload,
     )
-    from app.scoring import get_archetype
 
-    spec = get_archetype(archetype_id)
-    payload_cls = get_contract(archetype_id).task_payload
-
-    if spec.core_activity == "listen":
-        if archetype_id == "LISTEN_DICTATION":
-            if not is_valid_dictation_payload(content):
-                return False
-        elif not is_valid_listening_payload(content):
-            return False
-        audio_script = str(content.get("audio_script") or "").strip()
-        audio_url = str(content.get("audio_url") or "").strip()
-        return bool(audio_url or audio_script)
-
-    if archetype_id == "READ_TONE_ID":
-        return is_valid_read_tone_id_payload(content)
-    if archetype_id == "WRITE_OPEN_SENT":
-        return is_valid_open_text_payload(content, expected_items=3)
-    if archetype_id == "SPEAK_READ_ALOUD":
-        return is_valid_read_aloud_payload(content)
-    if archetype_id == "SPEAK_TIMED":
-        return is_valid_speak_and_record_payload(content)
-    if archetype_id == "SPEAK_PIC_DESC":
-        return is_valid_speak_pic_desc_payload(content)
-    if archetype_id == "SPEAK_INTERVIEW":
-        return is_valid_interview_speaking_payload(content)
-    if archetype_id in {"SPEAK_ROLEPLAY", "SPEAK_SMALLTALK", "SPEAK_DEBATE"}:
-        return is_valid_dialogue_speaking_payload(content)
-    if archetype_id == "WRITE_SENT_TRANS":
-        return is_valid_sentence_transform_payload(content, expected_items=3)
-    if archetype_id == "WRITE_ERROR_CORR":
-        return is_valid_error_correction_payload(content, expected_items=3)
-    if archetype_id == "READ_STRUCTURE_ID":
-        return is_valid_read_structure_payload(content)
-
-    if payload_cls is McqPayload:
-        return is_valid_mcq_payload(content)
-    if payload_cls is TfngPayload:
-        return is_valid_tfng_payload(content)
-    if payload_cls is FillBlanksPayload:
-        return is_valid_fill_blanks_payload(content)
-    if payload_cls is ErrorSpottingPayload:
-        return is_valid_error_spotting_payload(content)
-    if payload_cls is OpenTextPayload:
-        return is_valid_open_text_payload(content)
-    if payload_cls is TransformPayload:
-        return is_valid_sentence_transform_payload(content)
-    if payload_cls is ErrorCorrectionPayload:
-        return is_valid_error_correction_payload(content)
-    if payload_cls is ReadStructurePayload:
-        return is_valid_read_structure_payload(content)
-    if payload_cls is SpeakingPayload:
-        return is_valid_speak_and_record_payload(content)
-
-    return True
+    try:
+        project_task_payload(
+            archetype_id,
+            content,
+            activity_id="check",
+            sequence=1,
+        )
+        return True
+    except ContractValidationError:
+        return False
 
 

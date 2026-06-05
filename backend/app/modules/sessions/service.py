@@ -29,6 +29,7 @@ from app.modules.sessions.contracts.agent_inputs import (
     TaskGenAgentInput,
     build_agent_input,
 )
+from app.modules.sessions.contracts.validation import normalize_task_content
 from app.modules.curriculum.file_source import (
     get_day_by_id as file_get_day_by_id,
     resolve_archetypes as file_resolve_archetypes,
@@ -83,10 +84,6 @@ from app.modules.sessions.task_generator import (
     StubTaskGenerator,
     TaskGenerator,
     is_valid_task_content,
-    normalize_read_aloud_payload,
-    normalize_read_structure_payload,
-    normalize_sentence_transform_payload,
-    normalize_speak_pic_desc_payload,
 )
 from app.modules.skills.repository import SkillRepository
 from app.scoring import (
@@ -324,31 +321,10 @@ class SessionService:
         """
         spec = get_archetype(attempt.archetype_id)
         content = dict(attempt.task_content or {})
-        if spec.archetype_id == "SPEAK_READ_ALOUD":
-            healed = normalize_read_aloud_payload(content)
-            if healed != content:
-                attempt.task_content = healed
-                self.db.commit()
-                self.db.refresh(attempt)
-                content = healed
-        if spec.ui_widget == "SentenceTransform":
-            healed = normalize_sentence_transform_payload(content)
-            if healed != content:
-                attempt.task_content = healed
-                self.db.commit()
-                self.db.refresh(attempt)
-                content = healed
-        if spec.archetype_id == "READ_STRUCTURE_ID":
-            healed = normalize_read_structure_payload(content)
-            if healed != content:
-                attempt.task_content = healed
-                self.db.commit()
-                self.db.refresh(attempt)
-                content = healed
+        healed = normalize_task_content(spec.archetype_id, content)
         if spec.archetype_id == "SPEAK_PIC_DESC":
             from app.ai.sessions.llm_task_generator import LLMTaskGenerator
 
-            healed = normalize_speak_pic_desc_payload(content)
             image_alt = str(healed.get("image_alt") or "").strip()
             image_url = str(healed.get("image_url") or "").strip()
             if image_alt and not image_url and not healed.get("image_error"):
@@ -356,11 +332,11 @@ class SessionService:
                     content=healed,
                     archetype=spec,
                 )
-            if healed != content:
-                attempt.task_content = healed
-                self.db.commit()
-                self.db.refresh(attempt)
-                content = healed
+        if healed != content:
+            attempt.task_content = healed
+            self.db.commit()
+            self.db.refresh(attempt)
+            content = healed
         if self._is_attempt_content_valid(content, spec):
             return attempt
 

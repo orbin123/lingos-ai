@@ -466,6 +466,7 @@ def build_task_gen_user_prompt(
     sub_level: int,
     user_interests: list[str] | None,
     task_spec: dict | None = None,
+    validation_feedback: str | None = None,
 ) -> str:
     interests = ", ".join(user_interests) if user_interests else "general"
     spec = task_spec or {}
@@ -493,6 +494,12 @@ def build_task_gen_user_prompt(
         parts.append(f"Task intro to use: {spec['task_intro']}")
     if spec.get("estimated_time_minutes"):
         parts.append(f"Estimated time minutes: {spec['estimated_time_minutes']}")
+    if validation_feedback:
+        parts.extend([
+            "",
+            "Previous attempt failed contract validation. Fix these issues and regenerate:",
+            validation_feedback,
+        ])
     widget_key = _widget_key(archetype.ui_widget)
     parts.extend([
         "",
@@ -525,7 +532,11 @@ def build_task_gen_user_prompt(
                 "- `correct_answer` is the correctly inflected simple-present form (base verb or +s/+es).",
                 "- Include exactly 2 distractors per item (wrong inflections, e.g. 'wakes'/'waking' when correct is 'wake').",
             ])
-    if widget_key == "listen_and_respond":
+    if (
+        widget_key == "listen_and_respond"
+        and archetype.archetype_id
+        not in {"LISTEN_DICTATION", "LISTEN_RETELL", "LISTEN_SHADOW"}
+    ):
         parts.extend([
             "ListenAndRespond requirements:",
             "- `audio_script` must be a natural-sounding spoken passage (60-120 words) at the target CEFR level.",
@@ -599,9 +610,13 @@ def build_task_gen_user_prompt(
     if archetype.archetype_id == "LISTEN_DICTATION":
         parts.extend([
             "ListenDictation requirements:",
+            "- `inner_widget` must be 'open_text' (not mcq).",
             "- `audio_script` must contain 3–4 short spoken sentences at the target CEFR level.",
             "- Generate one dictation item per sentence in `items`.",
             "- Each item MUST include item_id, prompt, correct_answer (the full sentence exactly as spoken), and explanation.",
+            "- `prompt` must give KEYWORD HINTS only — never the full spoken sentence. "
+            "Format: 'Write this sentence: eat, breakfast' or 'Sentence 2: take, shower'. "
+            "Put 2–3 content words (verbs/nouns) in the prompt; keep helper verbs and the full sentence in `correct_answer` only.",
             "- Do NOT use cloze-style prompts with `___` unless `correct_answer` is still the full spoken sentence.",
             "- Do NOT put the answers only in `target_words`; `correct_answer` is required on every item.",
         ])

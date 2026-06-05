@@ -66,12 +66,61 @@ class ChallengeAttemptRepository:
             .where(
                 ChallengeAttempt.user_id == user_id,
                 ChallengeAttempt.challenge_level_id.in_(level_ids),
-                ChallengeAttempt.status == ChallengeAttemptStatus.COMPLETED,
+                ChallengeAttempt.status.in_(
+                    (
+                        ChallengeAttemptStatus.COMPLETED,
+                        ChallengeAttemptStatus.TIMED_OUT,
+                    )
+                ),
                 ChallengeAttempt.overall_score.is_not(None),
             )
             .group_by(ChallengeAttempt.challenge_level_id)
         ).all()
         return {level_id: float(score) for level_id, score in rows if score is not None}
+
+    def find_in_progress_for_level(
+        self,
+        *,
+        user_id: int,
+        level_id: int,
+    ) -> ChallengeAttempt | None:
+        return self.db.execute(
+            select(ChallengeAttempt)
+            .where(
+                ChallengeAttempt.user_id == user_id,
+                ChallengeAttempt.challenge_level_id == level_id,
+                ChallengeAttempt.status == ChallengeAttemptStatus.IN_PROGRESS,
+            )
+            .options(selectinload(ChallengeAttempt.level))
+            .order_by(ChallengeAttempt.created_at.desc(), ChallengeAttempt.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+
+    def in_progress_attempt_ids_by_level(
+        self,
+        *,
+        user_id: int,
+        level_ids: list[int],
+    ) -> dict[int, int]:
+        if not level_ids:
+            return {}
+        rows = self.db.execute(
+            select(
+                ChallengeAttempt.challenge_level_id,
+                ChallengeAttempt.id,
+            )
+            .where(
+                ChallengeAttempt.user_id == user_id,
+                ChallengeAttempt.challenge_level_id.in_(level_ids),
+                ChallengeAttempt.status == ChallengeAttemptStatus.IN_PROGRESS,
+            )
+            .order_by(ChallengeAttempt.created_at.desc(), ChallengeAttempt.id.desc())
+        ).all()
+        result: dict[int, int] = {}
+        for level_id, attempt_id in rows:
+            if level_id not in result:
+                result[level_id] = attempt_id
+        return result
 
     def attempt_counts_by_level(
         self,
@@ -152,14 +201,16 @@ class ChallengeAttemptRepository:
         user_id: int,
         level_id: int,
         started_at: datetime,
-        expires_at: datetime,
         task_payload: dict,
+        expires_at: datetime | None = None,
+        timer_started_at: datetime | None = None,
     ) -> ChallengeAttempt:
         attempt = ChallengeAttempt(
             user_id=user_id,
             challenge_level_id=level_id,
             status=ChallengeAttemptStatus.IN_PROGRESS,
             started_at=started_at,
+            timer_started_at=timer_started_at,
             expires_at=expires_at,
             task_payload=task_payload,
             response_payload=None,

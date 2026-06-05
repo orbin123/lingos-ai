@@ -89,6 +89,7 @@ def _valid_content_for(archetype_id: str) -> dict:
             "widget": "listen_and_respond",
             "audio_script": "Maria wakes up at seven every morning.",
             "audio_url": "/audio/sample.mp3",
+            "audio_duration_seconds": 8,
         })
         if archetype_id == "LISTEN_CLOZE":
             content.update({
@@ -106,12 +107,22 @@ def _valid_content_for(archetype_id: str) -> dict:
         elif archetype_id == "LISTEN_DICTATION":
             content.update({
                 "inner_widget": "open_text",
-                "items": _valid_open_text_items(),
+                "items": [
+                    {
+                        "item_id": "d1",
+                        "prompt": "Type sentence 1.",
+                        "correct_answer": "Maria wakes up at seven every morning.",
+                        "explanation": "Listen for the full sentence.",
+                    }
+                ],
             })
         elif archetype_id in {"LISTEN_RETELL", "LISTEN_SHADOW"}:
             content.update({
                 "inner_widget": "speak_and_record",
                 "text_to_shadow": "Maria wakes up at seven every morning.",
+                "speaking_prompts": ["Retell what you heard in your own words."],
+                "sample_responses": ["Maria wakes up at seven every morning."],
+                "speaking_duration_seconds": 45,
             })
         else:
             content.update({
@@ -365,7 +376,11 @@ def _valid_content_for(archetype_id: str) -> dict:
         return content
 
     if payload_cls is SpeakingPayload:
-        content.update({**_valid_speaking_prompts(), "widget": "speak_and_record"})
+        content.update({
+            **_valid_speaking_prompts(),
+            "widget": "speak_and_record",
+            "speaking_duration_seconds": 45,
+        })
         return content
 
     raise AssertionError(f"no valid fixture builder for {archetype_id}")
@@ -379,20 +394,24 @@ def _invalid_content_for(archetype_id: str) -> dict:
         content["passage_sentences"] = []
     elif archetype_id == "SPEAK_READ_ALOUD":
         content["text_to_read_aloud"] = ""
+        content["speaking_duration_seconds"] = 1
     elif archetype_id == "SPEAK_PIC_DESC":
         content["image_alt"] = ""
         content["image_url"] = ""
+        content["speaking_duration_seconds"] = 1
     elif archetype_id == "SPEAK_INTERVIEW":
         content["questions"] = []
+        content["speaking_duration_seconds"] = 1
     elif archetype_id in {"SPEAK_ROLEPLAY", "SPEAK_SMALLTALK", "SPEAK_DEBATE"}:
         content["dialogue_context"] = []
+        content["speaking_duration_seconds"] = 1
     elif archetype_id in {"LISTEN_RETELL", "LISTEN_SHADOW"}:
         content["text_to_shadow"] = ""
         content["audio_script"] = ""
         content["audio_url"] = ""
+        content["speaking_duration_seconds"] = 1
     elif spec.core_activity == "speak":
-        content["speaking_prompts"] = []
-        content["sample_responses"] = []
+        content["speaking_duration_seconds"] = 1
     elif "items" in content:
         content["items"] = []
     else:

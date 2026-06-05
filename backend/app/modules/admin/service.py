@@ -19,17 +19,21 @@ from app.modules.admin.schemas import (
     AdminSummary,
     AdminUserDetail,
     AdminUserListItem,
+    AppReviewItem,
+    FeedbackReviewItem,
+    FeedbackReviewUpdate,
     PaymentRead,
     RolePermissionsUpdate,
-    SubscriptionRead,
-    SubscriptionUpdate,
+    SubscriberItem,
+    SubscribersOverview,
     UserBillingRead,
+    UserProgressItem,
     UserRolesUpdate,
 )
 from app.modules.auth.models import DEFAULT_ROLE_NAMES, ROLE_SUPER_ADMIN, User
 from app.modules.auth.permissions import ALL_PERMISSION_KEYS
 from app.modules.auth.repository import RoleRepository
-from app.modules.subscriptions.models import Subscription
+from app.modules.subscriptions.models import Purchase
 
 
 class AdminService:
@@ -47,6 +51,9 @@ class AdminService:
 
     def get_user_detail(self, user_id: int) -> AdminUserDetail | None:
         return self.repo.get_user_detail(user_id)
+
+    def list_user_progress(self) -> list[UserProgressItem]:
+        return self.repo.list_user_progress()
 
     def list_roles(self) -> list[AdminRoleRead]:
         self.roles.ensure_defaults()
@@ -176,6 +183,56 @@ class AdminService:
             created_at=detail.created_at,
         )
 
+    def list_feedback_review(self) -> list[FeedbackReviewItem]:
+        return self.repo.list_feedback_review()
+
+    def review_feedback(
+        self,
+        *,
+        feedback_type: str,
+        feedback_id: int,
+        payload: FeedbackReviewUpdate,
+        actor: User,
+        ip_address: str | None = None,
+    ) -> FeedbackReviewItem | None:
+        if not self.repo.feedback_target_exists(feedback_type, feedback_id):
+            return None
+
+        review = self.repo.upsert_feedback_review(
+            feedback_type=feedback_type,
+            feedback_id=feedback_id,
+            review_status=payload.review_status,
+            admin_note=payload.admin_note,
+            reviewer=actor,
+        )
+        self.audit.record(
+            admin=actor,
+            action="feedback.review",
+            resource_type="feedback_review",
+            resource_id=review.id,
+            old_value=None,
+            new_value={
+                "feedback_type": feedback_type,
+                "feedback_id": feedback_id,
+                "review_status": payload.review_status,
+            },
+            ip_address=ip_address,
+        )
+        self.db.commit()
+        # Return the refreshed item from the unified list.
+        return next(
+            (
+                item
+                for item in self.repo.list_feedback_review()
+                if item.feedback_type == feedback_type
+                and item.feedback_id == feedback_id
+            ),
+            None,
+        )
+
+    def list_app_reviews(self) -> list[AppReviewItem]:
+        return self.repo.list_app_reviews()
+
     def list_audit_logs(self) -> list[AdminAuditLogRead]:
         return self.repo.list_audit_logs()
 
@@ -191,47 +248,44 @@ class AdminService:
     def list_payments(self) -> list[PaymentRead]:
         return self.repo.list_payments()
 
-    def list_subscriptions(self) -> list[SubscriptionRead]:
-        return self.repo.list_subscriptions()
+    def list_subscribers(self) -> SubscribersOverview:
+        return self.repo.list_subscribers()
 
     def get_user_billing(self, user_id: int) -> UserBillingRead | None:
         return self.repo.get_user_billing(user_id)
 
-    def update_subscription(
+    def update_subscriber_access(
         self,
         *,
-        subscription_id: int,
-        payload: SubscriptionUpdate,
+        user_id: int,
+        access_expires_at,
         actor: User,
         ip_address: str | None = None,
-    ) -> SubscriptionRead | None:
-        subscription = self.repo.get_subscription(subscription_id)
-        if subscription is None:
+    ) -> SubscriberItem | None:
+        """Extend or expire a subscriber's 2-year access window."""
+        purchase = self.repo.get_purchase_for_user(user_id)
+        if purchase is None:
             return None
 
-        updates = payload.model_dump(exclude_unset=True)
-        if not updates:
-            raise ValueError("At least one subscription field must be provided")
-
-        old_value = self._subscription_snapshot(subscription)
-        for field, value in updates.items():
-            if field == "plan_name" and isinstance(value, str):
-                value = value.strip()
-            setattr(subscription, field, value)
-
+        old_value = self._purchase_snapshot(purchase)
+        purchase.access_expires_at = access_expires_at
         self.db.flush()
         self.audit.record(
             admin=actor,
-            action="subscription.update",
-            resource_type="subscription",
-            resource_id=subscription.id,
+            action="purchase.access_update",
+            resource_type="purchase",
+            resource_id=purchase.id,
             old_value=old_value,
-            new_value=self._subscription_snapshot(subscription),
+            new_value=self._purchase_snapshot(purchase),
             ip_address=ip_address,
         )
         self.db.commit()
-        self.db.refresh(subscription)
-        return self.repo._subscription_out(subscription)
+        # Return the refreshed subscriber row from the unified view.
+        overview = self.repo.list_subscribers()
+        return next(
+            (item for item in overview.subscribers if item.user_id == user_id),
+            None,
+        )
 
     def _user_status_snapshot(self, user: User) -> dict[str, Any]:
         return {
@@ -262,28 +316,16 @@ class AdminService:
             "permissions": role.permission_keys(),
         }
 
-    def _subscription_snapshot(self, subscription: Subscription) -> dict[str, Any]:
+    def _purchase_snapshot(self, purchase: Purchase) -> dict[str, Any]:
         return {
-            "id": subscription.id,
-            "user_id": subscription.user_id,
-            "provider": subscription.provider,
-            "provider_customer_id": subscription.provider_customer_id,
-            "provider_subscription_id": subscription.provider_subscription_id,
-            "plan_name": subscription.plan_name,
-            "status": subscription.status,
-            "trial_ends_at": (
-                subscription.trial_ends_at.isoformat()
-                if subscription.trial_ends_at
-                else None
-            ),
-            "current_period_start": (
-                subscription.current_period_start.isoformat()
-                if subscription.current_period_start
-                else None
-            ),
-            "current_period_end": (
-                subscription.current_period_end.isoformat()
-                if subscription.current_period_end
+            "id": purchase.id,
+            "user_id": purchase.user_id,
+            "plan_id": purchase.plan_id,
+            "plan_name": purchase.plan_name,
+            "status": purchase.status,
+            "access_expires_at": (
+                purchase.access_expires_at.isoformat()
+                if purchase.access_expires_at
                 else None
             ),
         }

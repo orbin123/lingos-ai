@@ -224,9 +224,11 @@ export default function ChallengeAttemptPage() {
     enabled: isReady && Number.isFinite(attemptId),
   });
 
-  const [activeSection, setActiveSection] = useState<SectionKey>("reading");
+  const [activeSection, setActiveSection] = useState<SectionKey>("listening");
   const [responses, setResponses] = useState<ChallengeResponses>(emptyResponses);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [timerStarted, setTimerStarted] = useState(false);
+  const [beginError, setBeginError] = useState<string | null>(null);
   const [submittedAttempt, setSubmittedAttempt] =
     useState<ChallengeAttemptRead | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -234,6 +236,8 @@ export default function ChallengeAttemptPage() {
   const responsesRef = useRef<ChallengeResponses>(responses);
   const attemptRef = useRef<ChallengeAttemptRead | null>(null);
   const submitInFlightRef = useRef(false);
+  const autoSubmitTriggeredRef = useRef(false);
+  const saveTimeoutRef = useRef<number | null>(null);
 
   const currentAttempt = submittedAttempt ?? attemptQuery.data ?? null;
   const taskPayload = currentAttempt?.task_payload;
@@ -251,13 +255,33 @@ export default function ChallengeAttemptPage() {
     onSuccess: (attempt) => {
       setSubmittedAttempt(attempt);
       setSubmitError(null);
+      setTimerStarted(Boolean(attempt.timer_started_at));
       queryClient.setQueryData(["challenge-attempt", attemptId], attempt);
     },
     onError: (error) => {
+      autoSubmitTriggeredRef.current = false;
       const message = error instanceof Error ? error.message : "Submit failed";
       setSubmitError(message);
       queryClient.invalidateQueries({ queryKey: ["challenge-attempt", attemptId] });
     },
+  });
+
+  const beginMutation = useMutation({
+    mutationFn: () => challengesApi.beginAttempt(attemptId),
+    onSuccess: (attempt) => {
+      setBeginError(null);
+      setTimerStarted(true);
+      queryClient.setQueryData(["challenge-attempt", attemptId], attempt);
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : "Could not start timer";
+      setBeginError(message);
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      challengesApi.saveResponses(attemptId, payload),
   });
 
   useEffect(() => {
@@ -276,8 +300,24 @@ export default function ChallengeAttemptPage() {
     const attempt = attemptQuery.data;
     if (!attempt || initializedAttemptId.current === attempt.id) return;
     setResponses(normalizeResponses(attempt.response_payload));
+    setTimerStarted(Boolean(attempt.timer_started_at));
     initializedAttemptId.current = attempt.id;
   }, [attemptQuery.data]);
+
+  useEffect(() => {
+    if (!timerStarted || currentAttempt?.status !== "in_progress") return;
+    if (saveTimeoutRef.current != null) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveMutation.mutate({ ...responsesRef.current });
+    }, 1200);
+    return () => {
+      if (saveTimeoutRef.current != null) {
+        window.clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [responses, timerStarted, currentAttempt?.status, saveMutation.mutate]);
 
   const submitNow = useCallback(() => {
     const attempt = attemptRef.current;
@@ -296,23 +336,33 @@ export default function ChallengeAttemptPage() {
     );
   }, [submitMutation]);
 
+  const handleBeginSprint = () => {
+    if (beginMutation.isPending || timerStarted) return;
+    beginMutation.mutate();
+  };
+
   useEffect(() => {
     const attempt = currentAttempt;
-    if (!attempt || attempt.status !== "in_progress") return;
+    if (!attempt || attempt.status !== "in_progress" || !timerStarted || !attempt.expires_at) {
+      return;
+    }
 
     const updateRemaining = () => {
       const next = Math.max(
         0,
-        Math.ceil((new Date(attempt.expires_at).getTime() - Date.now()) / 1000),
+        Math.ceil((new Date(attempt.expires_at as string).getTime() - Date.now()) / 1000),
       );
       setRemainingSeconds(next);
-      if (next === 0) submitNow();
+      if (next === 0 && !autoSubmitTriggeredRef.current) {
+        autoSubmitTriggeredRef.current = true;
+        submitNow();
+      }
     };
 
     updateRemaining();
     const interval = window.setInterval(updateRemaining, 1000);
     return () => window.clearInterval(interval);
-  }, [currentAttempt, submitNow]);
+  }, [currentAttempt, timerStarted, submitNow]);
 
   useEffect(() => {
     if (currentAttempt?.status !== "in_progress") return;
@@ -333,8 +383,9 @@ export default function ChallengeAttemptPage() {
 
   const status = currentAttempt?.status;
   const inProgress = status === "in_progress";
+  const awaitingBegin = inProgress && !timerStarted;
   const isComplete = status === "completed" || status === "timed_out";
-  const warning = inProgress && remainingSeconds <= 60;
+  const warning = inProgress && timerStarted && remainingSeconds <= 60;
 
   return (
     <div style={pageWrapperStyle}>
@@ -373,6 +424,16 @@ export default function ChallengeAttemptPage() {
 
         {currentAttempt && (
           <>
+            {awaitingBegin ? (
+              <ReadyPanel
+                attempt={currentAttempt}
+                loading={attemptQuery.isLoading}
+                beginning={beginMutation.isPending}
+                error={beginError}
+                onBegin={handleBeginSprint}
+              />
+            ) : (
+              <>
             {/* Exam header */}
             <div style={examHeaderStyle}>
               <div
@@ -394,7 +455,13 @@ export default function ChallengeAttemptPage() {
                     color: warning ? "#e03a2f" : "#0d1f36",
                   }}
                 >
-                  {inProgress ? formatRemaining(remainingSeconds) : "Submitted"}
+                  {inProgress
+                    ? timerStarted
+                      ? formatRemaining(remainingSeconds)
+                      : "Ready"
+                    : submitMutation.isPending
+                      ? "Scoring..."
+                      : "Submitted"}
                 </span>
               </div>
 
@@ -406,7 +473,7 @@ export default function ChallengeAttemptPage() {
                 </p>
               </div>
 
-              {inProgress && (
+              {inProgress && timerStarted && (
                 <button
                   type="button"
                   onClick={submitNow}
@@ -414,7 +481,7 @@ export default function ChallengeAttemptPage() {
                   style={submitButtonStyle}
                 >
                   <Send size={15} aria-hidden />
-                  {submitMutation.isPending ? "Submitting" : "Submit"}
+                  {submitMutation.isPending ? "Scoring your responses..." : "Submit"}
                 </button>
               )}
             </div>
@@ -475,6 +542,12 @@ export default function ChallengeAttemptPage() {
                 );
               })}
             </nav>
+
+            {submitMutation.isPending && (
+              <div style={{ ...panelStyle, marginBottom: 16, textAlign: "center" }}>
+                Scoring your responses...
+              </div>
+            )}
 
             {submitError && (
               <div style={{ ...alertStyle, marginBottom: 16 }}>
@@ -540,6 +613,8 @@ export default function ChallengeAttemptPage() {
             )}
 
             {isComplete && <ResultsPanel attempt={currentAttempt} />}
+              </>
+            )}
           </>
         )}
       </main>
@@ -1172,6 +1247,47 @@ function SectionHeading({
   );
 }
 
+function ReadyPanel({
+  attempt,
+  loading,
+  beginning,
+  error,
+  onBegin,
+}: {
+  attempt: ChallengeAttemptRead;
+  loading: boolean;
+  beginning: boolean;
+  error: string | null;
+  onBegin: () => void;
+}) {
+  const minutes = attempt.time_limit_seconds
+    ? Math.round(attempt.time_limit_seconds / 60)
+    : null;
+  return (
+    <section style={{ ...panelStyle, textAlign: "center", padding: "48px 28px" }}>
+      <Clock3 size={36} aria-hidden style={{ color: "#0070C4", marginBottom: 16 }} />
+      <h1 style={{ ...examTitleStyle, marginBottom: 8 }}>
+        {loading ? "Loading sprint..." : "Ready when you are"}
+      </h1>
+      <p style={{ margin: "0 auto 24px", maxWidth: 520, color: "#4a6880", lineHeight: 1.6 }}>
+        Your attempt is prepared. The strict timer starts only after you click Begin Sprint
+        {minutes ? ` (${minutes} minutes)` : ""}.
+      </p>
+      <button
+        type="button"
+        onClick={onBegin}
+        disabled={loading || beginning}
+        style={submitButtonStyle}
+      >
+        {beginning ? "Starting timer..." : "Begin Sprint"}
+      </button>
+      {error && (
+        <div style={{ ...alertStyle, marginTop: 16, justifyContent: "center" }}>{error}</div>
+      )}
+    </section>
+  );
+}
+
 function PlaceholderContent({
   Icon,
   label,
@@ -1193,6 +1309,10 @@ function PlaceholderContent({
 }
 
 function ResultsPanel({ attempt }: { attempt: ChallengeAttemptRead }) {
+  const router = useRouter();
+  const passThreshold = attempt.pass_threshold ?? 6.0;
+  const passed = attempt.passed === true;
+  const levelNumber = attempt.level_number ?? 1;
   const scores = attempt.section_scores ?? {};
   const feedbackReport = isRecord(attempt.feedback_report) ? attempt.feedback_report : {};
   const feedbackSummary =
@@ -1202,7 +1322,7 @@ function ResultsPanel({ attempt }: { attempt: ChallengeAttemptRead }) {
   const feedbackSections = isRecord(feedbackReport.sections)
     ? feedbackReport.sections
     : {};
-  const nextTips = (["reading", "writing", "speaking"] as SectionKey[])
+  const nextTips = (["listening", "reading", "writing", "speaking"] as SectionKey[])
     .map((section) => {
       const sectionFeedback = feedbackSections[section];
       if (!isRecord(sectionFeedback) || typeof sectionFeedback.next_tip !== "string") {
@@ -1212,10 +1332,34 @@ function ResultsPanel({ attempt }: { attempt: ChallengeAttemptRead }) {
     })
     .filter((tip): tip is { section: SectionKey; tip: string } => tip !== null);
 
+  const evaluationReport = isRecord(attempt.evaluation_report)
+    ? attempt.evaluation_report
+    : {};
+  const readingReview = isRecord(evaluationReport.reading) ? evaluationReport.reading : null;
+  const listeningReview = isRecord(evaluationReport.listening)
+    ? evaluationReport.listening
+    : null;
+  const writingReview = isRecord(evaluationReport.writing) ? evaluationReport.writing : null;
+  const readingQuestions = Array.isArray(readingReview?.questions)
+    ? readingReview.questions.filter(isRecord)
+    : [];
+  const listeningQuestions = Array.isArray(listeningReview?.questions)
+    ? listeningReview.questions.filter(isRecord)
+    : [];
+  const writingItems = Array.isArray(writingReview?.items)
+    ? writingReview.items.filter(isRecord)
+    : [];
+
   return (
     <section style={{ ...panelStyle, marginTop: 18, borderColor: "rgba(0,112,196,0.2)" }}>
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
-        <div style={scoreDialStyle}>
+        <div
+          style={{
+            ...scoreDialStyle,
+            background: passed ? "#dcfce7" : "#fee2e2",
+            color: passed ? "#15803d" : "#b91c1c",
+          }}
+        >
           <Trophy size={24} aria-hidden />
           <strong style={{ fontSize: 22, fontWeight: 800 }}>
             {attempt.overall_score?.toFixed(1) ?? "--"}
@@ -1223,8 +1367,22 @@ function ResultsPanel({ attempt }: { attempt: ChallengeAttemptRead }) {
         </div>
         <div style={{ flex: "1 1 260px" }}>
           <h2 style={sectionTitleStyle}>
-            {attempt.status === "timed_out" ? "Timed out" : "Result saved"}
+            {passed
+              ? "Level passed"
+              : attempt.status === "timed_out"
+                ? "Timed out"
+                : "Level not passed"}
           </h2>
+          <p style={{ margin: "8px 0 0", color: "#4a6880", lineHeight: 1.6, fontSize: 14 }}>
+            {passed
+              ? `You reached the pass threshold of ${passThreshold.toFixed(1)}.`
+              : `You needed ${passThreshold.toFixed(1)} to pass this level.`}
+          </p>
+          {passed && levelNumber < 3 && (
+            <p style={{ margin: "8px 0 0", color: "#15803d", fontWeight: 700, fontSize: 14 }}>
+              Level {levelNumber + 1} is now unlocked.
+            </p>
+          )}
           <p style={{ margin: "8px 0 0", color: "#4a6880", lineHeight: 1.6, fontSize: 14 }}>
             {feedbackSummary ??
               "Reading and Listening were graded from answer keys, Writing was evaluated, and Speaking was scored from transcripts only."}
@@ -1232,19 +1390,52 @@ function ResultsPanel({ attempt }: { attempt: ChallengeAttemptRead }) {
         </div>
       </div>
       <div style={scoreGridStyle}>
-        {(["listening", "reading", "writing", "speaking"] as SectionKey[]).map(
-          (section) => (
-            <div key={section} style={scoreCellStyle}>
-              <span style={{ textTransform: "capitalize", fontSize: 13, fontWeight: 700 }}>
-                {section}
-              </span>
-              <strong style={{ color: "#0d1f36", fontSize: 15 }}>
-                {scores[section]?.toFixed(1) ?? "--"}
-              </strong>
-            </div>
-          ),
-        )}
+        {(["listening", "reading", "writing", "speaking"] as SectionKey[]).map((section) => (
+          <div key={section} style={scoreCellStyle}>
+            <span style={{ textTransform: "capitalize", fontSize: 13, fontWeight: 700 }}>
+              {section}
+            </span>
+            <strong style={{ color: "#0d1f36", fontSize: 15 }}>
+              {scores[section]?.toFixed(1) ?? "--"}
+            </strong>
+          </div>
+        ))}
       </div>
+      {(readingQuestions.length > 0 || listeningQuestions.length > 0) && (
+        <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
+          {readingQuestions.length > 0 && (
+            <ReviewBlock title="Reading review" questions={readingQuestions} />
+          )}
+          {listeningQuestions.length > 0 && (
+            <ReviewBlock title="Listening review" questions={listeningQuestions} />
+          )}
+        </div>
+      )}
+      {writingItems.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <h3 style={{ ...sectionTitleStyle, fontSize: 15, marginBottom: 10 }}>Writing summary</h3>
+          <div style={{ display: "grid", gap: 10 }}>
+            {writingItems.map((item, index) => {
+              const issues = Array.isArray(item.issues) ? item.issues.filter(isRecord) : [];
+              const summary =
+                typeof item.summary === "string" ? item.summary : "Writing feedback unavailable.";
+              return (
+                <div key={String(item.item_id ?? index)} style={feedbackTipStyle}>
+                  <strong style={{ display: "block", marginBottom: 6 }}>{summary}</strong>
+                  {issues.slice(0, 2).map((issue, issueIndex) => (
+                    <p
+                      key={issueIndex}
+                      style={{ margin: "4px 0 0", color: "#4a6880", fontSize: 13.5, lineHeight: 1.5 }}
+                    >
+                      {typeof issue.issue === "string" ? issue.issue : "Review this sentence."}
+                    </p>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {nextTips.length > 0 && (
         <div style={feedbackTipGridStyle}>
           {nextTips.map(({ section, tip }) => (
@@ -1267,7 +1458,68 @@ function ResultsPanel({ attempt }: { attempt: ChallengeAttemptRead }) {
           ))}
         </div>
       )}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
+        <button type="button" style={submitButtonStyle} onClick={() => router.push("/challenges/ielts")}>
+          Back to IELTS Sprint
+        </button>
+        <button
+          type="button"
+          style={secondaryButtonStyle}
+          onClick={() => router.push(`/challenges/ielts?retry=${levelNumber}`)}
+        >
+          <RotateCcw size={16} aria-hidden />
+          Retry level
+        </button>
+        {passed && levelNumber < 3 && (
+          <button
+            type="button"
+            style={submitButtonStyle}
+            onClick={() => router.push(`/challenges/ielts?start=${levelNumber + 1}`)}
+          >
+            Next level
+          </button>
+        )}
+      </div>
     </section>
+  );
+}
+
+function ReviewBlock({
+  title,
+  questions,
+}: {
+  title: string;
+  questions: Record<string, unknown>[];
+}) {
+  return (
+    <div style={feedbackTipStyle}>
+      <h3 style={{ ...sectionTitleStyle, fontSize: 15, marginBottom: 10 }}>{title}</h3>
+      <div style={{ display: "grid", gap: 8 }}>
+        {questions.map((question, index) => {
+          const correct = question.correct === true;
+          const prompt =
+            typeof question.prompt === "string"
+              ? question.prompt
+              : `Question ${index + 1}`;
+          return (
+            <div
+              key={String(question.item_id ?? index)}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                color: correct ? "#15803d" : "#b91c1c",
+                fontSize: 13.5,
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ color: "#0d1f36", fontWeight: 600 }}>{prompt}</span>
+              <span>{correct ? "Correct" : "Incorrect"}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

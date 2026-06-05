@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.ai.llm import LLMProviderError
 from app.core.database import Base
 from app.modules.auth.models import User
-from app.modules.challenges.evaluation_schemas import (
+from app.modules.challenges.ielts_sprint.evaluation_schemas import (
     IELTSFeedbackReport,
     SectionFeedback,
     WritingCriteriaEvaluation,
@@ -25,7 +25,7 @@ from app.modules.challenges.models import (
     ChallengeAttemptStatus,
     ChallengeLevel,
 )
-from app.modules.challenges.service import (
+from app.modules.challenges.ielts_sprint.service import (
     ChallengeAudioNotFound,
     ChallengeDailyAttemptLimitExceeded,
     ChallengeReadService,
@@ -438,6 +438,7 @@ async def test_expired_submit_marks_timed_out_and_still_evaluates(
         tts_service=FakeTTSService(),
     )
     attempt = await service.start_attempt(slug="ielts", level_number=1, user_id=user.id)
+    attempt.timer_started_at = datetime.now(timezone.utc) - timedelta(minutes=25)
     attempt.expires_at = datetime.now(timezone.utc) - timedelta(seconds=10)
     db_session.commit()
 

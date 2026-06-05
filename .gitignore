@@ -46,6 +46,9 @@ backend/app/ai/tts/_cache/
 # STT transcript cache (regenerated on demand from OpenAI)
 backend/app/ai/stt/_cache/
 
+# Learner speaking uploads (local dev only)
+backend/app/ai/stt/_learner_audio/
+
 # Pronunciation assessment cache (JSON only, never raw user audio)
 backend/app/ai/pronunciation/_cache/
 

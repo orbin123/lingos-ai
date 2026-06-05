@@ -10,10 +10,17 @@
  */
 
 import { useState } from "react";
+import { ThumbsDown, ThumbsUp } from "lucide-react";
+
+import { sessionsApi, type RagRatingValue } from "@/lib/sessions-api";
 
 interface Props {
   /** The mentor note text, or null/undefined when RAG failed. */
   note?: string | null;
+  /** Chat session id — when present, enables the like/dislike control. */
+  sessionId?: string;
+  /** The viewer's existing rating, hydrated from the scorecard. */
+  initialRating?: RagRatingValue | null;
 }
 
 /* ── Fallback icon (cloud-off style) ───────────────────────────── */
@@ -55,10 +62,30 @@ function GradCapIcon() {
   );
 }
 
-export function MentorNote({ note }: Props) {
+export function MentorNote({ note, sessionId, initialRating = null }: Props) {
   const [hovered, setHovered] = useState(false);
+  const [rating, setRating] = useState<RagRatingValue | null>(initialRating);
+  const [saving, setSaving] = useState(false);
 
   const hasNote = typeof note === "string" && note.trim().length > 0;
+
+  const handleRate = async (value: RagRatingValue) => {
+    if (!sessionId || saving) return;
+    const next = rating === value ? null : value;
+    setSaving(true);
+    setRating(next); // optimistic
+    try {
+      if (next === null) {
+        await sessionsApi.clearRagFeedbackRating(sessionId);
+      } else {
+        await sessionsApi.rateRagFeedback(sessionId, next);
+      }
+    } catch {
+      setRating(rating); // revert on failure
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // ── Fallback state ────────────────────────────────────────────
   if (!hasNote) {
@@ -205,7 +232,71 @@ export function MentorNote({ note }: Props) {
         >
           {note}
         </p>
+
+        {/* Like / dislike — only when this note is tied to a chat session */}
+        {sessionId && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              paddingTop: 12,
+              borderTop: "1px solid oklch(90% 0.04 50)",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: "oklch(45% 0.06 50)",
+              }}
+            >
+              Was this helpful?
+            </span>
+            <button
+              type="button"
+              aria-label="Like this coaching note"
+              aria-pressed={rating === "like"}
+              disabled={saving}
+              onClick={() => handleRate("like")}
+              style={thumbStyle(rating === "like", "like")}
+            >
+              <ThumbsUp size={15} />
+            </button>
+            <button
+              type="button"
+              aria-label="Dislike this coaching note"
+              aria-pressed={rating === "dislike"}
+              disabled={saving}
+              onClick={() => handleRate("dislike")}
+              style={thumbStyle(rating === "dislike", "dislike")}
+            >
+              <ThumbsDown size={15} />
+            </button>
+          </div>
+        )}
       </section>
     </div>
   );
+}
+
+function thumbStyle(active: boolean, kind: "like" | "dislike") {
+  const activeBg =
+    kind === "like" ? "oklch(92% 0.08 150)" : "oklch(93% 0.07 25)";
+  const activeColor =
+    kind === "like" ? "oklch(38% 0.14 150)" : "oklch(42% 0.16 25)";
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    border: active
+      ? "1.5px solid transparent"
+      : "1.5px solid oklch(88% 0.04 60)",
+    background: active ? activeBg : "white",
+    color: active ? activeColor : "oklch(55% 0.04 60)",
+    cursor: "pointer",
+  } as const;
 }

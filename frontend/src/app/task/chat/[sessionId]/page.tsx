@@ -2380,6 +2380,7 @@ export default function ChatSessionPage() {
               {daySessionScorecard ? (
                 <DaySessionScorecard
                   scorecard={daySessionScorecard}
+                  sessionId={sessionId}
                   onGoToDashboard={() => {
                     queryClient.invalidateQueries({ queryKey: ["sessions", "today-plan"] });
                     queryClient.invalidateQueries({ queryKey: ["me"] });

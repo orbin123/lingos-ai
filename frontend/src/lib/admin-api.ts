@@ -65,6 +65,19 @@ export interface AdminUserDetail extends AdminUserListItem {
   recent_feedback: AdminRecentFeedback[];
 }
 
+export interface UserProgressItem {
+  user_id: number;
+  name: string;
+  email: string;
+  plan_id: string | null;
+  plan_name: string | null;
+  purchase_complete: boolean;
+  access_expires_at: string | null;
+  activities_completed: number;
+  dashboard_score: number | null;
+  subskill_scores: AdminSkillScore[];
+}
+
 export interface AdminPermission {
   id: number;
   key: string;
@@ -86,25 +99,6 @@ export interface UserRolesUpdate {
 
 export interface RolePermissionsUpdate {
   permission_keys: string[];
-}
-
-export interface TaskTemplate {
-  id: number;
-  title: string;
-  task_type: string;
-  difficulty: number;
-  status: "draft" | "active" | "archived";
-  content: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface TaskTemplateInput {
-  title: string;
-  task_type: string;
-  difficulty: number;
-  status: "draft" | "active" | "archived";
-  content: Record<string, unknown>;
 }
 
 export interface AdminLogUser {
@@ -143,13 +137,20 @@ export interface AIRequestLog {
 }
 
 export interface FeedbackReviewItem {
-  id: number;
+  feedback_type: "specific" | "rag";
+  feedback_id: number;
   user: AdminLogUser | null;
-  task_title: string;
-  user_response: Record<string, unknown>;
-  user_response_raw_text: string | null;
-  ai_feedback: Record<string, unknown>;
-  score: number;
+  context_label: string;
+  // Specific-feedback fields.
+  score: number | null;
+  summary: string | null;
+  did_well: string[];
+  mistakes: Record<string, unknown>[];
+  next_tip: string | null;
+  // RAG-feedback fields.
+  mentor_note: string | null;
+  rating: "like" | "dislike" | null;
+  // Review annotation.
   review_status: "pending" | "approved" | "flagged" | "fixed";
   reviewed_by: AdminLogUser | null;
   reviewed_at: string | null;
@@ -197,12 +198,41 @@ export interface AdminUserBilling {
   payments: AdminPayment[];
 }
 
-export interface SubscriptionUpdate {
-  plan_name?: string;
-  status?: string;
-  trial_ends_at?: string | null;
-  current_period_start?: string | null;
-  current_period_end?: string | null;
+export interface SubscriberItem {
+  user_id: number;
+  name: string;
+  email: string;
+  plan_id: string | null;
+  plan_name: string | null;
+  amount_paid: number | null;
+  currency: string | null;
+  status: string;
+  purchased_at: string | null;
+  access_expires_at: string | null;
+}
+
+export interface TrialUserItem {
+  user_id: number;
+  name: string;
+  email: string;
+  status: string;
+  signed_up_at: string;
+  trial_ends_at: string;
+}
+
+export interface SubscribersOverview {
+  subscribers: SubscriberItem[];
+  trials: TrialUserItem[];
+}
+
+export interface AppReviewItem {
+  id: number;
+  user: AdminLogUser | null;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  status: string;
+  created_at: string;
 }
 
 export const adminApi = {
@@ -212,6 +242,9 @@ export const adminApi = {
 
   user: (userId: number) =>
     api.get<AdminUserDetail>(`/admin/users/${userId}`).then((r) => r.data),
+
+  userProgress: () =>
+    api.get<UserProgressItem[]>("/admin/user-progress").then((r) => r.data),
 
   updateUserStatus: (userId: number, isActive: boolean) =>
     api
@@ -233,19 +266,8 @@ export const adminApi = {
       .patch<AdminRole>(`/admin/roles/${roleId}/permissions`, data)
       .then((r) => r.data),
 
-  taskTemplates: () =>
-    api.get<TaskTemplate[]>("/admin/task-templates").then((r) => r.data),
-
-  createTaskTemplate: (data: TaskTemplateInput) =>
-    api.post<TaskTemplate>("/admin/task-templates", data).then((r) => r.data),
-
-  updateTaskTemplate: (templateId: number, data: Partial<TaskTemplateInput>) =>
-    api
-      .patch<TaskTemplate>(`/admin/task-templates/${templateId}`, data)
-      .then((r) => r.data),
-
-  archiveTaskTemplate: (templateId: number) =>
-    api.delete<TaskTemplate>(`/admin/task-templates/${templateId}`).then((r) => r.data),
+  appReviews: () =>
+    api.get<AppReviewItem[]>("/admin/app-reviews").then((r) => r.data),
 
   auditLogs: () =>
     api.get<AdminAuditLog[]>("/admin/audit-logs").then((r) => r.data),
@@ -258,21 +280,30 @@ export const adminApi = {
   feedbackReview: () =>
     api.get<FeedbackReviewItem[]>("/admin/feedback-review").then((r) => r.data),
 
-  updateFeedbackReview: (feedbackId: number, data: FeedbackReviewUpdate) =>
+  updateFeedbackReview: (
+    feedbackType: "specific" | "rag",
+    feedbackId: number,
+    data: FeedbackReviewUpdate,
+  ) =>
     api
-      .patch<FeedbackReviewItem>(`/admin/feedback-review/${feedbackId}`, data)
+      .patch<FeedbackReviewItem>(
+        `/admin/feedback-review/${feedbackType}/${feedbackId}`,
+        data,
+      )
       .then((r) => r.data),
 
   payments: () => api.get<AdminPayment[]>("/admin/payments").then((r) => r.data),
 
-  subscriptions: () =>
-    api.get<AdminSubscription[]>("/admin/subscriptions").then((r) => r.data),
+  subscribers: () =>
+    api.get<SubscribersOverview>("/admin/subscribers").then((r) => r.data),
 
   userBilling: (userId: number) =>
     api.get<AdminUserBilling>(`/admin/users/${userId}/billing`).then((r) => r.data),
 
-  updateSubscription: (subscriptionId: number, data: SubscriptionUpdate) =>
+  updateSubscriberAccess: (userId: number, accessExpiresAt: string) =>
     api
-      .patch<AdminSubscription>(`/admin/subscriptions/${subscriptionId}`, data)
+      .patch<SubscriberItem>(`/admin/subscribers/${userId}/access`, {
+        access_expires_at: accessExpiresAt,
+      })
       .then((r) => r.data),
 };

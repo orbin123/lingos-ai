@@ -24,13 +24,19 @@ from app.ai.sessions.llm_task_generator import (
     ErrorSpottingTask,
     ErrorSpottingTaskLLM,
     ErrorCorrectionTask,
+    ListenClozeTaskLLM,
+    ListenDictationTaskLLM,
+    ListenMcqTaskLLM,
+    ListenRetellTaskLLM,
     LLMTaskGenerator,
     TaskGenOutput,
 )
+from app.modules.sessions.contracts.registry import get_contract
 from app.modules.sessions.task_generator import normalize_error_spotting_payload
 from app.scoring import ARCHETYPE_REGISTRY, get_archetype
 from app.tasks.schemas import FillInBlanksTask
 from app.tasks.schemas.llm_output_schemas import FillInBlanksTaskLLM
+from tests.test_task_content_validation import THE_34, _valid_content_for
 
 
 # ── Fake LLM client ────────────────────────────────────────────────
@@ -850,7 +856,7 @@ class TestLLMTaskGenerator:
                 sub_level=3,
             )
         assert exc_info.value.archetype_id == "WRITE_EMAIL"
-        assert len(fake.calls) == 2  # initial attempt + one retry
+        assert len(fake.calls) == 3  # initial attempt + two retries
 
     @pytest.mark.asyncio
     async def test_fill_in_blanks_uses_widget_schema_and_protects_widget_key(self):
@@ -952,7 +958,7 @@ class TestLLMTaskGenerator:
                 sub_level=1,
             )
         assert exc_info.value.archetype_id == "READ_ERROR_SPOT"
-        assert len(fake.calls) == 2
+        assert len(fake.calls) == 3
 
     @pytest.mark.asyncio
     async def test_w1d1_simple_present_fill_in_blanks_calls_llm(self):
@@ -1022,7 +1028,7 @@ class TestLLMTaskGenerator:
                 sub_level=1,
             )
         assert exc_info.value.archetype_id == "READ_CLOZE"
-        assert len(fake.calls) == 2
+        assert len(fake.calls) == 3
 
     @pytest.mark.asyncio
     async def test_write_open_sent_preserves_valid_open_text_items(self):
@@ -1109,7 +1115,7 @@ class TestLLMTaskGenerator:
                 sub_level=1,
             )
         assert exc_info.value.archetype_id == "WRITE_OPEN_SENT"
-        assert len(fake.calls) == 2
+        assert len(fake.calls) == 3
 
     @pytest.mark.asyncio
     async def test_write_error_correction_preserves_valid_items(self):
@@ -1178,7 +1184,7 @@ class TestLLMTaskGenerator:
                 sub_level=1,
             )
         assert exc_info.value.archetype_id == "WRITE_ERROR_CORR"
-        assert len(fake.calls) == 2
+        assert len(fake.calls) == 3
 
     @pytest.mark.asyncio
     async def test_read_comp_mcq_malformed_output_retries_then_raises(self):
@@ -1201,7 +1207,7 @@ class TestLLMTaskGenerator:
                 sub_level=1,
             )
         assert exc_info.value.archetype_id == "READ_COMP_MCQ"
-        assert len(fake.calls) == 2
+        assert len(fake.calls) == 3
 
 
     @pytest.mark.asyncio
@@ -1258,6 +1264,7 @@ class TestLLMTaskGenerator:
             topic="Say simple present routines",
             instructions="Speak naturally.",
             speaking_prompts=[],
+            speaking_duration_seconds=1,
         )
         fake = FakeLLMClient([invalid, invalid])
         agent = LLMTaskGenerator(fake)
@@ -1271,7 +1278,7 @@ class TestLLMTaskGenerator:
                 sub_level=1,
             )
         assert exc_info.value.archetype_id == "SPEAK_TIMED"
-        assert len(fake.calls) == 2
+        assert len(fake.calls) == 3
 
     @pytest.mark.asyncio
     async def test_speak_pic_desc_generates_required_image(self, monkeypatch):
@@ -1364,6 +1371,33 @@ class TestLLMTaskGenerator:
         assert "SPEAK_PIC_DESC" in content["image_error"]
 
     @pytest.mark.asyncio
+    async def test_listen_dictation_normalizes_and_synthesizes_audio(self, monkeypatch):
+        from app.ai import tts as tts_module
+
+        spec = get_archetype("LISTEN_DICTATION")
+        fake_tts = FakeTTSService()
+        monkeypatch.setattr(tts_module, "get_default_tts_service", lambda: fake_tts)
+        canned = _dictation_canned()
+        fake = FakeLLMClient([canned])
+        agent = LLMTaskGenerator(fake)
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic="Daily routines",
+            explanation_brief="Present simple dictation.",
+            cefr_level="A1",
+            sub_level=1,
+        )
+
+        content = generated.content
+        assert content["phase"] == "live"
+        assert content["widget"] == "listen_and_respond"
+        assert content["inner_widget"] == "open_text"
+        assert len(content["items"]) == 3
+        assert content["items"][0]["correct_answer"] == "Maria wakes up at seven."
+        assert content["audio_url"] == "/audio/fake-listening.mp3"
+
+    @pytest.mark.asyncio
     async def test_listen_mcq_synthesizes_required_audio(self, monkeypatch):
         from app.ai import tts as tts_module
 
@@ -1426,7 +1460,7 @@ class TestLLMTaskGenerator:
                 sub_level=1,
             )
         assert exc_info.value.archetype_id == "LISTEN_MCQ"
-        assert len(fake.calls) == 2
+        assert len(fake.calls) == 3
 
     @pytest.mark.asyncio
     async def test_listen_mcq_tts_failure_uses_browser_fallback(self, monkeypatch):
@@ -1946,30 +1980,211 @@ def _tfng_canned() -> TaskGenOutput:
     )
 
 
-_GENERATOR_PROJECTION_CASES = [
-    ("READ_CLOZE", _fill_in_blanks_canned),
-    ("READ_ERROR_SPOT", lambda: ErrorSpottingTask.model_validate(_error_spotting_content())),
-    ("WRITE_ERROR_CORR", _error_correction_canned),
-    ("READ_COMP_MCQ", _mcq_canned),
-    ("READ_TFNG", _tfng_canned),
-]
+def _dictation_canned() -> TaskGenOutput:
+    return TaskGenOutput(
+        topic="Dictation practice",
+        instructions="Type each sentence exactly as you hear it.",
+        audio_script=(
+            "Maria wakes up at seven. "
+            "She always drinks coffee first. "
+            "Then she reads the news."
+        ),
+        items=[
+            {
+                "item_id": "d1",
+                "prompt": "Type sentence 1.",
+                "correct_answer": "Maria wakes up at seven.",
+                "explanation": "Listen for the full sentence.",
+            },
+            {
+                "item_id": "d2",
+                "prompt": "Type sentence 2.",
+                "correct_answer": "She always drinks coffee first.",
+                "explanation": "Listen for the full sentence.",
+            },
+            {
+                "item_id": "d3",
+                "prompt": "Type sentence 3.",
+                "correct_answer": "Then she reads the news.",
+                "explanation": "Listen for the full sentence.",
+            },
+        ],
+    )
+
+
+def _sentence_transform_canned() -> TaskGenOutput:
+    return TaskGenOutput(
+        topic="Rewrite into present continuous",
+        instructions="Rewrite each sentence in the present continuous.",
+        items=[
+            {
+                "item_id": "tr1",
+                "source_sentence": "She plays tennis every Saturday.",
+                "sample_answer": "She is playing tennis right now.",
+                "watch_hints": ["she -> is", "play -> playing"],
+            },
+            {
+                "item_id": "tr2",
+                "source_sentence": "They study English on Mondays.",
+                "sample_answer": "They are studying English right now.",
+                "watch_hints": ["they -> are", "study -> studying"],
+            },
+            {
+                "item_id": "tr3",
+                "source_sentence": "I read the news every morning.",
+                "sample_answer": "I am reading the news right now.",
+                "watch_hints": ["I -> am", "read -> reading"],
+            },
+        ],
+    )
+
+
+def _canned_llm_output_for(archetype_id: str) -> BaseModel:
+    """Map contract-valid fixture content to the LLM output model the generator expects."""
+    if archetype_id == "WRITE_SENT_TRANS":
+        return _sentence_transform_canned()
+
+    content = _valid_content_for(archetype_id)
+    spec = get_archetype(archetype_id)
+
+    if archetype_id == "READ_ERROR_SPOT":
+        return ErrorSpottingTask.model_validate(_error_spotting_content())
+
+    if spec.ui_widget == "FillInBlanks" and spec.core_activity == "read":
+        return FillInBlanksTask(
+            topic=content["topic"],
+            instructions=content["instructions"],
+            items=content["items"],
+            passage=content.get("passage"),
+        )
+
+    if spec.ui_widget == "ErrorCorrection":
+        return ErrorCorrectionTask(
+            topic=content["topic"],
+            instructions=content["instructions"],
+            task_intro=content.get("task_intro", "Complete the task."),
+            items=content["items"],
+        )
+
+    if archetype_id == "WRITE_PARAPHRASE":
+        paraphrase_items = [
+            {
+                "item_id": raw["item_id"],
+                "prompt": raw["incorrect_sentence"],
+                "sample_answer": raw["sample_answer"],
+                "answer_hints": raw.get("watch_hints", []),
+            }
+            for raw in content.get("items", [])
+        ]
+        return TaskGenOutput(
+            topic=content["topic"],
+            instructions=content["instructions"],
+            items=paraphrase_items,
+        )
+
+    if archetype_id == "READ_STRUCTURE_ID":
+        structure_items = []
+        labels = content.get("structure_labels", [])
+        for raw in content.get("items", []):
+            structure_items.append(
+                {
+                    "item_id": raw["item_id"],
+                    "prompt": raw["paragraph"],
+                    "options": labels,
+                    "correct_answer": raw["correct_answer"],
+                    "explanation": raw.get("explanation", ""),
+                }
+            )
+        return TaskGenOutput(
+            topic=content["topic"],
+            instructions=content["instructions"],
+            items=structure_items,
+        )
+
+    if archetype_id == "LISTEN_DICTATION":
+        return ListenDictationTaskLLM(
+            topic=content["topic"],
+            instructions=content["instructions"],
+            audio_script=content["audio_script"],
+            items=content["items"],
+        )
+
+    if archetype_id in {"LISTEN_MCQ", "LISTEN_INFER", "LISTEN_TONE"}:
+        return ListenMcqTaskLLM(
+            topic=content["topic"],
+            instructions=content["instructions"],
+            audio_script=content["audio_script"],
+            items=content["items"],
+        )
+
+    if archetype_id == "LISTEN_CLOZE":
+        items = list(content["items"])
+        while len(items) < 4:
+            clone = dict(items[0])
+            clone["item_id"] = f"b{len(items) + 1}"
+            items.append(clone)
+        return ListenClozeTaskLLM(
+            topic=content["topic"],
+            instructions=content["instructions"],
+            audio_script=content["audio_script"],
+            passage=content["passage"],
+            items=items[:4],
+        )
+
+    if archetype_id in {"LISTEN_RETELL", "LISTEN_SHADOW"}:
+        return ListenRetellTaskLLM(
+            topic=content["topic"],
+            instructions=content["instructions"],
+            audio_script=content["audio_script"],
+            speaking_prompts=content["speaking_prompts"],
+            sample_responses=content.get("sample_responses", []),
+            text_to_shadow=content.get("text_to_shadow"),
+            speaking_duration_seconds=content.get("speaking_duration_seconds", 45),
+        )
+
+    task_gen_fields = {
+        "topic": content["topic"],
+        "instructions": content["instructions"],
+        "task_intro": content.get("task_intro"),
+        "items": content.get("items", []),
+        "passage": content.get("passage"),
+        "primary_text": content.get("primary_text") or content.get("passage") or "",
+        "audio_script": content.get("audio_script"),
+        "inner_widget": content.get("inner_widget"),
+        "speaking_duration_seconds": content.get("speaking_duration_seconds"),
+        "speaking_prompts": content.get("speaking_prompts", []),
+        "sample_responses": content.get("sample_responses", []),
+        "text_to_read_aloud": content.get("text_to_read_aloud"),
+        "text_to_shadow": content.get("text_to_shadow"),
+        "image_alt": content.get("image_alt"),
+        "dialogue_context": content.get("dialogue_context", []),
+        "questions": content.get("questions", []),
+    }
+    return TaskGenOutput(**{k: v for k, v in task_gen_fields.items() if v is not None})
+
+
+_LISTENING_ARCHETYPES = frozenset(
+    aid for aid in THE_34 if get_archetype(aid).core_activity == "listen"
+)
 
 
 class TestGeneratorOutputProjectsThroughContract:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "archetype_id,canned_factory",
-        _GENERATOR_PROJECTION_CASES,
-        ids=[case[0] for case in _GENERATOR_PROJECTION_CASES],
-    )
+    @pytest.mark.parametrize("archetype_id", sorted(THE_34))
     async def test_generated_content_projects_onto_contract(
-        self, archetype_id, canned_factory
-    ):
+        self, archetype_id: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from app.modules.sessions.contracts import project_task_payload
-        from app.modules.sessions.contracts.registry import get_contract
+
+        if archetype_id in _LISTENING_ARCHETYPES:
+            from app.ai import tts as tts_module
+
+            monkeypatch.setattr(
+                tts_module, "get_default_tts_service", lambda: FakeTTSService()
+            )
 
         spec = get_archetype(archetype_id)
-        agent = LLMTaskGenerator(FakeLLMClient([canned_factory()]))
+        agent = LLMTaskGenerator(FakeLLMClient([_canned_llm_output_for(archetype_id)]))
 
         generated = await agent.generate(
             archetype=spec,
@@ -1979,18 +2194,14 @@ class TestGeneratorOutputProjectsThroughContract:
             sub_level=1,
         )
 
-        # The mock produces valid output, so we stay on the live LLM path.
         assert generated.content["phase"] == "live"
 
-        # The loose generated content projects onto its strict wire contract.
         payload = project_task_payload(
             archetype_id,
             dict(generated.content),
             activity_id="attempt-1",
             sequence=1,
         )
-        # Round-trips through the strict contract (which enforces non-empty
-        # items/sentences via min_length), proving the generated shape is valid.
         model = get_contract(archetype_id).task_payload.model_validate(payload)
         assert model.archetype_id == archetype_id
         assert model.task_widget == get_contract(archetype_id).task_widget

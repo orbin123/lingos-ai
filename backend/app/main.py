@@ -25,6 +25,7 @@ from app.modules.learning_session.router import (
 )
 from app.modules.preferences.routes import router as preferences_router
 from app.modules.responses.routes import router as responses_router
+from app.modules.reviews.routes import reviews_router
 from app.modules.sessions.routes import router as sessions_router
 from app.modules.streaks.routes import router as streaks_router
 
@@ -111,3 +112,4 @@ app.include_router(preferences_router, prefix="/api")
 app.include_router(responses_router)
 app.include_router(learning_rest_router, prefix="/api")
 app.include_router(learning_ws_router)
+app.include_router(reviews_router)

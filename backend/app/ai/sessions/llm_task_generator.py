@@ -25,36 +25,19 @@ from app.ai.sessions.prompts import (
     build_task_gen_user_prompt,
     task_gen_system_prompt,
 )
+from app.modules.sessions.contracts.projection import ContractValidationError
+from app.modules.sessions.contracts.validation import (
+    normalize_task_content,
+    validate_and_project_task_content,
+)
 from app.modules.sessions.task_generator import (
     GeneratedTask,
     authored_error_spotting_content,
     authored_fill_in_blanks_content,
     authored_listen_and_respond_content,
-    is_valid_error_spotting_payload,
-    is_valid_listening_payload,
-    is_valid_open_text_payload,
-    is_valid_speak_and_record_payload,
-    is_valid_error_correction_payload,
-    is_valid_dialogue_speaking_payload,
-    is_valid_interview_speaking_payload,
-    is_valid_task_content,
-    normalize_mcq_payload,
-    normalize_interview_speaking_payload,
+    normalize_dictation_payload,
     normalize_error_spotting_payload,
-    normalize_fill_in_blanks_payload,
     normalize_listen_and_respond_payload,
-    normalize_listen_retell_payload,
-    normalize_open_text_payload,
-    normalize_speak_and_record_payload,
-    normalize_speak_pic_desc_payload,
-    normalize_dialogue_speaking_payload,
-    normalize_error_correction_payload,
-    normalize_read_aloud_payload,
-    is_valid_read_aloud_payload,
-    normalize_read_structure_payload,
-    is_valid_read_structure_payload,
-    normalize_sentence_transform_payload,
-    is_valid_sentence_transform_payload,
 )
 from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.scoring import ArchetypeSpec
@@ -170,6 +153,100 @@ class TaskGenOutput(BaseModel):
     dialogue_context: list[TaskGenDialogueTurn] = Field(default_factory=list)
     interview_context: str | None = None
     questions: list[TaskGenInterviewQuestion] = Field(default_factory=list)
+
+
+class DictationItemLLM(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str
+    prompt: str
+    correct_answer: str
+    explanation: str
+
+
+class ListenDictationTaskLLM(BaseModel):
+    """Structured output for LISTEN_DICTATION."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str
+    instructions: str
+    task_intro: str | None = None
+    estimated_time_minutes: int | None = None
+    audio_script: str
+    inner_widget: str = "open_text"
+    target_words: list[str] = Field(default_factory=list)
+    grammar_rule_to_practice: str | None = None
+    items: list[DictationItemLLM] = Field(min_length=1, max_length=6)
+
+
+class ListenMcqItemLLM(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str
+    prompt: str
+    options: list[str] = Field(min_length=3, max_length=4)
+    correct_index: int = Field(ge=0)
+    explanation: str
+
+
+class ListenMcqTaskLLM(BaseModel):
+    """Structured output for LISTEN_MCQ / LISTEN_INFER / LISTEN_TONE."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str
+    instructions: str
+    task_intro: str | None = None
+    estimated_time_minutes: int | None = None
+    audio_script: str
+    inner_widget: str = "mcq"
+    items: list[ListenMcqItemLLM] = Field(min_length=1, max_length=6)
+
+
+class ListenClozeItemLLM(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str
+    sentence_with_blank: str
+    correct_answer: str
+    explanation: str
+    base_verb: str | None = None
+
+
+class ListenClozeTaskLLM(BaseModel):
+    """Structured output for LISTEN_CLOZE."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str
+    instructions: str
+    task_intro: str | None = None
+    estimated_time_minutes: int | None = None
+    audio_script: str
+    inner_widget: str = "fill_in_blanks"
+    passage: str
+    items: list[ListenClozeItemLLM] = Field(min_length=4, max_length=5)
+
+
+class ListenRetellTaskLLM(BaseModel):
+    """Structured output for LISTEN_RETELL / LISTEN_SHADOW."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    topic: str
+    instructions: str
+    task_intro: str | None = None
+    estimated_time_minutes: int | None = None
+    audio_script: str
+    inner_widget: str = "speak_and_record"
+    speaking_prompts: list[str] = Field(min_length=1, max_length=1)
+    sample_responses: list[str] = Field(default_factory=list, max_length=1)
+    passage_to_retell: str | None = None
+    text_to_shadow: str | None = None
+    grammar_rule_to_practice: str | None = None
+    target_words: list[str] = Field(default_factory=list)
+    speaking_duration_seconds: int | None = None
 
 
 class ErrorCorrectionItem(BaseModel):
@@ -349,7 +426,10 @@ class LLMTaskGenerator:
                 "sub_level": sub_level,
                 **authored_listening_payload,
             }
-            content = normalize_listen_and_respond_payload(content)
+            if archetype.archetype_id == "LISTEN_DICTATION":
+                content = normalize_dictation_payload(content)
+            else:
+                content = normalize_listen_and_respond_payload(content)
             content = await self._attach_required_audio(
                 content=content,
                 archetype=archetype,
@@ -379,7 +459,8 @@ class LLMTaskGenerator:
             )
 
         last_exc: Exception | None = None
-        for attempt_no in range(2):  # initial attempt + one retry
+        validation_feedback: str | None = None
+        for attempt_no in range(3):
             try:
                 content = await self._generate_once(
                     archetype=archetype,
@@ -389,12 +470,15 @@ class LLMTaskGenerator:
                     sub_level=sub_level,
                     user_interests=user_interests,
                     task_spec=task_spec,
+                    validation_feedback=validation_feedback,
                 )
                 return GeneratedTask(content=content)
             except (LLMError, ValidationError, ValueError, _TaskContentInvalid) as exc:
                 last_exc = exc
+                if isinstance(exc, _TaskContentInvalid):
+                    validation_feedback = str(exc)
                 logger.warning(
-                    "Task generation attempt %d/2 failed for archetype=%s: %s",
+                    "Task generation attempt %d/3 failed for archetype=%s: %s",
                     attempt_no + 1, archetype.archetype_id, exc,
                 )
 
@@ -413,8 +497,13 @@ class LLMTaskGenerator:
         sub_level: int,
         user_interests: list[str] | None,
         task_spec: dict | None,
+        validation_feedback: str | None = None,
     ) -> dict:
         """Run one full LLM generation attempt.
+
+        LLM-schema coercion (dedicated output models) happens here; all payload
+        normalization goes through ``normalize_task_content`` /
+        ``validate_and_project_task_content``.
 
         Returns validated, render-ready task content, or raises (``LLMError`` /
         ``ValidationError`` / ``ValueError`` from the LLM call, or
@@ -426,8 +515,16 @@ class LLMTaskGenerator:
             output_model: type[BaseModel] = ErrorSpottingTaskLLM
         elif archetype.ui_widget == "ErrorCorrection":
             output_model = ErrorCorrectionTask
-        elif archetype.ui_widget == "FillInBlanks":
+        elif archetype.ui_widget == "FillInBlanks" and archetype.core_activity == "read":
             output_model = FillInBlanksTaskLLM
+        elif archetype.archetype_id == "LISTEN_DICTATION":
+            output_model = ListenDictationTaskLLM
+        elif archetype.archetype_id in {"LISTEN_MCQ", "LISTEN_INFER", "LISTEN_TONE"}:
+            output_model = ListenMcqTaskLLM
+        elif archetype.archetype_id == "LISTEN_CLOZE":
+            output_model = ListenClozeTaskLLM
+        elif archetype.archetype_id in {"LISTEN_RETELL", "LISTEN_SHADOW"}:
+            output_model = ListenRetellTaskLLM
         else:
             output_model = TaskGenOutput
 
@@ -441,6 +538,7 @@ class LLMTaskGenerator:
                 sub_level=sub_level,
                 user_interests=user_interests,
                 task_spec=task_spec,
+                validation_feedback=validation_feedback,
             ),
             output_model=output_model,
             temperature=self.temperature,
@@ -451,14 +549,10 @@ class LLMTaskGenerator:
             generated_payload = FillInBlanksTask.model_validate(
                 generated_payload
             ).model_dump(exclude_none=True)
-            generated_payload = normalize_fill_in_blanks_payload(generated_payload)
         if archetype.ui_widget == "ErrorCorrection":
             generated_payload = ErrorCorrectionTask.model_validate(
                 generated_payload
             ).model_dump(exclude_none=True)
-            generated_payload = normalize_error_correction_payload(generated_payload)
-        if archetype.ui_widget == "SentenceTransform":
-            generated_payload = normalize_sentence_transform_payload(generated_payload)
         if self._is_error_spotting_task(archetype):
             normalized = normalize_error_spotting_payload(generated_payload)
             strict_payload = {
@@ -491,75 +585,14 @@ class LLMTaskGenerator:
                     "estimated_time_minutes"
                 ]
 
-        if self._is_open_text_writing_task(archetype):
-            content = normalize_open_text_payload(content)
-            if not is_valid_open_text_payload(content, expected_items=3):
-                raise _TaskContentInvalid(
-                    f"open-text payload failed validation for {archetype.archetype_id}"
-                )
-        elif self._is_read_aloud_task(archetype):
-            content = normalize_read_aloud_payload(content)
-            if not is_valid_read_aloud_payload(content):
-                raise _TaskContentInvalid(
-                    f"read-aloud payload failed validation for {archetype.archetype_id}"
-                )
-        elif self._is_pic_desc_task(archetype):
-            content = normalize_speak_pic_desc_payload(content)
+        content = normalize_task_content(archetype.archetype_id, content)
+
+        if self._is_pic_desc_task(archetype):
             content = await self._attach_required_image(
                 content=content,
                 archetype=archetype,
             )
-        elif self._is_dialogue_speaking_task(archetype):
-            content = normalize_dialogue_speaking_payload(content)
-            if not is_valid_dialogue_speaking_payload(content):
-                raise _TaskContentInvalid(
-                    f"dialogue-speaking payload failed validation for {archetype.archetype_id}"
-                )
-        elif self._is_speak_and_record_task(archetype):
-            content = normalize_speak_and_record_payload(content)
-            if not is_valid_speak_and_record_payload(content):
-                raise _TaskContentInvalid(
-                    f"speak-and-record payload failed validation for {archetype.archetype_id}"
-                )
-        elif self._is_interview_task(archetype):
-            content = normalize_interview_speaking_payload(content)
-            if not is_valid_interview_speaking_payload(content):
-                raise _TaskContentInvalid(
-                    f"interview-speaking payload failed validation for {archetype.archetype_id}"
-                )
-        if archetype.ui_widget == "ErrorCorrection":
-            content = normalize_error_correction_payload(content)
-            if not is_valid_error_correction_payload(content, expected_items=3):
-                raise _TaskContentInvalid(
-                    f"error-correction payload failed validation for {archetype.archetype_id}"
-                )
-        elif archetype.ui_widget == "SentenceTransform":
-            content = normalize_sentence_transform_payload(content)
-            if not is_valid_sentence_transform_payload(content, expected_items=3):
-                raise _TaskContentInvalid(
-                    f"sentence-transform payload failed validation for {archetype.archetype_id}"
-                )
-        elif self._is_error_spotting_task(archetype):
-            content = normalize_error_spotting_payload(content)
-            if not is_valid_error_spotting_payload(content):
-                raise _TaskContentInvalid(
-                    f"error-spotting payload failed validation for {archetype.archetype_id}"
-                )
-        elif self._is_read_structure_task(archetype):
-            content = normalize_read_structure_payload(content)
-            if not is_valid_read_structure_payload(content):
-                raise _TaskContentInvalid(
-                    f"read-structure payload failed validation for {archetype.archetype_id}"
-                )
         elif self._is_listening_task(archetype):
-            if archetype.archetype_id in {"LISTEN_RETELL", "LISTEN_SHADOW"}:
-                content = normalize_listen_retell_payload(content)
-            else:
-                content = normalize_listen_and_respond_payload(content)
-            if not is_valid_listening_payload(content):
-                raise _TaskContentInvalid(
-                    f"listening payload failed validation for {archetype.archetype_id}"
-                )
             content = await self._attach_required_audio(
                 content=content,
                 archetype=archetype,
@@ -569,22 +602,14 @@ class LLMTaskGenerator:
                 content=content,
                 archetype=archetype,
             )
-        elif archetype.ui_widget == "MCQList":
-            content = normalize_mcq_payload(content)
-        elif archetype.ui_widget == "TrueFalseNotGiven":
-            content = {**content, "widget": "true_false_not_given"}
-        elif (
-            archetype.ui_widget == "FillInBlanks"
-            and archetype.core_activity == "read"
-        ):
-            content = normalize_fill_in_blanks_payload(content)
 
-        if not is_valid_task_content(archetype.archetype_id, content):
-            raise _TaskContentInvalid(
-                f"task content failed validation for {archetype.archetype_id}"
+        try:
+            return validate_and_project_task_content(
+                archetype.archetype_id,
+                content,
             )
-
-        return content
+        except ContractValidationError as exc:
+            raise _TaskContentInvalid(exc.detail) from exc
 
     async def _attach_optional_audio(
         self,

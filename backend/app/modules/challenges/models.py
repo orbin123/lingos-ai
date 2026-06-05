@@ -141,10 +141,15 @@ class ChallengeAttempt(Base, IDMixin, CreatedAtMixin):
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+    timer_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     task_payload: Mapped[dict] = mapped_column(
         JSON().with_variant(JSONB, "postgresql"),
         nullable=False,

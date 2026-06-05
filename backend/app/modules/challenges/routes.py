@@ -9,17 +9,19 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
-from app.modules.challenges.schemas import (
+from app.modules.challenges.ielts_sprint.schemas import (
     ChallengeAttemptRead,
+    ChallengeAttemptResponsesPatchRequest,
     ChallengeAttemptSubmitRequest,
     ChallengeDetailRead,
     ChallengeHistoryRead,
     ChallengeListItem,
     ChallengeSpeakingUploadRead,
 )
-from app.modules.challenges.service import (
-    ChallengeAudioNotFound,
+from app.modules.challenges.ielts_sprint.service import (
+    ChallengeAttemptInProgress,
     ChallengeAttemptNotFound,
+    ChallengeAudioNotFound,
     ChallengeDailyAttemptLimitExceeded,
     ChallengeLevelLocked,
     ChallengeLevelNotFound,
@@ -27,9 +29,26 @@ from app.modules.challenges.service import (
     ChallengeReadService,
     ChallengeSpeakingUploadRejected,
 )
+from app.modules.challenges.models import ChallengeAttempt
+
+
+from app.modules.challenges.a2z_game.routes import router as a2z_router
 
 
 router = APIRouter(prefix="/v1", tags=["challenges"])
+router.include_router(a2z_router)
+
+
+def _attempt_read(attempt: ChallengeAttempt) -> ChallengeAttemptRead:
+    level = attempt.level
+    return ChallengeAttemptRead.model_validate(
+        {
+            **ChallengeAttemptRead.model_validate(attempt).model_dump(),
+            "level_number": level.level_number if level is not None else None,
+            "pass_threshold": float(level.pass_threshold) if level is not None else None,
+            "time_limit_seconds": level.time_limit_seconds if level is not None else None,
+        }
+    )
 
 
 @router.get(
@@ -98,7 +117,53 @@ def get_challenge_attempt(
         )
     except ChallengeAttemptNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return ChallengeAttemptRead.model_validate(attempt)
+    return _attempt_read(attempt)
+
+
+@router.post(
+    "/challenge-attempts/{attempt_id}/begin",
+    response_model=ChallengeAttemptRead,
+    status_code=status.HTTP_200_OK,
+)
+def begin_challenge_attempt(
+    attempt_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ChallengeAttemptRead:
+    """Start the server-side sprint timer for a prepared attempt."""
+    service = ChallengeReadService(db)
+    try:
+        attempt = service.begin_attempt(
+            attempt_id=attempt_id,
+            user_id=current_user.id,
+        )
+    except ChallengeAttemptNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _attempt_read(attempt)
+
+
+@router.patch(
+    "/challenge-attempts/{attempt_id}/responses",
+    response_model=ChallengeAttemptRead,
+    status_code=status.HTTP_200_OK,
+)
+def patch_challenge_attempt_responses(
+    attempt_id: int,
+    payload: ChallengeAttemptResponsesPatchRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ChallengeAttemptRead:
+    """Autosave draft section responses for an in-progress attempt."""
+    service = ChallengeReadService(db)
+    try:
+        attempt = service.save_draft_responses(
+            attempt_id=attempt_id,
+            user_id=current_user.id,
+            response_payload=payload.response_payload,
+        )
+    except ChallengeAttemptNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _attempt_read(attempt)
 
 
 @router.get(
@@ -213,7 +278,12 @@ async def start_challenge_attempt(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ChallengeDailyAttemptLimitExceeded as exc:
         raise HTTPException(status_code=429, detail=str(exc)) from exc
-    return ChallengeAttemptRead.model_validate(attempt)
+    except ChallengeAttemptInProgress as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": str(exc), "attempt_id": exc.attempt_id},
+        ) from exc
+    return _attempt_read(attempt)
 
 
 @router.post(
@@ -237,4 +307,4 @@ async def submit_challenge_attempt(
         )
     except ChallengeAttemptNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return ChallengeAttemptRead.model_validate(attempt)
+    return _attempt_read(attempt)

@@ -11,7 +11,7 @@ from app.ai.llm import LLMProviderError
 from app.ai.stt import STTProviderError
 from app.core.database import Base
 from app.modules.auth.models import User
-from app.modules.challenges.evaluation_schemas import (
+from app.modules.challenges.ielts_sprint.evaluation_schemas import (
     IELTSFeedbackReport,
     SectionFeedback,
     SpeakingCriteriaEvaluation,
@@ -30,7 +30,7 @@ from app.modules.challenges.models import (
     ChallengeAttemptStatus,
     ChallengeLevel,
 )
-from app.modules.challenges.service import (
+from app.modules.challenges.ielts_sprint.service import (
     ChallengeAttemptNotFound,
     ChallengeReadService,
     ChallengeSpeakingUploadRejected,

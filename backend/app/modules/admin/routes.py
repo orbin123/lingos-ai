@@ -13,11 +13,16 @@ from app.modules.admin.schemas import (
     AdminSummary,
     AdminUserDetail,
     AdminUserListItem,
+    AppReviewItem,
+    FeedbackReviewItem,
+    FeedbackReviewUpdate,
     PaymentRead,
     RolePermissionsUpdate,
-    SubscriptionRead,
-    SubscriptionUpdate,
+    SubscriberAccessUpdate,
+    SubscriberItem,
+    SubscribersOverview,
     UserBillingRead,
+    UserProgressItem,
     UserRolesUpdate,
     UserStatusUpdate,
 )
@@ -69,6 +74,18 @@ def get_user(
     if detail is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return detail
+
+
+@router.get(
+    "/user-progress",
+    response_model=list[UserProgressItem],
+    status_code=status.HTTP_200_OK,
+)
+def list_user_progress(
+    _current_user: User = Depends(require_permission("users.view_progress")),
+    db: Session = Depends(get_db),
+) -> list[UserProgressItem]:
+    return AdminService(db).list_user_progress()
 
 
 @router.patch(
@@ -175,64 +192,16 @@ def update_role_permissions(
     return role
 
 
-# ── Task templates (Phase 8: disabled) ─────────────────────────────
-#
-# Backed by the deleted `tasks.Task` table. The admin team will rebuild
-# against `task_archetypes` + `curriculum_days` in a follow-up. Until
-# then every endpoint returns 501.
-
-
-_TASK_TEMPLATES_DISABLED = (
-    "Task templates were backed by the legacy `tasks` table, which was "
-    "removed in the Phase 8 cutover. Admin task management will be "
-    "re-implemented against `task_archetypes` in a follow-up."
+@router.get(
+    "/app-reviews",
+    response_model=list[AppReviewItem],
+    status_code=status.HTTP_200_OK,
 )
-
-
-@router.get("/task-templates", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def list_task_templates(
-    _current_user: User = Depends(require_permission("task_templates.read")),
-) -> None:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=_TASK_TEMPLATES_DISABLED,
-    )
-
-
-@router.post("/task-templates", status_code=status.HTTP_501_NOT_IMPLEMENTED)
-def create_task_template(
-    _current_user: User = Depends(require_permission("task_templates.create")),
-) -> None:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=_TASK_TEMPLATES_DISABLED,
-    )
-
-
-@router.patch(
-    "/task-templates/{template_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED
-)
-def update_task_template(
-    template_id: int,
-    _current_user: User = Depends(require_permission("task_templates.update")),
-) -> None:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=_TASK_TEMPLATES_DISABLED,
-    )
-
-
-@router.delete(
-    "/task-templates/{template_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED
-)
-def archive_task_template(
-    template_id: int,
-    _current_user: User = Depends(require_permission("task_templates.archive")),
-) -> None:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=_TASK_TEMPLATES_DISABLED,
-    )
+def list_app_reviews(
+    _current_user: User = Depends(require_permission("reviews.read")),
+    db: Session = Depends(get_db),
+) -> list[AppReviewItem]:
+    return AdminService(db).list_app_reviews()
 
 
 @router.get(
@@ -288,15 +257,15 @@ def list_payments(
 
 
 @router.get(
-    "/subscriptions",
-    response_model=list[SubscriptionRead],
+    "/subscribers",
+    response_model=SubscribersOverview,
     status_code=status.HTTP_200_OK,
 )
-def list_subscriptions(
+def list_subscribers(
     _current_user: User = Depends(require_permission("payments.read")),
     db: Session = Depends(get_db),
-) -> list[SubscriptionRead]:
-    return AdminService(db).list_subscriptions()
+) -> SubscribersOverview:
+    return AdminService(db).list_subscribers()
 
 
 @router.get(
@@ -316,67 +285,75 @@ def get_user_billing(
 
 
 @router.patch(
-    "/subscriptions/{subscription_id}",
-    response_model=SubscriptionRead,
+    "/subscribers/{user_id}/access",
+    response_model=SubscriberItem,
     status_code=status.HTTP_200_OK,
 )
-def update_subscription(
-    subscription_id: int,
-    payload: SubscriptionUpdate,
+def update_subscriber_access(
+    user_id: int,
+    payload: SubscriberAccessUpdate,
     request: Request,
     _permission_user: User = Depends(require_permission("subscriptions.manage")),
     current_user: User = Depends(require_super_admin),
     db: Session = Depends(get_db),
-) -> SubscriptionRead:
-    try:
-        subscription = AdminService(db).update_subscription(
-            subscription_id=subscription_id,
-            payload=payload,
-            actor=current_user,
-            ip_address=client_ip_from_request(request),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    if subscription is None:
+) -> SubscriberItem:
+    subscriber = AdminService(db).update_subscriber_access(
+        user_id=user_id,
+        access_expires_at=payload.access_expires_at,
+        actor=current_user,
+        ip_address=client_ip_from_request(request),
+    )
+    if subscriber is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Subscription not found",
+            detail="No purchase found for this user",
         )
-    return subscription
+    return subscriber
 
 
-# ── Feedback review (Phase 8: disabled) ────────────────────────────
-#
-# Backed by the deleted `feedbacks` review queue. The new flow's
-# `activity_feedback` rows don't yet carry a review status — that
-# surface returns when the admin team re-implements.
+# ── Feedback review (specific + rag) ───────────────────────────────
 
 
-_FEEDBACK_REVIEW_DISABLED = (
-    "Feedback review was backed by the legacy `feedbacks` table, which "
-    "was removed in the Phase 8 cutover. The admin review queue will "
-    "land in a follow-up against `activity_feedback`."
+@router.get(
+    "/feedback-review",
+    response_model=list[FeedbackReviewItem],
+    status_code=status.HTTP_200_OK,
 )
-
-
-@router.get("/feedback-review", status_code=status.HTTP_501_NOT_IMPLEMENTED)
 def list_feedback_review(
     _current_user: User = Depends(require_permission("feedback_logs.read")),
-) -> None:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=_FEEDBACK_REVIEW_DISABLED,
-    )
+    db: Session = Depends(get_db),
+) -> list[FeedbackReviewItem]:
+    return AdminService(db).list_feedback_review()
 
 
 @router.patch(
-    "/feedback-review/{feedback_id}", status_code=status.HTTP_501_NOT_IMPLEMENTED
+    "/feedback-review/{feedback_type}/{feedback_id}",
+    response_model=FeedbackReviewItem,
+    status_code=status.HTTP_200_OK,
 )
 def update_feedback_review(
+    feedback_type: str,
     feedback_id: int,
-    _current_user: User = Depends(require_permission("feedback_quality.review")),
-) -> None:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail=_FEEDBACK_REVIEW_DISABLED,
+    payload: FeedbackReviewUpdate,
+    request: Request,
+    current_user: User = Depends(require_permission("feedback_quality.review")),
+    db: Session = Depends(get_db),
+) -> FeedbackReviewItem:
+    if feedback_type not in ("specific", "rag"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="feedback_type must be 'specific' or 'rag'",
+        )
+    item = AdminService(db).review_feedback(
+        feedback_type=feedback_type,
+        feedback_id=feedback_id,
+        payload=payload,
+        actor=current_user,
+        ip_address=client_ip_from_request(request),
     )
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Feedback not found",
+        )
+    return item

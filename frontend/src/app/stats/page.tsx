@@ -4,11 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { authApi } from "@/lib/auth-api";
-import { progressApi, type DifficultyDistribution, type RecentActivity, type SkillHistorySeries, type SkillScoreSnapshot } from "@/lib/progress-api";
+import { progressApi, type DifficultyDistribution, type RecentActivity, type SkillScoreSnapshot } from "@/lib/progress-api";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { ScoreProgressionChart } from "@/components/stats/ScoreProgressionChart";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuthStore } from "@/store/authStore";
-import { normalizeSkillKey } from "@/lib/skill-labels";
 
 // ─── CSS vars / tokens (matching existing app palette) ────────────────────────
 const T = {
@@ -212,85 +212,6 @@ function CardLink({ children, onClick }: { children: React.ReactNode; onClick?: 
     >
       {children}
     </button>
-  );
-}
-
-// ─── Score progression chart ──────────────────────────────────────────────────
-// Keyed by the canonical LEGACY sub-skill identifiers (the same set in
-// `@/lib/skill-labels.SKILL_ORDER`). Incoming names from the backend are
-// normalised through `normalizeSkillKey` before lookup so doc/long-form
-// aliases ("thought_org", "thought_organization") resolve correctly.
-const SKILL_COLORS: Record<string, string> = {
-  grammar:       "#0070C4",
-  vocabulary:    "#7c3aed",
-  pronunciation: "#ef4444",
-  fluency:       "#10b981",
-  expression:    "#f59e0b",
-  comprehension: "#06b6d4",
-  tone:          "#ec4899",
-};
-
-function skillColor(name: string) {
-  return SKILL_COLORS[normalizeSkillKey(name)] ?? "#888";
-}
-
-function ProgressChart({ labels = [], series = [] }: { labels?: string[]; series?: SkillHistorySeries[] }) {
-  const w = 600, h = 220, pad = { l: 32, r: 14, t: 14, b: 28 };
-  if (!series.length || !labels.length) {
-    return (
-      <div style={{ height: 220, display: "flex", alignItems: "center", justifyContent: "center", color: T.inkMuted, fontSize: 13 }}>
-        Complete tasks to see score progression
-      </div>
-    );
-  }
-  const allVals = series.flatMap(s => s.scores);
-  const yMin = 0;
-  const yMax = Math.max(8, ...allVals);
-  const xStep = (w - pad.l - pad.r) / (labels.length - 1);
-  const yScale = (v: number) => pad.t + (h - pad.t - pad.b) * (1 - (v - yMin) / (yMax - yMin));
-  const xScale = (i: number) => pad.l + i * xStep;
-  const gridVals = [0, 2, 4, 6, Math.ceil(yMax / 2) * 2].filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => a - b);
-
-  return (
-    <div style={{ position: "relative", height: 220, marginBottom: 8 }}>
-      <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet">
-        {gridVals.map(v => (
-          <g key={v}>
-            <line x1={pad.l} x2={w - pad.r} y1={yScale(v)} y2={yScale(v)}
-              stroke="oklch(90% 0.02 240)" strokeDasharray="3 3"/>
-            <text x={pad.l - 8} y={yScale(v) + 4} textAnchor="end"
-              fontSize="10" fill="oklch(50% 0.04 240)" fontWeight="600">{v}</text>
-          </g>
-        ))}
-        {labels.map((l, i) => (
-          <text key={l} x={xScale(i)} y={h - 8} textAnchor="middle"
-            fontSize="11" fill="oklch(50% 0.04 240)" fontWeight="600">{l}</text>
-        ))}
-        {series.map(s => {
-          const color = skillColor(s.skill_name);
-          const path = s.scores.map((v, i) => `${i === 0 ? "M" : "L"} ${xScale(i)} ${yScale(v)}`).join(" ");
-          return (
-            <g key={s.skill_id}>
-              <path d={path} fill="none" stroke={color} strokeWidth="2.5"
-                strokeLinecap="round" strokeLinejoin="round"/>
-              {s.scores.map((v, i) => (
-                <circle key={i} cx={xScale(i)} cy={yScale(v)}
-                  r={i === s.scores.length - 1 ? 4.5 : 3}
-                  fill="white" stroke={color} strokeWidth="2"/>
-              ))}
-            </g>
-          );
-        })}
-      </svg>
-      <div style={{ display: "flex", gap: 16, fontSize: 12, color: T.inkMuted, fontWeight: 600, flexWrap: "wrap", paddingLeft: 32 }}>
-        {series.map(s => (
-          <span key={s.skill_id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ display: "inline-block", width: 9, height: 9, borderRadius: 3, background: skillColor(s.skill_name) }}/>
-            {displaySkillName(s.skill_name)}
-          </span>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -786,7 +707,7 @@ export default function StatsPage() {
                       sub="Sub-skills tracked daily by Evaluator Agent"
                       right={<AgentTag label="Live" tone="live"/>}
                     />
-                    <ProgressChart labels={historyLabels} series={skillHistory}/>
+                    <ScoreProgressionChart labels={historyLabels} series={skillHistory}/>
                   </Card>
 
                   {/* Sub-skill overview */}

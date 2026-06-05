@@ -45,6 +45,11 @@ from app.modules.sessions.contracts.projection import (
     project_feedback,
     project_task_payload,
 )
+from app.modules.sessions.contracts.validation import (
+    infer_listen_inner_widget,
+    normalize_task_content,
+    validate_and_project_task_content,
+)
 from app.modules.sessions.contracts.task_payloads import (
     DictationPayload,
     ErrorCorrectionPayload,
@@ -72,6 +77,9 @@ __all__ = [
     "project_task_payload",
     "project_evaluation",
     "project_feedback",
+    "infer_listen_inner_widget",
+    "normalize_task_content",
+    "validate_and_project_task_content",
     # task payloads
     "FillBlanksPayload",
     "McqPayload",

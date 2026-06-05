@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class AdminUserListItem(BaseModel):
@@ -81,6 +81,23 @@ class AdminUserDetail(AdminUserListItem):
     recent_feedback: list[AdminRecentFeedback]
 
 
+class UserProgressItem(BaseModel):
+    """A learner's at-a-glance progress for the admin User Progress list."""
+
+    user_id: int
+    name: str
+    email: str
+    plan_id: str | None = None
+    plan_name: str | None = None
+    purchase_complete: bool = False
+    access_expires_at: datetime | None = None
+    activities_completed: int = 0
+    # Mean of the learner's per-sub-skill display scores (0–10), or None if
+    # the learner has no scored skills yet.
+    dashboard_score: float | None = None
+    subskill_scores: list[AdminSkillScore] = Field(default_factory=list)
+
+
 class UserStatusUpdate(BaseModel):
     is_active: bool
 
@@ -106,35 +123,6 @@ class UserRolesUpdate(BaseModel):
 
 class RolePermissionsUpdate(BaseModel):
     permission_keys: list[str] = Field(max_length=32)
-
-
-class TaskTemplateRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    title: str
-    task_type: str
-    difficulty: int
-    status: str
-    content: dict
-    created_at: datetime
-    updated_at: datetime
-
-
-class TaskTemplateCreate(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
-    task_type: str = Field(min_length=1, max_length=80)
-    difficulty: int = Field(default=1, ge=1, le=10)
-    status: str = Field(default="draft")
-    content: dict = Field(default_factory=dict)
-
-
-class TaskTemplateUpdate(BaseModel):
-    title: str | None = Field(default=None, min_length=1, max_length=200)
-    task_type: str | None = Field(default=None, min_length=1, max_length=80)
-    difficulty: int | None = Field(default=None, ge=1, le=10)
-    status: str | None = None
-    content: dict | None = None
 
 
 class AdminLogUser(BaseModel):
@@ -173,14 +161,29 @@ class AIRequestLogRead(BaseModel):
 
 
 class FeedbackReviewItem(BaseModel):
-    id: int
+    """One reviewable piece of feedback — either a per-activity "specific"
+    feedback row or a session-level "rag" Coach's Note."""
+
+    feedback_type: Literal["specific", "rag"]
+    feedback_id: int
     user: AdminLogUser | None = None
-    task_title: str
-    user_response: dict
-    user_response_raw_text: str | None = None
-    ai_feedback: dict
-    score: float
-    review_status: str
+    # archetype id (specific) or day_id (rag) — context for the reviewer.
+    context_label: str
+
+    # Specific-feedback fields.
+    score: float | None = None
+    summary: str | None = None
+    did_well: list[str] = Field(default_factory=list)
+    mistakes: list[dict] = Field(default_factory=list)
+    next_tip: str | None = None
+
+    # RAG-feedback fields.
+    mentor_note: str | None = None
+    # Learner's thumbs on the Coach's Note, if they rated it.
+    rating: Literal["like", "dislike"] | None = None
+
+    # Review annotation (defaults represent the lazy "not yet reviewed" state).
+    review_status: str = "pending"
     reviewed_by: AdminLogUser | None = None
     reviewed_at: datetime | None = None
     admin_note: str | None = None
@@ -233,3 +236,56 @@ class SubscriptionUpdate(BaseModel):
     trial_ends_at: datetime | None = None
     current_period_start: datetime | None = None
     current_period_end: datetime | None = None
+
+
+class SubscriberItem(BaseModel):
+    """A paying learner — backed by a one-time `Purchase` with a 2-year window."""
+
+    user_id: int
+    name: str
+    email: str
+    plan_id: str | None = None
+    plan_name: str | None = None
+    amount_paid: float | None = None
+    currency: str | None = None
+    # "active" | "expired" | "paused"
+    status: str
+    purchased_at: datetime | None = None
+    access_expires_at: datetime | None = None
+
+
+class TrialUserItem(BaseModel):
+    """A learner with no purchase — on a derived signup + TRIAL_DAYS trial."""
+
+    user_id: int
+    name: str
+    email: str
+    # "trial" | "expired"
+    status: str
+    signed_up_at: datetime
+    trial_ends_at: datetime
+
+
+class SubscribersOverview(BaseModel):
+    """Paying subscribers and trial users kept as distinct groups."""
+
+    subscribers: list[SubscriberItem]
+    trials: list[TrialUserItem]
+
+
+class SubscriberAccessUpdate(BaseModel):
+    """Admin extends or expires a subscriber's 2-year access window."""
+
+    access_expires_at: datetime
+
+
+class AppReviewItem(BaseModel):
+    """A user's review of the application, for the admin User Reviews list."""
+
+    id: int
+    user: AdminLogUser | None = None
+    rating: int
+    title: str | None = None
+    body: str | None = None
+    status: str
+    created_at: datetime

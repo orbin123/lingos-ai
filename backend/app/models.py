@@ -19,7 +19,11 @@ from app.modules.auth.models import (  # noqa: F401
     UserProfile,
     UserRole,
 )
-from app.modules.admin.models import AdminAuditLog, AIRequestLog  # noqa: F401
+from app.modules.admin.models import (  # noqa: F401
+    AdminAuditLog,
+    AIRequestLog,
+    FeedbackReview,
+)
 from app.modules.skills.models import Skill  # noqa: F401
 from app.modules.curriculum.models import (  # noqa: F401
     Course,
@@ -33,6 +37,7 @@ from app.modules.challenges.models import (  # noqa: F401
     ChallengeAttempt,
     ChallengeLevel,
 )
+from app.modules.challenges.a2z_game.models import A2ZUserProgress  # noqa: F401
 from app.modules.progress.models import ProgressLog, SkillPoints, SkillPointsLog  # noqa: F401
 from app.modules.subscriptions.models import Payment, Purchase, Subscription  # noqa: F401
 from app.modules.sessions.models import (  # noqa: F401
@@ -40,9 +45,11 @@ from app.modules.sessions.models import (  # noqa: F401
     ActivityEvaluation,
     ActivityFeedback,
     DailySession,
+    FeedbackRating,
     SessionScorecard,
 )
 from app.modules.streaks.models import DailyActivity, StreakFreezeUsage  # noqa: F401
 from app.modules.preferences.models import UserCoursePreference  # noqa: F401
 from app.modules.learning_session.models import LearningSession  # noqa: F401
 from app.modules.feedback_memory.models import FeedbackMemoryLog  # noqa: F401
+from app.modules.reviews.models import AppReview  # noqa: F401

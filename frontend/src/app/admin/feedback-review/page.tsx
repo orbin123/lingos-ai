@@ -1,9 +1,9 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Flag, Wrench } from "lucide-react";
+import { Check, Flag, GraduationCap, ListChecks, ThumbsDown, ThumbsUp, Wrench } from "lucide-react";
 
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import {
@@ -17,20 +17,24 @@ import {
   type FeedbackReviewUpdate,
 } from "@/lib/admin-api";
 
+type Filter = "all" | "specific" | "rag";
+
 export default function AdminFeedbackReviewPage() {
   const queryClient = useQueryClient();
+  const [filter, setFilter] = useState<Filter>("all");
+
   const reviewQuery = useQuery({
     queryKey: ["admin", "feedback-review"],
     queryFn: adminApi.feedbackReview,
   });
   const updateMutation = useMutation({
     mutationFn: ({
-      feedbackId,
+      item,
       data,
     }: {
-      feedbackId: number;
+      item: FeedbackReviewItem;
       data: FeedbackReviewUpdate;
-    }) => adminApi.updateFeedbackReview(feedbackId, data),
+    }) => adminApi.updateFeedbackReview(item.feedback_type, item.feedback_id, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["admin", "feedback-review"] });
       await queryClient.invalidateQueries({ queryKey: ["admin", "summary"] });
@@ -38,25 +42,60 @@ export default function AdminFeedbackReviewPage() {
   });
 
   const items = reviewQuery.data ?? [];
+  const filtered = useMemo(
+    () => (filter === "all" ? items : items.filter((i) => i.feedback_type === filter)),
+    [items, filter],
+  );
 
   return (
     <AdminLayout title="Feedback Review" eyebrow="Quality review">
+      <div style={tabsStyle}>
+        <FilterTab label="All" value="all" active={filter} onClick={setFilter} />
+        <FilterTab label="Activity feedback" value="specific" active={filter} onClick={setFilter} />
+        <FilterTab label="Coach's Note (RAG)" value="rag" active={filter} onClick={setFilter} />
+      </div>
+
       <div style={listStyle}>
-        {items.map((item) => (
+        {filtered.map((item) => (
           <ReviewCard
-            key={`${item.id}-${item.review_status}-${item.reviewed_at ?? "new"}`}
+            key={`${item.feedback_type}-${item.feedback_id}-${item.review_status}-${item.reviewed_at ?? "new"}`}
             item={item}
             isSaving={updateMutation.isPending}
-            onUpdate={(data) => updateMutation.mutate({ feedbackId: item.id, data })}
+            onUpdate={(data) => updateMutation.mutate({ item, data })}
           />
         ))}
-        {items.length === 0 && (
+        {filtered.length === 0 && (
           <AdminPanel style={{ padding: 20 }}>
-            <p style={emptyStyle}>No feedback is waiting for review.</p>
+            <p style={emptyStyle}>
+              {reviewQuery.isLoading ? "Loading…" : "No feedback is waiting for review."}
+            </p>
           </AdminPanel>
         )}
       </div>
     </AdminLayout>
+  );
+}
+
+function FilterTab({
+  label,
+  value,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: Filter;
+  active: Filter;
+  onClick: (v: Filter) => void;
+}) {
+  const isActive = active === value;
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(value)}
+      style={{ ...tabStyle, ...(isActive ? tabActiveStyle : null) }}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -70,42 +109,55 @@ function ReviewCard({
   onUpdate: (data: FeedbackReviewUpdate) => void;
 }) {
   const [adminNote, setAdminNote] = useState(item.admin_note ?? "");
-  const feedbackMessage =
-    typeof item.ai_feedback.overall_message === "string"
-      ? item.ai_feedback.overall_message
-      : null;
+  const isRag = item.feedback_type === "rag";
 
   return (
     <AdminPanel style={{ padding: 20 }}>
       <div style={cardHeadStyle}>
         <div>
-          <h2 style={cardTitleStyle}>{item.task_title}</h2>
+          <div style={typeRowStyle}>
+            <span style={typeBadgeStyle}>
+              {isRag ? <GraduationCap size={13} /> : <ListChecks size={13} />}
+              {isRag ? "Coach's Note" : "Activity feedback"}
+            </span>
+            {item.rating && <RatingBadge rating={item.rating} />}
+          </div>
+          <h2 style={cardTitleStyle}>{item.context_label}</h2>
           <div style={metaStyle}>
-            {item.user?.name ?? "Unknown learner"} - {formatAdminDateTime(item.created_at)}
+            {item.user?.name ?? "Unknown learner"} · {formatAdminDateTime(item.created_at)}
           </div>
         </div>
         <ReviewStatusBadge status={item.review_status} />
       </div>
 
-      <div style={contentGridStyle}>
+      {isRag ? (
         <section>
-          <h3 style={sectionLabelStyle}>User response</h3>
-          <pre style={preStyle}>
-            {item.user_response_raw_text || JSON.stringify(item.user_response, null, 2)}
-          </pre>
+          <h3 style={sectionLabelStyle}>Coach&apos;s Note</h3>
+          <pre style={preStyle}>{item.mentor_note ?? "—"}</pre>
         </section>
-        <section>
-          <h3 style={sectionLabelStyle}>AI feedback</h3>
-          <pre style={preStyle}>
-            {feedbackMessage ?? JSON.stringify(item.ai_feedback, null, 2)}
-          </pre>
-        </section>
-      </div>
+      ) : (
+        <div style={contentGridStyle}>
+          <section>
+            <h3 style={sectionLabelStyle}>Summary</h3>
+            <pre style={preStyle}>{item.summary ?? "—"}</pre>
+          </section>
+          <section>
+            <h3 style={sectionLabelStyle}>Mistakes & tip</h3>
+            <pre style={preStyle}>
+              {JSON.stringify(
+                { mistakes: item.mistakes, did_well: item.did_well, next_tip: item.next_tip },
+                null,
+                2,
+              )}
+            </pre>
+          </section>
+        </div>
+      )}
 
       <div style={reviewBarStyle}>
         <div>
           <div style={sectionLabelStyle}>Score</div>
-          <div style={scoreStyle}>{item.score.toFixed(1)}</div>
+          <div style={scoreStyle}>{item.score !== null ? item.score.toFixed(1) : "—"}</div>
         </div>
         <label style={noteFieldStyle}>
           <span style={sectionLabelStyle}>Admin note</span>
@@ -145,6 +197,22 @@ function ReviewCard({
   );
 }
 
+function RatingBadge({ rating }: { rating: "like" | "dislike" }) {
+  const liked = rating === "like";
+  return (
+    <span
+      style={{
+        ...ratingBadgeStyle,
+        background: liked ? "oklch(94% 0.06 155)" : "oklch(95% 0.05 25)",
+        color: liked ? "oklch(34% 0.13 155)" : "oklch(42% 0.16 25)",
+      }}
+    >
+      {liked ? <ThumbsUp size={12} /> : <ThumbsDown size={12} />}
+      {liked ? "Liked" : "Disliked"}
+    </span>
+  );
+}
+
 function ReviewStatusBadge({ status }: { status: FeedbackReviewItem["review_status"] }) {
   const colors = {
     pending: ["oklch(96% 0.05 80)", "oklch(42% 0.12 70)"],
@@ -155,6 +223,62 @@ function ReviewStatusBadge({ status }: { status: FeedbackReviewItem["review_stat
   const [background, color] = colors[status];
   return <span style={{ ...badgeStyle, background, color }}>{status}</span>;
 }
+
+const tabsStyle: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  marginBottom: 18,
+};
+
+const tabStyle: CSSProperties = {
+  minHeight: 36,
+  padding: "0 14px",
+  borderRadius: 999,
+  border: "1px solid oklch(88% 0.018 245)",
+  background: "white",
+  color: "oklch(40% 0.05 245)",
+  cursor: "pointer",
+  fontFamily: "inherit",
+  fontSize: 13,
+  fontWeight: 750,
+};
+
+const tabActiveStyle: CSSProperties = {
+  background: "oklch(94% 0.04 240)",
+  borderColor: "oklch(82% 0.05 240)",
+  color: "#00599e",
+};
+
+const typeRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  marginBottom: 8,
+};
+
+const typeBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  padding: "3px 9px",
+  borderRadius: 999,
+  background: "oklch(95% 0.02 245)",
+  color: "oklch(40% 0.06 245)",
+  fontSize: 11.5,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: "0.03em",
+};
+
+const ratingBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 5,
+  padding: "3px 9px",
+  borderRadius: 999,
+  fontSize: 11.5,
+  fontWeight: 800,
+};
 
 const listStyle: CSSProperties = {
   display: "grid",
@@ -198,7 +322,7 @@ const sectionLabelStyle: CSSProperties = {
 };
 
 const preStyle: CSSProperties = {
-  minHeight: 124,
+  minHeight: 90,
   maxHeight: 260,
   margin: "8px 0 0",
   padding: 14,

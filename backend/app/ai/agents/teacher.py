@@ -1,4 +1,16 @@
-"""Agent 0 -- Teacher Agent for chat-driven learning sessions."""
+"""Agent 0 -- Teacher Agent for chat-driven learning sessions.
+
+Prompt vs system boundary
+-------------------------
+* **LLM / prompt** owns: 60--80 word budget, one question per turn, one-sentence
+  learner probes, following the current authored step, readiness as a standalone
+  final turn.
+* **System** owns: structural repair (multi-question collapse, quote fixes),
+  hard reject >80 words (retry then step-aware fallback — never word-slice),
+  ``extended_production_ask`` detection, duplicate-of-previous detection.
+* **Deterministic bypass** emits ``readiness_prompt`` verbatim on the final
+  authored step without calling the LLM.
+"""
 
 from __future__ import annotations
 
@@ -21,7 +33,10 @@ _TEMPERATURE = 0.4
 # the LLM can see where it is in the plan instead of restarting from
 # step 1 once early messages roll out of the window.
 _MAX_RECENT_MESSAGES = 16
-_MAX_WORDS_PER_TURN = 80
+_TARGET_WORDS = 60
+_HARD_MAX_WORDS = 80
+_MAX_WORDS_PER_TURN = _HARD_MAX_WORDS
+_DEFAULT_READINESS_PROMPT = "Ready to try the practice task?"
 _DUPLICATE_JACCARD_THRESHOLD = 0.85
 _READINESS_SENTENCE = "ready to try the practice task?"
 _EMPTY_PRAISE_PREFIXES = ("great!", "good job!", "nice sentence!")
@@ -351,6 +366,82 @@ def _format_scripted_plan(scripted_plan: list[str] | None) -> str:
     )
 
 
+def _count_teacher_chat_turns(conversation: list[dict[str, Any]]) -> int:
+    count = 0
+    for message in conversation:
+        if message.get("role") not in ("ai", "assistant"):
+            continue
+        if str(message.get("type") or "chat") != "chat":
+            continue
+        count += 1
+    return count
+
+
+def _readiness_prompt_from_instructions(
+    teacher_instructions: TeacherInstructions | None,
+) -> str:
+    prompt = _stringify((teacher_instructions or {}).get("readiness_prompt"))
+    return prompt or _DEFAULT_READINESS_PROMPT
+
+
+def _current_step_index(
+    conversation: list[dict[str, Any]],
+    scripted_plan: list[str] | None,
+    *,
+    explicit_index: int | None = None,
+) -> int | None:
+    if not scripted_plan:
+        return None
+    if explicit_index is not None:
+        return min(max(explicit_index, 1), len(scripted_plan))
+    return min(_count_teacher_chat_turns(conversation) + 1, len(scripted_plan))
+
+
+def _step_instruction(
+    scripted_plan: list[str] | None, step_index: int | None
+) -> str:
+    if not scripted_plan or step_index is None:
+        return ""
+    idx = step_index - 1
+    if idx < 0 or idx >= len(scripted_plan):
+        return ""
+    return scripted_plan[idx].strip()
+
+
+def _is_readiness_step_text(text: str) -> bool:
+    lowered = text.lower()
+    return "ready" in lowered and "practice" in lowered
+
+
+def _should_emit_readiness_turn(
+    *,
+    conversation: list[dict[str, Any]],
+    scripted_plan: list[str] | None,
+    teacher_instructions: TeacherInstructions | None,
+    current_step_index: int | None,
+) -> bool:
+    if not scripted_plan:
+        return False
+    plan_len = len(scripted_plan)
+    final_step = scripted_plan[-1]
+    if not _is_readiness_step_text(final_step):
+        return False
+    ai_turns = _count_teacher_chat_turns(conversation)
+    step_index = _current_step_index(
+        conversation, scripted_plan, explicit_index=current_step_index
+    )
+    return step_index == plan_len and ai_turns >= plan_len - 1
+
+
+def _format_current_step_block(
+    scripted_plan: list[str] | None, step_index: int | None
+) -> str:
+    step_text = _step_instruction(scripted_plan, step_index)
+    if not step_text:
+        return "No current authored step (follow the lesson description)."
+    return f"{step_index}. {step_text}"
+
+
 def _format_extra_instructions(
     teacher_instructions: TeacherInstructions | None,
     *,
@@ -381,6 +472,7 @@ def _build_user_prompt(
     teacher_instructions: TeacherInstructions | None = None,
     scripted_plan: list[str] | None = None,
     lesson_description: str | None = None,
+    current_step_index: int | None = None,
 ) -> str:
     """Build the teacher prompt from curriculum + learner context."""
 
@@ -390,6 +482,10 @@ def _build_user_prompt(
         or _stringify(instructions.get("lesson_description"))
         or "No lesson description provided."
     )
+    step_index = _current_step_index(
+        conversation, scripted_plan, explicit_index=current_step_index
+    )
+    current_step_block = _format_current_step_block(scripted_plan, step_index)
 
     return f"""\
 Lesson title: {topic}
@@ -398,10 +494,17 @@ Skill/theme: {sub_skill}
 Learner sub-level: {user_level}/10
 Current task type after teaching: {task_type}
 
+TURN BUDGET: Your next message must be {_TARGET_WORDS}--{_HARD_MAX_WORDS} words
+total (aim for ~{_TARGET_WORDS}). Include acknowledgement + one teaching point
++ exactly one short question. Complete every sentence — never cut off mid-thought.
+
 LEARNER PROFILE
 {_format_profile(learner_profile)}
 
-AUTHORED TEACHER BEHAVIOR
+CURRENT STEP (execute ONLY this step this turn — do not skip ahead or repeat earlier steps)
+{current_step_block}
+
+AUTHORED TEACHER BEHAVIOR (full plan — reference only; do not execute multiple steps in one turn)
 {_format_scripted_plan(scripted_plan)}
 
 EXTRA TEACHER INSTRUCTIONS
@@ -520,20 +623,31 @@ def _collapse_to_single_question(text: str) -> str:
     )
 
     if best_end == positions[0]:
-        return text[: best_end + 1].strip()
-
-    pre_first_q = text[: positions[0]].rstrip()
-    last_period = pre_first_q.rfind(". ")
-    if last_period != -1:
-        preamble = pre_first_q[: last_period + 1].strip()
-    elif pre_first_q.endswith((".", "!")):
-        preamble = pre_first_q
+        collapsed = text[: best_end + 1].strip()
     else:
-        # No completed sentence before the dropped question (e.g. "Info one?").
-        preamble = ""
-    if preamble:
-        return f"{preamble} {best_clause}".strip()
-    return best_clause
+        pre_first_q = text[: positions[0]].rstrip()
+        last_period = pre_first_q.rfind(". ")
+        if last_period != -1:
+            preamble = pre_first_q[: last_period + 1].strip()
+        elif pre_first_q.endswith((".", "!")):
+            preamble = pre_first_q
+        else:
+            # No completed sentence before the dropped question (e.g. "Info one?").
+            preamble = ""
+        if preamble:
+            collapsed = f"{preamble} {best_clause}".strip()
+        else:
+            collapsed = best_clause
+
+    if collapsed != text:
+        logger.warning(
+            "teacher repair: collapsed extra questions (%d -> %d words): %r -> %r",
+            len(text.split()),
+            len(collapsed.split()),
+            text[:120],
+            collapsed[:120],
+        )
+    return collapsed
 
 
 def _retry_instruction(violations: list[str], previous_assistant: str) -> str:
@@ -568,18 +682,26 @@ def _fallback_text(
     topic: str,
     conversation: list[dict[str, Any]],
     scripted_plan: list[str] | None,
+    teacher_instructions: TeacherInstructions | None = None,
+    current_step_index: int | None = None,
 ) -> str:
     """Deterministic teacher turn used when the LLM is unavailable."""
 
-    last_user = _last_user_message(conversation).lower()
-    ai_turns = sum(
-        1
-        for message in conversation
-        if message.get("role") in ("ai", "assistant")
-        and str(message.get("type") or "chat") == "chat"
+    last_user = _last_user_message(conversation)
+    last_user_lower = last_user.lower()
+    ai_turns = _count_teacher_chat_turns(conversation)
+    readiness_prompt = _readiness_prompt_from_instructions(teacher_instructions)
+    step_index = _current_step_index(
+        conversation, scripted_plan, explicit_index=current_step_index
     )
+    step_text = _step_instruction(scripted_plan, step_index)
 
     if not conversation or ai_turns == 0:
+        if step_text:
+            return (
+                f"Hi! Today our lesson is {topic}. "
+                "Tell me one short answer to start today's first step."
+            )
         if scripted_plan:
             return (
                 f"Hi! Today our lesson is {topic}. Let's start with the "
@@ -593,11 +715,14 @@ def _fallback_text(
             "daily routine you have."
         )
 
-    if any(phrase in last_user for phrase in ("don't understand", "dont understand", "confused", "not clear")):
-        if scripted_plan:
+    if any(
+        phrase in last_user_lower
+        for phrase in ("don't understand", "dont understand", "confused", "not clear")
+    ):
+        if step_text:
             return (
-                f"No problem. We are still on {topic}. I will keep it simple: "
-                "try one short answer for the current lesson step."
+                f"No problem — we are still on {topic}. "
+                "Try one short sentence for the current step."
             )
         return (
             "No problem. Simple present is for things that happen again and "
@@ -606,8 +731,16 @@ def _fallback_text(
         )
 
     if scripted_plan:
-        if ai_turns >= len(scripted_plan):
-            return "Ready to try the practice task?"
+        if ai_turns >= len(scripted_plan) or (
+            step_text and _is_readiness_step_text(step_text)
+        ):
+            return readiness_prompt
+        if last_user:
+            snippet = last_user.strip()[:40]
+            return (
+                f"You said '{snippet}' — good. "
+                "Can you give me one short sentence for the next part of today's lesson?"
+            )
         return (
             "Good. Let's continue with the next step from today's lesson. "
             f"Give one short answer about {topic}."
@@ -662,10 +795,26 @@ def _deterministic_repair(text: str) -> str:
     text = _fix_orphan_leading_quote(text)
     if len(_question_positions_outside_quotes(text)) > 1:
         text = _collapse_to_single_question(text)
-        logger.warning("teacher repair: collapsed extra questions to one probe")
     text = _balance_double_quotes(text)
     text = _fix_orphan_leading_quote(text)
     return text
+
+
+def _readiness_turn_text(
+    *,
+    conversation: list[dict[str, Any]],
+    scripted_plan: list[str] | None,
+    teacher_instructions: TeacherInstructions | None,
+    current_step_index: int | None,
+) -> str | None:
+    if not _should_emit_readiness_turn(
+        conversation=conversation,
+        scripted_plan=scripted_plan,
+        teacher_instructions=teacher_instructions,
+        current_step_index=current_step_index,
+    ):
+        return None
+    return _readiness_prompt_from_instructions(teacher_instructions)
 
 
 async def generate_teaching_turn(
@@ -679,8 +828,19 @@ async def generate_teaching_turn(
     teacher_instructions: TeacherInstructions | None = None,
     scripted_plan: list[str] | None = None,
     lesson_description: str | None = None,
+    current_step_index: int | None = None,
 ) -> TeachingOutput:
     """Generate one teacher turn, enforcing the single-turn contract."""
+
+    readiness_text = _readiness_turn_text(
+        conversation=conversation,
+        scripted_plan=scripted_plan,
+        teacher_instructions=teacher_instructions,
+        current_step_index=current_step_index,
+    )
+    if readiness_text is not None:
+        logger.info("teacher: deterministic readiness turn (no LLM)")
+        return TeachingOutput(messages=[readiness_text])
 
     system_prompt = _system_prompt()
     user_prompt = _build_user_prompt(
@@ -693,6 +853,7 @@ async def generate_teaching_turn(
         teacher_instructions=teacher_instructions,
         scripted_plan=scripted_plan,
         lesson_description=lesson_description,
+        current_step_index=current_step_index,
     )
     previous_assistant = _last_assistant_message(conversation) or None
 
@@ -727,12 +888,22 @@ async def generate_teaching_turn(
                 "teacher repair: retry still invalid (%s); using fallback",
                 retry_violations,
             )
+            violations = retry_violations
 
+    logger.warning(
+        "teacher.fallback_used: violations=%s step_index=%s",
+        violations if violations else ["llm_unavailable"],
+        _current_step_index(
+            conversation, scripted_plan, explicit_index=current_step_index
+        ),
+    )
     fallback = _deterministic_repair(
         _fallback_text(
             topic=topic,
             conversation=conversation,
             scripted_plan=scripted_plan,
+            teacher_instructions=teacher_instructions,
+            current_step_index=current_step_index,
         )
     )
     return TeachingOutput(messages=[fallback])
@@ -763,6 +934,7 @@ async def stream_teaching_turn(
     teacher_instructions: TeacherInstructions | None = None,
     scripted_plan: list[str] | None = None,
     lesson_description: str | None = None,
+    current_step_index: int | None = None,
 ) -> AsyncIterator[str]:
     """Stream one teacher turn.
 
@@ -771,6 +943,17 @@ async def stream_teaching_turn(
     just as on the non-streaming path; turn outputs are short enough (<= 60
     words) that buffering does not meaningfully affect perceived latency.
     """
+
+    readiness_text = _readiness_turn_text(
+        conversation=conversation,
+        scripted_plan=scripted_plan,
+        teacher_instructions=teacher_instructions,
+        current_step_index=current_step_index,
+    )
+    if readiness_text is not None:
+        logger.info("teacher: deterministic readiness turn (no LLM, stream)")
+        yield readiness_text
+        return
 
     system_prompt = _system_prompt()
     user_prompt = _build_user_prompt(
@@ -783,6 +966,7 @@ async def stream_teaching_turn(
         teacher_instructions=teacher_instructions,
         scripted_plan=scripted_plan,
         lesson_description=lesson_description,
+        current_step_index=current_step_index,
     )
     previous_assistant = _last_assistant_message(conversation)
 
@@ -825,12 +1009,23 @@ async def stream_teaching_turn(
         if retry_text and not retry_violations:
             yield retry_text
             return
+        if retry_violations:
+            violations = retry_violations
 
+    logger.warning(
+        "teacher.fallback_used (stream): violations=%s step_index=%s",
+        violations if violations else ["llm_unavailable"],
+        _current_step_index(
+            conversation, scripted_plan, explicit_index=current_step_index
+        ),
+    )
     fallback = _deterministic_repair(
         _fallback_text(
             topic=topic,
             conversation=conversation,
             scripted_plan=scripted_plan,
+            teacher_instructions=teacher_instructions,
+            current_step_index=current_step_index,
         )
     )
     yield fallback

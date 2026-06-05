@@ -24,6 +24,8 @@ from app.modules.auth.repository import UserRepository
 from app.modules.learning_session.schemas import (
     LearningSessionSnapshotRead,
     LearningSessionStateRead,
+    RagRatingRequest,
+    RagRatingResponse,
     StartSessionRequest,
     StartSessionResponse,
     WSIncomingMessage,
@@ -312,7 +314,112 @@ async def get_scorecard_for_chat_session(
             status_code=404,
             detail="session has no scorecard yet",
         )
-    return _serialize_scorecard(daily.session_id, scorecard, db=db)
+    result = _serialize_scorecard(daily.session_id, scorecard, db=db)
+    # Hydrate the viewer's thumbs on the Coach's Note so the chat UI can
+    # show persisted like/dislike state on reload.
+    from app.modules.sessions.models import FeedbackRating, SessionScorecard
+
+    card = (
+        db.query(SessionScorecard)
+        .filter(SessionScorecard.session_id == daily.id)
+        .first()
+    )
+    if card is not None:
+        rating = (
+            db.query(FeedbackRating)
+            .filter(
+                FeedbackRating.scorecard_id == card.id,
+                FeedbackRating.user_id == current_user.id,
+            )
+            .first()
+        )
+        result.rag_rating = rating.value if rating else None
+    return result
+
+
+def _resolve_scorecard_for_chat(
+    session_id: str, user: User, db: Session
+):
+    """Bridge a chat session_id → its DailySession's SessionScorecard.
+
+    Returns the ORM scorecard, or raises HTTPException(404) if the chat
+    session, daily session, or scorecard can't be found for this user.
+    """
+    from app.modules.learning_session.models import LearningSession
+    from app.modules.sessions.models import DailySession
+
+    chat = (
+        db.query(LearningSession)
+        .filter(
+            LearningSession.session_id == session_id,
+            LearningSession.user_id == user.id,
+        )
+        .first()
+    )
+    if chat is None:
+        raise HTTPException(status_code=404, detail="chat session not found")
+    daily = db.get(DailySession, chat.daily_session_id)
+    if daily is None or daily.scorecard is None:
+        raise HTTPException(status_code=404, detail="session has no scorecard yet")
+    return daily.scorecard
+
+
+@rest_router.put(
+    "/sessions/{session_id}/rag-feedback/rating",
+    response_model=RagRatingResponse,
+    status_code=status.HTTP_200_OK,
+)
+def rate_rag_feedback(
+    session_id: str,
+    payload: RagRatingRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RagRatingResponse:
+    """Upsert the learner's thumbs up/down on this session's Coach's Note."""
+    from app.modules.sessions.models import FeedbackRating
+
+    scorecard = _resolve_scorecard_for_chat(session_id, current_user, db)
+    rating = (
+        db.query(FeedbackRating)
+        .filter(
+            FeedbackRating.scorecard_id == scorecard.id,
+            FeedbackRating.user_id == current_user.id,
+        )
+        .first()
+    )
+    if rating is None:
+        rating = FeedbackRating(
+            scorecard_id=scorecard.id,
+            user_id=current_user.id,
+            value=payload.value,
+        )
+        db.add(rating)
+    else:
+        rating.value = payload.value
+    db.commit()
+    return RagRatingResponse(value=payload.value)
+
+
+@rest_router.delete(
+    "/sessions/{session_id}/rag-feedback/rating",
+    response_model=RagRatingResponse,
+    status_code=status.HTTP_200_OK,
+)
+def clear_rag_feedback_rating(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> RagRatingResponse:
+    """Remove the learner's rating on this session's Coach's Note."""
+    from app.modules.sessions.models import FeedbackRating
+
+    scorecard = _resolve_scorecard_for_chat(session_id, current_user, db)
+    db.query(FeedbackRating).filter(
+        FeedbackRating.scorecard_id == scorecard.id,
+        FeedbackRating.user_id == current_user.id,
+    ).delete()
+    db.commit()
+    return RagRatingResponse(value=None)
 
 
 # --- WebSocket --------------------------------------------------------
