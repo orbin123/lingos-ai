@@ -41,6 +41,29 @@ function FilterIcon() {
   );
 }
 
+function ChevronDownIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      style={{
+        transform: open ? "rotate(180deg)" : "rotate(0deg)",
+        transition: "transform 0.15s ease",
+      }}
+    >
+      <path
+        d="M2.5 4.5L6 8L9.5 4.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 type SkillOption = {
   key: string;
   label: string;
@@ -100,14 +123,14 @@ export function ScoreProgressionChart({
   );
 
   const w = 600;
-  const h = 220;
-  const pad = { l: 32, r: 14, t: 14, b: 28 };
+  const h = 260;
+  const pad = { l: 42, r: 22, t: 20, b: 34 };
 
   if (!series.length || !labels.length) {
     return (
       <div
         style={{
-          height: 220,
+          height: 260,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -143,7 +166,7 @@ export function ScoreProgressionChart({
 
   return (
     <div style={{ position: "relative", marginBottom: 8 }}>
-      <div style={{ position: "relative", height: 220 }}>
+      <div style={{ position: "relative", height: h }}>
         <svg
           width="100%"
           height={h}
@@ -157,16 +180,16 @@ export function ScoreProgressionChart({
                 x2={w - pad.r}
                 y1={yScale(v)}
                 y2={yScale(v)}
-                stroke="oklch(90% 0.02 240)"
-                strokeDasharray="3 3"
+                stroke="oklch(93% 0.015 240)"
+                strokeDasharray="4 4"
               />
               <text
                 x={pad.l - 8}
                 y={yScale(v) + 4}
                 textAnchor="end"
-                fontSize="10"
-                fill="oklch(50% 0.04 240)"
-                fontWeight="600"
+                fontSize="12"
+                fill="oklch(40% 0.05 240)"
+                fontWeight="700"
               >
                 {Number.isInteger(v) ? v : v.toFixed(1)}
               </text>
@@ -178,9 +201,9 @@ export function ScoreProgressionChart({
               x={xScale(i)}
               y={h - 8}
               textAnchor="middle"
-              fontSize="11"
-              fill="oklch(50% 0.04 240)"
-              fontWeight="600"
+              fontSize="12"
+              fill="oklch(40% 0.05 240)"
+              fontWeight="700"
             >
               {l}
             </text>
@@ -215,8 +238,50 @@ export function ScoreProgressionChart({
             );
           })}
         </svg>
+      </div>
 
-        <div ref={pickerRef} style={{ position: "absolute", right: 0, bottom: 0 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginTop: 16,
+          paddingLeft: pad.l,
+          paddingRight: pad.r,
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        {/* Legend */}
+        <div
+          style={{
+            display: "flex",
+            gap: "10px 16px",
+            fontSize: 12,
+            color: T.inkMuted,
+            fontWeight: 600,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          {visibleSeries.map((s) => (
+            <span key={s.skill_id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span
+                style={{
+                  display: "inline-block",
+                  width: 9,
+                  height: 9,
+                  borderRadius: 3,
+                  background: skillColor(s.skill_name),
+                }}
+              />
+              {displaySkillName(s.skill_name, s.display_label)}
+            </span>
+          ))}
+        </div>
+
+        {/* Options Button and Selection Popover */}
+        <div ref={pickerRef} style={{ position: "relative" }}>
           <button
             type="button"
             title="Choose skills to compare"
@@ -224,20 +289,33 @@ export function ScoreProgressionChart({
             aria-expanded={pickerOpen}
             onClick={() => setPickerOpen((open) => !open)}
             style={{
-              width: 32,
               height: 32,
-              borderRadius: 9,
+              borderRadius: 999,
               border: `1.5px solid ${T.line}`,
               background: "white",
               color: T.navy,
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
+              gap: 6,
+              padding: "0 12px 0 10px",
               cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(80,110,180,0.12)",
+              fontSize: 12,
+              fontWeight: 700,
+              boxShadow: "0 2px 6px rgba(80,110,180,0.08)",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = T.primary;
+              e.currentTarget.style.background = "oklch(99% 0.005 240)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = T.line;
+              e.currentTarget.style.background = "white";
             }}
           >
             <FilterIcon />
+            <span>Compare Skills</span>
+            <ChevronDownIcon open={pickerOpen} />
           </button>
 
           {pickerOpen && (
@@ -245,27 +323,37 @@ export function ScoreProgressionChart({
               style={{
                 position: "absolute",
                 right: 0,
-                bottom: 40,
-                width: 240,
-                padding: "12px 14px",
-                borderRadius: 14,
+                bottom: "calc(100% + 8px)",
+                width: 260,
+                padding: "16px 14px",
+                borderRadius: 16,
                 background: "white",
                 border: `1.5px solid ${T.line}`,
-                boxShadow: "0 8px 28px rgba(80,110,180,0.18)",
-                zIndex: 10,
+                boxShadow: "0 12px 32px rgba(40,80,150,0.18)",
+                zIndex: 100,
               }}
             >
               <div
                 style={{
-                  fontSize: 12,
-                  fontWeight: 700,
+                  fontSize: 13,
+                  fontWeight: 800,
                   color: T.navy,
-                  marginBottom: 10,
+                  marginBottom: 2,
                 }}
               >
-                Compare up to 4 skills
+                Compare sub-skills
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 500,
+                  color: T.inkMuted,
+                  marginBottom: 12,
+                }}
+              >
+                Select up to 4 ({selectedKeys.length}/4 selected)
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {skillOptions.map(({ key, label }) => {
                   const checked = selectedKeys.includes(key);
                   const disableUncheck = checked && selectedKeys.length <= 1;
@@ -277,31 +365,48 @@ export function ScoreProgressionChart({
                       style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: 8,
-                        fontSize: 13,
+                        justifyContent: "space-between",
+                        padding: "6px 8px",
+                        borderRadius: 8,
+                        fontSize: 12.5,
                         fontWeight: 600,
-                        color: disabled && !checked ? "oklch(70% 0.03 240)" : T.inkMuted,
+                        color: disabled && !checked ? "oklch(70% 0.03 240)" : T.navy,
                         cursor: disabled ? "not-allowed" : "pointer",
+                        background: checked ? "oklch(97% 0.01 240)" : "transparent",
+                        transition: "all 0.12s",
+                      }}
+                      onMouseEnter={e => {
+                        if (!disabled) e.currentTarget.style.background = checked ? "oklch(95% 0.018 240)" : "oklch(97% 0.01 240)";
+                      }}
+                      onMouseLeave={e => {
+                        if (!disabled) e.currentTarget.style.background = checked ? "oklch(97% 0.01 240)" : "transparent";
                       }}
                     >
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: skillColor(key),
+                            flexShrink: 0,
+                          }}
+                        />
+                        {label}
+                      </span>
                       <input
                         type="checkbox"
                         checked={checked}
                         disabled={disabled}
                         onChange={() => toggleSkill(key)}
-                        style={{ accentColor: T.primary, cursor: disabled ? "not-allowed" : "pointer" }}
-                      />
-                      <span
                         style={{
-                          display: "inline-block",
-                          width: 9,
-                          height: 9,
-                          borderRadius: 3,
-                          background: skillColor(key),
-                          flexShrink: 0,
+                          accentColor: T.primary,
+                          cursor: disabled ? "not-allowed" : "pointer",
+                          width: 14,
+                          height: 14,
                         }}
                       />
-                      {label}
                     </label>
                   );
                 })}
@@ -309,34 +414,6 @@ export function ScoreProgressionChart({
             </div>
           )}
         </div>
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          fontSize: 12,
-          color: T.inkMuted,
-          fontWeight: 600,
-          flexWrap: "wrap",
-          paddingLeft: 32,
-          paddingRight: 40,
-        }}
-      >
-        {visibleSeries.map((s) => (
-          <span key={s.skill_id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span
-              style={{
-                display: "inline-block",
-                width: 9,
-                height: 9,
-                borderRadius: 3,
-                background: skillColor(s.skill_name),
-              }}
-            />
-            {displaySkillName(s.skill_name, s.display_label)}
-          </span>
-        ))}
       </div>
     </div>
   );

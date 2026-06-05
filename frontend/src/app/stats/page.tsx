@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { authApi } from "@/lib/auth-api";
@@ -27,7 +27,6 @@ const T = {
 
 // ─── Mocks for sections with no tracking data yet ─────────────────────────────
 const MOCK_TIME_PRACTICED = "–";
-const MOCK_GOAL = { week: 1, total: 12, current: 5.4, target: 7.0 };
 const MOCK_PRACTICE = [
   { num: "–",   unit: "",    label: "Most active" },
   { num: "–",   unit: "",    label: "Avg session" },
@@ -132,11 +131,7 @@ const ArrowOut = () => (
     <path d="M5 11L11 5M11 5H6M11 5v5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
   </svg>
 );
-const DownloadIcon = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-    <path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
-);
+
 const PulseIcon = () => (
   <span style={{
     display: "inline-block", width: 6, height: 6, borderRadius: "50%",
@@ -414,8 +409,31 @@ function InsightRow({ text, meta, tone }: { text: React.ReactNode; meta: string;
 }
 
 // ─── Goal card ────────────────────────────────────────────────────────────────
-function GoalCard() {
-  const pct = Math.round((MOCK_GOAL.week / MOCK_GOAL.total) * 100);
+function GoalCard({ courseLengthStr, currentWeek }: { courseLengthStr?: string, currentWeek?: number }) {
+  const totalWeeks = courseLengthStr === "48w" ? 48 : 24;
+  const week = currentWeek || 1;
+  const stageLength = totalWeeks / 3;
+
+  let targetWeek = stageLength;
+  let targetStage = "intermediate";
+
+  if (week <= stageLength) {
+    targetWeek = stageLength;
+    targetStage = "intermediate";
+  } else if (week <= stageLength * 2) {
+    targetWeek = stageLength * 2;
+    targetStage = "advanced";
+  } else {
+    targetWeek = totalWeeks;
+    targetStage = "completion";
+  }
+
+  const titleText = targetStage === "completion" 
+    ? `Complete course by Week ${totalWeeks}` 
+    : `Reach ${targetStage} by Week ${targetWeek}`;
+
+  const pct = Math.min(100, Math.round((week / targetWeek) * 100));
+
   return (
     <div style={{
       background: `linear-gradient(135deg, ${T.primary}, oklch(45% 0.2 250))`,
@@ -430,18 +448,17 @@ function GoalCard() {
         background: "rgba(255,255,255,0.1)",
       }}/>
       <div style={{ fontSize: 12.5, fontWeight: 700, opacity: 0.85, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-        24-week milestone
+        {totalWeeks}-week milestone
       </div>
       <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em", margin: "8px 0 14px", lineHeight: 1.25, position: "relative", zIndex: 1 }}>
-        Reach intermediate by Week 12
+        {titleText}
       </div>
       <div style={{ position: "relative", zIndex: 1 }}>
         <div style={{ height: 8, background: "rgba(255,255,255,0.25)", borderRadius: 8, overflow: "hidden", margin: "6px 0 10px" }}>
           <div style={{ height: "100%", background: "white", borderRadius: 8, width: `${pct}%`, transition: "width 0.6s ease" }}/>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, opacity: 0.92 }}>
-          <span><strong>Week {MOCK_GOAL.week}</strong> of {MOCK_GOAL.total}</span>
-          <span>{MOCK_GOAL.current} / {MOCK_GOAL.target} target</span>
+          <span><strong>Week {week}</strong> of {targetWeek}</span>
         </div>
       </div>
     </div>
@@ -540,15 +557,11 @@ function KpiTile({
   );
 }
 
-// ─── Range tabs ───────────────────────────────────────────────────────────────
-const RANGES = [["7d", "Week"], ["30d", "Month"], ["90d", "Quarter"], ["all", "All time"]] as const;
-
 // ─── Main page ─────────────────────────────────────────────────────────────────
 export default function StatsPage() {
   const router = useRouter();
   const { logout } = useAuthStore();
   const { isReady } = useRequireAuth();
-  const [range, setRange] = useState<string>("7d");
 
   // Per-attempt detail view is not part of the sessions flow yet. Rows
   // render in read-only mode for now.
@@ -580,10 +593,12 @@ export default function StatsPage() {
 
   const stats = statsQuery.data;
   const weekly = stats?.weekly_snapshot;
-  const overallScore = weekly?.overall_score ?? 0;
+  const skillScores = axisScores(stats?.skill_scores ?? []);
+  const overallScore = skillScores.length > 0 
+    ? skillScores.reduce((sum, s) => sum + s.score, 0) / skillScores.length 
+    : 0;
   const change = weekly?.overall_score_change ?? 0;
   const changeUp = change >= 0;
-  const skillScores = axisScores(stats?.skill_scores ?? []);
   const strengths = stats?.feedback.strengths ?? [];
   const focusAreas = stats?.feedback.focus_areas ?? [];
   const activities = stats?.recent_activities ?? [];
@@ -631,34 +646,7 @@ export default function StatsPage() {
                     Tracked by the Evaluator Agent · all scores on a 0–10 scale
                   </p>
                 </div>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  {/* Range tabs */}
-                  <div style={{
-                    display: "inline-flex", padding: 4, background: "white",
-                    border: `1.5px solid ${T.line}`, borderRadius: 12, gap: 2,
-                  }}>
-                    {RANGES.map(([k, l]) => (
-                      <button key={k} onClick={() => setRange(k)} style={{
-                        padding: "7px 14px", borderRadius: 9,
-                        fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer",
-                        background: range === k ? T.primary : "transparent",
-                        color: range === k ? "white" : T.inkMuted,
-                        boxShadow: range === k ? "0 2px 6px rgba(0,112,196,0.3)" : "none",
-                        transition: "all 0.15s", fontFamily: "inherit",
-                      }}>
-                        {l}
-                      </button>
-                    ))}
-                  </div>
-                  {/* Export */}
-                  <button title="Export report" style={{
-                    width: 38, height: 38, borderRadius: 10, background: "white",
-                    border: `1.5px solid ${T.line}`, display: "flex", alignItems: "center",
-                    justifyContent: "center", color: "oklch(28% 0.08 245)", cursor: "pointer",
-                  }}>
-                    <DownloadIcon/>
-                  </button>
-                </div>
+
               </div>
 
               {/* ── KPI row ── */}
@@ -833,7 +821,10 @@ export default function StatsPage() {
                   </Card>
 
                   {/* Goal progress */}
-                  <GoalCard/>
+                  <GoalCard 
+                    courseLengthStr={userQuery.data?.preference?.course_length}
+                    currentWeek={userQuery.data?.preference?.current_week}
+                  />
 
                   {/* Task difficulty */}
                   <Card>

@@ -68,42 +68,52 @@ export function saveSelectedSkills(keys: string[]): void {
 
 export function computeProgressionYAxis(
   values: number[],
-): { yMin: number; yMax: number; ticks: [number, number, number] } {
+): { yMin: number; yMax: number; ticks: number[] } {
   if (values.length === 0) {
-    return { yMin: 1, yMax: 3, ticks: [1, 2, 3] };
+    return { yMin: 1.5, yMax: 3.0, ticks: [1.5, 2.0, 2.5, 3.0] };
   }
 
   const dataMin = Math.min(...values);
   const dataMax = Math.max(...values);
 
-  let yMax: number;
-  let yMin: number;
+  let yMin = 0.0;
+  let yMax = 10.0;
+  let ticks: number[] = [0.0, 3.3, 6.7, 10.0];
 
-  if (dataMax <= 3) {
-    yMax = 3;
-    yMin = roundHalf(Math.max(0, dataMin - 0.5));
-  } else if (dataMax <= 6) {
-    yMin = 2;
-    yMax = 6;
+  if (dataMax <= 3.0) {
+    yMax = 3.0;
+    if (dataMin >= 1.5) {
+      yMin = 1.5;
+      ticks = [1.5, 2.0, 2.5, 3.0];
+    } else {
+      yMin = 0.0;
+      ticks = [0.0, 1.0, 2.0, 3.0];
+    }
+  } else if (dataMax <= 6.0) {
+    yMax = 6.0;
+    if (dataMin >= 3.0) {
+      yMin = 3.0;
+      ticks = [3.0, 4.0, 5.0, 6.0];
+    } else {
+      yMin = 0.0;
+      ticks = [0.0, 2.0, 4.0, 6.0];
+    }
   } else {
-    yMax = Math.min(10, roundHalf(Math.ceil((dataMax + 0.5) / 2) * 2));
-    yMin = Math.max(0, yMax - 4);
+    yMax = 10.0;
+    if (dataMin >= 7.0) {
+      yMin = 7.0;
+      ticks = [7.0, 8.0, 9.0, 10.0];
+    } else if (dataMin >= 4.0) {
+      yMin = 4.0;
+      ticks = [4.0, 6.0, 8.0, 10.0];
+    } else if (dataMin >= 1.0) {
+      yMin = 1.0;
+      ticks = [1.0, 4.0, 7.0, 10.0];
+    } else {
+      yMin = 0.0;
+      ticks = [0.0, 3.3, 6.7, 10.0];
+    }
   }
 
-  if (dataMin < yMin) yMin = roundHalf(Math.floor(dataMin * 2) / 2);
-  if (dataMax > yMax) yMax = roundHalf(Math.ceil(dataMax * 2) / 2);
-
-  if (values.every((v) => v > 0.5) && yMin === 0) {
-    yMin = 0.5;
-  }
-
-  if (yMax - yMin < 1) {
-    const mid = (dataMin + dataMax) / 2;
-    yMin = roundHalf(Math.max(0, mid - 0.5));
-    yMax = roundHalf(mid + 0.5);
-    if (values.every((v) => v > 0.5) && yMin === 0) yMin = 0.5;
-  }
-
-  const midTick = roundHalf((yMin + yMax) / 2);
-  return { yMin, yMax, ticks: [yMin, midTick, yMax] };
+  return { yMin, yMax, ticks };
 }

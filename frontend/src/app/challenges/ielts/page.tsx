@@ -49,7 +49,7 @@ function renderRulesMarkdown(rulesMd: string): string {
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\n\n/g, "</p><p>")
     .replace(/^(?!<h3|<li)/gm, "")
-    .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>");
+    .replace(/(<li>[\s\S]*<\/li>)/g, "<ul>$1</ul>");
 }
 
 export default function IELTSSprintPage() {
