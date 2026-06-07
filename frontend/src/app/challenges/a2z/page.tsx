@@ -40,6 +40,7 @@ export default function A2ZGamePage() {
   const [result, setResult] = useState<{ pass: boolean; words: string[]; target: number; levelId: number; letter: string | null } | null>(null);
   const [reduceMotion] = useState(false);
   const [isStartingRound, setIsStartingRound] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user && !user.diagnosis_completed) router.replace("/diagnosis");
@@ -53,6 +54,7 @@ export default function A2ZGamePage() {
   const startSpin = useCallback(async (forced: string | null) => {
     try {
       setIsStartingRound(true);
+      setPageError(null);
       const mode = forced ? "pick" : "spin";
       const res = await a2zApi.startRound(mode, forced || undefined);
       setActiveLetter(res.letter);
@@ -60,6 +62,8 @@ export default function A2ZGamePage() {
       setScreen('spin');
     } catch (e) {
       console.error("Failed to start round", e);
+      setPageError("Couldn't start a new round. Please try again.");
+      setScreen('home');
     } finally {
       setIsStartingRound(false);
     }
@@ -69,9 +73,9 @@ export default function A2ZGamePage() {
     setScreen('speak'); 
   }, []);
 
-  const onRoundFinish = useCallback(async ({ pass, words }: { pass: boolean, words: string[] }) => {
+  const onRoundFinish = useCallback(async () => {
     if (activeRoundId === null) return;
-    
+
     try {
       const finishRes = await a2zApi.finishRound(activeRoundId);
       setResult({ 
@@ -85,10 +89,12 @@ export default function A2ZGamePage() {
       setScreen('result');
     } catch (e) {
       console.error("Failed to finish round", e);
-      setResult({ pass, words, target: level.words, levelId: level.id, letter: activeLetter });
-      setScreen('result');
+      // Don't fabricate a 0-word result — surface the failure and go back to
+      // the map so the user knows scoring didn't go through.
+      setPageError("We couldn't score that round. Please try the letter again.");
+      setScreen('home');
     }
-  }, [activeRoundId, level, activeLetter, queryClient]);
+  }, [activeRoundId, queryClient]);
 
   if (!isReady || progressLoading) return null;
 
@@ -143,6 +149,34 @@ export default function A2ZGamePage() {
           <ChevronLeft size={18} />
           Challenges
         </button>
+        {pageError && (
+          <div
+            role="alert"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              margin: "0 0 16px 0",
+              padding: "12px 16px",
+              borderRadius: 12,
+              background: "rgba(239,68,68,0.10)",
+              border: "1px solid rgba(239,68,68,0.35)",
+              color: "#b91c1c",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            <span>{pageError}</span>
+            <button
+              onClick={() => setPageError(null)}
+              aria-label="Dismiss"
+              style={{ border: "none", background: "none", color: "#b91c1c", cursor: "pointer", fontWeight: 700, fontSize: 16, lineHeight: 1 }}
+            >
+              ×
+            </button>
+          </div>
+        )}
         <div className="a2z-wrapper" style={{ background: "transparent", minHeight: "auto" }}>
       {screen === 'home' && (
         <A2ZHome

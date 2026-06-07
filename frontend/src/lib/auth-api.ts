@@ -64,8 +64,14 @@ export interface UserUpdateInput {
 }
 
 export const authApi = {
-  signup: (data: RegisterInput) =>
-    api.post<UserOut>("/auth/signup", data).then((r) => r.data),
+  signup: (data: RegisterInput) => {
+    const payload = {
+      name: data.name,
+      email: data.email,
+      password: data.password,
+    };
+    return api.post<UserOut>("/auth/signup", payload).then((r) => r.data);
+  },
 
   login: (data: LoginInput) =>
     api.post<TokenOut>("/auth/login", data).then((r) => r.data),

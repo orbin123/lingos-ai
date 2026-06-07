@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Mic } from 'lucide-react';
-import { a2zApi } from '@/lib/a2z-api';
+import { X, Mic, MicOff } from 'lucide-react';
 
 interface A2ZSpeakProps {
   roundId: number;
@@ -15,17 +14,27 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
   const [phase, setPhase] = useState<'idle' | 'listening' | 'finishing'>('idle');
   const [timeLeft, setTimeLeft] = useState(level.time);
   const [words, setWords] = useState<string[]>([]);
-  
+  const [micError, setMicError] = useState<string | null>(null);
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const dataIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const chunkIndexRef = useRef(0);
-  const pendingRequestsRef = useRef(0);
+  const wsRef = useRef<WebSocket | null>(null);
   const isFinishingRef = useRef(false);
-  const allChunksRef = useRef<BlobPart[]>([]);
+  // Set once we've surfaced an explicit error so onclose doesn't also show a
+  // generic "connection lost" message on top of it.
+  const errorShownRef = useRef(false);
+  // wordsRef mirrors the words state so callbacks always see the latest value
+  const wordsRef = useRef<string[]>([]);
 
-  // Clean up function
+  const showError = (message: string) => {
+    errorShownRef.current = true;
+    setMicError(message);
+    stopRecording();
+    setPhase('idle');
+    setTimeLeft(level.time);
+  };
+
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
@@ -33,8 +42,10 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
     }
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.close();
+    }
     if (timerRef.current) clearInterval(timerRef.current);
-    if (dataIntervalRef.current) clearInterval(dataIntervalRef.current);
   };
 
   const handleFinish = (currentWords: string[]) => {
@@ -42,86 +53,116 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
     isFinishingRef.current = true;
     setPhase('finishing');
     stopRecording();
-    
-    // We need to wait for any pending audio chunks to finish uploading
-    // before we inform the parent to call finishRound.
-    const checkPendingAndFinish = () => {
-      if (pendingRequestsRef.current > 0) {
-        setTimeout(checkPendingAndFinish, 100);
-      } else {
-        const pass = currentWords.length >= level.words;
-        onFinish({ pass, words: currentWords });
-      }
-    };
-    checkPendingAndFinish();
+    const pass = currentWords.length >= level.words;
+    onFinish({ pass, words: currentWords });
   };
 
   const startListening = async () => {
+    setMicError(null);
+    errorShownRef.current = false;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+
+      // Pick the best mimeType the browser supports (Chrome: webm/opus,
+      // Firefox: ogg/opus, Safari: browser default / mp4)
+      const mimeType =
+        MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' :
+        MediaRecorder.isTypeSupported('audio/webm')             ? 'audio/webm' :
+        MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')  ? 'audio/ogg;codecs=opus' :
+        '';
+      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = mediaRecorder;
-      chunkIndexRef.current = 0;
-      allChunksRef.current = [];
-      
-      mediaRecorder.ondataavailable = async (e) => {
-        if (e.data && e.data.size > 0 && !isFinishingRef.current) {
-          allChunksRef.current.push(e.data);
-          
-          // Create a blob containing all audio up to this point
-          const currentBlob = new Blob(allChunksRef.current, { type: mediaRecorder.mimeType });
-          const index = chunkIndexRef.current++;
-          pendingRequestsRef.current++;
-          try {
-            const res = await a2zApi.sendAudioChunk(roundId, currentBlob, index);
+
+      // Build WebSocket URL — swap http(s) → ws(s), add JWT as query param
+      // (browsers cannot set Authorization headers on WebSocket connections)
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const wsBase = apiBase.replace(/^http/, 'ws');
+      const token = encodeURIComponent(localStorage.getItem('token') || '');
+      const wsUrl = `${wsBase}/api/v1/challenges/a2z/rounds/${roundId}/stream?token=${token}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data as string) as {
+            type?: string;
+            code?: string;
+            message?: string;
+            accepted_words?: string[];
+            passed_so_far?: boolean;
+          };
+
+          // Structured server error (auth, streaming not configured, round
+          // not found, upstream failure). Show it explicitly — don't finish.
+          if (data.type === 'error') {
             if (!isFinishingRef.current) {
-              setWords(res.accepted_words);
-              if (res.passed_so_far) {
-                handleFinish(res.accepted_words);
-              }
+              showError(data.message || 'Something went wrong. Please try again.');
             }
-          } catch (err) {
-            console.error("Failed to send audio chunk", err);
-          } finally {
-            pendingRequestsRef.current--;
+            return;
           }
+
+          if (!isFinishingRef.current) {
+            wordsRef.current = data.accepted_words || [];
+            setWords(data.accepted_words || []);
+            if (data.passed_so_far) {
+              handleFinish(data.accepted_words || []);
+            }
+          }
+        } catch (e) {
+          console.error('Failed to parse WS message', e);
         }
       };
 
-      mediaRecorder.start(); // Start without timeslice
-      setPhase('listening');
-      
-      // Request data every 3 seconds
-      dataIntervalRef.current = setInterval(() => {
-        if (mediaRecorder.state === 'recording') {
-          mediaRecorder.requestData();
+      ws.onerror = () => {
+        if (!isFinishingRef.current && !errorShownRef.current) {
+          showError('Connection error. Please check your network and try again.');
         }
-      }, 3000);
-      
-      // Start timer
-      timerRef.current = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current!);
-            if (dataIntervalRef.current) clearInterval(dataIntervalRef.current);
-            return 0;
+      };
+
+      ws.onclose = () => {
+        // A clean finish (target reached or timer) already set isFinishingRef
+        // before closing. Any other close here is abnormal — surface it as an
+        // error instead of silently dumping the user to a 0-word result.
+        if (!isFinishingRef.current && !errorShownRef.current) {
+          showError('Connection lost. Please try again.');
+        }
+      };
+
+      ws.onopen = () => {
+        // Send audio chunks as binary frames every 250 ms
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+            ws.send(e.data);
           }
-          return prev - 1;
-        });
-      }, 1000);
+        };
+
+        mediaRecorder.start(250); // 250 ms timeslice → ~4 chunks/second
+        setPhase('listening');
+
+        timerRef.current = setInterval(() => {
+          setTimeLeft(prev => {
+            if (prev <= 1) {
+              clearInterval(timerRef.current!);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      };
 
     } catch (err) {
-      console.error("Microphone access denied or error", err);
+      console.error('Microphone access denied or error', err);
+      setMicError('Microphone access denied. Please allow mic access and try again.');
     }
   };
 
+  // When the countdown reaches zero, finish the round
   useEffect(() => {
     if (timeLeft === 0 && phase === 'listening') {
-      handleFinish(words);
+      handleFinish(wordsRef.current);
     }
-  }, [timeLeft, phase, words]);
+  }, [timeLeft, phase]);
 
   useEffect(() => {
     return () => {
@@ -158,7 +199,7 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
              <circle className="a2z-ring-fg" cx="100" cy="100" r="90" strokeDasharray="565.48" strokeDashoffset={565.48 * (1 - timePct / 100)} />
           )}
         </svg>
-        
+
         {phase === 'listening' && !reduceMotion && (
           <>
             <div className="a2z-mic-pulse p1"></div>
@@ -167,7 +208,7 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
           </>
         )}
 
-        <div 
+        <div
           className={`a2z-mic-core ${phase === 'idle' ? 'idle' : 'listening'}`}
           onClick={() => {
             if (phase === 'idle') startListening();
@@ -175,8 +216,8 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
         >
           {phase === 'idle' ? (
             <>
-              <Mic size={36} strokeWidth={2.5} />
-              <div className="a2z-mic-start-cta">Tap to start</div>
+              {micError ? <MicOff size={36} strokeWidth={2.5} /> : <Mic size={36} strokeWidth={2.5} />}
+              <div className="a2z-mic-start-cta">{micError ? 'Mic error' : 'Tap to start'}</div>
             </>
           ) : phase === 'finishing' ? (
             <>
@@ -193,6 +234,12 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
           )}
         </div>
       </div>
+
+      {micError && (
+        <div style={{ color: 'var(--color-error, #ef4444)', fontSize: 13, textAlign: 'center', padding: '0 16px' }}>
+          {micError}
+        </div>
+      )}
 
       <div className="a2z-speak-counter">
         <div className="a2z-counter-num">

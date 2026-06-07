@@ -239,6 +239,9 @@ class A2ZService:
             expires_at=expires_at,
             task_payload=task_payload,
         )
+        # Commit so the round persists: the WS stream and finish_round run in
+        # separate request sessions and must be able to load this attempt.
+        self.db.commit()
 
         return StartRoundResponse(
             round_id=attempt.id,
@@ -277,7 +280,9 @@ class A2ZService:
 
         # Store audio chunk in blob storage
         ext = "webm"
-        if content_type and "ogg" in content_type:
+        if content_type and "wav" in content_type:
+            ext = "wav"
+        elif content_type and "ogg" in content_type:
             ext = "ogg"
         elif content_type and "mp4" in content_type:
             ext = "mp4"
@@ -299,25 +304,30 @@ class A2ZService:
         )
         chunk_text = result.get("text", "").strip()
 
-        # Replace running transcript with the full transcription
+        # Store the latest full transcript for reference
         response = attempt.response_payload or {}
         response["running_transcript"] = chunk_text
 
-        # Extract all valid words from the full transcript
-        all_valid = evaluator.extract_valid_words(response["running_transcript"], letter)
+        # Extract valid words from the latest transcript
+        chunk_valid = evaluator.extract_valid_words(chunk_text, letter)
 
-        # Determine new words (not yet in accepted_words)
+        # Union with all previously accepted words so words never vanish
+        # (Whisper is probabilistic — later chunks may not re-mention earlier words)
         prev_accepted = set(response.get("accepted_words", []))
-        new_words = [w for w in all_valid if w not in prev_accepted]
+        combined = list(prev_accepted | set(chunk_valid))
 
-        # Update accepted words
+        # Determine new words (not yet seen before this chunk)
+        new_words = [w for w in combined if w not in prev_accepted]
+
+        # Update accepted words (monotonically growing)
+        all_valid = combined
         response["accepted_words"] = all_valid
         attempt.response_payload = response
 
         # Flag the column as modified for SQLAlchemy JSON mutation tracking
         from sqlalchemy.orm.attributes import flag_modified
         flag_modified(attempt, "response_payload")
-        self.db.flush()
+        self.db.commit()
 
         return AudioChunkResponse(
             new_words=new_words,
@@ -345,13 +355,24 @@ class A2ZService:
         target_words = task.get("target_words", 10)
         level_number = task.get("level_number", 1)
 
-        # Get transcript from response payload
+        # Use the union-accumulated accepted_words as the authoritative word list.
+        # Re-grading from running_transcript alone would lose words that Whisper
+        # correctly identified in earlier chunks but missed in the final chunk.
         response = attempt.response_payload or {}
-        transcript = response.get("running_transcript", "")
+        accumulated_words = response.get("accepted_words", [])
 
-        # Grade
-        report = evaluator.grade(transcript, letter, target_words)
-        passed = report["passed"]
+        # Fall back to grading the transcript if no chunks were processed
+        if not accumulated_words:
+            transcript = response.get("running_transcript", "")
+            accumulated_words = evaluator.extract_valid_words(transcript, letter)
+
+        passed = len(accumulated_words) >= target_words
+        report = {
+            "valid_words": accumulated_words,
+            "valid_word_count": len(accumulated_words),
+            "target_words": target_words,
+            "passed": passed,
+        }
 
         # Update attempt
         now = datetime.now(timezone.utc)
@@ -398,7 +419,7 @@ class A2ZService:
                     progress.game_completed_at = now
 
         self._progress_repo.save(progress)
-        self.db.flush()
+        self.db.commit()
 
         # Build progress DTO
         progress_dto = self._build_progress_dto(challenge, progress)
@@ -435,6 +456,6 @@ class A2ZService:
         from sqlalchemy.orm.attributes import flag_modified
         flag_modified(progress, "cleared_letters")
         self._progress_repo.save(progress)
-        self.db.flush()
+        self.db.commit()
 
         return self._build_progress_dto(challenge, progress)

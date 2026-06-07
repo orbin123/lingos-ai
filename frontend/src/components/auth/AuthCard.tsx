@@ -43,7 +43,7 @@ export function AuthCard({ title, subtitle, children, footer }: AuthCardProps) {
 
       <div className="relative w-full max-w-[440px]">
         <div
-          className="rounded-2xl bg-white/85 backdrop-blur-xl border border-white/90 px-8 py-10 sm:px-10 sm:py-12"
+          className="rounded-2xl bg-white/85 backdrop-blur-xl border border-white/90 px-8 py-8 sm:px-10 sm:py-10"
           style={{
             boxShadow:
               "0 4px 32px rgba(80,110,180,0.13), 0 1.5px 6px rgba(80,120,200,0.07)",
@@ -58,7 +58,7 @@ export function AuthCard({ title, subtitle, children, footer }: AuthCardProps) {
             {title}
           </h1>
           <p
-            className="text-[15px] leading-relaxed mb-8"
+            className="text-[15px] leading-relaxed mb-6"
             style={{ color: "oklch(45% 0.07 240)" }}
           >
             {subtitle}

@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     # public StaticFiles; they are served through an owner-checked route.
     LEARNER_AUDIO_DIR: str = "app/ai/stt/_learner_audio"
 
+    # Deepgram — real-time streaming STT for A2Z challenge
+    # Get a key at console.deepgram.com → API Keys → Create Key
+    DEEPGRAM_API_KEY: str = ""
+
     # AI / Pronunciation (Azure Speech Pronunciation Assessment)
     # Optional at startup so Phase 4 code doesn't break environments that
     # haven't created an Azure Speech resource yet. The pronunciation route

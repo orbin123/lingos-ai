@@ -71,7 +71,7 @@ export const a2zApi = {
   /** Upload an audio chunk and receive new valid words. */
   sendAudioChunk: (roundId: number, audioBlob: Blob, chunkIndex: number) => {
     const formData = new FormData();
-    formData.append("audio", audioBlob, `chunk_${chunkIndex}.webm`);
+    formData.append("audio", audioBlob, `chunk_${chunkIndex}.wav`);
     formData.append("chunk_index", String(chunkIndex));
     return api.post<AudioChunkResponse>(
       `${PREFIX}/rounds/${roundId}/audio-chunks`,

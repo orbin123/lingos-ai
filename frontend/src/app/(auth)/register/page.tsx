@@ -78,11 +78,19 @@ export default function RegisterPage() {
           autoComplete="new-password"
           placeholder="Create a password"
           error={errors.password?.message}
-          hint="At least 8 characters"
           {...field("password")}
         />
 
-        <div className="mt-6">
+        <FormField
+          label="Confirm Password"
+          type="password"
+          autoComplete="new-password"
+          placeholder="Confirm your password"
+          error={errors.confirmPassword?.message}
+          {...field("confirmPassword")}
+        />
+
+        <div className="mt-4">
           <SubmitButton loading={registerUser.isPending} loadingText="Creating account...">
             Create account
           </SubmitButton>

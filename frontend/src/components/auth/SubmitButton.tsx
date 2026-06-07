@@ -20,7 +20,7 @@ export function SubmitButton({
       type="submit"
       disabled={disabled || loading}
       className={[
-        "w-full rounded-full py-3 text-[15px] font-bold tracking-tight",
+        "w-full rounded-full py-2.5 text-[15px] font-bold tracking-tight",
         "text-white transition-all",
         "flex items-center justify-center gap-2",
         "disabled:opacity-70 disabled:cursor-not-allowed",

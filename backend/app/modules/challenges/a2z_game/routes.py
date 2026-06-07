@@ -1,13 +1,14 @@
-"""HTTP endpoints for the A2Z Challenge game."""
+"""HTTP + WebSocket endpoints for the A2Z Challenge game."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, WebSocket, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
+from app.modules.challenges.a2z_game import ws_stream
 from app.modules.challenges.a2z_game.schemas import (
     A2ZProgressRead,
     AudioChunkResponse,
@@ -103,6 +104,28 @@ async def ingest_a2z_audio_chunk(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except A2ZRoundNotInProgress as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.websocket("/rounds/{round_id}/stream")
+async def stream_a2z_audio(
+    round_id: int,
+    websocket: WebSocket,
+    token: str = Query(..., description="JWT bearer token (passed as query param because browsers cannot set WS headers)"),
+    db: Session = Depends(get_db),
+) -> None:
+    """Stream raw audio to Deepgram and receive real-time word events.
+
+    The browser opens this WebSocket, sends MediaRecorder chunks (WebM/Opus)
+    as binary frames, and receives JSON word-event messages as text frames.
+    Authentication uses the JWT passed as ?token=... since browsers cannot
+    set Authorization headers on WebSocket connections.
+    """
+    await ws_stream.stream_round(
+        websocket=websocket,
+        round_id=round_id,
+        token=token,
+        db=db,
+    )
 
 
 @router.post(

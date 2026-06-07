@@ -4,7 +4,7 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export function SocialDivider() {
   return (
-    <div className="my-6 flex items-center gap-3">
+    <div className="my-4 flex items-center gap-3">
       <div
         className="flex-1 h-px"
         style={{ background: "oklch(88% 0.02 240)" }}
@@ -33,7 +33,7 @@ export function GoogleButton() {
     <button
       type="button"
       onClick={handleGoogleLogin}
-      className="w-full rounded-full py-3 text-[14.5px] font-semibold flex items-center justify-center gap-2.5 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
+      className="w-full rounded-full py-2.5 text-[14.5px] font-semibold flex items-center justify-center gap-2.5 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
       style={{ color: "oklch(22% 0.09 245)" }}
     >
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>

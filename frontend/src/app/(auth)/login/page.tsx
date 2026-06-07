@@ -99,7 +99,7 @@ function LoginPageInner() {
           {...register("password")}
         />
 
-        <div className="mt-6">
+        <div className="mt-4">
           <SubmitButton loading={login.isPending} loadingText="Logging in...">
             Log in
           </SubmitButton>
