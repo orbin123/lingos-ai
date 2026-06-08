@@ -31,6 +31,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.ai.agents.planner import PlannerAgent
+from app.ai.agents.relevance_classifier import classify_reply_relevance
 from app.ai.agents.teacher import stream_teaching_turn
 from app.core.config import settings
 from app.modules.curriculum.file_source import (
@@ -447,6 +448,151 @@ def _should_force_transition_to_practice(
     teacher_turns = _count_teacher_chat_turns(messages)
     plan_len = _scripted_plan_length(state) or _DEFAULT_TEACHING_TURN_CEILING
     return teacher_turns >= plan_len
+
+
+# ----------------------------------------------------------------------------
+# Learner-message input gate (gibberish / off-topic during teaching)
+# ----------------------------------------------------------------------------
+#
+# Mirror image of the teacher-side `validate_teaching_message()` gate in
+# `app/ai/agents/teacher.py`: before the teacher LLM ever sees a learner reply
+# during the teaching phase, confront gibberish / off-topic text, restate the
+# topic, and re-ask the same step — never advance. A wrong-but-relevant answer
+# is fine (the teacher corrects it); only structural junk or clearly unrelated
+# text trips this gate.
+
+_VOWELS = frozenset("aeiouy")
+
+# After this many consecutive redirects, escalate to a simpler-version message
+# instead of looping the same probe (prevents an infinite redirect loop).
+_REDIRECT_ESCALATION_THRESHOLD = 3
+
+
+def _is_confusion(text: str) -> bool:
+    """True when the reply is a recognised confusion / not-ready phrase.
+
+    Confusion is legitimate — the existing teacher flow re-explains — so the
+    input gate must let these through rather than treating them as off-topic.
+    """
+    cleaned = (text or "").strip().lower()
+    if not cleaned:
+        return False
+    return any(pattern.search(cleaned) for pattern in _NON_UNDERSTANDING_PATTERNS)
+
+
+def _is_structural_gibberish(text: str) -> bool:
+    """Deterministic, free check for structurally meaningless input.
+
+    Flags obvious junk: empty/whitespace-only, all-punctuation/symbols, a
+    single repeated character ("aaaaaa"), pure non-ASCII runs, or text whose
+    word-tokens are all vowel-less consonant runs ("asdkjfh").
+
+    Length alone is NEVER a trigger: short valid answers like "Walk." or
+    "I go." must pass. Only the *structure* of the characters matters.
+    """
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return True
+
+    lowered = cleaned.lower()
+
+    # Pure ASCII letters/digits content — strip everything else to inspect.
+    alnum = [c for c in lowered if c.isalnum()]
+    if not alnum:
+        # No letters or digits at all (all punctuation / symbols / emoji).
+        return True
+
+    # No ASCII letters at all (e.g. pure non-Latin script or digits-only).
+    ascii_letters = [c for c in alnum if "a" <= c <= "z"]
+    if not ascii_letters:
+        return True
+
+    # A single character repeated (after removing spaces): "aaaaaa", "!!!".
+    compact = lowered.replace(" ", "")
+    if len(compact) >= 4 and len(set(compact)) == 1:
+        return True
+
+    # Inspect the alphabetic word-tokens for keyboard-mash structure:
+    #   - a vowel-less token of length >= 5 ("zxcvb"), or
+    #   - a consonant run of length >= 6 ("asdkjfh" -> "sdkjfh") — longer than
+    #     any real English cluster, so safe words like "lengths"/"strength"
+    #     (max run 5/4) pass.
+    for token in re.findall(r"[a-z]+", lowered):
+        if len(token) >= 5 and not (set(token) & _VOWELS):
+            return True
+        run = 0
+        for ch in token:
+            if ch in _VOWELS:
+                run = 0
+                continue
+            run += 1
+            if run >= 6:
+                return True
+
+    return False
+
+
+def _count_trailing_redirects(messages: list[dict]) -> int:
+    """Count consecutive trailing AI redirect turns.
+
+    The redirect counter is derived from the persisted `messages` list (each
+    redirect AI turn is tagged ``redirect=True``) rather than a DB column —
+    same pattern as `_count_teacher_chat_turns`.
+    """
+    count = 0
+    for message in reversed(messages):
+        if message.get("role") not in ("ai", "assistant"):
+            # A learner turn between redirects doesn't break the streak; keep
+            # scanning past it. (Each redirect answers exactly one user turn.)
+            continue
+        if message.get("redirect") is True:
+            count += 1
+            continue
+        break
+    return count
+
+
+def _build_redirect_message(
+    *,
+    topic: str,
+    previous_tutor_message: str,
+    redirect_count: int,
+    reason: str,
+) -> str:
+    """Deterministic confront-and-restate message for the input gate.
+
+    Names what happened, restates the current topic, and re-asks the same step
+    by reusing the tutor's previous question. After repeated redirects it
+    escalates to a simpler-version message instead of looping the same probe.
+
+    `reason` is one of "gibberish" or "off_topic".
+    """
+    topic_label = (topic or "today's topic").strip()
+    re_ask = (previous_tutor_message or "").strip()
+
+    if redirect_count >= _REDIRECT_ESCALATION_THRESHOLD:
+        msg = (
+            f"Let's try an easier version. We are still learning {topic_label}. "
+            "Don't worry about getting it perfect — just write one short, "
+            "simple sentence and I'll help you fix it."
+        )
+        return msg
+
+    if reason == "gibberish":
+        opener = "Hmm, I couldn't follow that."
+    else:
+        opener = "That looks off-topic."
+
+    parts = [
+        f"{opener} We are still on {topic_label}.",
+    ]
+    if re_ask:
+        parts.append(f"Let's stay with this: {re_ask}")
+    else:
+        parts.append(
+            "Try the current step again with one short sentence in English."
+        )
+    return " ".join(parts)
 
 
 class LearningSessionService:
@@ -1014,14 +1160,17 @@ class LearningSessionService:
                 yield msg
             return
 
-        # Mid-activity, or teaching already confirmed with a stale "teaching"
-        # phase → resume directly at the first pending activity (don't replay
-        # teaching, don't re-emit completed activities' eval/feedback).
-        if session.phase in ("teaching", "practice_task"):
-            if self._next_pending_attempt(session) is not None:
-                async for msg in self._resume_practice_task(session):
-                    yield msg
-                return
+        # Teaching confirmed with a pending activity (whatever the stale stored
+        # phase is — "practice_task" OR a just-finished "feedback") → resume
+        # directly at the next pending activity. The chat UI shows the completed
+        # activities in its retry list alongside it; finished activities'
+        # eval/feedback are a live-submit-only view and are NOT replayed here.
+        if session.understanding_confirmed and (
+            self._next_pending_attempt(session) is not None
+        ):
+            async for msg in self._resume_practice_task(session):
+                yield msg
+            return
 
         if session.phase == "ended":
             message = (
@@ -1033,26 +1182,9 @@ class LearningSessionService:
                 yield msg
             return
 
-        # Sitting on an activity's feedback → replay the result widgets the
-        # transcript may have lost (reconnect/retry), then offer next steps.
-        if session.phase in ("feedback", "follow_up", "scorecard") and (
-            session.evaluation is not None and session.feedback is not None
-        ):
-            async for msg in self._replay_last_activity_results(session, state):
-                yield msg
-            summary_text = str(session.feedback.get("summary") or "Good effort.")
-            next_tip = session.feedback.get("next_tip")
-            if next_tip:
-                summary_text = f"{summary_text} {next_tip}"
-            actions = self._post_feedback_actions(session)
-            async for msg in self._stream_chat_text(summary_text, actions=actions):
-                yield msg
-            return
-
-        message = "Ready for the next step?"
-        async for msg in self._stream_chat_text(
-            message, actions=self._post_feedback_actions(session),
-        ):
+        # Teaching confirmed and no activity left to do → the day is finished;
+        # announce completion so the UI shows the final day result.
+        async for msg in self._stream_completed_daily_message():
             yield msg
 
     async def _resume_practice_task(
@@ -1075,6 +1207,9 @@ class LearningSessionService:
         task_content_payload = dict(attempt.task_content or {})
         session.pre_generated_tasks = task_content_payload
         session.current_task_index = current
+        # Normalise a stale "feedback" phase: the learner is back on a task now,
+        # so persist practice_task to keep the stored phase coherent.
+        session.phase = "practice_task"
         self.session_repo.save(session)
         self.db.commit()
 
@@ -1112,19 +1247,13 @@ class LearningSessionService:
         teaching_completed = bool(session.understanding_confirmed)
         if not teaching_completed:
             last_phase = "teaching"
-        elif (
-            session.phase in ("feedback", "follow_up", "scorecard")
-            and session.evaluation is not None
-        ):
-            # Learner is reviewing results for the activity they just finished,
-            # even when another activity is still pending in the queue.
-            last_phase = "feedback"
         elif pending is not None:
+            # A pending activity always wins — resume lands the learner on the
+            # next activity (completed ones live in the retry list), never on a
+            # replayed feedback view for an already-finished activity.
             last_phase = "practice_task"
-        elif session.phase == "ended":
-            last_phase = "ended"
         else:
-            last_phase = session.phase or "feedback"
+            last_phase = "ended"
         return {
             "teaching_completed": teaching_completed,
             "current_sequence": int(pending.sequence) if pending is not None else None,
@@ -1394,6 +1523,47 @@ class LearningSessionService:
 
         if state.get("phase") in ("teaching", None):
             previous_tutor_message = _last_tutor_message(messages[:-1])
+
+            # Input gate: confront gibberish / off-topic replies BEFORE any
+            # advance or teaching-turn logic. Wrong-but-relevant answers and
+            # genuine confusion fall through to the normal teaching flow.
+            if not _looks_like_ready_response(text) and not _is_confusion(text):
+                gate_reason: str | None = None
+                if _is_structural_gibberish(text):
+                    gate_reason = "gibberish"
+                else:
+                    verdict = await classify_reply_relevance(
+                        topic=state.get("topic") or "today's topic",
+                        current_step=previous_tutor_message,
+                        learner_reply=text,
+                    )
+                    if verdict is not None and verdict.verdict == "OFF_TOPIC":
+                        gate_reason = "off_topic"
+
+                if gate_reason is not None:
+                    redirect = _build_redirect_message(
+                        topic=state.get("topic") or "today's topic",
+                        previous_tutor_message=previous_tutor_message,
+                        redirect_count=_count_trailing_redirects(messages),
+                        reason=gate_reason,
+                    )
+                    new_messages = list(messages)
+                    new_messages.append(
+                        {
+                            "role": "ai",
+                            "content": redirect,
+                            "type": "chat",
+                            "redirect": True,
+                        }
+                    )
+                    self._apply_update(
+                        session, {"phase": "teaching", "messages": new_messages},
+                    )
+                    self.db.commit()
+                    async for msg in self._stream_chat_text(redirect):
+                        yield msg
+                    return
+
             ready_for_practice = _looks_like_ready_for_practice(
                 text, previous_tutor_message=previous_tutor_message,
             )
@@ -1754,151 +1924,6 @@ class LearningSessionService:
         self.db.commit()
         async for msg in self._stream_chat_text(summary_text, actions=actions):
             yield msg
-
-    async def _replay_last_activity_results(
-        self,
-        session: LearningSession,
-        state: LearningSessionState,
-    ) -> AsyncIterator[WSOutgoingMessage]:
-        """Re-emit scorecard/feedback widgets after a reconnect at feedback phase."""
-        evaluation_dict = dict(session.evaluation or {})
-        feedback_dict = dict(session.feedback or {})
-        if not evaluation_dict or not feedback_dict:
-            return
-
-        sequence = state.get("current_sequence")
-        if sequence is None:
-            sequence = max(int(session.current_task_index or 0), 0) + 1
-        attempt = self.attempts_repo.get(
-            session_pk=session.daily_session_id,
-            sequence=int(sequence),
-        )
-        if attempt is None or attempt.status is not AttemptStatus.EVALUATED:
-            # Fall back to the most recently evaluated attempt.
-            evaluated = [
-                a
-                for a in self.attempts_repo.list_for_session(session.daily_session_id)
-                if a.status is AttemptStatus.EVALUATED
-            ]
-            attempt = evaluated[-1] if evaluated else None
-            if attempt is None:
-                return
-            sequence = int(attempt.sequence)
-
-        session_meta = {
-            "current_task_index": max(int(sequence) - 1, 0),
-            "total_tasks": len(session.task_queue or []) or 1,
-            "sequence": int(sequence),
-            "daily_session_id": session.daily_session_id,
-        }
-        task_content = dict(attempt.task_content or {})
-        activity_contract = dict(task_content.get("activity_contract") or {})
-        task_widget = normalize_widget_key(
-            str(
-                task_content.get("widget")
-                or task_content.get("ui_widget")
-                or activity_contract.get("task_widget")
-                or session.task_type
-                or ""
-            )
-        )
-        evaluation_widget = str(
-            activity_contract.get("evaluation_widget")
-            or task_content.get("evaluation_widget")
-            or "activity_score"
-        )
-        feedback_widget_key = str(
-            activity_contract.get("feedback_widget")
-            or task_content.get("feedback_widget")
-            or "feedback_card"
-        )
-
-        pronunciation_data = None
-        evaluator_notes = evaluation_dict.get("evaluator_notes")
-        if evaluator_notes:
-            try:
-                parsed_notes = json.loads(evaluator_notes)
-                if (
-                    isinstance(parsed_notes, dict)
-                    and parsed_notes.get("task_type") == "speak_read_aloud"
-                    and isinstance(parsed_notes.get("pronunciation"), dict)
-                ):
-                    pronunciation_data = parsed_notes["pronunciation"]
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        if pronunciation_data is not None:
-            reference_text = (
-                task_content.get("text_to_read_aloud")
-                or task_content.get("passage")
-                or ""
-            )
-            pronunciation_payload = {
-                "pronunciation": pronunciation_data,
-                "raw_score": float(evaluation_dict.get("raw_score") or 0),
-                "reference_text": reference_text,
-                "feedback": feedback_dict,
-                "activity_contract": activity_contract,
-                "task_widget": task_widget,
-                "evaluation_widget": evaluation_widget,
-                "feedback_widget": feedback_widget_key,
-                "_session": session_meta,
-            }
-            yield self._event_orchestrator().evaluation_event(
-                widget="pronunciation_result",
-                evaluation_payload=pronunciation_payload,
-                evaluation={
-                    **evaluation_dict,
-                    "pronunciation": pronunciation_data,
-                    "reference_text": reference_text,
-                },
-                session_meta=session_meta,
-            )
-            return
-
-        correct_count, total = _deterministic_scorecard_counts(
-            attempt.archetype_id,
-            evaluation_dict.get("evaluator_notes"),
-        )
-        scorecard_payload = {
-            "overall_score": float(evaluation_dict.get("raw_score") or 0),
-            "skill_name": session.skill_name,
-            "topic": session.topic,
-            "rubric_scores": evaluation_dict.get("rubric_scores") or {},
-            "weighted_points": evaluation_dict.get("weighted_points") or {},
-            "activity_contract": activity_contract,
-            "task_widget": task_widget,
-            "evaluation_widget": evaluation_widget,
-            "feedback_widget": feedback_widget_key,
-            "_session": session_meta,
-        }
-        if correct_count is not None and total is not None:
-            scorecard_payload["correct_count"] = correct_count
-            scorecard_payload["total"] = total
-            scorecard_payload["answered_count"] = total
-        yield self._event_orchestrator().evaluation_event(
-            widget="scorecard",
-            evaluation_payload=scorecard_payload,
-            evaluation=evaluation_dict,
-            session_meta=session_meta,
-        )
-
-        feedback_payload = {
-            **feedback_dict,
-            "score": float(evaluation_dict.get("raw_score") or feedback_dict.get("score") or 0),
-            "widget": task_widget,
-            "activity_contract": activity_contract,
-            "task_widget": task_widget,
-            "evaluation_widget": evaluation_widget,
-            "feedback_widget": feedback_widget_key,
-            "_session": session_meta,
-        }
-        yield self._event_orchestrator().feedback_event(
-            widget="feedback_card",
-            feedback_payload=feedback_payload,
-            feedback=feedback_dict,
-            session_meta=session_meta,
-        )
 
     async def _handle_follow_up_stream(
         self,
@@ -2420,17 +2445,6 @@ class LearningSessionService:
         if next_attempt is None:
             return ["Go to dashboard"]
         return ["Next activity", "Go to dashboard"]
-
-    @staticmethod
-    def _post_feedback_actions(session: LearningSession) -> list[str]:
-        queue = list(session.task_queue or [])
-        has_next = any(
-            item.get("status") not in ("evaluated", "submitted")
-            for item in queue
-        )
-        if has_next:
-            return ["Next activity", "Go to dashboard"]
-        return ["Go to dashboard"]
 
     # ------------------------------------------------------------------
     # Streaming primitives

@@ -23,6 +23,10 @@ from app.modules.curriculum.data.source_L_A1A2 import WEEKS_A1A2
 from app.modules.curriculum.file_source import get_day_by_id as file_get_day_by_id
 from app.modules.learning_session.service import (
     LearningSessionService,
+    _build_redirect_message,
+    _count_trailing_redirects,
+    _is_confusion,
+    _is_structural_gibberish,
     _parse_day_id,
     _looks_like_ready_for_practice,
     _should_force_transition_to_practice,
@@ -224,6 +228,9 @@ async def test_initial_open_auto_completes_all_evaluated_daily_session(monkeypat
 
 @pytest.mark.asyncio
 async def test_resume_keeps_next_activity_when_attempt_is_pending(monkeypatch) -> None:
+    """A pending activity always wins on resume: even when the stored phase is
+    "feedback" (just-submitted, Next not yet clicked), resume delivers the next
+    activity rather than replaying the finished activity's results."""
     service = LearningSessionService.__new__(LearningSessionService)
     service.db = MagicMock()
     service.attempts_repo = MagicMock()
@@ -235,31 +242,37 @@ async def test_resume_keeps_next_activity_when_attempt_is_pending(monkeypatch) -
     chat.task_queue = [{"status": "pending"}]
     chat.current_task_index = 0
     chat.phase = "feedback"
+    chat.understanding_confirmed = True
 
     daily = MagicMock()
     daily.id = 42
     daily.status = SessionStatus.IN_PROGRESS
     service.db.get.return_value = daily
-    service.attempts_repo.list_for_session.return_value = [
-        MagicMock(status=AttemptStatus.PENDING)
-    ]
     service._load_session = MagicMock(return_value=chat)
     service._state_from_row = MagicMock(return_value={})
     service._enrich_state_with_profile = MagicMock()
     service._sync_task_queue_from_attempts = MagicMock()
-
-    make_v2 = MagicMock()
-    monkeypatch.setattr(
-        "app.modules.learning_session.service._make_v2_session_service",
-        make_v2,
+    service._auto_complete_daily_if_ready = AsyncMock(return_value=daily)
+    service._session_blueprint_message = MagicMock(
+        return_value=WSOutgoingMessage(type="ui_event", widget="session_blueprint")
     )
+    service._next_pending_attempt = MagicMock(
+        return_value=_fake_attempt(archetype_id="WRITE_SENT_TRANS", sequence=2)
+    )
+
+    delivered = WSOutgoingMessage(type="ui_event", widget="write_sentence_transform")
+
+    async def _fake_resume_practice_task(_session):
+        yield delivered
+
+    service._resume_practice_task = _fake_resume_practice_task
 
     messages = [
         msg async for msg in service.resume_messages_stream("chat-session")
     ]
 
-    make_v2.assert_not_called()
-    assert messages[-1].actions == ["Next activity", "Go to dashboard"]
+    # Resume delegated to the pending-activity delivery path.
+    assert delivered in messages
 
 
 # ── Full create_session flow (no DB) ───────────────────────────────────────
@@ -1407,6 +1420,162 @@ def test_turn_ceiling_force_transition_after_authored_plan() -> None:
     )
 
 
+# ── Learner input gate: gibberish / off-topic during teaching ───────────────
+
+
+def test_is_structural_gibberish_flags_junk() -> None:
+    for junk in ("", "   ", "!!!", "...", "aaaaaa", "zzzzz", "asdkjfh", "qwrtpln"):
+        assert _is_structural_gibberish(junk), f"expected {junk!r} to be gibberish"
+
+
+def test_is_structural_gibberish_allows_short_valid_answers() -> None:
+    # Length alone is never a trigger — short real answers must pass.
+    for ok in (
+        "Walk.",
+        "I go.",
+        "yes",
+        "She walk to school",  # wrong grammar but relevant
+        "I goes to work every day",
+        "He play football",
+    ):
+        assert not _is_structural_gibberish(ok), f"expected {ok!r} to pass"
+
+
+def test_is_confusion_recognises_not_understanding() -> None:
+    assert _is_confusion("I don't understand")
+    assert _is_confusion("can you explain again")
+    assert _is_confusion("not clear")
+    assert not _is_confusion("She walks to school")
+
+
+def test_count_trailing_redirects() -> None:
+    assert _count_trailing_redirects([]) == 0
+    messages = [
+        {"role": "ai", "content": "Give me a sentence.", "type": "chat"},
+        {"role": "user", "content": "asdkjfh", "type": "chat"},
+        {"role": "ai", "content": "Off-topic.", "type": "chat", "redirect": True},
+        {"role": "user", "content": "lol no", "type": "chat"},
+        {"role": "ai", "content": "Off-topic.", "type": "chat", "redirect": True},
+    ]
+    assert _count_trailing_redirects(messages) == 2
+    # A normal (non-redirect) teacher turn breaks the streak.
+    messages.append({"role": "user", "content": "I walk", "type": "chat"})
+    messages.append({"role": "ai", "content": "Nice!", "type": "chat"})
+    assert _count_trailing_redirects(messages) == 0
+
+
+def test_build_redirect_message_restates_topic_and_reasks() -> None:
+    msg = _build_redirect_message(
+        topic="the simple present",
+        previous_tutor_message="Give me one sentence in the simple present.",
+        redirect_count=0,
+        reason="off_topic",
+    )
+    assert "off-topic" in msg.lower()
+    assert "the simple present" in msg
+    assert "Give me one sentence in the simple present." in msg
+
+
+def test_build_redirect_message_escalates_after_threshold() -> None:
+    msg = _build_redirect_message(
+        topic="the simple present",
+        previous_tutor_message="Give me one sentence.",
+        redirect_count=3,
+        reason="gibberish",
+    )
+    assert "easier version" in msg.lower()
+    # Escalation drops the verbatim re-ask in favour of a gentler nudge.
+    assert "Give me one sentence." not in msg
+
+
+@pytest.mark.asyncio
+async def test_gibberish_reply_is_redirected_not_advanced(monkeypatch) -> None:
+    """Gibberish in the teaching phase yields a redirect, never a task."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    chat = SimpleNamespace(
+        session_id="chat-1", user_id=1, messages=[], understanding_confirmed=False,
+    )
+    service._load_session = MagicMock(return_value=chat)
+    service._enrich_state_with_profile = MagicMock()
+    service._apply_update = MagicMock()
+    service._next_pending_attempt = MagicMock(
+        side_effect=AssertionError("must not advance on gibberish")
+    )
+
+    state = {
+        "phase": "teaching",
+        "topic": "the simple present",
+        "messages": [
+            {
+                "role": "ai",
+                "content": "Give me one sentence in the simple present.",
+                "type": "chat",
+            }
+        ],
+    }
+    service._state_from_row = MagicMock(return_value=state)
+    # Heuristic fires first; classifier must not be needed.
+    monkeypatch.setattr(
+        "app.modules.learning_session.service.classify_reply_relevance",
+        AsyncMock(side_effect=AssertionError("classifier must not run")),
+    )
+
+    incoming = WSIncomingMessage(type="user_message", content="asdkjfh zxcvbn")
+    out = [m async for m in service.process_message_stream("chat-1", incoming)]
+
+    assert any(m.type == "chat_stream_end" for m in out)
+    end = next(m for m in out if m.type == "chat_stream_end")
+    assert "the simple present" in (end.content or "")
+    # Persisted state stays in teaching and the last turn is a tagged redirect.
+    update = service._apply_update.call_args.args[1]
+    assert update["phase"] == "teaching"
+    assert update["messages"][-1]["redirect"] is True
+
+
+@pytest.mark.asyncio
+async def test_wrong_but_relevant_reply_falls_through_to_teaching(monkeypatch) -> None:
+    """A relevant (even wrong) answer is not gated — it reaches the teacher."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    chat = SimpleNamespace(
+        session_id="chat-1", user_id=1, messages=[], understanding_confirmed=False,
+    )
+    service._load_session = MagicMock(return_value=chat)
+    service._enrich_state_with_profile = MagicMock()
+    service._apply_update = MagicMock()
+
+    async def _teaching_stub(_session, _state):
+        yield WSOutgoingMessage(type="chat_message", content="__TEACHING__")
+
+    service._stream_teaching_turn = _teaching_stub
+    service._next_pending_attempt = MagicMock(
+        side_effect=AssertionError("must not advance")
+    )
+
+    state = {
+        "phase": "teaching",
+        "topic": "the simple present",
+        "messages": [
+            {
+                "role": "ai",
+                "content": "Give me one sentence in the simple present.",
+                "type": "chat",
+            }
+        ],
+    }
+    service._state_from_row = MagicMock(return_value=state)
+    monkeypatch.setattr(
+        "app.modules.learning_session.service.classify_reply_relevance",
+        AsyncMock(return_value=SimpleNamespace(verdict="RELEVANT")),
+    )
+
+    incoming = WSIncomingMessage(type="user_message", content="She walk to school")
+    out = [m async for m in service.process_message_stream("chat-1", incoming)]
+
+    assert any((m.content or "") == "__TEACHING__" for m in out)
+
+
 # ── Phase 1: task_queue sync, resume checkpoint, restart scorecard ──────────
 
 
@@ -1612,3 +1781,88 @@ async def test_next_activity_delivers_once_then_noops(monkeypatch) -> None:
 async def _empty_async_iter():
     return
     yield  # pragma: no cover — makes this an async generator
+
+
+
+@pytest.mark.asyncio
+async def test_resume_from_feedback_phase_lands_on_next_activity(
+    monkeypatch,
+) -> None:
+    """Returning mid-session while the stored phase is "feedback" (the learner
+    submitted an activity but hasn't clicked Next) must still resume at the next
+    pending activity — never replay the just-finished activity's score/feedback.
+    The completed activity surfaces in the UI retry list, not as result cards."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+    service.attempts_repo = MagicMock()
+
+    chat = _w1d1_chat(phase="feedback")
+    chat.understanding_confirmed = True
+    chat.current_task_index = 0
+    # A stored result for the just-finished activity must be ignored on resume.
+    chat.evaluation = {"raw_score": 7.5, "rubric_scores": {}, "weighted_points": {}}
+    chat.feedback = {"score": 8, "summary": "Nice work.", "next_tip": "Keep going."}
+
+    daily = _w1d1_daily()
+    service._load_session = MagicMock(return_value=chat)
+    service._state_from_row = MagicMock(return_value={"task_queue": chat.task_queue})
+    service._enrich_state_with_profile = MagicMock()
+    service._sync_task_queue_from_attempts = MagicMock()
+    service._auto_complete_daily_if_ready = AsyncMock(return_value=daily)
+    service._session_blueprint_message = MagicMock(
+        return_value=WSOutgoingMessage(type="ui_event", widget="session_blueprint")
+    )
+
+    pending = _fake_attempt(archetype_id="WRITE_SENT_TRANS", sequence=2)
+    service._next_pending_attempt = MagicMock(return_value=pending)
+    service._prepare_attempt_for_delivery = AsyncMock(return_value=pending)
+
+    messages = [
+        msg async for msg in service.resume_messages_stream("chat-w1d1")
+    ]
+
+    widgets = {m.widget for m in messages if m.widget}
+    assert "scorecard" not in widgets
+    assert "feedback_card" not in widgets
+    assert "pronunciation_result" not in widgets
+    # Resume lands on the next pending activity's task widget.
+    assert any(m.payload_kind == "task" for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_resume_announces_completion_when_no_pending_activity(
+    monkeypatch,
+) -> None:
+    """Teaching done and nothing left to do → resume announces the completed day
+    so the UI shows the final result (rather than replaying any feedback)."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+    service.attempts_repo = MagicMock()
+
+    chat = _w1d1_chat(phase="feedback")
+    chat.understanding_confirmed = True
+
+    daily = _w1d1_daily()
+    service._load_session = MagicMock(return_value=chat)
+    service._state_from_row = MagicMock(return_value={"task_queue": chat.task_queue})
+    service._enrich_state_with_profile = MagicMock()
+    service._sync_task_queue_from_attempts = MagicMock()
+    service._auto_complete_daily_if_ready = AsyncMock(return_value=daily)
+    service._session_blueprint_message = MagicMock(
+        return_value=WSOutgoingMessage(type="ui_event", widget="session_blueprint")
+    )
+    service._next_pending_attempt = MagicMock(return_value=None)
+
+    messages = [
+        msg async for msg in service.resume_messages_stream("chat-w1d1")
+    ]
+
+    widgets = {m.widget for m in messages if m.widget}
+    assert "scorecard" not in widgets
+    assert "feedback_card" not in widgets
+    # No task delivered; the completed-daily farewell is streamed instead.
+    assert not any(m.payload_kind == "task" for m in messages)
+    text = " ".join(m.content or "" for m in messages)
+    assert "Today's activities are complete" in text

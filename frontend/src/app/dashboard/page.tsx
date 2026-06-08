@@ -12,6 +12,7 @@ import { DailyTaskPanel } from "@/components/dashboard/DailyTaskPanel";
 import { SkillScorePreview } from "@/components/dashboard/SkillScorePreview";
 import { ActivityGridCard } from "@/components/streak/ActivityGridCard";
 import { StreakStateDemoPanel } from "@/components/streak/StreakStateDemoPanel";
+import { CurriculumCalendarCard } from "@/components/dashboard/CurriculumCalendarCard";
 import { shouldShowAdminConsoleButton } from "@/lib/admin-access";
 
 // Empty fallback — every legacy sub-skill at 0.0. The dashboard reads real
@@ -657,6 +658,9 @@ function EnrolledView({
               ))}
             </div>
           </Card>
+
+          {/* Curriculum Calendar widget */}
+          <CurriculumCalendarCard preference={preference} />
         </div>
       </div>
     </div>
