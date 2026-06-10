@@ -11,7 +11,11 @@ from app.ai.pronunciation import (
 )
 from app.core.ai_rate_limit import ai_rate_limit
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_user, require_learner
+from app.modules.auth.dependencies import (
+    get_current_user,
+    require_learner,
+    require_verified,
+)
 from app.modules.auth.models import User
 from app.modules.auth.repository import UserProfileRepository
 from app.modules.diagnosis.diagnosis_agents.evaluators import PASSAGES
@@ -28,7 +32,10 @@ from app.modules.diagnosis.schemas import (
 )
 from app.modules.diagnosis.service import DiagnosisService
 
-router = APIRouter(dependencies=[Depends(require_learner)])
+# Diagnosis sits between email verification and the trial in the lifecycle:
+# allowed for VERIFIED users, blocked for UNVERIFIED — hence require_verified
+# here rather than the (post-trial) premium guard.
+router = APIRouter(dependencies=[Depends(require_learner), Depends(require_verified)])
 
 
 @router.post("/start", status_code=status.HTTP_200_OK)

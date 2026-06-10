@@ -91,6 +91,24 @@ def require_role(required_roles: Iterable[str]):
 require_learner = require_role([ROLE_LEARNER, ROLE_SUPER_ADMIN])
 
 
+def require_verified(current_user: User = Depends(get_current_user)) -> User:
+    """Block users who haven't verified their email yet.
+
+    Deliberately NOT folded into get_current_user: unverified users still
+    need /auth/me, resend-otp, and logout. Apply this guard per-router
+    (e.g. diagnosis) instead.
+    """
+    if not current_user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "email_unverified",
+                "message": "Verify your email to continue.",
+            },
+        )
+    return current_user
+
+
 def require_permission(permission_key: str):
     """Dependency factory for permission-protected endpoints."""
 

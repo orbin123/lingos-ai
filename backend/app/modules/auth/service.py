@@ -1,9 +1,15 @@
 """Business Logic for authentication and user signup."""
 
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
-from app.modules.auth.exceptions import EmailAlreadyExists, InvalidCredentials
+from app.modules.auth.exceptions import (
+    EmailAlreadyExists,
+    EmailNotVerified,
+    InvalidCredentials,
+)
 from app.modules.auth.models import ROLE_LEARNER, User
 from app.modules.auth.repository import (
     OAuthAccountRepository,
@@ -34,7 +40,9 @@ class AuthService:
         # 2. Hash Password
         password_hash = hash_password(password)
 
-        # 3. Create User (flushes to get the id)
+        # 3. Create User (flushes to get the id). email_verified defaults to
+        # False — the account stays UNVERIFIED until the registration OTP is
+        # confirmed (the route triggers the send).
         user = self.users.create(
             email=email,
             password_hash=password_hash,
@@ -57,6 +65,9 @@ class AuthService:
 
         Raises:
             InvalidCredentials: if email not found OR password is wrong.
+            EmailNotVerified: credentials are correct but the email is not
+                verified yet. Checked AFTER the password so verification
+                state never leaks on a bad-credentials probe.
         """
         user = self.users.get_by_email(email)
 
@@ -68,6 +79,9 @@ class AuthService:
 
         if not verify_password(password, user.password_hash or ""):
             raise InvalidCredentials("Invalid email or password")
+
+        if not user.email_verified:
+            raise EmailNotVerified()
 
         return user
 
@@ -92,13 +106,22 @@ class AuthService:
             (user, is_new_user)
             is_new_user = True if we just created the account (→ send to diagnosis).
         """
+        # Google asserts ownership of the email, so every branch below may
+        # mark the account verified — this also rescues a stuck unverified
+        # password signup that logs in with Google instead.
+
         # 1. Existing OAuth link
         existing_link = self.oauth_accounts.get_by_provider(
             provider="google",
             provider_user_id=google_user_id,
         )
         if existing_link:
-            return existing_link.user, False
+            user = existing_link.user
+            if not user.email_verified:
+                self._mark_email_verified(user)
+                self.db.commit()
+                self.db.refresh(user)
+            return user, False
 
         # 2. User with same email exists (signed up with email/password before)
         existing_user = self.users.get_by_email(email)
@@ -109,6 +132,8 @@ class AuthService:
                 provider="google",
                 provider_user_id=google_user_id,
             )
+            if not existing_user.email_verified:
+                self._mark_email_verified(existing_user)
             self.db.commit()
             self.db.refresh(existing_user)
             return existing_user, False
@@ -122,6 +147,12 @@ class AuthService:
             provider="google",
             provider_user_id=google_user_id,
         )
+        self._mark_email_verified(new_user)
         self.db.commit()
         self.db.refresh(new_user)
         return new_user, True
+
+    @staticmethod
+    def _mark_email_verified(user: User) -> None:
+        user.email_verified = True
+        user.email_verified_at = datetime.now(timezone.utc)

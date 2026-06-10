@@ -69,10 +69,21 @@ class AdminRateLimitMiddleware:
             bucket.append(now)
             return True
 
+    # OTP/credential endpoints share the login bucket: their first defense is
+    # the per-email caps inside OtpService; this IP cap is defense-in-depth.
+    _AUTH_SENSITIVE_PATHS = {
+        "/auth/login",
+        "/auth/signup",
+        "/auth/verify-email",
+        "/auth/resend-otp",
+        "/auth/password-reset/request",
+        "/auth/password-reset/confirm",
+    }
+
     def _route_group(self, scope: Scope) -> str | None:
         path = str(scope.get("path") or "")
         method = str(scope.get("method") or "").upper()
-        if path == "/auth/login" and method == "POST":
+        if path in self._AUTH_SENSITIVE_PATHS and method == "POST":
             return "auth-login"
         if path.startswith("/admin"):
             return "admin-api"

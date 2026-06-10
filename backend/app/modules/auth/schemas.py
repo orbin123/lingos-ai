@@ -1,7 +1,7 @@
 """Pydantic schemas for auth module - API boundary contracts"""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -18,6 +18,45 @@ class UserLogin(BaseModel):
     """Input schema for login"""
     email: EmailStr
     password: str
+    # Extends the refresh session to REFRESH_TOKEN_REMEMBER_DAYS.
+    remember_me: bool = False
+
+
+_GENERIC_SIGNUP_MESSAGE = (
+    "If this email can be registered, a verification code has been sent."
+)
+
+
+class SignupOut(BaseModel):
+    """Generic signup response — identical whether the email was new,
+    already pending verification, or already registered (anti-enumeration)."""
+
+    status: Literal["pending_verification"] = "pending_verification"
+    email: EmailStr
+    message: str = _GENERIC_SIGNUP_MESSAGE
+
+
+class VerifyEmailIn(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class ResendOtpIn(BaseModel):
+    email: EmailStr
+
+
+class MessageOut(BaseModel):
+    message: str
+
+
+class PasswordResetRequestIn(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmIn(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    new_password: str = Field(min_length=8, max_length=128)
 
 class UserOut(BaseModel):
     """Output schema - What we send back to the client. Never includes password_hash"""
@@ -29,6 +68,7 @@ class UserOut(BaseModel):
     auth_provider: str = "password"
     is_superuser: bool = False
     is_active: bool = True
+    email_verified: bool = True
     roles: list[str] = Field(default_factory=lambda: ["learner"])
     role: str = "learner"
     diagnosis_completed: bool = False  # tells frontend where to send the user
