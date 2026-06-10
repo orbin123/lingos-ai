@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     JSON,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -64,6 +65,37 @@ class AIRequestLog(Base, IDMixin, CreatedAtMixin):
     prompt_version: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     user = relationship("User")
+
+
+class AIEvaluation(Base, IDMixin, CreatedAtMixin):
+    """LLM-as-judge quality scores for one generated AI output.
+
+    Append-only event table (Part B Phase 2). Each row is one judge run over a
+    single production LLM output, keyed by the same ``trace_id`` stamped on the
+    matching ``ai_request_logs`` row(s) so cost/latency join to quality. Scores
+    are 0–10; ``faithfulness`` is RAG-only (mentor note) and stays null here.
+
+    Privacy: store scores + a short rationale only — never raw learner text.
+    """
+
+    __tablename__ = "ai_evaluations"
+
+    # Join key to ai_request_logs (same per-submit correlation id).
+    trace_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    # "feedback" | "mentor_note" | "task_generation" | "evaluation"
+    target_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    # The judged artifact's id (e.g. activity_feedback.id), stringified.
+    target_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    judge_model: Mapped[str] = mapped_column(String(120), nullable=False)
+    accuracy: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)
+    relevance: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)
+    helpfulness: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)
+    correctness: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)
+    # RAG-only (faithfulness to retrieved context); null for non-RAG targets.
+    faithfulness: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # "online" (production sampling) | "offline" (golden-set / CI)
+    eval_mode: Mapped[str] = mapped_column(String(20), nullable=False)
 
 
 class FeedbackReview(Base, IDMixin, TimestampMixin):

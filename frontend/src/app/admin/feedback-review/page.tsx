@@ -1,7 +1,8 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Flag, GraduationCap, ListChecks, ThumbsDown, ThumbsUp, Wrench } from "lucide-react";
 
@@ -20,8 +21,36 @@ import {
 type Filter = "all" | "specific" | "rag";
 
 export default function AdminFeedbackReviewPage() {
+  // useSearchParams() must sit under a Suspense boundary in the App Router.
+  return (
+    <Suspense
+      fallback={
+        <AdminLayout title="Feedback Review" eyebrow="Quality review">
+          <p style={emptyStyle}>Loading…</p>
+        </AdminLayout>
+      }
+    >
+      <FeedbackReviewContent />
+    </Suspense>
+  );
+}
+
+function FeedbackReviewContent() {
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<Filter>("all");
+  const searchParams = useSearchParams();
+
+  // Deep-link target from /admin/ai-quality (?feedback_type=…&feedback_id=…).
+  const targetType = searchParams.get("feedback_type");
+  const targetIdParam = searchParams.get("feedback_id");
+  const targetId = targetIdParam != null ? Number(targetIdParam) : null;
+  const hasTarget =
+    (targetType === "specific" || targetType === "rag") &&
+    targetId != null &&
+    Number.isFinite(targetId);
+
+  const [filter, setFilter] = useState<Filter>(
+    targetType === "specific" || targetType === "rag" ? targetType : "all",
+  );
 
   const reviewQuery = useQuery({
     queryKey: ["admin", "feedback-review"],
@@ -61,6 +90,11 @@ export default function AdminFeedbackReviewPage() {
             key={`${item.feedback_type}-${item.feedback_id}-${item.review_status}-${item.reviewed_at ?? "new"}`}
             item={item}
             isSaving={updateMutation.isPending}
+            highlight={
+              hasTarget &&
+              item.feedback_type === targetType &&
+              item.feedback_id === targetId
+            }
             onUpdate={(data) => updateMutation.mutate({ item, data })}
           />
         ))}
@@ -102,17 +136,39 @@ function FilterTab({
 function ReviewCard({
   item,
   isSaving,
+  highlight = false,
   onUpdate,
 }: {
   item: FeedbackReviewItem;
   isSaving: boolean;
+  highlight?: boolean;
   onUpdate: (data: FeedbackReviewUpdate) => void;
 }) {
   const [adminNote, setAdminNote] = useState(item.admin_note ?? "");
   const isRag = item.feedback_type === "rag";
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (highlight && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlight]);
 
   return (
-    <AdminPanel style={{ padding: 20 }}>
+    <div
+      ref={cardRef}
+      style={{
+        borderRadius: 14,
+        ...(highlight
+          ? {
+              outline: "2px solid #0070C4",
+              outlineOffset: 2,
+              boxShadow: "0 0 0 4px oklch(94% 0.04 240)",
+            }
+          : null),
+      }}
+    >
+      <AdminPanel style={{ padding: 20 }}>
       <div style={cardHeadStyle}>
         <div>
           <div style={typeRowStyle}>
@@ -193,7 +249,8 @@ function ReviewCard({
           </AdminButton>
         </div>
       </div>
-    </AdminPanel>
+      </AdminPanel>
+    </div>
   );
 }
 

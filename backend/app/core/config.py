@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     debug: bool = True
     log_level: str = "info"
 
+    # Sentry error tracking. Empty = disabled (local/test default).
+    sentry_dsn: str = ""
+    # Fraction of requests traced for performance (0.0–1.0). 0.1 = 10%.
+    sentry_traces_sample_rate: float = 0.1
+
     # Schema-boundary strictness. When False (prod default during rollout), a
     # contract-projection or agent-input validation failure is logged and the
     # legacy payload is delivered unchanged. When True (set in tests), the same
@@ -56,6 +61,39 @@ class Settings(BaseSettings):
     LANGCHAIN_API_KEY: str
     LANGCHAIN_PROJECT: str = "ai-english-coach"
     LANGCHAIN_ENDPOINT: str = "https://api.smith.langchain.com"
+
+    # AI observability — when True, each instrumented LLM collaborator call
+    # writes one operational row to ai_request_logs (latency, tokens, status,
+    # trace_id). Best-effort and off the request session; flip to False to kill
+    # the seam entirely if it ever misbehaves.
+    AI_REQUEST_LOGGING_ENABLED: bool = True
+
+    # Rate limiting (AI endpoints) — per-user sliding-window limits on every
+    # route that spends money on an AI provider call. Backed by Redis when
+    # reachable (multi-worker safe); falls back to in-memory buckets so dev
+    # and tests need no Redis. Limits are deliberately generous to start —
+    # tighten with data from ai_request_logs per-user counts.
+    AI_RATE_LIMIT_ENABLED: bool = True
+    AI_RATE_LIMIT_PER_MINUTE: int = 30
+    AI_RATE_LIMIT_TRANSCRIBE_PER_MINUTE: int = 20
+    # Learning-session WebSocket: max incoming messages per user per minute.
+    WS_MESSAGE_RATE_PER_MINUTE: int = 20
+    # A2Z game: max Deepgram stream connections per user per minute
+    # (connection-level only — audio frames inside a stream are never throttled).
+    WS_A2Z_STREAMS_PER_MINUTE: int = 10
+
+    # AI quality (LLM-as-judge, Part B Phase 2) — a stronger model scores live
+    # feedback for quality and writes one ai_evaluations row, joined to the
+    # operational log by trace_id. Online sampling only (cost control); the
+    # judge runs post-commit, fire-and-forget, and never blocks the learner.
+    AI_EVAL_ENABLED: bool = True
+    AI_EVAL_SAMPLE_RATE: float = 0.1
+    AI_EVAL_JUDGE_MODEL: str = "gpt-4.1"
+    AI_EVAL_TIMEOUT_S: float = 20.0
+    # Mentor-note (RAG) judging sample rate (Part B Phase 3). Notes are produced
+    # once per session completion — far rarer than per-activity feedback — and
+    # RAG faithfulness is the highest-value bug-catcher, so judge every one.
+    AI_EVAL_MENTOR_SAMPLE_RATE: float = 1.0
 
     # AI / TTS (text-to-speech)
     # `gpt-4o-mini-tts` is the newest + cheapest TTS model from OpenAI.

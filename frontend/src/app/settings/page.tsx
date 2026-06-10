@@ -26,7 +26,13 @@ const DEFAULT_NOTIFICATIONS: NotificationSettings = {
 type PracticeSettings = Required<
   Pick<
     UserCoursePreferenceUpdate,
-    "tasks_per_day" | "allow_read" | "allow_write" | "allow_listen" | "allow_speak"
+    | "tasks_per_day"
+    | "allow_read"
+    | "allow_write"
+    | "allow_listen"
+    | "allow_speak"
+    | "require_pass_to_advance"
+    | "pass_threshold_pct"
   >
 >;
 type ActivitySettingKey =
@@ -41,6 +47,8 @@ const DEFAULT_PRACTICE_SETTINGS: PracticeSettings = {
   allow_write: true,
   allow_listen: true,
   allow_speak: true,
+  require_pass_to_advance: false,
+  pass_threshold_pct: 65,
 };
 
 type ModalKind =
@@ -174,6 +182,8 @@ export default function SettingsPage() {
           allow_write: user.preference.allow_write,
           allow_listen: user.preference.allow_listen,
           allow_speak: user.preference.allow_speak,
+          require_pass_to_advance: user.preference.require_pass_to_advance,
+          pass_threshold_pct: user.preference.pass_threshold_pct,
         }
       : {}),
     ...practiceOverride,
@@ -218,6 +228,8 @@ export default function SettingsPage() {
         allow_write: saved.allow_write,
         allow_listen: saved.allow_listen,
         allow_speak: saved.allow_speak,
+        require_pass_to_advance: saved.require_pass_to_advance,
+        pass_threshold_pct: saved.pass_threshold_pct,
       });
       await queryClient.invalidateQueries({ queryKey: ["me"] });
     },
@@ -307,6 +319,15 @@ export default function SettingsPage() {
                 updatePractice({ tasks_per_day: tasksPerDay })
               }
               onToggleActivity={toggleActivity}
+              onTogglePass={() =>
+                updatePractice({
+                  require_pass_to_advance:
+                    !practiceSettings.require_pass_to_advance,
+                })
+              }
+              onThreshold={(value) =>
+                updatePractice({ pass_threshold_pct: value })
+              }
             />
           )}
           <NotificationsCard
@@ -468,16 +489,22 @@ function UsageTile({ label, value, detail }: { label: string; value: string; det
   );
 }
 
+const PASS_THRESHOLD_PRESETS = [50, 65, 75, 85];
+
 function DailyPracticeCard({
   settings,
   isSaving,
   onTasksPerDay,
   onToggleActivity,
+  onTogglePass,
+  onThreshold,
 }: {
   settings: PracticeSettings;
   isSaving: boolean;
   onTasksPerDay: (value: number) => void;
   onToggleActivity: (key: ActivitySettingKey) => void;
+  onTogglePass: () => void;
+  onThreshold: (value: number) => void;
 }) {
   const activities: Array<{
     key: ActivitySettingKey;
@@ -583,6 +610,80 @@ function DailyPracticeCard({
             );
           })}
         </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 22,
+          paddingTop: 20,
+          borderTop: "1px solid oklch(90% 0.025 245)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 18,
+          }}
+        >
+          <div>
+            <p style={{ margin: 0, color: "oklch(18% 0.08 245)", fontWeight: 800, fontSize: 14 }}>
+              Require a passing score to advance
+            </p>
+            <p style={{ margin: "4px 0 0", color: "oklch(50% 0.05 240)", fontSize: 13 }}>
+              Repeat an activity until you clear the threshold before moving on.
+            </p>
+          </div>
+          <Toggle
+            checked={settings.require_pass_to_advance}
+            disabled={isSaving}
+            onClick={onTogglePass}
+          />
+        </div>
+
+        {settings.require_pass_to_advance && (
+          <div style={{ marginTop: 16 }}>
+            <p style={{ margin: "0 0 10px", color: "oklch(18% 0.08 245)", fontWeight: 800, fontSize: 14 }}>
+              Passing threshold
+            </p>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 8,
+                maxWidth: 360,
+              }}
+            >
+              {PASS_THRESHOLD_PRESETS.map((value) => {
+                const selected = settings.pass_threshold_pct === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() => onThreshold(value)}
+                    style={{
+                      borderRadius: 8,
+                      border: selected
+                        ? "1px solid oklch(52% 0.18 240)"
+                        : "1px solid oklch(86% 0.03 245)",
+                      background: selected ? "oklch(93% 0.04 240)" : "white",
+                      color: selected ? "oklch(34% 0.14 240)" : "oklch(30% 0.07 240)",
+                      padding: "11px 0",
+                      fontSize: 14,
+                      fontWeight: 800,
+                      cursor: isSaving ? "not-allowed" : "pointer",
+                      opacity: isSaving ? 0.72 : 1,
+                    }}
+                  >
+                    {value}%
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

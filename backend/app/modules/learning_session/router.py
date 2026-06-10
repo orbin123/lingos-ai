@@ -18,8 +18,11 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import decode_token
-from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import User
+from app.core.sentry import capture_to_sentry
+from app.core.ai_rate_limit import RATE_LIMIT_MESSAGE, ai_rate_limit, get_limiter
+from app.core.config import settings
+from app.modules.auth.dependencies import get_current_user, require_learner
+from app.modules.auth.models import ROLE_LEARNER, ROLE_SUPER_ADMIN, User
 from app.modules.auth.repository import UserRepository
 from app.modules.learning_session.schemas import (
     LearningSessionSnapshotRead,
@@ -48,7 +51,11 @@ logger = logging.getLogger(__name__)
 
 # --- REST -------------------------------------------------------------
 
-rest_router = APIRouter(prefix="/learning", tags=["learning_session"])
+rest_router = APIRouter(
+    prefix="/learning",
+    tags=["learning_session"],
+    dependencies=[Depends(require_learner)],
+)
 
 
 
@@ -58,6 +65,7 @@ rest_router = APIRouter(prefix="/learning", tags=["learning_session"])
     "/sessions/start",
     response_model=StartSessionResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(ai_rate_limit("learning_start"))],
 )
 async def start_session(
     payload: StartSessionRequest | None = None,
@@ -85,6 +93,7 @@ async def start_session(
     "/sessions/{session_id}/restart",
     response_model=StartSessionResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(ai_rate_limit("learning_start"))],
 )
 async def restart_session(
     session_id: str,
@@ -462,6 +471,10 @@ async def learning_session_ws(
         await websocket.close(code=4401)
         return
 
+    if not user.has_any_role({ROLE_LEARNER, ROLE_SUPER_ADMIN}):
+        await websocket.close(code=4403)
+        return
+
     service = LearningSessionService(db)
 
     session = service.session_repo.get_by_session_id(session_id)
@@ -493,6 +506,20 @@ async def learning_session_ws(
                 )
                 continue
 
+            # Per-user message-rate guard: every accepted message can fan out
+            # into LLM calls, so throttle at the submit boundary. The
+            # connection stays open — the client already renders error frames.
+            if settings.AI_RATE_LIMIT_ENABLED and not get_limiter().allow(
+                f"ws:learning:{user.id}",
+                limit=settings.WS_MESSAGE_RATE_PER_MINUTE,
+                window_seconds=60,
+            ):
+                await _send(
+                    websocket,
+                    WSOutgoingMessage(type="error", content=RATE_LIMIT_MESSAGE),
+                )
+                continue
+
             try:
                 stream = service.process_message_stream(session_id, incoming)
                 async for msg in stream:
@@ -501,6 +528,7 @@ async def learning_session_ws(
                 logger.exception(
                     "ws process_message failed session_id=%s", session_id
                 )
+                capture_to_sentry(exc)
                 await _send(
                     websocket,
                     WSOutgoingMessage(type="error", content=str(exc)),

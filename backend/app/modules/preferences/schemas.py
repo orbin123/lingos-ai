@@ -26,6 +26,8 @@ class UserCoursePreferenceRead(BaseModel):
     current_day_in_week: int
     current_day_started_at: datetime
     last_completed_on: date | None
+    require_pass_to_advance: bool
+    pass_threshold_pct: int = Field(..., ge=0, le=100)
 
 
 class UserCoursePreferenceUpdate(BaseModel):
@@ -37,3 +39,5 @@ class UserCoursePreferenceUpdate(BaseModel):
     allow_write: bool | None = None
     allow_listen: bool | None = None
     allow_speak: bool | None = None
+    require_pass_to_advance: bool | None = None
+    pass_threshold_pct: int | None = Field(default=None, ge=0, le=100)

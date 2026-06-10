@@ -13,6 +13,8 @@ export interface UserCoursePreferenceRead {
   current_day_in_week: number;
   current_day_started_at: string;
   last_completed_on: string | null;
+  require_pass_to_advance: boolean;
+  pass_threshold_pct: number;
 }
 
 export interface UserCoursePreferenceUpdate {
@@ -22,6 +24,8 @@ export interface UserCoursePreferenceUpdate {
   allow_write?: boolean;
   allow_listen?: boolean;
   allow_speak?: boolean;
+  require_pass_to_advance?: boolean;
+  pass_threshold_pct?: number;
 }
 
 export const preferencesApi = {

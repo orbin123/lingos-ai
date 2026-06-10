@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.dependencies import require_learner
 from app.modules.auth.models import User
 from app.modules.challenges.ielts_sprint.schemas import (
     ChallengeAttemptRead,
@@ -57,7 +57,7 @@ def _attempt_read(attempt: ChallengeAttempt) -> ChallengeAttemptRead:
     status_code=status.HTTP_200_OK,
 )
 def list_challenges(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> list[ChallengeListItem]:
     """Return active challenges for the authenticated learner."""
@@ -72,7 +72,7 @@ def list_challenges(
 )
 def get_challenge_detail(
     slug: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> ChallengeDetailRead:
     """Return challenge details plus this learner's level progress."""
@@ -89,7 +89,7 @@ def get_challenge_detail(
 )
 def get_challenge_history(
     slug: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> ChallengeHistoryRead:
     """Return the authenticated learner's personal history for a challenge."""
@@ -106,7 +106,7 @@ def get_challenge_history(
 )
 def get_challenge_attempt(
     attempt_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> ChallengeAttemptRead:
     """Return one challenge attempt if it belongs to the authenticated learner."""
@@ -127,7 +127,7 @@ def get_challenge_attempt(
 )
 def begin_challenge_attempt(
     attempt_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> ChallengeAttemptRead:
     """Start the server-side sprint timer for a prepared attempt."""
@@ -150,7 +150,7 @@ def begin_challenge_attempt(
 def patch_challenge_attempt_responses(
     attempt_id: int,
     payload: ChallengeAttemptResponsesPatchRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> ChallengeAttemptRead:
     """Autosave draft section responses for an in-progress attempt."""
@@ -173,7 +173,7 @@ def patch_challenge_attempt_responses(
 async def get_challenge_attempt_audio(
     attempt_id: int,
     audio_key: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """Stream one owner-checked listening audio clip for an attempt."""
@@ -200,7 +200,7 @@ async def get_challenge_attempt_speaking_audio(
     attempt_id: int,
     prompt_id: str,
     audio_key: str,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """Stream one owner-checked speaking upload for an attempt."""
@@ -229,7 +229,7 @@ async def upload_challenge_attempt_speaking(
     attempt_id: int,
     prompt_id: str,
     audio: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> ChallengeSpeakingUploadRead:
     """Accept one browser-recorded speaking take for a live attempt."""
@@ -259,7 +259,7 @@ async def upload_challenge_attempt_speaking(
 async def start_challenge_attempt(
     slug: str,
     level_number: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> ChallengeAttemptRead:
     """Create a timed attempt for one unlocked challenge level."""
@@ -294,7 +294,7 @@ async def start_challenge_attempt(
 async def submit_challenge_attempt(
     attempt_id: int,
     payload: ChallengeAttemptSubmitRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> ChallengeAttemptRead:
     """Persist raw section responses and return current phase evaluation/feedback."""

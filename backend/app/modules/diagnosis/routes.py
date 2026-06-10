@@ -9,8 +9,9 @@ from app.ai.pronunciation import (
     PronunciationValidationError,
     get_default_pronunciation_service,
 )
+from app.core.ai_rate_limit import ai_rate_limit
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.dependencies import get_current_user, require_learner
 from app.modules.auth.models import User
 from app.modules.auth.repository import UserProfileRepository
 from app.modules.diagnosis.diagnosis_agents.evaluators import PASSAGES
@@ -27,7 +28,7 @@ from app.modules.diagnosis.schemas import (
 )
 from app.modules.diagnosis.service import DiagnosisService
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_learner)])
 
 
 @router.post("/start", status_code=status.HTTP_200_OK)
@@ -54,6 +55,7 @@ def start_diagnosis(
     "/pronunciation-score",
     response_model=PronunciationResult,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(ai_rate_limit("diagnosis"))],
 )
 async def score_read_aloud(
     audio: UploadFile = File(..., description="WAV recording of the read-aloud passage"),
@@ -111,6 +113,7 @@ async def score_read_aloud(
     "/submit",
     response_model=DiagnosisSubmitResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(ai_rate_limit("diagnosis"))],
 )
 async def submit_diagnosis(
     payload: DiagnosisSubmitRequest,

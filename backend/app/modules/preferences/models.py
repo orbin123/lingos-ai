@@ -41,6 +41,10 @@ class UserCoursePreference(Base, IDMixin, TimestampMixin):
             "tasks_per_day BETWEEN 2 AND 4",
             name="ck_user_course_preferences_tasks_per_day_2_4",
         ),
+        CheckConstraint(
+            "pass_threshold_pct BETWEEN 0 AND 100",
+            name="ck_user_course_preferences_pass_threshold_0_100",
+        ),
     )
 
     user_id: Mapped[int] = mapped_column(
@@ -85,6 +89,15 @@ class UserCoursePreference(Base, IDMixin, TimestampMixin):
         server_default=func.now(),
     )
     last_completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Pass-mark gating: when enabled the learner must clear `pass_threshold_pct`
+    # on an activity before advancing, otherwise they retry it. Off by default
+    # so existing learners are unaffected.
+    require_pass_to_advance: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
+    pass_threshold_pct: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=65, server_default="65",
+    )
 
     def __repr__(self) -> str:
         return (

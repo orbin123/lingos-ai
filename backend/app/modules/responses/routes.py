@@ -25,14 +25,19 @@ from app.ai.stt.exceptions import (
     STTPayloadTooLarge,
     STTValidationError,
 )
+from app.core.ai_rate_limit import ai_rate_limit
 from app.core.config import settings
-from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.dependencies import get_current_user, require_learner
 from app.modules.auth.models import User
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/responses", tags=["responses"])
+router = APIRouter(
+    prefix="/responses",
+    tags=["responses"],
+    dependencies=[Depends(require_learner)],
+)
 
 
 class TranscribeResponse(BaseModel):
@@ -101,7 +106,18 @@ def _content_type_for_key(audio_key: str) -> str:
     return "application/octet-stream"
 
 
-@router.post("/transcribe-audio", response_model=TranscribeResponse)
+@router.post(
+    "/transcribe-audio",
+    response_model=TranscribeResponse,
+    dependencies=[
+        Depends(
+            ai_rate_limit(
+                "transcribe",
+                limit_setting="AI_RATE_LIMIT_TRANSCRIBE_PER_MINUTE",
+            )
+        )
+    ],
+)
 async def transcribe_audio(
     audio: UploadFile = File(..., description="Learner audio recording."),
     language: str = Form(default="en"),

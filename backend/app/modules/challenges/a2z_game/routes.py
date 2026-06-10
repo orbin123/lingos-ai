@@ -5,8 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, WebSocket, status
 from sqlalchemy.orm import Session
 
+from app.core.ai_rate_limit import ai_rate_limit
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.dependencies import require_learner
 from app.modules.auth.models import User
 from app.modules.challenges.a2z_game import ws_stream
 from app.modules.challenges.a2z_game.schemas import (
@@ -40,7 +41,7 @@ router = APIRouter(prefix="/challenges/a2z", tags=["a2z-challenge"])
     status_code=status.HTTP_200_OK,
 )
 def get_a2z_progress(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> A2ZProgressRead:
     """Return alphabet progress for the authenticated learner."""
@@ -60,7 +61,7 @@ def get_a2z_progress(
 )
 def start_a2z_round(
     payload: StartRoundRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> StartRoundResponse:
     """Start one letter round (spin or pick)."""
@@ -82,12 +83,13 @@ def start_a2z_round(
     "/rounds/{round_id}/audio-chunks",
     response_model=AudioChunkResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(ai_rate_limit("a2z_audio"))],
 )
 async def ingest_a2z_audio_chunk(
     round_id: int,
     audio: UploadFile = File(...),
     chunk_index: int = Form(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> AudioChunkResponse:
     """Accept one audio chunk, transcribe it, and return newly found words."""
@@ -136,7 +138,7 @@ async def stream_a2z_audio(
 def finish_a2z_round(
     round_id: int,
     payload: FinishRoundRequest | None = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> FinishRoundResponse:
     """Finalize a round: grade transcript and update progress."""
@@ -160,7 +162,7 @@ def finish_a2z_round(
     status_code=status.HTTP_200_OK,
 )
 def restart_a2z_game(
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_learner),
     db: Session = Depends(get_db),
 ) -> A2ZProgressRead:
     """Reset all progress. Only allowed after full completion."""

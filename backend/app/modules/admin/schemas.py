@@ -33,6 +33,9 @@ class AdminSummary(BaseModel):
     feedback_generated: int
     ai_requests_24h: int = 0
     ai_errors_24h: int = 0
+    # Estimated AI spend and mean latency over the last 24h (derived from logs).
+    ai_cost_24h: float = 0.0
+    ai_avg_latency_ms_24h: int | None = None
     pending_feedback_reviews: int = 0
     recent_users: list[AdminRecentUser]
 
@@ -153,11 +156,67 @@ class AIRequestLogRead(BaseModel):
     model: str
     input_tokens: int | None = None
     output_tokens: int | None = None
+    # Estimated USD cost, derived from model + tokens at read time (None when
+    # the model isn't in the pricing table or tokens are missing).
+    cost_usd: float | None = None
     latency_ms: int | None = None
     status: str
     error_message: str | None = None
     prompt_version: str | None = None
     created_at: datetime
+
+
+class AIQualityRow(BaseModel):
+    """Rolling mean quality scores for one judged target type."""
+
+    target_type: str
+    judged_count: int
+    mean_accuracy: float | None = None
+    mean_relevance: float | None = None
+    mean_helpfulness: float | None = None
+    mean_correctness: float | None = None
+    mean_faithfulness: float | None = None
+
+
+class AIQualityWorst(BaseModel):
+    """A low-scoring judged output, surfaced for human review."""
+
+    id: int
+    trace_id: str | None = None
+    target_type: str
+    target_id: str | None = None
+    judge_model: str
+    accuracy: float | None = None
+    relevance: float | None = None
+    helpfulness: float | None = None
+    correctness: float | None = None
+    faithfulness: float | None = None
+    rationale: str | None = None
+    created_at: datetime
+
+
+class AIQualityTimeSeriesPoint(BaseModel):
+    """Mean quality scores for one (day, target_type) bucket (Part B Phase 3)."""
+
+    date: str  # YYYY-MM-DD (UTC)
+    target_type: str
+    judged_count: int
+    mean_accuracy: float | None = None
+    mean_relevance: float | None = None
+    mean_helpfulness: float | None = None
+    mean_correctness: float | None = None
+    mean_faithfulness: float | None = None
+
+
+class AIQualityReport(BaseModel):
+    """Aggregated LLM-as-judge quality over a rolling window (Part B Phase 2)."""
+
+    days: int
+    judged_count: int
+    means: list[AIQualityRow]
+    worst: list[AIQualityWorst]
+    # Per-day means per target_type, oldest → newest (Part B Phase 3).
+    series: list[AIQualityTimeSeriesPoint] = []
 
 
 class FeedbackReviewItem(BaseModel):

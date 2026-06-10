@@ -32,6 +32,7 @@ export default function AdminAILogsPage() {
               <th style={thStyle}>User</th>
               <th style={thStyle}>Model</th>
               <th style={thStyle}>Tokens</th>
+              <th style={thStyle}>Cost</th>
               <th style={thStyle}>Latency</th>
               <th style={thStyle}>Status</th>
               <th style={thStyle}>Error</th>
@@ -49,6 +50,7 @@ export default function AdminAILogsPage() {
                 </td>
                 <td style={tdStyle}>{log.model}</td>
                 <td style={tdStyle}>{tokenUsage(log)}</td>
+                <td style={tdStyle}>{formatCost(log.cost_usd)}</td>
                 <td style={tdStyle}>{log.latency_ms == null ? "—" : `${log.latency_ms} ms`}</td>
                 <td style={tdStyle}>
                   <StatusBadge status={log.status} />
@@ -68,7 +70,7 @@ export default function AdminAILogsPage() {
             ))}
             {logs.length === 0 && (
               <tr>
-                <td style={tdStyle} colSpan={10}>
+                <td style={tdStyle} colSpan={11}>
                   No AI logs found.
                 </td>
               </tr>
@@ -108,6 +110,12 @@ function StatusBadge({ status }: { status: string }) {
 function tokenUsage(log: AIRequestLog) {
   if (log.input_tokens == null && log.output_tokens == null) return "—";
   return `${log.input_tokens ?? 0} in / ${log.output_tokens ?? 0} out`;
+}
+
+function formatCost(cost: number | null) {
+  if (cost == null) return "—";
+  // Sub-cent precision; these are tiny per-call costs.
+  return `$${cost.toFixed(4)}`;
 }
 
 const strongTextStyle: CSSProperties = {

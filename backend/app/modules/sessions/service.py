@@ -15,14 +15,23 @@ implementations without touching this file.
 from __future__ import annotations
 
 import asyncio
-import logging
+import random
+import time
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+import structlog
 from sqlalchemy.orm import Session
 
+from app.ai.llm.eval_context import (
+    get_eval_context,
+    reset_eval_context,
+    set_eval_context,
+)
+from app.ai.sessions.llm_evaluator import is_llm_backed_evaluation
 from app.core.config import settings
+from app.core.sentry import capture_to_sentry
 from app.modules.sessions.contracts.agent_inputs import (
     EvaluatorAgentInput,
     FeedbackAgentInput,
@@ -99,7 +108,12 @@ from app.scoring import (
 )
 
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
+
+# Cap on concurrent task generations per session start. Bounds OpenAI 429
+# pressure while still collapsing wall time from sum(activities) to roughly
+# max(activities).
+_TASKGEN_CONCURRENCY = 4
 
 
 def _validate_agent_input(model_cls, **fields) -> None:
@@ -110,9 +124,10 @@ def _validate_agent_input(model_cls, **fields) -> None:
     inputs early) — callers keep using their original values.
     """
     if build_agent_input(model_cls, strict=settings.strict_contracts, **fields) is None:
-        logger.warning(
-            "Agent input validation failed at %s boundary — proceeding on legacy path",
-            model_cls.__name__,
+        log.warning(
+            "agent_input_validation_failed",
+            boundary=model_cls.__name__,
+            note="proceeding on legacy path",
         )
 
 
@@ -126,6 +141,7 @@ class SessionService:
         evaluator: Evaluator | None = None,
         feedback_generator: FeedbackGenerator | None = None,
         task_generator: TaskGenerator | None = None,
+        judge: Any | None = None,
     ) -> None:
         self.db = db
         # The three injectable agents default to stubs. Production wiring
@@ -156,6 +172,10 @@ class SessionService:
         self._mentor_generator: Any | None = None
         self._pending_rag_tasks: list[asyncio.Task[None]] = []
 
+        # LLM-as-judge quality scorer (Part B Phase 2) — optional. When absent
+        # (tests, stub wiring) online quality sampling is skipped entirely.
+        self._judge: Any | None = judge
+
     # ── start ──────────────────────────────────────────────────────
 
     async def start_session(
@@ -179,6 +199,7 @@ class SessionService:
         from the composed band source files instead of the planner.
         """
         now = now or datetime.now(timezone.utc)
+        t0 = time.perf_counter()
 
         if day_id is None:
             raise DayNotFound("day_id is required")
@@ -245,39 +266,82 @@ class SessionService:
 
         if file_day_override is not None and source_plan is not None:
             effective_sub_level = sub_level or file_day_override.sub_level_min
-            for sequence, (_orig_index, spec, task_spec) in enumerate(
-                source_plan, start=1,
-            ):
-                await self._materialise_attempt(
-                    session=session,
-                    day_topic=file_day_override.topic,
-                    explanation_brief=file_day_override.explanation_brief,
-                    archetype_id=spec.archetype_id,
-                    sequence=sequence,
-                    is_mandatory=True,
-                    cefr_level=file_day_override.cefr_level,
-                    sub_level=effective_sub_level,
-                    user_interests=user_interests,
-                    task_spec=task_spec or None,
+            items: list[dict] = [
+                {
+                    "day_topic": file_day_override.topic,
+                    "explanation_brief": file_day_override.explanation_brief,
+                    "archetype_id": spec.archetype_id,
+                    "sequence": sequence,
+                    "is_mandatory": True,
+                    "cefr_level": file_day_override.cefr_level,
+                    "sub_level": effective_sub_level,
+                    "user_interests": user_interests,
+                    "task_spec": task_spec or None,
+                }
+                for sequence, (_orig_index, spec, task_spec) in enumerate(
+                    source_plan, start=1,
                 )
+            ]
         else:
             effective_sub_level = sub_level or parent_week.sub_level_min
-            for activity in plan:
-                await self._materialise_attempt(
-                    session=session,
-                    day_topic=day.topic,
-                    explanation_brief=day.explanation_brief,
-                    archetype_id=activity.archetype_id,
-                    sequence=activity.sequence,
-                    is_mandatory=activity.is_mandatory,
-                    cefr_level=parent_week.cefr_level,
-                    sub_level=effective_sub_level,
-                    user_interests=user_interests,
-                    task_spec=None,
-                )
+            items = [
+                {
+                    "day_topic": day.topic,
+                    "explanation_brief": day.explanation_brief,
+                    "archetype_id": activity.archetype_id,
+                    "sequence": activity.sequence,
+                    "is_mandatory": activity.is_mandatory,
+                    "cefr_level": parent_week.cefr_level,
+                    "sub_level": effective_sub_level,
+                    "user_interests": user_interests,
+                    "task_spec": None,
+                }
+                for activity in plan
+            ]
+
+        # Generate all task content concurrently (LLM/TTS/imagegen only — no
+        # DB access), then persist sequentially: the sync SQLAlchemy Session
+        # must not be touched from concurrent coroutines. A single failure
+        # cancels the siblings and propagates, so nothing is committed —
+        # the same all-or-nothing semantics as the old sequential loop.
+        gen_t0 = time.perf_counter()
+        sem = asyncio.Semaphore(_TASKGEN_CONCURRENCY)
+
+        async def _timed_generate(item: dict) -> tuple[dict, float]:
+            async with sem:
+                t = time.perf_counter()
+                content = await self._generate_attempt_content(**item)
+                return content, (time.perf_counter() - t) * 1000
+
+        results = await asyncio.gather(*(_timed_generate(i) for i in items))
+        task_gen_total_ms = (time.perf_counter() - gen_t0) * 1000
+
+        persist_t0 = time.perf_counter()
+        for item, (content, _ms) in zip(items, results):
+            self._persist_attempt(
+                session=session,
+                archetype_id=item["archetype_id"],
+                sequence=item["sequence"],
+                is_mandatory=item["is_mandatory"],
+                content=content,
+            )
 
         self.db.commit()
         self.db.refresh(session)
+        log.info(
+            "session_start_timing",
+            user_id=user_id,
+            day_id=day_id,
+            file_authored=file_day_override is not None,
+            activity_count=len(items),
+            per_activity_ms=[
+                {"archetype_id": item["archetype_id"], "ms": round(ms)}
+                for item, (_content, ms) in zip(items, results)
+            ],
+            task_gen_total_ms=round(task_gen_total_ms),
+            persist_ms=round((time.perf_counter() - persist_t0) * 1000),
+            total_ms=round((time.perf_counter() - t0) * 1000),
+        )
         return session
 
     # ── next ───────────────────────────────────────────────────────
@@ -340,13 +404,12 @@ class SessionService:
         if self._is_attempt_content_valid(content, spec):
             return attempt
 
-        logger.warning(
-            "session attempt id=%s archetype=%s has invalid task_content "
-            "(phase=%s); regenerating via %s",
-            attempt.id,
-            attempt.archetype_id,
-            content.get("phase"),
-            type(self.task_generator).__name__,
+        log.warning(
+            "attempt_invalid_task_content_regenerating",
+            attempt_id=attempt.id,
+            archetype=attempt.archetype_id,
+            phase=content.get("phase"),
+            generator=type(self.task_generator).__name__,
         )
         repaired = await self._regenerate_task_content(
             attempt=attempt, archetype=spec, prior=content,
@@ -461,6 +524,36 @@ class SessionService:
         user_response: dict | None,
         now: datetime | None = None,
     ) -> tuple[ActivityAttempt, ActivityEvaluation, ActivityFeedback]:
+        """Public entry point. Stamps one correlation ``trace_id`` on this submit
+        so every LLM call it triggers (evaluator, feedback) shares a trace in
+        ``ai_request_logs``, then delegates to the implementation. Reuses the
+        ambient ``trace_id`` stamped by ``TraceIDMiddleware`` when present so
+        logs, cost and quality all join on one id; mints a fresh one when called
+        outside an HTTP request (e.g. tests)."""
+        existing = get_eval_context()
+        token = set_eval_context(
+            trace_id=existing.trace_id or uuid4().hex, user_id=user_id
+        )
+        try:
+            return await self._submit_activity_inner(
+                session_id=session_id,
+                user_id=user_id,
+                sequence=sequence,
+                user_response=user_response,
+                now=now,
+            )
+        finally:
+            reset_eval_context(token)
+
+    async def _submit_activity_inner(
+        self,
+        *,
+        session_id: str,
+        user_id: int,
+        sequence: int,
+        user_response: dict | None,
+        now: datetime | None = None,
+    ) -> tuple[ActivityAttempt, ActivityEvaluation, ActivityFeedback]:
         """Persist response, run evaluator + feedback generator, store results."""
         now = now or datetime.now(timezone.utc)
         session = self._load_owned(session_id=session_id, user_id=user_id)
@@ -540,9 +633,10 @@ class SessionService:
                 )
             except Exception:
                 # Best-effort: a slow/failed lookup must never block feedback.
-                logger.warning(
-                    "Per-activity RAG retrieval skipped (timeout/error) for attempt=%d",
-                    attempt.id, exc_info=True,
+                log.warning(
+                    "per_activity_rag_retrieval_skipped",
+                    attempt_id=attempt.id,
+                    exc_info=True,
                 )
                 learner_history = None
 
@@ -596,6 +690,30 @@ class SessionService:
         # not safe for concurrent use. Indexing happens in the post-completion
         # background worker (`run_post_completion_rag`), which opens its own
         # session and re-indexes every evaluated activity idempotently.
+
+        # LLM-as-judge quality sampling (Part B Phase 2). Fire-and-forget after
+        # commit, only for LLM-graded archetypes, at AI_EVAL_SAMPLE_RATE. Pure
+        # observability — runs on its own DB session and never blocks/affects
+        # the learner. Skipped when disabled, no judge wired, or arithmetic.
+        if (
+            settings.AI_EVAL_ENABLED
+            and self._judge is not None
+            and is_llm_backed_evaluation(spec)
+            and random.random() < settings.AI_EVAL_SAMPLE_RATE
+        ):
+            self._schedule_ai_eval(
+                trace_id=get_eval_context().trace_id,
+                user_id=session.user_id,
+                target_id=str(feedback.id),
+                task_content=dict(attempt.task_content or {}),
+                user_response=dict(user_response or {}),
+                feedback={
+                    "summary": feedback.summary,
+                    "did_well": list(feedback.did_well or []),
+                    "mistakes": list(feedback.mistakes or []),
+                    "next_tip": feedback.next_tip,
+                },
+            )
 
         return attempt, evaluation, feedback
 
@@ -654,9 +772,9 @@ class SessionService:
                         reason="session already completed",
                     )
 
-                logger.info(
-                    "complete_session: scorecard for session %r has stale scores, rebuilding",
-                    session_id,
+                log.info(
+                    "complete_session_rebuilding_stale_scorecard",
+                    session_id=session_id,
                 )
 
             # We either have an IN_PROGRESS session that was previously completed
@@ -799,11 +917,12 @@ class SessionService:
 
             self.db.commit()
         except Exception:
-            logger.warning(
-                "Post-completion RAG pipeline failed for session=%s",
-                session_id,
+            log.warning(
+                "post_completion_rag_pipeline_failed",
+                session_id=session_id,
                 exc_info=True,
             )
+            capture_to_sentry()
             self.db.rollback()
 
     async def ensure_mentor_note(
@@ -838,6 +957,7 @@ class SessionService:
             mentor_note = await self._generate_mentor_note_safe(
                 session=session,
                 activities_breakdown=activities_breakdown,
+                scorecard_id=scorecard.id,
             )
             if not mentor_note:
                 return None
@@ -859,9 +979,9 @@ class SessionService:
             self.db.commit()
             return mentor_note
         except Exception:
-            logger.warning(
-                "ensure_mentor_note failed for session=%s",
-                session_id,
+            log.warning(
+                "ensure_mentor_note_failed",
+                session_id=session_id,
                 exc_info=True,
             )
             self.db.rollback()
@@ -906,6 +1026,66 @@ class SessionService:
         self._pending_rag_tasks.append(task)
         task.add_done_callback(self._discard_pending_rag_task)
 
+    def _schedule_ai_eval(
+        self,
+        *,
+        trace_id: str | None,
+        user_id: int,
+        target_id: str,
+        task_content: dict,
+        user_response: dict,
+        feedback: dict,
+    ) -> None:
+        """Fire-and-forget LLM-as-judge quality scoring of one feedback output.
+
+        Runs on its own DB session so it never shares the request/WebSocket
+        ``self.db`` (same hazard as the RAG workers). Pure observability — the
+        worker writes one ``ai_evaluations`` row and is best-effort; a judge
+        failure is logged and dropped, never surfaced to the learner.
+        """
+        task = asyncio.create_task(
+            _run_ai_eval_worker(
+                trace_id=trace_id,
+                user_id=user_id,
+                target_id=target_id,
+                task_content=task_content,
+                user_response=user_response,
+                feedback=feedback,
+            )
+        )
+        self._pending_rag_tasks.append(task)
+        task.add_done_callback(self._discard_pending_rag_task)
+
+    def _schedule_mentor_note_eval(
+        self,
+        *,
+        trace_id: str | None,
+        user_id: int,
+        target_id: str,
+        note: str,
+        rag_context: dict,
+        today_activities: list[dict],
+    ) -> None:
+        """Fire-and-forget RAG-faithfulness judging of one mentor note.
+
+        Runs on its own DB session (never shares ``self.db``) and is
+        best-effort — the worker writes one ``ai_evaluations`` row
+        (``target_type="mentor_note"``, with a ``faithfulness`` score) and a
+        judge failure is logged and dropped, never surfaced to the learner.
+        """
+        task = asyncio.create_task(
+            _run_mentor_note_eval_worker(
+                trace_id=trace_id,
+                user_id=user_id,
+                target_id=target_id,
+                note=note,
+                rag_context=rag_context,
+                today_activities=today_activities,
+            )
+        )
+        self._pending_rag_tasks.append(task)
+        task.add_done_callback(self._discard_pending_rag_task)
+
     def _discard_pending_rag_task(self, task: asyncio.Task[None]) -> None:
         try:
             self._pending_rag_tasks.remove(task)
@@ -915,8 +1095,8 @@ class SessionService:
             return
         exc = task.exception()
         if exc is not None:
-            logger.warning(
-                "Post-completion RAG background task failed",
+            log.warning(
+                "post_completion_rag_background_task_failed",
                 exc_info=exc,
             )
 
@@ -1131,10 +1311,9 @@ class SessionService:
         if session.status is SessionStatus.ABANDONED:
             raise SessionAbandoned(f"session {session.session_id!r} was abandoned")
 
-    async def _materialise_attempt(
+    async def _generate_attempt_content(
         self,
         *,
-        session: DailySession,
         day_topic: str,
         explanation_brief: str,
         archetype_id: str,
@@ -1144,7 +1323,11 @@ class SessionService:
         sub_level: int,
         user_interests: list[str] | None,
         task_spec: dict | None = None,
-    ) -> ActivityAttempt:
+    ) -> dict:
+        """Generate an attempt's task_content (LLM/TTS/imagegen).
+
+        No DB access — safe to run concurrently for several activities.
+        """
         spec = get_archetype(archetype_id)
         _validate_agent_input(
             TaskGenAgentInput,
@@ -1164,13 +1347,23 @@ class SessionService:
             user_interests=user_interests,
             task_spec=task_spec,
         )
-        content = self._attach_activity_contract(
+        return self._attach_activity_contract(
             content=dict(generated.content),
             archetype=spec,
             sequence=sequence,
             is_mandatory=is_mandatory,
             task_spec=task_spec,
         )
+
+    def _persist_attempt(
+        self,
+        *,
+        session: DailySession,
+        archetype_id: str,
+        sequence: int,
+        is_mandatory: bool,
+        content: dict,
+    ) -> ActivityAttempt:
         attempt = ActivityAttempt(
             session_id=session.id,
             archetype_id=archetype_id,
@@ -1286,9 +1479,10 @@ class SessionService:
                 summary=feedback.summary,
             )
         except Exception:
-            logger.warning(
-                "Failed to store activity memory for attempt=%d",
-                attempt_id, exc_info=True,
+            log.warning(
+                "store_activity_memory_failed",
+                attempt_id=attempt_id,
+                exc_info=True,
             )
 
     async def _store_session_memory_safe(
@@ -1314,9 +1508,10 @@ class SessionService:
                 mentor_note=mentor_note,
             )
         except Exception:
-            logger.warning(
-                "Failed to store session memory for session=%d",
-                session_id, exc_info=True,
+            log.warning(
+                "store_session_memory_failed",
+                session_id=session_id,
+                exc_info=True,
             )
 
     async def _generate_mentor_note_safe(
@@ -1324,6 +1519,7 @@ class SessionService:
         *,
         session: DailySession,
         activities_breakdown: list[dict],
+        scorecard_id: int | None = None,
     ) -> str | None:
         """Retrieve RAG context and generate mentor note. Never raises.
 
@@ -1332,6 +1528,10 @@ class SessionService:
         if self._rag_service is None or self._mentor_generator is None:
             return None
 
+        # Stamp a trace so the mentor-note LLM call is recorded with the learner
+        # in ai_request_logs. Runs in a background worker with its own context.
+        trace_id = uuid4().hex
+        token = set_eval_context(trace_id=trace_id, user_id=session.user_id)
         try:
             # Collect today's mistakes from all attempts
             attempts = self.attempts_repo.list_for_session(session.id)
@@ -1361,14 +1561,37 @@ class SessionService:
                 rag_context=rag_context,
                 points_earned=points_earned,
             )
+
+            # RAG faithfulness judging (Part B Phase 3). Fire-and-forget on a
+            # sample, only when a note was actually produced and we have the
+            # scorecard id to key the eval to. Pure observability — runs on its
+            # own DB session, shares the mentor-note trace_id, never blocks.
+            if (
+                mentor_note
+                and scorecard_id is not None
+                and settings.AI_EVAL_ENABLED
+                and random.random() < settings.AI_EVAL_MENTOR_SAMPLE_RATE
+            ):
+                self._schedule_mentor_note_eval(
+                    trace_id=trace_id,
+                    user_id=session.user_id,
+                    target_id=str(scorecard_id),
+                    note=mentor_note,
+                    rag_context=dict(rag_context or {}),
+                    today_activities=activities_breakdown,
+                )
+
             return mentor_note
 
         except Exception:
-            logger.warning(
-                "Mentor note generation failed for session=%s",
-                session.session_id, exc_info=True,
+            log.warning(
+                "mentor_note_generation_failed",
+                session_id=session.session_id,
+                exc_info=True,
             )
             return None
+        finally:
+            reset_eval_context(token)
 
 
 async def _run_post_completion_rag_worker(
@@ -1388,14 +1611,140 @@ async def _run_post_completion_rag_worker(
             user_id=user_id,
         )
     except Exception:
-        logger.warning(
-            "Post-completion RAG worker failed for session=%s",
-            session_id,
+        log.warning(
+            "post_completion_rag_worker_failed",
+            session_id=session_id,
             exc_info=True,
         )
         db.rollback()
     finally:
         db.close()
+
+
+async def _run_ai_eval_worker(
+    *,
+    trace_id: str | None,
+    user_id: int,
+    target_id: str,
+    task_content: dict,
+    user_response: dict,
+    feedback: dict,
+) -> None:
+    """Background worker (own DB session) that judges one feedback output.
+
+    Opens a fresh ``SessionLocal``, re-stamps the eval context with the same
+    ``trace_id`` so the judge's own ``ai_request_logs`` row joins the feedback
+    call, runs the judge under a timeout, and writes one ``ai_evaluations`` row
+    (``target_type="feedback"``, ``eval_mode="online"``). Never raises — quality
+    scoring is observability and must never affect the learner.
+    """
+    from app.ai.sessions.factory import build_judge
+    from app.core.database import SessionLocal
+    from app.modules.admin.models import AIEvaluation
+
+    token = set_eval_context(trace_id=trace_id, user_id=user_id)
+    db = SessionLocal()
+    try:
+        judge = build_judge()
+        scores = await asyncio.wait_for(
+            judge.score(
+                task=task_content,
+                user_answer=user_response,
+                feedback=feedback,
+            ),
+            timeout=settings.AI_EVAL_TIMEOUT_S,
+        )
+        db.add(
+            AIEvaluation(
+                trace_id=trace_id,
+                target_type="feedback",
+                target_id=target_id,
+                judge_model=settings.AI_EVAL_JUDGE_MODEL,
+                accuracy=scores.accuracy,
+                relevance=scores.relevance,
+                helpfulness=scores.helpfulness,
+                correctness=scores.correctness,
+                faithfulness=None,
+                rationale=(scores.rationale or "")[:1000] or None,
+                eval_mode="online",
+            )
+        )
+        db.commit()
+    except Exception:
+        log.warning(
+            "ai_quality_judge_failed",
+            target_type="feedback",
+            target_id=target_id,
+            exc_info=True,
+        )
+        db.rollback()
+    finally:
+        db.close()
+        reset_eval_context(token)
+
+
+async def _run_mentor_note_eval_worker(
+    *,
+    trace_id: str | None,
+    user_id: int,
+    target_id: str,
+    note: str,
+    rag_context: dict,
+    today_activities: list[dict],
+) -> None:
+    """Background worker (own DB session) that judges one mentor note for RAG
+    faithfulness (Part B Phase 3).
+
+    Opens a fresh ``SessionLocal``, re-stamps the eval context with the same
+    ``trace_id`` so the judge's own ``ai_request_logs`` row joins the
+    mentor-note call, runs the judge under a timeout, and writes one
+    ``ai_evaluations`` row (``target_type="mentor_note"``, ``eval_mode="online"``,
+    with the RAG-specific ``faithfulness`` score). Never raises — quality
+    scoring is observability and must never affect the learner.
+    """
+    from app.ai.sessions.factory import build_mentor_judge
+    from app.core.database import SessionLocal
+    from app.modules.admin.models import AIEvaluation
+
+    token = set_eval_context(trace_id=trace_id, user_id=user_id)
+    db = SessionLocal()
+    try:
+        judge = build_mentor_judge()
+        scores = await asyncio.wait_for(
+            judge.score(
+                note=note,
+                rag_context=rag_context,
+                today_activities=today_activities,
+            ),
+            timeout=settings.AI_EVAL_TIMEOUT_S,
+        )
+        db.add(
+            AIEvaluation(
+                trace_id=trace_id,
+                target_type="mentor_note",
+                target_id=target_id,
+                judge_model=settings.AI_EVAL_JUDGE_MODEL,
+                accuracy=scores.accuracy,
+                relevance=scores.relevance,
+                helpfulness=scores.helpfulness,
+                correctness=scores.correctness,
+                faithfulness=scores.faithfulness,
+                rationale=(scores.rationale or "")[:1000] or None,
+                eval_mode="online",
+            )
+        )
+        db.commit()
+    except Exception:
+        log.warning(
+            "ai_quality_judge_failed",
+            target_type="mentor_note",
+            target_id=target_id,
+            exc_info=True,
+        )
+        db.rollback()
+    finally:
+        db.close()
+        reset_eval_context(token)
 
 
 async def generate_mentor_note_async(
@@ -1421,9 +1770,9 @@ async def generate_mentor_note_async(
             user_id=user_id,
         )
     except Exception:
-        logger.warning(
-            "Mentor note worker failed for session=%s",
-            session_id,
+        log.warning(
+            "mentor_note_worker_failed",
+            session_id=session_id,
             exc_info=True,
         )
         db.rollback()
@@ -1460,10 +1809,10 @@ async def _run_rag_delete_worker(
         if delete_summary:
             await rag.delete_session_summary(session_pk)
     except Exception:
-        logger.warning(
-            "rag.delete.worker failed for session_pk=%s attempts=%s",
-            session_pk,
-            attempt_ids,
+        log.warning(
+            "rag_delete_worker_failed",
+            session_pk=session_pk,
+            attempt_ids=attempt_ids,
             exc_info=True,
         )
         db.rollback()

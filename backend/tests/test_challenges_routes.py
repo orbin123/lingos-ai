@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import User
+from app.modules.auth.models import Role, User, UserRole
 from app.modules.challenges.ielts_sprint import service as challenges_service
 from app.modules.challenges.models import (
     Challenge,
@@ -143,6 +143,8 @@ def db_session():
         engine,
         tables=[
             User.__table__,
+            Role.__table__,
+            UserRole.__table__,
             Challenge.__table__,
             ChallengeLevel.__table__,
             ChallengeAttempt.__table__,

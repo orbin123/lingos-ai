@@ -14,6 +14,7 @@ REQUIRED_PERMISSIONS: tuple[tuple[str, str], ...] = (
     ("reviews.read", "View app reviews submitted by users."),
     ("ai_logs.read", "View AI request logs."),
     ("ai_costs.read", "View AI usage and cost information."),
+    ("ai_quality.read", "View AI evaluation quality metrics."),
     ("payments.read", "View limited payment and billing information."),
     ("subscriptions.manage", "Manage subscription access and periods."),
     ("audit_logs.read", "View admin audit logs."),
@@ -32,6 +33,7 @@ ADMIN_PERMISSION_KEYS = (
     "reviews.read",
     "ai_logs.read",
     "ai_costs.read",
+    "ai_quality.read",
     "payments.read",
     "audit_logs.read",
 )

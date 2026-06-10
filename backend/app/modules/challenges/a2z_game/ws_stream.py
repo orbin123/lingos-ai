@@ -27,8 +27,11 @@ from websockets import ClientConnection as DgConnection
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.core.ai_rate_limit import get_limiter
 from app.core.config import settings
 from app.core.security import decode_token
+from app.core.sentry import capture_to_sentry
+from app.modules.auth.models import ROLE_LEARNER, ROLE_SUPER_ADMIN
 from app.modules.auth.repository import UserRepository
 from app.modules.challenges.a2z_game import evaluator
 from app.modules.challenges.a2z_game.repository import A2ZRoundRepository
@@ -89,6 +92,8 @@ def _resolve_user_id(token: str, db: Session) -> int | None:
     user = UserRepository(db).get_by_id(user_id)
     if user is None or not user.is_active:
         return None
+    if not user.has_any_role({ROLE_LEARNER, ROLE_SUPER_ADMIN}):
+        return None
     return user_id
 
 
@@ -138,6 +143,22 @@ async def stream_round(
             code="round_not_found",
             message="This round could not be found or has already ended. Start a new round.",
             close_code=4004,
+        )
+        return
+
+    # Connection-level guard only: each accepted stream costs Deepgram money,
+    # but audio frames inside an accepted stream are never throttled (that
+    # would break real-time transcription mid-round).
+    if settings.AI_RATE_LIMIT_ENABLED and not get_limiter().allow(
+        f"ws:a2z:{user_id}",
+        limit=settings.WS_A2Z_STREAMS_PER_MINUTE,
+        window_seconds=60,
+    ):
+        await _send_error(
+            websocket,
+            code="rate_limited",
+            message="Too many round attempts in a short time. Please wait a moment.",
+            close_code=4029,
         )
         return
 
@@ -246,6 +267,7 @@ async def stream_round(
             )
     except Exception as exc:
         logger.exception("a2z stream error round=%d: %s", round_id, exc)
+        capture_to_sentry(exc)
         await _send_error(
             websocket,
             code="upstream_failed",

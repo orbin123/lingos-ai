@@ -23,7 +23,10 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "python-jose[cryptography]>=3.5.0",
     "python-multipart>=0.0.26",
+    "redis>=5.0",
+    "sentry-sdk[fastapi]>=2.0.0",
     "sqlalchemy>=2.0.49",
+    "structlog>=26.1.0",
     "uvicorn[standard]>=0.46.0",
 ]
 

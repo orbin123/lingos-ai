@@ -23,6 +23,7 @@ from app.ai.embeddings.embedding_generator import OpenAIEmbeddingGenerator
 from app.ai.embeddings.exceptions import EmbeddingError
 from app.ai.embeddings.service import EmbeddingService
 from app.core.config import settings
+from app.core.sentry import capture_to_sentry
 from app.modules.feedback_memory.memory_builder import (
     build_activity_memory,
     build_session_memory,
@@ -217,6 +218,7 @@ class FeedbackRAGService:
                 "Unexpected error storing session summary for session=%d",
                 session_id, exc_info=True,
             )
+            capture_to_sentry()
             return None
 
     # ── DELETE: keep Pinecone in sync with Postgres ────────────────

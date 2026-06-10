@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  BarChart3,
   Bot,
   ClipboardCheck,
   CreditCard,
@@ -32,6 +33,7 @@ const NAV_ICONS: Record<string, ReactNode> = {
   Payments: <CreditCard size={18} />,
   Subscribers: <Repeat size={18} />,
   "AI Logs": <Bot size={18} />,
+  "AI Quality": <BarChart3 size={18} />,
   "Feedback Review": <ClipboardCheck size={18} />,
   "User Reviews": <Star size={18} />,
   "Audit Logs": <ListChecks size={18} />,

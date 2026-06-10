@@ -17,6 +17,8 @@ export interface AdminSummary {
   feedback_generated: number;
   ai_requests_24h: number;
   ai_errors_24h: number;
+  ai_cost_24h: number;
+  ai_avg_latency_ms_24h: number | null;
   pending_feedback_reviews: number;
   recent_users: AdminUserListItem[];
 }
@@ -129,11 +131,56 @@ export interface AIRequestLog {
   model: string;
   input_tokens: number | null;
   output_tokens: number | null;
+  cost_usd: number | null;
   latency_ms: number | null;
   status: string;
   error_message: string | null;
   prompt_version: string | null;
   created_at: string;
+}
+
+export interface AIQualityRow {
+  target_type: string;
+  judged_count: number;
+  mean_accuracy: number | null;
+  mean_relevance: number | null;
+  mean_helpfulness: number | null;
+  mean_correctness: number | null;
+  mean_faithfulness: number | null;
+}
+
+export interface AIQualityWorst {
+  id: number;
+  trace_id: string | null;
+  target_type: string;
+  target_id: string | null;
+  judge_model: string;
+  accuracy: number | null;
+  relevance: number | null;
+  helpfulness: number | null;
+  correctness: number | null;
+  faithfulness: number | null;
+  rationale: string | null;
+  created_at: string;
+}
+
+export interface AIQualityTimeSeriesPoint {
+  date: string;
+  target_type: string;
+  judged_count: number;
+  mean_accuracy: number | null;
+  mean_relevance: number | null;
+  mean_helpfulness: number | null;
+  mean_correctness: number | null;
+  mean_faithfulness: number | null;
+}
+
+export interface AIQualityReport {
+  days: number;
+  judged_count: number;
+  means: AIQualityRow[];
+  worst: AIQualityWorst[];
+  series: AIQualityTimeSeriesPoint[];
 }
 
 export interface FeedbackReviewItem {
@@ -276,6 +323,9 @@ export const adminApi = {
 
   aiLog: (logId: number) =>
     api.get<AIRequestLog>(`/admin/ai-logs/${logId}`).then((r) => r.data),
+
+  aiQuality: (days = 7) =>
+    api.get<AIQualityReport>(`/admin/ai-quality?days=${days}`).then((r) => r.data),
 
   feedbackReview: () =>
     api.get<FeedbackReviewItem[]>("/admin/feedback-review").then((r) => r.data),

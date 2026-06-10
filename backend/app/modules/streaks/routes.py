@@ -6,12 +6,16 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.dependencies import get_current_user, require_learner
 from app.modules.auth.models import User
 from app.modules.streaks.schemas import StreakDataResponse
 from app.modules.streaks.service import StreakService
 
-router = APIRouter(prefix="/streak", tags=["streak"])
+router = APIRouter(
+    prefix="/streak",
+    tags=["streak"],
+    dependencies=[Depends(require_learner)],
+)
 
 
 @router.get("/me", response_model=StreakDataResponse)

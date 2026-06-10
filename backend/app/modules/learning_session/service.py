@@ -22,18 +22,21 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import re
+import time
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
 
+import structlog
 from sqlalchemy.orm import Session
 
 from app.ai.agents.planner import PlannerAgent
 from app.ai.agents.relevance_classifier import classify_reply_relevance
 from app.ai.agents.teacher import stream_teaching_turn
+from app.ai.llm.eval_context import reset_eval_context, set_eval_context
 from app.core.config import settings
+from app.core.sentry import capture_to_sentry
 from app.modules.curriculum.file_source import (
     SCRIPTED_PLAN_KEY,
     build_teacher_instructions as file_build_teacher_instructions,
@@ -103,7 +106,7 @@ from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.modules.skills.repository import SkillRepository
 from app.scoring import CourseLength, get_archetype
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 # Guard against concurrent complete_session calls (e.g. WS submit + resume).
 _completing_daily_uuids: set[str] = set()
@@ -111,6 +114,27 @@ _completing_daily_uuids: set[str] = set()
 # Strong refs to in-flight Coach's Note workers so a timed-out (shielded) task
 # is not garbage-collected before it finishes persisting the note.
 _pending_note_tasks: set[asyncio.Task[str | None]] = set()
+
+# evaluator_notes substrings that mark an infra/structural fallback rather than a
+# genuine low score. The pass-mark gate is bypassed for these so a transient
+# failure (LLM/STT/Azure down, malformed/empty payload) never traps the learner
+# in an unwinnable retry loop. A real low score (incl. "No response submitted")
+# is NOT in this list and so is gated normally.
+_GATE_BYPASS_MARKERS: tuple[str, ...] = (
+    "unavailable",
+    "malformed",
+    "no mcq items",
+    "no blanks",
+    "neutral fallback",
+)
+
+
+def _is_gate_bypass(evaluator_notes: str | None) -> bool:
+    """True when evaluator_notes signal an error/structural fallback score."""
+    if not evaluator_notes:
+        return False
+    notes = evaluator_notes.lower()
+    return any(marker in notes for marker in _GATE_BYPASS_MARKERS)
 
 # Friendly labels for the four core activities, used in the compact
 # completed-activity summary rows the chat UI renders on resume.
@@ -127,6 +151,13 @@ _DAILY_COMPLETE_MESSAGE = (
     "to review the day and advance when you're ready."
 )
 
+# Shown when the learner leaves while an activity is still below the pass-mark
+# threshold — the day stays open so they can come back and retry it.
+_DAILY_GATE_INCOMPLETE_MESSAGE = (
+    "No problem — this day is still open. Come back any time to retry the "
+    "activity and pass it when you're ready."
+)
+
 
 def _validate_teacher_input(**fields) -> None:
     """Guard the teacher-agent boundary. Raises under ``strict_contracts``;
@@ -137,8 +168,9 @@ def _validate_teacher_input(**fields) -> None:
         )
         is None
     ):
-        logger.warning(
-            "Teacher agent input validation failed — proceeding on legacy path",
+        log.warning(
+            "teacher_input_validation_failed",
+            note="proceeding on legacy path",
         )
 
 
@@ -622,9 +654,11 @@ class LearningSessionService:
         `UserCoursePreference`. Resume the existing LearningSession if one
         already exists for that DailySession.
         """
+        t0 = time.perf_counter()
         daily = await self._resolve_daily_session(
             user_id=user_id, daily_session_id=daily_session_id
         )
+        resolve_daily_ms = (time.perf_counter() - t0) * 1000
 
         # Resume an existing chat envelope if one exists for this DailySession.
         existing = self.session_repo.get_by_daily_session_id(daily.id)
@@ -633,6 +667,12 @@ class LearningSessionService:
             # Existing envelopes may have been created before the source
             # day was authored, or before file-mode carried the full persona.
             self._maybe_refresh_file_persona(existing, daily.day_id)
+            log.info(
+                "session_create_resumed",
+                user_id=user_id,
+                daily_session_id=daily.id,
+                total_ms=round((time.perf_counter() - t0) * 1000),
+            )
             return StartSessionResponse(
                 session_id=existing.session_id,
                 daily_session_id=daily.id,
@@ -655,6 +695,7 @@ class LearningSessionService:
         except DayNotFound:
             file_persona = None
 
+        planner_ms: float | None = None
         if file_persona is not None:
             topic_label, skill_name, sub_level, teacher_instructions = (
                 file_persona
@@ -679,6 +720,7 @@ class LearningSessionService:
             topic_dict = v2_course_topic(day, week, archetype)
             course_slug = f"{daily.course_length}-course"
             learner_profile = self._profile_context(user_id)
+            planner_t0 = time.perf_counter()
             try:
                 plan = await PlannerAgent().generate(
                     user_id=user_id,
@@ -687,11 +729,15 @@ class LearningSessionService:
                     learner_profile=learner_profile,
                 )
             except Exception:
-                logger.exception(
-                    "PlannerAgent failed for user_id=%s daily=%s; using neutral persona",
-                    user_id, daily.session_id,
+                log.exception(
+                    "planner_agent_failed",
+                    user_id=user_id,
+                    daily_session_id=daily.session_id,
+                    note="using neutral persona",
                 )
+                capture_to_sentry()
                 plan = {"teacher_instructions": None}
+            planner_ms = (time.perf_counter() - planner_t0) * 1000
             topic_label = day.topic
             skill_name = topic_dict["sub_skill"]
             sub_level = topic_dict["sub_level"]
@@ -699,6 +745,7 @@ class LearningSessionService:
             teacher_instructions = plan.get("teacher_instructions")
 
         session_id = uuid.uuid4().hex
+        persist_t0 = time.perf_counter()
         self.session_repo.create(
             session_id=session_id,
             user_id=user_id,
@@ -713,6 +760,17 @@ class LearningSessionService:
             teacher_instructions=teacher_instructions,
         )
         self.db.commit()
+
+        log.info(
+            "session_create_timing",
+            user_id=user_id,
+            daily_session_id=daily.id,
+            file_authored=file_persona is not None,
+            resolve_daily_ms=round(resolve_daily_ms),
+            planner_ms=round(planner_ms) if planner_ms is not None else None,
+            persist_ms=round((time.perf_counter() - persist_t0) * 1000),
+            total_ms=round((time.perf_counter() - t0) * 1000),
+        )
 
         return StartSessionResponse(
             session_id=session_id,
@@ -1009,9 +1067,10 @@ class LearningSessionService:
                         )
                         session.teacher_instructions = plan.get("teacher_instructions")
         except Exception:
-            logger.warning(
-                "Teacher-instructions refresh failed for session_id=%s; keeping existing instructions",
-                session_id,
+            log.warning(
+                "teacher_instructions_refresh_failed",
+                session_id=session_id,
+                note="keeping existing instructions",
             )
 
         session.messages = []
@@ -1108,18 +1167,65 @@ class LearningSessionService:
     async def initial_messages_stream(
         self, session_id: str
     ) -> AsyncIterator[WSOutgoingMessage]:
-        """Stream the first teaching turn when the WebSocket connects."""
-        session = self._load_session(session_id)
-        daily = await self._auto_complete_daily_if_ready(session)
-        if daily is not None and daily.status is SessionStatus.COMPLETED:
-            async for msg in self._stream_completed_daily_message():
+        """Stream the first teaching turn when the WebSocket connects.
+
+        The blueprint and a short transient welcome are yielded immediately so
+        the learner sees the lesson frame while the teaching LLM warms up. The
+        welcome is intentionally NOT persisted to ``session.messages``:
+        ``_stream_teaching_turn`` positions the scripted-plan cursor by
+        counting persisted teacher turns, so persisting it would shift the
+        cursor for authored lessons.
+        """
+        t0 = time.perf_counter()
+        first_yield_ms: float | None = None
+        welcome_ms: float | None = None
+        teaching_first_chunk_ms: float | None = None
+        try:
+            session = self._load_session(session_id)
+            daily = await self._auto_complete_daily_if_ready(session)
+            if daily is not None and daily.status is SessionStatus.COMPLETED:
+                async for msg in self._stream_completed_daily_message():
+                    if first_yield_ms is None:
+                        first_yield_ms = (time.perf_counter() - t0) * 1000
+                    yield msg
+                return
+            state = self._state_from_row(session)
+            self._enrich_state_with_profile(state, session.user_id)
+            yield self._session_blueprint_message(session, state)
+            first_yield_ms = (time.perf_counter() - t0) * 1000
+
+            welcome = (
+                f"Hi! Today we're working on {session.topic}. "
+                "Give me a moment to set up your lesson..."
+            )
+            async for msg in self._stream_chat_text(welcome):
                 yield msg
-            return
-        state = self._state_from_row(session)
-        self._enrich_state_with_profile(state, session.user_id)
-        yield self._session_blueprint_message(session, state)
-        async for msg in self._stream_teaching_turn(session, state):
-            yield msg
+            welcome_ms = (time.perf_counter() - t0) * 1000
+
+            async for msg in self._stream_teaching_turn(session, state):
+                if (
+                    teaching_first_chunk_ms is None
+                    and msg.type == "chat_stream_delta"
+                ):
+                    teaching_first_chunk_ms = (time.perf_counter() - t0) * 1000
+                yield msg
+        finally:
+            # Logged in `finally` so a mid-stream disconnect still records
+            # how far the learner got.
+            log.info(
+                "ws_initial_stream_timing",
+                session_id=session_id,
+                first_yield_ms=(
+                    round(first_yield_ms) if first_yield_ms is not None else None
+                ),
+                welcome_ms=round(welcome_ms) if welcome_ms is not None else None,
+                teaching_first_chunk_ms=(
+                    round(teaching_first_chunk_ms)
+                    if teaching_first_chunk_ms is not None
+                    else None
+                ),
+                total_ms=round((time.perf_counter() - t0) * 1000),
+            )
 
     async def resume_messages_stream(
         self, session_id: str
@@ -1171,6 +1277,40 @@ class LearningSessionService:
             async for msg in self._resume_practice_task(session):
                 yield msg
             return
+
+        # Pass-mark gate: an EVALUATED-but-failed attempt left the day open with
+        # no pending activity (the learner dropped before clicking Retry, or
+        # left via the dashboard). Reset that attempt back to PENDING and
+        # re-deliver it so the reconnect lands on the retry — never on a bogus
+        # "day complete" message.
+        gate_required, gate_threshold = self._gate_settings(session.user_id)
+        if (
+            session.understanding_confirmed
+            and daily is not None
+            and daily.status is SessionStatus.IN_PROGRESS
+            and gate_required
+            and self._has_unpassed_gated_attempt(daily, gate_threshold)
+        ):
+            failed = next(
+                (
+                    a
+                    for a in self.attempts_repo.list_for_session(daily.id)
+                    if a.status is AttemptStatus.EVALUATED
+                    and not self._attempt_passes_gate(a, gate_threshold)
+                ),
+                None,
+            )
+            if failed is not None:
+                await _make_v2_session_service(self.db).reset_activity(
+                    session_id=daily.session_id,
+                    user_id=session.user_id,
+                    sequence=int(failed.sequence),
+                )
+                self._sync_task_queue_from_attempts(session)
+                self.db.commit()
+                async for msg in self._resume_practice_task(session):
+                    yield msg
+                return
 
         if session.phase == "ended":
             message = (
@@ -1376,6 +1516,13 @@ class LearningSessionService:
         ):
             return daily
 
+        # Pass-mark gate: a failed-but-EVALUATED attempt must not auto-complete
+        # the day (which would bypass the gate). Leave it IN_PROGRESS so resume
+        # re-presents the retry prompt instead of marking the day done.
+        gate_required, gate_threshold = self._gate_settings(session.user_id)
+        if gate_required and self._has_unpassed_gated_attempt(daily, gate_threshold):
+            return daily
+
         # Take the same completion lock the WS path uses so a concurrent
         # complete_session can't double-award points or skip the scorecard.
         _completing_daily_uuids.add(daily.session_id)
@@ -1387,9 +1534,10 @@ class LearningSessionService:
         except (SessionNotFound, SessionAbandoned, SessionAlreadyCompleted):
             pass
         except Exception:
-            logger.warning(
-                "Auto-complete failed for daily session_id=%s; leaving open",
-                daily.session_id,
+            log.warning(
+                "auto_complete_failed",
+                daily_session_id=daily.session_id,
+                note="leaving open",
                 exc_info=True,
             )
         finally:
@@ -1485,25 +1633,40 @@ class LearningSessionService:
         self, session_id: str, message: WSIncomingMessage
     ) -> AsyncIterator[WSOutgoingMessage]:
         session = self._load_session(session_id)
-        state = self._state_from_row(session)
-        self._enrich_state_with_profile(state, session.user_id)
+        # WS turns run outside HTTP middleware: stamp one trace_id per message so
+        # every log/LLM call this turn triggers shares a correlation id.
+        trace_id = uuid.uuid4().hex
+        structlog.contextvars.bind_contextvars(trace_id=trace_id)
+        token = set_eval_context(trace_id=trace_id, user_id=session.user_id)
+        try:
+            state = self._state_from_row(session)
+            self._enrich_state_with_profile(state, session.user_id)
 
-        if message.type == "user_message":
-            async for msg in self._handle_user_message_stream(session, state, message):
-                yield msg
-            return
-        if message.type == "task_submission":
-            async for msg in self._handle_task_submission_stream(session, state, message):
-                yield msg
-            return
-        if message.type == "follow_up_action":
-            async for msg in self._handle_follow_up_stream(session, state, message):
-                yield msg
-            return
-        yield WSOutgoingMessage(
-            type="error",
-            content=f"Unknown message type: {message.type!r}",
-        )
+            if message.type == "user_message":
+                async for msg in self._handle_user_message_stream(
+                    session, state, message
+                ):
+                    yield msg
+                return
+            if message.type == "task_submission":
+                async for msg in self._handle_task_submission_stream(
+                    session, state, message
+                ):
+                    yield msg
+                return
+            if message.type == "follow_up_action":
+                async for msg in self._handle_follow_up_stream(
+                    session, state, message
+                ):
+                    yield msg
+                return
+            yield WSOutgoingMessage(
+                type="error",
+                content=f"Unknown message type: {message.type!r}",
+            )
+        finally:
+            reset_eval_context(token)
+            structlog.contextvars.unbind_contextvars("trace_id")
 
     # ------------------------------------------------------------------
     # Per-message handlers
@@ -1588,11 +1751,11 @@ class LearningSessionService:
 
             if advance_to_practice:
                 if forced_transition and not ready_for_practice:
-                    logger.info(
-                        "learning_session %s: forcing transition to practice "
-                        "after %d teacher turns (escape valve)",
-                        session.session_id,
-                        _count_teacher_chat_turns(messages),
+                    log.info(
+                        "forcing_transition_to_practice",
+                        session_id=session.session_id,
+                        teacher_turns=_count_teacher_chat_turns(messages),
+                        note="escape valve",
                     )
                 # Pull the next pending V2 attempt and deliver it.
                 attempt = self._next_pending_attempt(session)
@@ -1689,10 +1852,10 @@ class LearningSessionService:
         except Exception:
             # Any other failure (DB, LLM, unexpected RAG error) must not kill the
             # WS handler — surface a recoverable error and keep the connection.
-            logger.warning(
-                "submit_activity failed for session_id=%s sequence=%s",
-                session.session_id,
-                sequence,
+            log.warning(
+                "submit_activity_failed",
+                session_id=session.session_id,
+                sequence=sequence,
                 exc_info=True,
             )
             yield WSOutgoingMessage(
@@ -1765,11 +1928,29 @@ class LearningSessionService:
         except ContractValidationError as exc:
             if settings.strict_contracts:
                 raise
-            logger.warning(
-                "Contract projection failed for eval/feedback attempt id=%s "
-                "archetype=%s: %s — emitting legacy payloads",
-                attempt.id, attempt.archetype_id, exc.detail,
+            log.warning(
+                "contract_projection_failed_eval_feedback",
+                attempt_id=attempt.id,
+                archetype=attempt.archetype_id,
+                detail=exc.detail,
+                note="emitting legacy payloads",
             )
+
+        # Pass-mark gating: decide (once) whether this attempt clears the
+        # learner's threshold. When gating is on we stamp a `gate` block onto
+        # the feedback so the card can render a "Not passed" banner, and a
+        # `gated_fail` short-circuits advancement/completion further down.
+        gate_required, gate_threshold = self._gate_settings(session.user_id)
+        gate_score_pct = round(float(evaluation.raw_score) * 10)
+        gated_fail = gate_required and not self._attempt_passes_gate(
+            attempt, gate_threshold
+        )
+        if gate_required:
+            feedback_dict["gate"] = {
+                "passed": not gated_fail,
+                "score_pct": gate_score_pct,
+                "threshold_pct": gate_threshold,
+            }
 
         # Check if this is a pronunciation (read-aloud) submission.
         pronunciation_data = None
@@ -1905,6 +2086,27 @@ class LearningSessionService:
         state["feedback"] = feedback_dict
         state["phase"] = "feedback"
         state["messages"] = messages
+
+        if gated_fail:
+            # Pass-mark gate: the learner scored below their threshold. Do not
+            # advance and do not complete the day — offer a retry of the same
+            # activity (or an exit to the dashboard, which leaves the day open
+            # to resume later).
+            summary_text = (
+                f"You scored {gate_score_pct}% — you need {gate_threshold}% "
+                "to move on. Want to try again?"
+            )
+            actions = ["Retry activity", "Go to dashboard"]
+            messages.append(
+                {"role": "ai", "content": summary_text, "type": "chat"}
+            )
+            session.messages = messages
+            state["messages"] = messages
+            self.session_repo.save(session)
+            self.db.commit()
+            async for msg in self._stream_chat_text(summary_text, actions=actions):
+                yield msg
+            return
 
         if self._next_pending_attempt(session) is None:
             # Last activity — skip the per-activity summary chat (scorecard +
@@ -2059,11 +2261,24 @@ class LearningSessionService:
         """End the chat and complete the V2 DailySession if not yet completed."""
         daily = self.db.get(DailySession, session.daily_session_id)
         scorecard = None
-        if daily is not None and daily.status is SessionStatus.IN_PROGRESS:
-            # If at least one attempt is evaluated, complete; otherwise leave open.
+        # Pass-mark gate: if any EVALUATED attempt is still below threshold, the
+        # day is not "done" — leaving (Go to dashboard) keeps it IN_PROGRESS so
+        # the learner can resume and retry, rather than completing on a fail.
+        gate_required, gate_threshold = self._gate_settings(session.user_id)
+        gate_block = (
+            daily is not None
+            and daily.status is SessionStatus.IN_PROGRESS
+            and gate_required
+            and self._has_unpassed_gated_attempt(daily, gate_threshold)
+        )
+        if daily is not None and daily.status is SessionStatus.IN_PROGRESS and not gate_block:
+            # Only complete when all activities have been attempted (no pending remain)
+            # AND at least one has been evaluated. Calling complete_session while
+            # activities are still PENDING would produce a partial scorecard.
             attempts = self.attempts_repo.list_for_session(daily.id)
             evaluated = [a for a in attempts if a.status is AttemptStatus.EVALUATED]
-            if evaluated:
+            has_pending = self._next_pending_attempt(session) is not None
+            if evaluated and not has_pending:
                 existing_scorecard = ScorecardRepository(self.db).get_for_session(
                     daily.id
                 )
@@ -2087,9 +2302,9 @@ class LearningSessionService:
                         # Any other failure (DB/LLM/RAG) must not kill the WS
                         # handler — the farewell still streams below so the chat
                         # degrades gracefully instead of hanging.
-                        logger.warning(
-                            "complete_session failed for daily session_id=%s",
-                            daily.session_id,
+                        log.warning(
+                            "complete_session_failed",
+                            daily_session_id=daily.session_id,
                             exc_info=True,
                         )
                     finally:
@@ -2165,7 +2380,9 @@ class LearningSessionService:
                 session_meta=session_meta,
             )
 
-        farewell = _DAILY_COMPLETE_MESSAGE
+        farewell = (
+            _DAILY_GATE_INCOMPLETE_MESSAGE if gate_block else _DAILY_COMPLETE_MESSAGE
+        )
         messages = list(session.messages or [])
         messages.append({"role": "ai", "content": farewell, "type": "chat"})
         session.messages = messages
@@ -2202,10 +2419,10 @@ class LearningSessionService:
                 timeout=settings.RAG_MENTOR_NOTE_TIMEOUT_S,
             )
         except Exception:
-            logger.warning(
-                "Coach's Note not ready in-band for session=%s; "
-                "background worker will persist it",
-                daily_uuid,
+            log.warning(
+                "coach_note_not_ready_in_band",
+                session_id=daily_uuid,
+                note="background worker will persist it",
             )
             return None
 
@@ -2383,10 +2600,10 @@ class LearningSessionService:
             v2_service = _make_v2_session_service(self.db)
             attempt = await v2_service.prepare_attempt_for_delivery(attempt)
         except Exception:
-            logger.exception(
-                "Failed to repair task_content for attempt id=%s; "
-                "delivering as-is",
-                attempt.id,
+            log.exception(
+                "repair_task_content_failed",
+                attempt_id=attempt.id,
+                note="delivering as-is",
             )
         self._apply_task_contract(attempt)
         return attempt
@@ -2403,7 +2620,7 @@ class LearningSessionService:
 
         This is the deliberate projection boundary: it runs at *delivery*, called
         right after ``prepare_attempt_for_delivery`` attaches TTS audio. Projecting
-        earlier (e.g. in ``SessionService._materialise_attempt``) would run before
+        earlier (e.g. in ``SessionService._generate_attempt_content``) would run before
         audio exists, so listening payloads (``DictationPayload``, ``LISTEN_CLOZE``)
         would fail their ``AudioMixin`` requirement. Keep projection here.
         """
@@ -2418,10 +2635,12 @@ class LearningSessionService:
         except ContractValidationError as exc:
             if settings.strict_contracts:
                 raise
-            logger.warning(
-                "Contract projection failed for attempt id=%s archetype=%s: %s "
-                "— delivering legacy content",
-                attempt.id, attempt.archetype_id, exc.detail,
+            log.warning(
+                "contract_projection_failed",
+                attempt_id=attempt.id,
+                archetype=attempt.archetype_id,
+                detail=exc.detail,
+                note="delivering legacy content",
             )
             return
         widgets = contract_widgets(attempt.archetype_id)
@@ -2445,6 +2664,42 @@ class LearningSessionService:
         if next_attempt is None:
             return ["Go to dashboard"]
         return ["Next activity", "Go to dashboard"]
+
+    # ------------------------------------------------------------------
+    # Pass-mark gating
+    # ------------------------------------------------------------------
+
+    def _gate_settings(self, user_id: int) -> tuple[bool, int]:
+        """Return (require_pass_to_advance, pass_threshold_pct) for the user."""
+        pref = PreferenceService(self.db).get(user_id=user_id)
+        return bool(pref.require_pass_to_advance), int(pref.pass_threshold_pct)
+
+    def _attempt_passes_gate(
+        self, attempt: ActivityAttempt, threshold_pct: int
+    ) -> bool:
+        """True if the attempt clears the threshold or is an error fallback.
+
+        raw_score is 0–10, the threshold is a 0–100 percentage, so the pass
+        line is ``raw_score * 10 >= threshold_pct``. Infra/structural fallback
+        scores (detected via evaluator_notes) bypass the gate entirely.
+        """
+        evaluation = attempt.evaluation
+        if evaluation is None:
+            return False
+        if _is_gate_bypass(evaluation.evaluator_notes):
+            return True
+        return float(evaluation.raw_score) * 10 >= threshold_pct
+
+    def _has_unpassed_gated_attempt(
+        self, daily: DailySession, threshold_pct: int
+    ) -> bool:
+        """True if any EVALUATED attempt is a genuine sub-threshold fail."""
+        for attempt in self.attempts_repo.list_for_session(daily.id):
+            if attempt.status is AttemptStatus.EVALUATED and not (
+                self._attempt_passes_gate(attempt, threshold_pct)
+            ):
+                return True
+        return False
 
     # ------------------------------------------------------------------
     # Streaming primitives
@@ -2525,7 +2780,7 @@ class LearningSessionService:
                 except StopAsyncIteration:
                     break
                 except TimeoutError:
-                    logger.warning(timeout_message)
+                    log.warning("stream_chunk_timeout", detail=timeout_message)
                     break
                 timeout = chunk_timeout_s
                 yield chunk
@@ -2641,7 +2896,7 @@ class LearningSessionService:
                     stream_id=stream_id, content=chunk,
                 )
         except Exception:
-            logger.exception("teaching turn streaming failed; using fallback")
+            log.exception("teaching_turn_streaming_failed", note="using fallback")
 
         content = "".join(chunks).strip()
         if not content:
@@ -2744,8 +2999,9 @@ def _make_v2_session_service(db: Session) -> SessionService:
         )
         service._mentor_generator = mentor_gen
     except Exception:
-        logger.warning(
-            "RAG services unavailable in learning chat; mentor notes disabled",
+        log.warning(
+            "rag_services_unavailable",
+            note="mentor notes disabled",
             exc_info=True,
         )
     return service

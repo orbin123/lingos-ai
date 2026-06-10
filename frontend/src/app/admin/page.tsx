@@ -36,6 +36,18 @@ export default function AdminDashboardPage() {
         <MetricCard label="AI requests 24h" value={summary?.ai_requests_24h ?? "—"} />
         <MetricCard label="AI errors 24h" value={summary?.ai_errors_24h ?? "—"} />
         <MetricCard
+          label="AI cost 24h"
+          value={summary ? `$${summary.ai_cost_24h.toFixed(2)}` : "—"}
+        />
+        <MetricCard
+          label="Avg latency 24h"
+          value={
+            summary?.ai_avg_latency_ms_24h == null
+              ? "—"
+              : `${summary.ai_avg_latency_ms_24h} ms`
+          }
+        />
+        <MetricCard
           label="Pending feedback"
           value={summary?.pending_feedback_reviews ?? "—"}
         />

@@ -21,12 +21,12 @@ Design notes:
 
 from __future__ import annotations
 
-import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from functools import lru_cache
 from typing import Any, TypeVar
 
 import openai
+import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, ValidationError
@@ -42,7 +42,7 @@ from app.ai.llm.exceptions import (
 from app.ai.llm.usage import UsageRecord, estimate_cost, log_usage
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -72,9 +72,14 @@ class OpenAILLMClient:
         temperature: float = _DEFAULT_TEMPERATURE,
         timeout: float = _DEFAULT_TIMEOUT_S,
         max_retries: int = _MAX_RETRIES,
+        usage_sink: Callable[[UsageRecord], None] | None = None,
     ) -> None:
         self._model = model
         self._temperature = temperature
+        # Optional hook invoked with the UsageRecord after every call. Used by
+        # the AIRequestLog instrumentation seam (LoggingLLMClient) to capture
+        # token counts; default None keeps the client's behaviour unchanged.
+        self._usage_sink = usage_sink
         # ChatOpenAI handles its own retry/backoff for transient errors.
         # We tell it how many tries; it does exponential backoff internally.
         self._chat = ChatOpenAI(
@@ -84,6 +89,11 @@ class OpenAILLMClient:
             max_retries=max_retries,
             api_key=settings.OPENAI_API_KEY,
         )
+
+    @property
+    def model(self) -> str:
+        """The model id this client targets (for logging / pricing)."""
+        return self._model
 
     # ------------------------------------------------------------------
     # Public — generate_text
@@ -154,7 +164,11 @@ class OpenAILLMClient:
         parsing.
         """
         chat = self._maybe_rebind_temperature(temperature)
-        structured_chat = chat.with_structured_output(output_model)
+        # include_raw=True returns {"raw": AIMessage, "parsed": <model>,
+        # "parsing_error": <exc|None>}. The raw AIMessage carries
+        # usage_metadata, which a plain with_structured_output() drops — this
+        # is what lets us price + log token usage on structured calls.
+        structured_chat = chat.with_structured_output(output_model, include_raw=True)
 
         messages = [
             SystemMessage(content=system_prompt),
@@ -166,9 +180,11 @@ class OpenAILLMClient:
         except ValidationError as exc:
             # The LLM answered, but the answer didn't match the schema.
             # Don't retry — the prompt or schema needs work.
-            logger.warning(
-                "llm_structured_validation_failed model=%s schema=%s err=%s",
-                self._model, output_model.__name__, exc,
+            log.warning(
+                "llm_structured_validation_failed",
+                model=self._model,
+                schema=output_model.__name__,
+                error=str(exc),
             )
             raise LLMValidationError(
                 f"LLM output failed schema validation for "
@@ -177,17 +193,41 @@ class OpenAILLMClient:
         except Exception as exc:
             raise self._translate_exception(exc) from exc
 
-        # NOTE: with_structured_output() loses access to token usage
-        # metadata in some LangChain versions. We log a marker so we
-        # know a structured call happened even if we can't price it.
-        logger.info(
-            "llm_structured_ok model=%s schema=%s",
-            self._model, output_model.__name__,
-        )
+        # With include_raw=True the result is a dict; emit usage off the raw
+        # AIMessage even when parsing later fails, so the call is still logged.
+        raw = result.get("raw") if isinstance(result, dict) else None
+        if raw is not None:
+            self._log_response_usage(raw)
 
-        # `result` is already an instance of `output_model` — LangChain
+        # A schema mismatch is surfaced here (not raised by ainvoke) when
+        # include_raw=True. Treat it the same as the ValidationError path.
+        parsing_error = result.get("parsing_error") if isinstance(result, dict) else None
+        if parsing_error is not None:
+            log.warning(
+                "llm_structured_validation_failed",
+                model=self._model,
+                schema=output_model.__name__,
+                error=str(parsing_error),
+            )
+            raise LLMValidationError(
+                f"LLM output failed schema validation for "
+                f"{output_model.__name__}: {parsing_error}"
+            )
+
+        parsed = result.get("parsed") if isinstance(result, dict) else result
+        if parsed is None:
+            raise LLMValidationError(
+                f"LLM returned no parseable output for {output_model.__name__}"
+            )
+
+        log.info(
+            "llm_structured_ok",
+            model=self._model,
+            schema=output_model.__name__,
+        )
+        # `parsed` is already an instance of `output_model` — LangChain
         # validated it for us. Return as-is.
-        return result  # type: ignore[no-any-return]
+        return parsed  # type: ignore[no-any-return]
 
     # ------------------------------------------------------------------
     # Public — escape hatch for legacy agents
@@ -233,15 +273,20 @@ class OpenAILLMClient:
         output_tokens = int(meta.get("output_tokens", 0) or 0)
         total = int(meta.get("total_tokens", input_tokens + output_tokens))
         cost = estimate_cost(self._model, input_tokens, output_tokens)
-        log_usage(
-            UsageRecord(
-                model=self._model,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=total,
-                cost_usd=cost,
-            )
+        record = UsageRecord(
+            model=self._model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total,
+            cost_usd=cost,
         )
+        log_usage(record)
+        if self._usage_sink is not None:
+            # Best-effort: a sink failure must never break the LLM call.
+            try:
+                self._usage_sink(record)
+            except Exception:  # pragma: no cover - defensive
+                log.warning("usage_sink_raised", exc_info=True)
 
     @classmethod
     def _chunk_content_to_text(cls, content: Any) -> str:

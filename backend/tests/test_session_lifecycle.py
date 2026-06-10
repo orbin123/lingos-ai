@@ -49,7 +49,7 @@ from app.modules.sessions.models import (
 from app.modules.streaks.models import DailyActivity, StreakFreezeUsage
 from app.modules.streaks.service import StreakService
 from app.modules.sessions.service import SessionService
-from app.modules.sessions.task_generator import GeneratedTask
+from app.modules.sessions.task_generator import GeneratedTask, StubTaskGenerator
 from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.modules.skills.models import Skill
 from app.scoring import ARCHETYPE_REGISTRY, CourseLength, SUB_SKILLS
@@ -320,6 +320,78 @@ class TestStartSession:
             == contract["evaluation_widget"]
         )
         assert content["activity_contract"]["feedback_widget"] == contract["feedback_widget"]
+
+
+class _OverlapTrackingTaskGenerator:
+    """StubTaskGenerator wrapper that records how many generations overlap."""
+
+    def __init__(self) -> None:
+        self._inner = StubTaskGenerator()
+        self._in_flight = 0
+        self.max_in_flight = 0
+
+    async def generate(self, **kwargs) -> GeneratedTask:
+        self._in_flight += 1
+        self.max_in_flight = max(self.max_in_flight, self._in_flight)
+        try:
+            # Yield to the event loop so sibling generations can start.
+            await asyncio.sleep(0.01)
+            return await self._inner.generate(**kwargs)
+        finally:
+            self._in_flight -= 1
+
+
+class _FailOnceTaskGenerator:
+    """Fails generation for one archetype; succeeds for the rest."""
+
+    def __init__(self, fail_archetype_id: str) -> None:
+        self._inner = StubTaskGenerator()
+        self._fail_archetype_id = fail_archetype_id
+
+    async def generate(self, *, archetype, **kwargs) -> GeneratedTask:
+        await asyncio.sleep(0.01)
+        if archetype.archetype_id == self._fail_archetype_id:
+            raise RuntimeError("generation blew up")
+        return await self._inner.generate(archetype=archetype, **kwargs)
+
+
+class TestStartSessionConcurrency:
+    @pytest.mark.asyncio
+    async def test_task_generation_runs_concurrently(self, db_session):
+        generator = _OverlapTrackingTaskGenerator()
+        service = SessionService(db_session, task_generator=generator)
+        session = await service.start_session(
+            user_id=_user_id(db_session),
+            day_id="day_24_09_03",
+            course_length=CourseLength.WEEKS_24,
+            tasks_per_day=4,
+            allowed_activities={"read", "write", "listen", "speak"},
+        )
+        assert len(session.attempts) == 4
+        # All four generations are awaited via asyncio.gather, so at least
+        # two must have been in flight at once.
+        assert generator.max_in_flight >= 2
+        # Persisted order still follows the plan's sequence.
+        assert [a.sequence for a in session.attempts] == [1, 2, 3, 4]
+
+    @pytest.mark.asyncio
+    async def test_one_failed_generation_commits_nothing(self, db_session):
+        source_day = file_source.get_day(9, 2)
+        fail_id = source_day.task_archetypes_used[-1]
+        service = SessionService(
+            db_session, task_generator=_FailOnceTaskGenerator(fail_id)
+        )
+        with pytest.raises(RuntimeError, match="generation blew up"):
+            await service.start_session(
+                user_id=_user_id(db_session),
+                day_id="day_24_09_03",
+                course_length=CourseLength.WEEKS_24,
+                tasks_per_day=4,
+                allowed_activities={"read", "write", "listen", "speak"},
+            )
+        db_session.rollback()
+        assert db_session.query(ActivityAttempt).count() == 0
+        assert db_session.query(DailySession).count() == 0
 
 
 # ── lifecycle ──────────────────────────────────────────────────────

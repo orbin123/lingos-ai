@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from app import models  # noqa: F401
 from app.core.database import Base, get_db
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import User, UserProfile
+from app.modules.auth.models import Role, User, UserProfile, UserRole
 from app.modules.curriculum.models import (
     Course,
     CourseLevel,
@@ -51,6 +51,8 @@ def dashboard_client(monkeypatch):
         engine,
         tables=[
             User.__table__,
+            Role.__table__,
+            UserRole.__table__,
             UserProfile.__table__,
             Course.__table__,
             UserEnrollment.__table__,

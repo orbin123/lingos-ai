@@ -7,14 +7,25 @@ will be wired in by the admin team in a follow-up.
 """
 
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
+from app.ai.llm.usage import estimate_cost
 from app.core.config import settings
-from app.modules.admin.models import AIRequestLog, AdminAuditLog, FeedbackReview
+from app.modules.admin.models import (
+    AIEvaluation,
+    AIRequestLog,
+    AdminAuditLog,
+    FeedbackReview,
+)
 from app.modules.admin.sanitization import mask_sensitive_text, sanitize_for_admin
 from app.modules.admin.schemas import (
+    AIQualityReport,
+    AIQualityRow,
+    AIQualityTimeSeriesPoint,
+    AIQualityWorst,
     AIRequestLogRead,
     AdminAuditLogRead,
     AdminLogUser,
@@ -156,6 +167,32 @@ class AdminRepository:
             .scalar()
             or 0
         )
+        avg_latency_raw = (
+            self.db.query(func.avg(AIRequestLog.latency_ms))
+            .filter(AIRequestLog.created_at >= since)
+            .scalar()
+        )
+        ai_avg_latency_ms_24h = (
+            int(avg_latency_raw) if avg_latency_raw is not None else None
+        )
+        # Cost isn't stored — derive it from (model, tokens) per row via the
+        # pricing table. The 24h window keeps this row count bounded.
+        cost_rows = (
+            self.db.query(
+                AIRequestLog.model,
+                AIRequestLog.input_tokens,
+                AIRequestLog.output_tokens,
+            )
+            .filter(AIRequestLog.created_at >= since)
+            .all()
+        )
+        ai_cost_24h = round(
+            sum(
+                estimate_cost(model, in_tok or 0, out_tok or 0) or 0.0
+                for model, in_tok, out_tok in cost_rows
+            ),
+            6,
+        )
         pending_feedback_reviews = self.count_pending_feedback_reviews()
         recent_users = [
             AdminRecentUser(
@@ -179,6 +216,8 @@ class AdminRepository:
             feedback_generated=feedback_generated,
             ai_requests_24h=ai_requests_24h,
             ai_errors_24h=ai_errors_24h,
+            ai_cost_24h=ai_cost_24h,
+            ai_avg_latency_ms_24h=ai_avg_latency_ms_24h,
             pending_feedback_reviews=pending_feedback_reviews,
             recent_users=recent_users,
         )
@@ -393,6 +432,125 @@ class AdminRepository:
         if log is None:
             return None
         return self._ai_log_out(log, include_sensitive=include_sensitive)
+
+    def ai_quality(self, *, days: int = 7, worst_limit: int = 20) -> AIQualityReport:
+        """Rolling LLM-as-judge quality over the last ``days`` (Part B Phase 2).
+
+        Returns per-``target_type`` mean scores + the worst-scoring outputs
+        (any axis < 6) for human review. Scores are stored as ``Numeric`` —
+        coerced to float here for the JSON response.
+        """
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+
+        def _f(value: Any) -> float | None:
+            return float(value) if value is not None else None
+
+        def _round(value: float | None) -> float | None:
+            return round(value, 2) if value is not None else None
+
+        mean_rows = (
+            self.db.query(
+                AIEvaluation.target_type,
+                func.count(AIEvaluation.id),
+                func.avg(AIEvaluation.accuracy),
+                func.avg(AIEvaluation.relevance),
+                func.avg(AIEvaluation.helpfulness),
+                func.avg(AIEvaluation.correctness),
+                func.avg(AIEvaluation.faithfulness),
+            )
+            .filter(AIEvaluation.created_at >= since)
+            .group_by(AIEvaluation.target_type)
+            .all()
+        )
+        means = [
+            AIQualityRow(
+                target_type=target_type,
+                judged_count=int(count or 0),
+                mean_accuracy=_round(_f(acc)),
+                mean_relevance=_round(_f(rel)),
+                mean_helpfulness=_round(_f(helps)),
+                mean_correctness=_round(_f(corr)),
+                mean_faithfulness=_round(_f(faith)),
+            )
+            for target_type, count, acc, rel, helps, corr, faith in mean_rows
+        ]
+        judged_count = sum(row.judged_count for row in means)
+
+        # Worst-N: any non-null axis below 6 (portable across Postgres/SQLite).
+        worst_rows = (
+            self.db.query(AIEvaluation)
+            .filter(AIEvaluation.created_at >= since)
+            .filter(
+                or_(
+                    AIEvaluation.accuracy < 6,
+                    AIEvaluation.relevance < 6,
+                    AIEvaluation.helpfulness < 6,
+                    AIEvaluation.correctness < 6,
+                    AIEvaluation.faithfulness < 6,
+                )
+            )
+            .order_by(AIEvaluation.created_at.desc())
+            .limit(worst_limit)
+            .all()
+        )
+        worst = [
+            AIQualityWorst(
+                id=row.id,
+                trace_id=row.trace_id,
+                target_type=row.target_type,
+                target_id=row.target_id,
+                judge_model=row.judge_model,
+                accuracy=_f(row.accuracy),
+                relevance=_f(row.relevance),
+                helpfulness=_f(row.helpfulness),
+                correctness=_f(row.correctness),
+                faithfulness=_f(row.faithfulness),
+                rationale=row.rationale,
+                created_at=row.created_at,
+            )
+            for row in worst_rows
+        ]
+
+        # Per-day means per target_type (Part B Phase 3). ``func.date`` is
+        # portable across SQLite and Postgres and buckets by UTC calendar day.
+        day_col = func.date(AIEvaluation.created_at)
+        series_rows = (
+            self.db.query(
+                day_col.label("day"),
+                AIEvaluation.target_type,
+                func.count(AIEvaluation.id),
+                func.avg(AIEvaluation.accuracy),
+                func.avg(AIEvaluation.relevance),
+                func.avg(AIEvaluation.helpfulness),
+                func.avg(AIEvaluation.correctness),
+                func.avg(AIEvaluation.faithfulness),
+            )
+            .filter(AIEvaluation.created_at >= since)
+            .group_by(day_col, AIEvaluation.target_type)
+            .order_by(day_col.asc())
+            .all()
+        )
+        series = [
+            AIQualityTimeSeriesPoint(
+                date=str(day),
+                target_type=target_type,
+                judged_count=int(count or 0),
+                mean_accuracy=_round(_f(acc)),
+                mean_relevance=_round(_f(rel)),
+                mean_helpfulness=_round(_f(helps)),
+                mean_correctness=_round(_f(corr)),
+                mean_faithfulness=_round(_f(faith)),
+            )
+            for day, target_type, count, acc, rel, helps, corr, faith in series_rows
+        ]
+
+        return AIQualityReport(
+            days=days,
+            judged_count=judged_count,
+            means=means,
+            worst=worst,
+            series=series,
+        )
 
     def list_payments(self, *, limit: int = 100) -> list[PaymentRead]:
         rows = (
@@ -758,6 +916,9 @@ class AdminRepository:
             error_message = "Sensitive technical details hidden."
         else:
             error_message = safe_error
+        cost_usd = estimate_cost(
+            log.model, log.input_tokens or 0, log.output_tokens or 0
+        )
         return AIRequestLogRead(
             id=log.id,
             user_id=log.user_id,
@@ -767,6 +928,7 @@ class AdminRepository:
             model=log.model,
             input_tokens=log.input_tokens,
             output_tokens=log.output_tokens,
+            cost_usd=cost_usd,
             latency_ms=log.latency_ms,
             status=log.status,
             error_message=error_message,

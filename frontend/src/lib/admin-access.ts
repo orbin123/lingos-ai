@@ -7,6 +7,7 @@ export const ADMIN_NAV_ITEMS = [
   { href: "/admin/payments", label: "Payments" },
   { href: "/admin/subscribers", label: "Subscribers" },
   { href: "/admin/ai-logs", label: "AI Logs" },
+  { href: "/admin/ai-quality", label: "AI Quality" },
   { href: "/admin/feedback-review", label: "Feedback Review" },
   { href: "/admin/user-reviews", label: "User Reviews" },
   { href: "/admin/audit-logs", label: "Audit Logs" },

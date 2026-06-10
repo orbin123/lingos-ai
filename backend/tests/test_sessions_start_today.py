@@ -17,7 +17,7 @@ from sqlalchemy.pool import StaticPool
 from app import models  # noqa: F401 — populate Base.metadata
 from app.core.database import Base, get_db
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import User
+from app.modules.auth.models import Role, User, UserRole
 from app.modules.curriculum.models import (
     CurriculumDay,
     CurriculumWeek,
@@ -52,6 +52,8 @@ def db_session():
         engine,
         tables=[
             User.__table__,
+            Role.__table__,
+            UserRole.__table__,
             Skill.__table__,
             SkillPoints.__table__,
             SkillPointsLog.__table__,

@@ -12,7 +12,7 @@ from sqlalchemy.pool import StaticPool
 from app import models  # noqa: F401
 from app.core.database import Base, get_db
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import User
+from app.modules.auth.models import Role, User, UserRole
 from app.modules.preferences.models import UserCoursePreference
 from app.modules.preferences.routes import router as preferences_router
 
@@ -26,7 +26,12 @@ def db_session():
     )
     Base.metadata.create_all(
         engine,
-        tables=[User.__table__, UserCoursePreference.__table__],
+        tables=[
+            User.__table__,
+            Role.__table__,
+            UserRole.__table__,
+            UserCoursePreference.__table__,
+        ],
     )
     SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     db = SessionLocal()

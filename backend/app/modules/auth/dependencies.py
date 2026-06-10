@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import decode_token
-from app.modules.auth.models import ROLE_SUPER_ADMIN, User
+from app.modules.auth.models import ROLE_LEARNER, ROLE_SUPER_ADMIN, User
 from app.modules.auth.repository import UserRepository
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -81,6 +81,14 @@ def require_role(required_roles: Iterable[str]):
         return current_user
 
     return _dependency
+
+
+# Learner-surface guard. Inclusive by design: User.role_names() defaults to
+# "learner" when no role rows exist, and admins typically also hold the
+# learner role. Super admins are allowed through (owner accounts predate the
+# role tables and may hold only admin roles); a token scoped exclusively to
+# the plain "admin" role is rejected.
+require_learner = require_role([ROLE_LEARNER, ROLE_SUPER_ADMIN])
 
 
 def require_permission(permission_key: str):

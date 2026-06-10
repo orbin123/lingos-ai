@@ -12,7 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.dependencies import get_current_user, require_learner
 from app.modules.auth.models import User
 from app.modules.curriculum.models import CurriculumDay, CurriculumWeek
 from app.modules.feedback_memory.rag_service import FeedbackRAGService
@@ -56,7 +56,11 @@ from app.modules.skills.models import Skill
 from app.scoring import get_archetype
 
 
-router = APIRouter(prefix="/progress", tags=["progress"])
+router = APIRouter(
+    prefix="/progress",
+    tags=["progress"],
+    dependencies=[Depends(require_learner)],
+)
 
 # Map CEFR level → difficulty bucket for the dashboard breakdown. The
 # new curriculum carries CEFR at the week level; per-activity difficulty

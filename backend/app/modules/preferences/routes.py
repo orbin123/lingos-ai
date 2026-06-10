@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.dependencies import get_current_user, require_learner
 from app.modules.auth.models import User
 from app.modules.preferences.schemas import (
     UserCoursePreferenceRead,
@@ -15,7 +15,11 @@ from app.modules.preferences.schemas import (
 from app.modules.preferences.service import PreferenceService
 
 
-router = APIRouter(prefix="/preferences", tags=["preferences"])
+router = APIRouter(
+    prefix="/preferences",
+    tags=["preferences"],
+    dependencies=[Depends(require_learner)],
+)
 
 
 @router.get("", response_model=UserCoursePreferenceRead)

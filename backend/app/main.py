@@ -9,7 +9,9 @@ from fastapi.staticfiles import StaticFiles
 
 from app.ai.routes import router as ai_router
 from app.core.config import settings
+from app.core.logging import AccessLogMiddleware, TraceIDMiddleware, configure_logging
 from app.core.rate_limit import AdminRateLimitMiddleware
+from app.core.sentry import init_sentry
 from app.modules.admin.routes import router as admin_router
 from app.modules.auth.routes import router as auth_router
 from app.modules.challenges.routes import router as challenges_router
@@ -31,6 +33,9 @@ from app.modules.streaks.routes import router as streaks_router
 
 load_dotenv("../.env")
 
+configure_logging()
+init_sentry()
+
 app = FastAPI(
     title="LingosAI - English Tutor API",
     version='0.1.0',
@@ -46,6 +51,13 @@ app.add_middleware(
 )
 
 app.add_middleware(AdminRateLimitMiddleware)
+
+# Runs inside TraceIDMiddleware so every access line carries a bound trace_id;
+# wraps the rate limiter so 429s are logged too.
+app.add_middleware(AccessLogMiddleware)
+
+# Added last → outermost: stamps a trace_id before any other middleware logs.
+app.add_middleware(TraceIDMiddleware)
 
 
 # ---------------------------------------------------------------------------

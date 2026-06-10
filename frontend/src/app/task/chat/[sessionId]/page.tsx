@@ -168,6 +168,8 @@ interface FeedbackPayload {
   practice_suggestion?: string;
   next_tip?: string | null;
   sub_skill_breakdown?: Record<string, number>;
+  // Pass-mark gating: present only when the learner has the gate enabled.
+  gate?: { passed: boolean; score_pct: number; threshold_pct: number };
 }
 
 /* ── Pronunciation result payload ─────────────────────────────────────── */
@@ -276,12 +278,49 @@ function latestCompletedSummarySequence(
 }
 
 function navigationPromptActions(actions?: string[]): string[] | undefined {
-  if (!isNavigationPromptActions(actions)) return actions;
-  return (actions ?? []).filter((label) => label !== RETRY_ACTIVITY_ACTION);
+  // "Retry activity" is kept as a first-class button (the pass-mark gate sends
+  // it explicitly on a failed activity). The subtle icon-only retry affordance
+  // is reserved for the normal "Next activity" prompt and is suppressed when
+  // this explicit button is present (see `hasExplicitRetry` in the renderer).
+  return actions;
 }
 
 function isDailyCompleteFarewell(content: string): boolean {
   return content.includes("Today's activities are complete");
+}
+
+/* ── Pass-mark gate "not passed" banner ───────────────────────────────── */
+function PassMarkBanner({
+  scorePct,
+  thresholdPct,
+}: {
+  scorePct: number;
+  thresholdPct: number;
+}) {
+  return (
+    <div
+      role="status"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        marginBottom: 10,
+        padding: "11px 14px",
+        borderRadius: 10,
+        border: "1px solid oklch(82% 0.12 55)",
+        background: "oklch(96% 0.045 70)",
+        color: "oklch(40% 0.12 50)",
+        fontSize: 13.5,
+        fontWeight: 700,
+      }}
+    >
+      <RotateCcw size={15} aria-hidden />
+      <span>
+        Not passed — you scored {scorePct}%, need {thresholdPct}% to advance.
+        Retry this activity to move on.
+      </span>
+    </div>
+  );
 }
 
 function hydrateResultEventsFromState(state: LearningSessionState): ChatEvent[] {
@@ -1224,6 +1263,7 @@ export default function ChatSessionPage() {
     dayNumber: null,
   });
   const [phase, setPhase] = useState<"teaching" | "practice" | "submitted" | "ended">("teaching");
+  const [sessionCompletedByServer, setSessionCompletedByServer] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [loadingType, setLoadingType] = useState<TaskChatLoadingType>(
     initialConnectionState === "connecting" ? "teacher_loading" : null,
@@ -1304,6 +1344,7 @@ export default function ChatSessionPage() {
                   ? "submitted"
                   : "submitted";
         setPhase(nextPhase);
+        if (state.daily_completed) setSessionCompletedByServer(true);
       } catch {
         // Snapshot is best-effort; the WebSocket resume is the source of truth.
       }
@@ -1315,6 +1356,10 @@ export default function ChatSessionPage() {
 
   useEffect(() => {
     if (phase !== "ended") return;
+    // Only fetch the REST fallback when the server confirmed session completion.
+    // Skipping this when the user left mid-session (no completed_event received)
+    // prevents the spurious "Could not load your session scorecard" error.
+    if (!sessionCompletedByServer) return;
     if (typeof sessionId !== "string" || sessionId.length === 0) return;
     if (daySessionScorecard !== null) return;
 
@@ -1355,7 +1400,7 @@ export default function ChatSessionPage() {
     return () => {
       cancelled = true;
     };
-  }, [phase, sessionId, daySessionScorecard]);
+  }, [phase, sessionId, daySessionScorecard, sessionCompletedByServer]);
 
   useEffect(() => {
     if (phase === "ended") return;
@@ -1663,6 +1708,7 @@ export default function ChatSessionPage() {
       }
       if (msg.widget === "final_scorecard" || payloadKind === "final_scorecard") {
         setLoadingType(null);
+        setSessionCompletedByServer(true);
         const payload = msg.payload as unknown as FinalScorecardPayload;
         setEvents((prev) => [
           ...prev,
@@ -1696,6 +1742,7 @@ export default function ChatSessionPage() {
         // Final scorecard + RAG feedback render inline; the farewell chat
         // with "Go to dashboard" follows and drives phase → ended.
         setLoadingType(null);
+        setSessionCompletedByServer(true);
         return;
       }
       if (msg.widget === "pronunciation_result") {
@@ -1907,6 +1954,18 @@ export default function ChatSessionPage() {
       }, 0);
       return;
     }
+    if (label === RETRY_ACTIVITY_ACTION) {
+      // Pass-mark gate: re-run the activity the learner just failed. Reuse the
+      // existing reset → reconnect → resume path (backend re-delivers the now
+      // PENDING attempt). Sequence comes from the live task or, as a fallback,
+      // the most recent scorecard/pronunciation event.
+      const seq = currentSequence ?? retrySequenceFromEvents(events);
+      if (seq !== null && retryingSequence === null) {
+        setEvents((prev) => [...prev, { kind: "chat", role: "you", content: label }]);
+        void handleRetryActivity(seq);
+      }
+      return;
+    }
     if (
       label === "Next activity" &&
       (nextActivityLockRef.current ||
@@ -1959,6 +2018,7 @@ export default function ChatSessionPage() {
       // short-circuiting the refetch.
       setDaySessionScorecard(null);
       setDaySessionScorecardError(null);
+      setSessionCompletedByServer(res.data.message === "Session complete");
       setPhase(res.data.message === "Session complete" ? "ended" : "teaching");
       setLessonMeta((curr) => ({
         ...curr,
@@ -2182,10 +2242,14 @@ export default function ChatSessionPage() {
                 evt.role === "ai" &&
                 !evt.streaming &&
                 isNavigationPromptActions(evt.actions);
+              const hasExplicitRetry = (evt.actions ?? []).includes(
+                RETRY_ACTIVITY_ACTION,
+              );
               const showRetry =
                 isNavigationPrompt &&
                 i === navigationPromptChatIndex &&
-                retrySequence !== null;
+                retrySequence !== null &&
+                !hasExplicitRetry;
               const isLatestNavigationPrompt =
                 isNavigationPrompt && i === navigationPromptChatIndex;
               const useFormatted =
@@ -2320,12 +2384,20 @@ export default function ChatSessionPage() {
             }
             if (evt.kind === "feedback") {
               const lastTask = events.slice(0, i).reverse().find((e) => e.kind === "task");
+              const gate = evt.payload.gate;
               return (
-                <RuntimeFeedbackCard
-                  key={i}
-                  feedback={evt.payload}
-                  taskPayload={lastTask?.kind === "task" ? lastTask.payload : null}
-                />
+                <div key={i}>
+                  {gate && !gate.passed && (
+                    <PassMarkBanner
+                      scorePct={gate.score_pct}
+                      thresholdPct={gate.threshold_pct}
+                    />
+                  )}
+                  <RuntimeFeedbackCard
+                    feedback={evt.payload}
+                    taskPayload={lastTask?.kind === "task" ? lastTask.payload : null}
+                  />
+                </div>
               );
             }
             if (evt.kind === "pronunciation") {
@@ -2371,7 +2443,7 @@ export default function ChatSessionPage() {
             </div>
           )}
 
-          {phase === "ended" && !hasFinalScorecard && (
+          {phase === "ended" && !hasFinalScorecard && sessionCompletedByServer && (
             <div
               ref={sessionResultsRef}
               id="session-day-results"

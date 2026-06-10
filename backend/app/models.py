@@ -21,6 +21,7 @@ from app.modules.auth.models import (  # noqa: F401
 )
 from app.modules.admin.models import (  # noqa: F401
     AdminAuditLog,
+    AIEvaluation,
     AIRequestLog,
     FeedbackReview,
 )

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.admin.audit_service import client_ip_from_request
 from app.modules.admin.schemas import (
+    AIQualityReport,
     AIRequestLogRead,
     AdminAuditLogRead,
     AdminPermissionRead,
@@ -242,6 +243,19 @@ def get_ai_log(
     if log is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI log not found")
     return log
+
+
+@router.get(
+    "/ai-quality",
+    response_model=AIQualityReport,
+    status_code=status.HTTP_200_OK,
+)
+def get_ai_quality(
+    days: int = 7,
+    _current_user: User = Depends(require_permission("ai_quality.read")),
+    db: Session = Depends(get_db),
+) -> AIQualityReport:
+    return AdminService(db).ai_quality(days=days)
 
 
 @router.get(

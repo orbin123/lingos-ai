@@ -516,7 +516,12 @@ async def test_initial_stream_emits_session_blueprint_before_teaching() -> None:
     ]
 
     _assert_w1d1_blueprint_event(messages[0])
-    assert messages[1].type == "chat_message"
+    # Transient welcome streams right after the blueprint (instant first
+    # paint), then the real teaching turn follows.
+    assert messages[1].type == "chat_stream_start"
+    welcome_end = next(m for m in messages if m.type == "chat_stream_end")
+    assert "set up your lesson" in (welcome_end.content or "")
+    assert messages[-1].type == "chat_message"
 
 
 @pytest.mark.asyncio
@@ -550,7 +555,11 @@ async def test_initial_stream_emits_session_blueprint_for_48w_depth_day() -> Non
     ]
 
     _assert_blueprint_event(messages[0], day_id)
-    assert messages[1].type == "chat_message"
+    # Same transient welcome contract as the 24w path.
+    assert messages[1].type == "chat_stream_start"
+    welcome_end = next(m for m in messages if m.type == "chat_stream_end")
+    assert "set up your lesson" in (welcome_end.content or "")
+    assert messages[-1].type == "chat_message"
 
 
 @pytest.mark.asyncio

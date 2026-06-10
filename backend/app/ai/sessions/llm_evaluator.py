@@ -42,6 +42,24 @@ _DETERMINISTIC_MCQ_ARCHETYPES = frozenset({
 _DETERMINISTIC_CLOZE_ARCHETYPES = frozenset({"READ_CLOZE", "LISTEN_CLOZE"})
 
 
+def is_llm_backed_evaluation(archetype: ArchetypeSpec) -> bool:
+    """True when this archetype is graded by the LLM (open writing / speaking).
+
+    Mirrors the routing in ``LLMEvaluator.evaluate``: MCQ, cloze, and
+    error-spotting are pure arithmetic, so their feedback isn't worth a judge
+    call. Open-ended writing and ``SpeakAndRecord`` (transcript path) go through
+    the LLM and are the only outputs the quality judge should sample.
+    """
+    aid = archetype.archetype_id
+    if aid in _DETERMINISTIC_MCQ_ARCHETYPES:
+        return False
+    if aid in _DETERMINISTIC_CLOZE_ARCHETYPES:
+        return False
+    if aid == "READ_ERROR_SPOT":
+        return False
+    return True
+
+
 class EvaluationOutput(BaseModel):
     """LLM-side schema enforced via structured output."""
 

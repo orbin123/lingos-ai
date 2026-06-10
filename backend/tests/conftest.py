@@ -16,3 +16,7 @@ os.environ.setdefault("PINECONE_API_KEY", "test-pinecone-key")
 # Schema-boundary contracts raise (not fall back) under tests so contract
 # violations surface loudly. Prod default stays False during rollout.
 os.environ.setdefault("STRICT_CONTRACTS", "true")
+# AI rate limiting is off for the suite so tight request loops sharing one
+# user id never trip a limit and the limiter never dials Redis. Dedicated
+# tests opt back in via monkeypatch + reset_limiter_for_tests().
+os.environ.setdefault("AI_RATE_LIMIT_ENABLED", "false")

@@ -18,8 +18,9 @@ from app.ai.pronunciation import (
     PronunciationValidationError,
     get_default_pronunciation_service,
 )
+from app.core.ai_rate_limit import ai_rate_limit
 from app.core.database import get_db
-from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.dependencies import get_current_user, require_learner
 from app.modules.auth.models import User
 from app.modules.curriculum.exceptions import EnrollmentNotActive, NotEnrolled
 from app.modules.curriculum.file_source import (
@@ -89,15 +90,29 @@ def _make_session_service(db: Session) -> SessionService:
     still be patched in tests via dependency injection on the service.
     """
     from app.ai.sessions import build_default_agents
-    from app.ai.sessions.factory import build_rag_services
+    from app.ai.sessions.factory import build_judge, build_rag_services
+    from app.core.config import settings
     from app.modules.feedback_memory.rag_service import FeedbackRAGService
 
     evaluator, feedback_generator, task_generator = build_default_agents()
+
+    # LLM-as-judge quality scorer (Part B Phase 2) — optional, best-effort.
+    judge = None
+    if settings.AI_EVAL_ENABLED:
+        try:
+            judge = build_judge()
+        except Exception:
+            logging.getLogger(__name__).warning(
+                "Quality judge unavailable — AI eval sampling disabled",
+                exc_info=True,
+            )
+
     service = SessionService(
         db,
         evaluator=evaluator,
         feedback_generator=feedback_generator,
         task_generator=task_generator,
+        judge=judge,
     )
 
     # Wire RAG services for mentor note generation.
@@ -110,7 +125,6 @@ def _make_session_service(db: Session) -> SessionService:
     except Exception:
         # RAG is optional — if Pinecone/OpenAI embeddings aren't configured,
         # the service runs without mentor notes.
-        import logging
         logging.getLogger(__name__).warning(
             "RAG services unavailable — mentor notes disabled", exc_info=True,
         )
@@ -121,7 +135,11 @@ def _make_session_service(db: Session) -> SessionService:
 logger = logging.getLogger(__name__)
 
 
-router = APIRouter(prefix="/sessions", tags=["sessions"])
+router = APIRouter(
+    prefix="/sessions",
+    tags=["sessions"],
+    dependencies=[Depends(require_learner)],
+)
 
 
 # ── POST /sessions/start ───────────────────────────────────────────
@@ -453,6 +471,7 @@ def advance_day(
 @router.post(
     "/today/start-or-continue",
     response_model=DashboardStartResponse,
+    dependencies=[Depends(ai_rate_limit("session_start"))],
 )
 async def start_or_continue_today(
     current_user: User = Depends(get_current_user),
@@ -506,6 +525,7 @@ async def start_or_continue_today(
     "/start",
     response_model=SessionStartResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(ai_rate_limit("session_start"))],
 )
 async def start_session(
     payload: SessionStartRequest,
@@ -541,6 +561,7 @@ async def start_session(
 @router.post(
     "/start-today",
     response_model=SessionStartResponse,
+    dependencies=[Depends(ai_rate_limit("session_start"))],
 )
 async def start_today_session(
     current_user: User = Depends(get_current_user),
@@ -668,6 +689,7 @@ async def next_activity(
 @router.post(
     "/{session_id}/activities/{sequence}/submit",
     response_model=SubmitActivityResponse,
+    dependencies=[Depends(ai_rate_limit("session_submit"))],
 )
 async def submit_activity(
     session_id: str,
@@ -721,6 +743,7 @@ async def submit_activity(
 @router.post(
     "/{session_id}/complete",
     response_model=SessionScorecardRead,
+    dependencies=[Depends(ai_rate_limit("session_complete"))],
 )
 async def complete_session(
     session_id: str,
@@ -793,6 +816,7 @@ def get_scorecard(
 @router.post(
     "/pronunciation-score",
     response_model=PronunciationResult,
+    dependencies=[Depends(ai_rate_limit("pronunciation"))],
 )
 async def score_pronunciation(
     audio: UploadFile = File(
