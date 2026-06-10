@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from enum import Enum
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Integer, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Index, Integer, UniqueConstraint
 from sqlalchemy import Enum as SQLAlchemyEnum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -83,6 +83,21 @@ class User(Base, IDMixin, TimestampMixin):
         nullable=False,
         default=True,
         server_default="true",
+    )
+
+    # Email-ownership verification (OTP at registration). Google OAuth users
+    # are created verified — Google asserts ownership. Pre-existing accounts
+    # were backfilled to verified in the migration.
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     # Relationships
@@ -453,3 +468,121 @@ class UserProfile(Base, IDMixin, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<UserProfile(id={self.id}, user_id={self.user_id})>"
+
+
+class OtpPurpose(str, Enum):
+    """What an email OTP is allowed to prove."""
+
+    REGISTRATION = "registration"
+    PASSWORD_RESET = "password_reset"
+    LOGIN_STEP_UP = "login_step_up"  # reserved — wired later behind a flag
+
+
+class EmailOtp(Base, IDMixin, CreatedAtMixin):
+    """
+    One row per OTP *send*. Only the newest unconsumed row per
+    (email, purpose) is valid; issuing a new code supersedes prior rows by
+    setting consumed_at. Cooldown and the hourly send cap are derived from
+    row created_at timestamps, so no counters live anywhere else.
+
+    code_hash is an HMAC-SHA256 of the code (peppered) — the raw code is
+    never stored.
+    """
+
+    __tablename__ = "email_otp"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # Denormalized so verification can look up by the email the user typed
+    # without joining users.
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    purpose: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+    )
+
+    attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    # Set on successful verification OR when superseded by a newer code.
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    __table_args__ = (
+        Index("ix_email_otp_email_purpose", "email", "purpose"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<EmailOtp(id={self.id}, email={self.email!r}, "
+            f"purpose={self.purpose!r})>"
+        )
+
+
+class AuthSession(Base, IDMixin, CreatedAtMixin):
+    """
+    Refresh-token session. The opaque token is stored as a SHA-256 hash and
+    rotated on every refresh; family_id ties a rotation chain together so a
+    replayed (already-rotated) token revokes the whole chain (theft signal).
+    """
+
+    __tablename__ = "auth_sessions"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    refresh_token_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    # First session id of the rotation chain (self for the initial login).
+    family_id: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        index=True,
+    )
+
+    device_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    # Logout or rotation. A revoked token presented again = reuse → revoke family.
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"<AuthSession(id={self.id}, user_id={self.user_id})>"

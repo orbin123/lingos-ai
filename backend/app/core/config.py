@@ -55,6 +55,42 @@ class Settings(BaseSettings):
     # trial-end date (signup + TRIAL_DAYS) in the admin Subscribers view.
     TRIAL_DAYS: int = 7
 
+    # Email delivery — "console" logs emails to the app logger (dev/test
+    # default, the OTP shows up in the uvicorn console); "resend" sends real
+    # email via the Resend API. Missing RESEND_API_KEY falls back to console.
+    EMAIL_PROVIDER: str = "console"
+    RESEND_API_KEY: str = ""
+    # Resend sandbox (no verified domain) requires the resend.dev sender and
+    # only delivers to the Resend account owner's address.
+    EMAIL_FROM: str = "LingosAI <onboarding@resend.dev>"
+
+    # Email OTP verification. The pepper keys the HMAC of stored codes —
+    # set a dedicated random value in prod; empty falls back to jwt_secret.
+    OTP_HASHING_SECRET: str = ""
+    OTP_LENGTH: int = 6
+    OTP_TTL_MINUTES: int = 10
+    OTP_RESEND_COOLDOWN_SECONDS: int = 60
+    OTP_MAX_SENDS_PER_HOUR: int = 5
+    OTP_MAX_VERIFY_ATTEMPTS: int = 5
+
+    # Auth sessions (refresh tokens). Access tokens issued by the session
+    # flow are short; the refresh cookie keeps users logged in. The legacy
+    # jwt_access_token_expire_minutes stays for non-session tokens (e.g.
+    # OAuth relink state).
+    ACCESS_TOKEN_TTL_MINUTES: int = 20
+    REFRESH_TOKEN_TTL_DAYS: int = 30
+    REFRESH_TOKEN_REMEMBER_DAYS: int = 90
+    # False for http://localhost dev; MUST be true behind https in prod.
+    # The refresh cookie is SameSite=Lax — frontend and backend must share a
+    # registrable domain in prod (subdomains are fine).
+    AUTH_COOKIE_SECURE: bool = False
+
+    # Razorpay (Test Mode) — wired in Phase 4; placeholders so .env can be
+    # filled ahead of time.
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+
     # AI / LLM
     OPENAI_API_KEY: str
     LANGCHAIN_TRACING_V2: bool = True

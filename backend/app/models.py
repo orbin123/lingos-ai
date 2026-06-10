@@ -11,6 +11,8 @@ Add every new model to this file as you create it.
 """
 
 from app.modules.auth.models import (  # noqa: F401
+    AuthSession,
+    EmailOtp,
     OAuthAccount,
     Permission,
     Role,
@@ -40,7 +42,12 @@ from app.modules.challenges.models import (  # noqa: F401
 )
 from app.modules.challenges.a2z_game.models import A2ZUserProgress  # noqa: F401
 from app.modules.progress.models import ProgressLog, SkillPoints, SkillPointsLog  # noqa: F401
-from app.modules.subscriptions.models import Payment, Purchase, Subscription  # noqa: F401
+from app.modules.subscriptions.models import (  # noqa: F401
+    Payment,
+    PaymentEvent,
+    Purchase,
+    Subscription,
+)
 from app.modules.sessions.models import (  # noqa: F401
     ActivityAttempt,
     ActivityEvaluation,
