@@ -31,6 +31,7 @@ export interface UserOut {
   diagnosis_completed: boolean;
   is_superuser: boolean;
   is_active: boolean;
+  email_verified: boolean;
   roles: string[];
   role: string;
   preference: UserCoursePreferenceRead | null;
@@ -49,6 +50,17 @@ export interface UserOut {
 export interface TokenOut {
   access_token: string;
   token_type: string;
+}
+
+/** Generic signup response — no token; the user must verify their email. */
+export interface SignupOut {
+  status: "pending_verification";
+  email: string;
+  message: string;
+}
+
+export interface MessageOut {
+  message: string;
 }
 
 export interface UserUpdateInput {
@@ -70,11 +82,31 @@ export const authApi = {
       email: data.email,
       password: data.password,
     };
-    return api.post<UserOut>("/auth/signup", payload).then((r) => r.data);
+    return api.post<SignupOut>("/auth/signup", payload).then((r) => r.data);
   },
 
   login: (data: LoginInput) =>
     api.post<TokenOut>("/auth/login", data).then((r) => r.data),
+
+  verifyEmail: (data: { email: string; code: string }) =>
+    api.post<TokenOut>("/auth/verify-email", data).then((r) => r.data),
+
+  resendOtp: (data: { email: string }) =>
+    api.post<MessageOut>("/auth/resend-otp", data).then((r) => r.data),
+
+  requestPasswordReset: (data: { email: string }) =>
+    api
+      .post<MessageOut>("/auth/password-reset/request", data)
+      .then((r) => r.data),
+
+  confirmPasswordReset: (data: {
+    email: string;
+    code: string;
+    new_password: string;
+  }) =>
+    api
+      .post<MessageOut>("/auth/password-reset/confirm", data)
+      .then((r) => r.data),
 
   me: () => api.get<UserOut>("/auth/me").then((r) => r.data),
 

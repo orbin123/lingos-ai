@@ -37,6 +37,7 @@ function LoginPageInner() {
   const searchParams = useSearchParams();
   const oauthError = searchParams.get("error");
   const oauthErrorMessage = oauthError ? (OAUTH_ERRORS[oauthError] ?? "Sign-in failed. Please try again.") : null;
+  const resetSuccess = searchParams.get("reset") === "success";
   useRedirectIfAuthed();
   const {
     register,
@@ -70,6 +71,19 @@ function LoginPageInner() {
       }
     >
       <form onSubmit={handleSubmit(onSubmit)} noValidate>
+        {resetSuccess && !serverError && (
+          <div
+            role="status"
+            className="mb-3 rounded-lg px-3.5 py-2.5 text-[13.5px] font-medium"
+            style={{
+              background: "oklch(95% 0.04 150)",
+              color: "oklch(35% 0.1 150)",
+              border: "1px solid oklch(85% 0.07 150)",
+            }}
+          >
+            Password updated — log in with your new password.
+          </div>
+        )}
         <ServerErrorBanner message={serverError} />
 
         <FormField

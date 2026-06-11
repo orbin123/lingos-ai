@@ -3,23 +3,19 @@
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { authApi } from "@/lib/auth-api";
-import { useAuthStore } from "@/store/authStore";
+import { setPendingVerification } from "@/lib/pending-verification";
 import type { RegisterInput } from "@/lib/validators/auth";
 
 export function useRegister() {
   const router = useRouter();
-  const setToken = useAuthStore((s) => s.setToken);
 
   return useMutation({
-    // Auto-login: signup, then immediately login with same credentials
-    mutationFn: async (data: RegisterInput) => {
-      await authApi.signup(data);
-      return authApi.login({ email: data.email, password: data.password });
-    },
+    // No auto-login: the account starts unverified, so signup hands the
+    // user to the verify-email screen where the OTP completes login.
+    mutationFn: (data: RegisterInput) => authApi.signup(data),
     onSuccess: (res) => {
-      setToken(res.access_token);
-      // New users always need diagnosis
-      router.push("/diagnosis");
+      setPendingVerification(res.email);
+      router.push(`/verify-email?email=${encodeURIComponent(res.email)}`);
     },
   });
 }

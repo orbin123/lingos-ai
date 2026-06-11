@@ -3,6 +3,8 @@
 import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { authApi } from "@/lib/auth-api";
+import { getApiErrorCode } from "@/lib/errors";
+import { setPendingVerification } from "@/lib/pending-verification";
 import { useAuthStore } from "@/store/authStore";
 import type { LoginInput } from "@/lib/validators/auth";
 
@@ -20,6 +22,13 @@ export function useLogin() {
     },
     onSuccess: (me) => {
       router.push(me.diagnosis_completed ? "/dashboard" : "/diagnosis");
+    },
+    onError: (error, variables) => {
+      // Correct password but unverified email → route to the verify screen.
+      if (getApiErrorCode(error) === "email_unverified") {
+        setPendingVerification(variables.email);
+        router.push(`/verify-email?email=${encodeURIComponent(variables.email)}`);
+      }
     },
   });
 }
