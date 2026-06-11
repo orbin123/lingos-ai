@@ -262,9 +262,12 @@ export interface TrialUserItem {
   user_id: number;
   name: string;
   email: string;
+  // "unverified" | "not_started" | "trial" | "expired"
   status: string;
+  email_verified: boolean;
   signed_up_at: string;
-  trial_ends_at: string;
+  trial_started_at: string | null;
+  trial_ends_at: string | null;
 }
 
 export interface SubscribersOverview {

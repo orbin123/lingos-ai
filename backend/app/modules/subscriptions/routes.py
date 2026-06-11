@@ -9,47 +9,50 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.modules.admin.audit_service import AdminAuditService
-from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.dependencies import get_current_user, require_verified
 from app.modules.auth.models import User
 from app.modules.auth.repository import UserProfileRepository
 from app.modules.preferences.repository import UserCoursePreferenceRepository
+from app.modules.subscriptions.catalog import PLAN_CATALOG, add_years as _add_years
+from app.modules.subscriptions.exceptions import (
+    NoPlanSelected,
+    NotCancellable,
+    PlanLocked,
+    PlanNotFound,
+    TrialAlreadyUsed,
+)
 from app.modules.subscriptions.models import Payment, Purchase
 from app.modules.subscriptions.schemas import (
+    EntitlementRead,
     NotificationSettings,
     NotificationSettingsUpdate,
     PlanPurchase,
+    PlanSelect,
     PurchaseRead,
+)
+from app.modules.subscriptions.service import (
+    AccessResolution,
+    SubscriptionService,
 )
 
 subscription_router = APIRouter(prefix="/api/subscriptions", tags=["subscriptions"])
 users_router = APIRouter(prefix="/api/users", tags=["users"])
 
 
-# Course length is the only per-plan piece of state the daily-sessions flow
-# cares about — the rest (title, level) is presentational and rendered by the
-# frontend from the plan_id directly.
-PLAN_CATALOG: dict[str, dict[str, object]] = {
-    "beginner-24w": {
-        "course_length": "24w",
-        "name": "24-Week Foundation",
-        "amount_paid": 999.0,
-        "currency": "INR",
-    },
-    "beginner-48w": {
-        "course_length": "48w",
-        "name": "48-Week Plan",
-        "amount_paid": 1999.0,
-        "currency": "INR",
-    },
-}
-
-
-def _add_years(moment: datetime, years: int) -> datetime:
-    """Add calendar years, clamping Feb 29 → Feb 28 on non-leap targets."""
-    try:
-        return moment.replace(year=moment.year + years)
-    except ValueError:
-        return moment.replace(year=moment.year + years, day=28)
+def _entitlement_out(access: AccessResolution) -> EntitlementRead:
+    plan = PLAN_CATALOG.get(access.plan_id) if access.plan_id else None
+    return EntitlementRead(
+        access_state=access.state.value,
+        subscription_status=access.subscription_status,
+        plan_id=access.plan_id,
+        plan_name=access.plan_name,
+        amount=float(plan["amount_paid"]) if plan else None,  # type: ignore[arg-type]
+        currency=str(plan["currency"]) if plan else None,
+        trial_started_at=access.trial_started_at,
+        trial_ends_at=access.trial_ends_at,
+        days_remaining=access.days_remaining,
+        current_period_end=access.current_period_end,
+    )
 
 
 def _settings_from_profile(profile: object) -> NotificationSettings:
@@ -61,13 +64,85 @@ def _settings_from_profile(profile: object) -> NotificationSettings:
     )
 
 
-@subscription_router.get("/me", response_model=PurchaseRead | None)
-def get_purchase(
+@subscription_router.get("/me", response_model=EntitlementRead)
+def get_entitlement(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> PurchaseRead | None:
-    """Return the current user's one-time purchase, if one exists."""
-    return db.query(Purchase).filter(Purchase.user_id == current_user.id).first()
+) -> EntitlementRead:
+    """Return the current user's entitlement (access state, plan, trial)."""
+    access = SubscriptionService(db).resolve_access(current_user)
+    return _entitlement_out(access)
+
+
+@subscription_router.post("/select-plan", response_model=EntitlementRead)
+def select_plan(
+    payload: PlanSelect,
+    current_user: User = Depends(require_verified),
+    db: Session = Depends(get_db),
+) -> EntitlementRead:
+    """Store the chosen plan (pre-trial). Locked once a trial has started."""
+    service = SubscriptionService(db)
+    try:
+        service.select_plan(current_user, payload.plan_id)
+    except PlanNotFound:
+        raise HTTPException(status_code=404, detail="Unknown plan.")
+    except PlanLocked:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "plan_locked",
+                "message": "Your plan can no longer be changed.",
+            },
+        )
+    return _entitlement_out(service.resolve_access(current_user))
+
+
+@subscription_router.post("/start-trial", response_model=EntitlementRead)
+def start_trial(
+    current_user: User = Depends(require_verified),
+    db: Session = Depends(get_db),
+) -> EntitlementRead:
+    """One-click free trial. Idempotent while a trial/subscription runs."""
+    service = SubscriptionService(db)
+    try:
+        service.start_trial(current_user)
+    except NoPlanSelected:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "plan_not_selected",
+                "message": "Choose a plan before starting your trial.",
+            },
+        )
+    except TrialAlreadyUsed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "trial_already_used",
+                "message": "Your free trial has already been used.",
+            },
+        )
+    return _entitlement_out(service.resolve_access(current_user))
+
+
+@subscription_router.post("/cancel", response_model=EntitlementRead)
+def cancel_subscription(
+    current_user: User = Depends(require_verified),
+    db: Session = Depends(get_db),
+) -> EntitlementRead:
+    """Cancel the running trial/subscription."""
+    service = SubscriptionService(db)
+    try:
+        service.cancel(current_user)
+    except NotCancellable:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "not_cancellable",
+                "message": "There is no active subscription to cancel.",
+            },
+        )
+    return _entitlement_out(service.resolve_access(current_user))
 
 
 @subscription_router.post("/purchase", response_model=PurchaseRead)
@@ -76,7 +151,19 @@ def purchase_plan(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PurchaseRead:
-    """Mock a purchase and seed/update the user's course preference."""
+    """Mock a purchase and seed/update the user's course preference.
+
+    Dev-only legacy path, superseded by the Razorpay flow. Disabled unless
+    ENABLE_MOCK_PURCHASE is set.
+    """
+    if not settings.ENABLE_MOCK_PURCHASE:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "code": "mock_purchase_disabled",
+                "message": "Mock purchases are disabled.",
+            },
+        )
     plan = PLAN_CATALOG.get(payload.plan_id)
     if plan is None:
         raise HTTPException(

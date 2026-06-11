@@ -13,7 +13,6 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.ai.llm.usage import estimate_cost
-from app.core.config import settings
 from app.modules.admin.models import (
     AIEvaluation,
     AIRequestLog,
@@ -72,7 +71,14 @@ from app.modules.sessions.models import (
 )
 from app.modules.reviews.models import AppReview
 from app.modules.skills.models import Skill
-from app.modules.subscriptions.models import Payment, Purchase, Subscription
+from app.modules.subscriptions.catalog import PLAN_CATALOG
+from app.modules.subscriptions.models import (
+    Payment,
+    Purchase,
+    Subscription,
+    SubscriptionStatus,
+)
+from app.modules.subscriptions.service import resolve_effective_status
 
 
 def _enum_value(value: object) -> str:
@@ -567,13 +573,15 @@ class AdminRepository:
         return [self._payment_out(payment) for payment in rows]
 
     def list_subscribers(self) -> SubscribersOverview:
-        """Paying subscribers (real `Purchase` rows) + derived trial users.
+        """Paying subscribers + trial users, read from stored billing rows.
 
-        Paying group: every user with a `Purchase`, status derived from the
-        2-year access window (`access_expires_at`). Trial group: every user
-        WITHOUT a purchase, on a derived signup + TRIAL_DAYS trial.
+        Paying group: paid-lifecycle `Subscription` rows (entered via
+        payment) plus legacy `Purchase` rows. Trial group: everyone else,
+        with trial state read from the stored subscription row — never
+        derived from signup date.
         """
         now = datetime.now(timezone.utc)
+
         purchase_rows = (
             self.db.query(Purchase, User)
             .join(User, User.id == Purchase.user_id)
@@ -584,10 +592,10 @@ class AdminRepository:
             .all()
         )
 
-        purchaser_ids: set[int] = set()
+        paying_ids: set[int] = set()
         subscribers: list[SubscriberItem] = []
         for purchase, user in purchase_rows:
-            purchaser_ids.add(user.id)
+            paying_ids.add(user.id)
             expires = _as_aware(purchase.access_expires_at)
             if purchase.status == "paused":
                 status = "paused"
@@ -610,24 +618,79 @@ class AdminRepository:
                 )
             )
 
-        trial_days = timedelta(days=settings.TRIAL_DAYS)
+        # Stored subscription rows, newest first; first row per user wins
+        # (matches SubscriptionRepository.get_for_user).
+        subscription_by_user: dict[int, Subscription] = {}
+        subscription_rows = (
+            self.db.query(Subscription, User)
+            .join(User, User.id == Subscription.user_id)
+            .order_by(Subscription.id.desc())
+            .all()
+        )
+        for subscription, user in subscription_rows:
+            if subscription.user_id in subscription_by_user:
+                continue
+            subscription_by_user[subscription.user_id] = subscription
+            # Paid lifecycle = a paid period was ever started. Trial-only
+            # rows (verified/trial/expired-trial) belong in the trial group.
+            if subscription.current_period_start is None or user.id in paying_ids:
+                continue
+            paying_ids.add(user.id)
+            effective = resolve_effective_status(subscription, now)
+            if subscription.status == SubscriptionStatus.CANCELLED.value:
+                status = "cancelled"
+            else:
+                status = effective.value
+            plan = (
+                PLAN_CATALOG.get(subscription.plan_id)
+                if subscription.plan_id
+                else None
+            )
+            subscribers.append(
+                SubscriberItem(
+                    user_id=user.id,
+                    name=user.name,
+                    email=user.email,
+                    plan_id=subscription.plan_id,
+                    plan_name=subscription.plan_name,
+                    amount_paid=float(plan["amount_paid"]) if plan else None,  # type: ignore[arg-type]
+                    currency=str(plan["currency"]) if plan else None,
+                    status=status,
+                    purchased_at=subscription.current_period_start,
+                    access_expires_at=subscription.current_period_end,
+                )
+            )
+
         trials: list[TrialUserItem] = []
         for user in (
             self._base_user_query()
             .order_by(User.created_at.desc(), User.id.desc())
             .all()
         ):
-            if user.id in purchaser_ids:
+            if user.id in paying_ids:
                 continue
-            trial_ends = _as_aware(user.created_at) + trial_days
+            subscription = subscription_by_user.get(user.id)
+            if not user.email_verified:
+                status = "unverified"
+            elif subscription is None or subscription.trial_started_at is None:
+                status = "not_started"
+            else:
+                ends = _as_aware(subscription.trial_ends_at)
+                status = "trial" if ends is not None and ends > now else "expired"
             trials.append(
                 TrialUserItem(
                     user_id=user.id,
                     name=user.name,
                     email=user.email,
-                    status="trial" if trial_ends > now else "expired",
+                    status=status,
+                    email_verified=user.email_verified,
                     signed_up_at=user.created_at,
-                    trial_ends_at=trial_ends,
+                    trial_started_at=(
+                        subscription.trial_started_at if subscription else None
+                    ),
+                    trial_ends_at=(
+                        subscription.trial_ends_at if subscription else None
+                    ),
                 )
             )
 

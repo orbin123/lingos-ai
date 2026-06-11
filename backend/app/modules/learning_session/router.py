@@ -20,6 +20,11 @@ from app.core.database import get_db
 from app.core.security import decode_token
 from app.core.sentry import capture_to_sentry
 from app.core.ai_rate_limit import RATE_LIMIT_MESSAGE, ai_rate_limit, get_limiter
+from app.modules.subscriptions.dependencies import (
+    WS_PAYMENT_REQUIRED,
+    check_ws_access,
+    require_active_access,
+)
 from app.core.config import settings
 from app.modules.auth.dependencies import get_current_user, require_learner
 from app.modules.auth.models import ROLE_LEARNER, ROLE_SUPER_ADMIN, User
@@ -65,7 +70,10 @@ rest_router = APIRouter(
     "/sessions/start",
     response_model=StartSessionResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(ai_rate_limit("learning_start"))],
+    dependencies=[
+        Depends(require_active_access),
+        Depends(ai_rate_limit("learning_start")),
+    ],
 )
 async def start_session(
     payload: StartSessionRequest | None = None,
@@ -93,7 +101,10 @@ async def start_session(
     "/sessions/{session_id}/restart",
     response_model=StartSessionResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(ai_rate_limit("learning_start"))],
+    dependencies=[
+        Depends(require_active_access),
+        Depends(ai_rate_limit("learning_start")),
+    ],
 )
 async def restart_session(
     session_id: str,
@@ -473,6 +484,10 @@ async def learning_session_ws(
 
     if not user.has_any_role({ROLE_LEARNER, ROLE_SUPER_ADMIN}):
         await websocket.close(code=4403)
+        return
+
+    if not check_ws_access(user, db):
+        await websocket.close(code=WS_PAYMENT_REQUIRED)
         return
 
     service = LearningSessionService(db)

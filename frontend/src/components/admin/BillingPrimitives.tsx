@@ -13,6 +13,8 @@ export function BillingStatusBadge({ status }: { status: string }) {
   const normalized = status.toLowerCase();
   const positive = ["paid", "active", "trialing"].includes(normalized);
   const warning = ["past_due", "pending", "paused"].includes(normalized);
+  // Pre-trial lifecycle states are informational, not failures.
+  const neutral = ["unverified", "not_started"].includes(normalized);
   return (
     <span
       style={{
@@ -21,12 +23,16 @@ export function BillingStatusBadge({ status }: { status: string }) {
           ? "oklch(94% 0.06 155)"
           : warning
             ? "oklch(96% 0.05 80)"
-            : "oklch(95% 0.04 25)",
+            : neutral
+              ? "oklch(95% 0.02 245)"
+              : "oklch(95% 0.04 25)",
         color: positive
           ? "oklch(34% 0.13 155)"
           : warning
             ? "oklch(42% 0.12 70)"
-            : "oklch(42% 0.16 25)",
+            : neutral
+              ? "oklch(40% 0.05 245)"
+              : "oklch(42% 0.16 25)",
       }}
     >
       {status.replace("_", " ")}

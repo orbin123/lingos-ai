@@ -14,6 +14,7 @@ venv/
 .vscode/
 .idea/
 *.swp
+/docs
 
 # macOS (IMPORTANT for you)
 .DS_Store

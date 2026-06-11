@@ -1,5 +1,6 @@
 import { api } from "./api";
 import type { UserCoursePreferenceRead } from "./preferences-api";
+import type { AccessState } from "./subscriptions-api";
 import type { NotificationSettings } from "./subscriptions-api";
 import type { LoginInput, RegisterInput } from "./validators/auth";
 
@@ -32,6 +33,12 @@ export interface UserOut {
   is_superuser: boolean;
   is_active: boolean;
   email_verified: boolean;
+  // Entitlement view — drives routing, trial banners, and AccessGate.
+  access_state: AccessState;
+  subscription_status: string | null;
+  plan_id: string | null;
+  trial_ends_at: string | null;
+  days_remaining: number | null;
   roles: string[];
   role: string;
   preference: UserCoursePreferenceRead | null;

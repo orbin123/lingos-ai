@@ -18,6 +18,7 @@ from app.modules.challenges.a2z_game.schemas import (
     StartRoundRequest,
     StartRoundResponse,
 )
+from app.modules.subscriptions.dependencies import require_active_access
 from app.modules.challenges.a2z_game.service import (
     A2ZChallengeNotFound,
     A2ZGameCompleted,
@@ -83,7 +84,10 @@ def start_a2z_round(
     "/rounds/{round_id}/audio-chunks",
     response_model=AudioChunkResponse,
     status_code=status.HTTP_200_OK,
-    dependencies=[Depends(ai_rate_limit("a2z_audio"))],
+    dependencies=[
+        Depends(require_active_access),
+        Depends(ai_rate_limit("a2z_audio")),
+    ],
 )
 async def ingest_a2z_audio_chunk(
     round_id: int,

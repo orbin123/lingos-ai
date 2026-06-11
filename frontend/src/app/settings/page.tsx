@@ -236,17 +236,25 @@ export default function SettingsPage() {
   });
 
   const currentPlan = useMemo(() => {
-    const purchase = purchaseQuery.data;
-    if (purchase) return purchase;
+    const entitlement = purchaseQuery.data;
+    if (entitlement && entitlement.plan_id) {
+      return {
+        plan_id: entitlement.plan_id,
+        plan_name: entitlement.plan_name ?? "Selected plan",
+        amount_paid: entitlement.amount ?? 0,
+        currency: entitlement.currency ?? "INR",
+        status: entitlement.access_state,
+        created_at:
+          entitlement.trial_started_at ?? entitlement.current_period_end ?? "",
+      };
+    }
     const courseLength = user?.preference?.course_length;
     return {
-      id: 0,
-      user_id: user?.id ?? 0,
       plan_id: courseLength === "48w" ? "beginner-48w" : "beginner-24w",
       plan_name: courseLength === "48w" ? "48-Week Plan" : "24-Week Foundation",
       amount_paid: courseLength === "48w" ? 1999 : 999,
       currency: "INR",
-      status: "paid",
+      status: entitlement?.access_state ?? "verified",
       created_at: "",
     };
   }, [purchaseQuery.data, user]);

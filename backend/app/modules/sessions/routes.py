@@ -20,6 +20,7 @@ from app.ai.pronunciation import (
 )
 from app.core.ai_rate_limit import ai_rate_limit
 from app.core.database import get_db
+from app.modules.subscriptions.dependencies import require_active_access
 from app.modules.auth.dependencies import get_current_user, require_learner
 from app.modules.auth.models import User
 from app.modules.curriculum.exceptions import EnrollmentNotActive, NotEnrolled
@@ -471,7 +472,10 @@ def advance_day(
 @router.post(
     "/today/start-or-continue",
     response_model=DashboardStartResponse,
-    dependencies=[Depends(ai_rate_limit("session_start"))],
+    dependencies=[
+        Depends(require_active_access),
+        Depends(ai_rate_limit("session_start")),
+    ],
 )
 async def start_or_continue_today(
     current_user: User = Depends(get_current_user),
@@ -525,7 +529,10 @@ async def start_or_continue_today(
     "/start",
     response_model=SessionStartResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(ai_rate_limit("session_start"))],
+    dependencies=[
+        Depends(require_active_access),
+        Depends(ai_rate_limit("session_start")),
+    ],
 )
 async def start_session(
     payload: SessionStartRequest,
@@ -561,7 +568,10 @@ async def start_session(
 @router.post(
     "/start-today",
     response_model=SessionStartResponse,
-    dependencies=[Depends(ai_rate_limit("session_start"))],
+    dependencies=[
+        Depends(require_active_access),
+        Depends(ai_rate_limit("session_start")),
+    ],
 )
 async def start_today_session(
     current_user: User = Depends(get_current_user),
@@ -689,7 +699,10 @@ async def next_activity(
 @router.post(
     "/{session_id}/activities/{sequence}/submit",
     response_model=SubmitActivityResponse,
-    dependencies=[Depends(ai_rate_limit("session_submit"))],
+    dependencies=[
+        Depends(require_active_access),
+        Depends(ai_rate_limit("session_submit")),
+    ],
 )
 async def submit_activity(
     session_id: str,
@@ -743,7 +756,10 @@ async def submit_activity(
 @router.post(
     "/{session_id}/complete",
     response_model=SessionScorecardRead,
-    dependencies=[Depends(ai_rate_limit("session_complete"))],
+    dependencies=[
+        Depends(require_active_access),
+        Depends(ai_rate_limit("session_complete")),
+    ],
 )
 async def complete_session(
     session_id: str,
@@ -816,7 +832,10 @@ def get_scorecard(
 @router.post(
     "/pronunciation-score",
     response_model=PronunciationResult,
-    dependencies=[Depends(ai_rate_limit("pronunciation"))],
+    dependencies=[
+        Depends(require_active_access),
+        Depends(ai_rate_limit("pronunciation")),
+    ],
 )
 async def score_pronunciation(
     audio: UploadFile = File(

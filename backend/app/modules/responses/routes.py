@@ -26,6 +26,7 @@ from app.ai.stt.exceptions import (
     STTValidationError,
 )
 from app.core.ai_rate_limit import ai_rate_limit
+from app.modules.subscriptions.dependencies import require_active_access
 from app.core.config import settings
 from app.modules.auth.dependencies import get_current_user, require_learner
 from app.modules.auth.models import User
@@ -110,6 +111,7 @@ def _content_type_for_key(audio_key: str) -> str:
     "/transcribe-audio",
     response_model=TranscribeResponse,
     dependencies=[
+        Depends(require_active_access),
         Depends(
             ai_rate_limit(
                 "transcribe",

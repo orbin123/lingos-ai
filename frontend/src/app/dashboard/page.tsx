@@ -13,6 +13,8 @@ import { SkillScorePreview } from "@/components/dashboard/SkillScorePreview";
 import { ActivityGridCard } from "@/components/streak/ActivityGridCard";
 import { StreakStateDemoPanel } from "@/components/streak/StreakStateDemoPanel";
 import { CurriculumCalendarCard } from "@/components/dashboard/CurriculumCalendarCard";
+import { TrialBanner } from "@/components/dashboard/TrialBanner";
+import { AccessGate } from "@/components/dashboard/AccessGate";
 import { shouldShowAdminConsoleButton } from "@/lib/admin-access";
 
 // Empty fallback — every legacy sub-skill at 0.0. The dashboard reads real
@@ -54,6 +56,9 @@ function getGreeting(name: string | undefined): string {
 function getInitialPurchaseToast() {
   if (typeof window === "undefined") return null;
   const params = new URLSearchParams(window.location.search);
+  if (params.get("trial") === "started") {
+    return "Your 7-day free trial has started. Let's go! 🎉";
+  }
   if (params.get("purchase") !== "success") return null;
   const plan = params.get("plan") || "selected";
   return `You're now on the ${plan} plan. Let's go! 🎉`;
@@ -248,7 +253,8 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(null), 4200);
-    if (window.location.search.includes("purchase=success")) {
+    const search = window.location.search;
+    if (search.includes("purchase=success") || search.includes("trial=started")) {
       router.replace("/dashboard");
     }
     return () => window.clearTimeout(timeout);
@@ -285,6 +291,18 @@ export default function DashboardPage() {
   }
 
   const preference = user?.preference;
+  // The view switch is keyed on access_state, not preference: select-plan
+  // writes a preference row while the user is still pre-trial, and those
+  // users must keep seeing the choose-plan view until the trial starts.
+  // Legacy users (no access machinery, e.g. old Purchase rows) fall back to
+  // the preference check.
+  const accessState = user?.access_state;
+  const enrolled =
+    accessState === "trial" ||
+    accessState === "active" ||
+    accessState === "expired" ||
+    accessState === "cancelled" ||
+    (accessState == null && !!preference);
   // Normalise incoming keys through `normalizeSkillKey` so that data shipped
   // under doc names ("thought_org") or long-form names ("thought_organization")
   // gets folded onto the canonical legacy identifier. Without this step the
@@ -354,7 +372,7 @@ export default function DashboardPage() {
         )}
 
         <DashboardLayout user={user} onSignOut={handleLogout}>
-          {preference ? (
+          {enrolled && preference ? (
             <EnrolledView
               preference={preference}
               scores={scores}
@@ -422,6 +440,8 @@ function EnrolledView({
         animation: "fadeSlideUp 0.4s ease both",
       }}
     >
+      <TrialBanner />
+
       {/* Page header */}
       <div
         style={{
@@ -496,10 +516,12 @@ function EnrolledView({
       >
         {/* LEFT COLUMN */}
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-          <DailyTaskPanel
-            key={`${preference.current_week}-${preference.current_day_in_week}`}
-            preference={preference}
-          />
+          <AccessGate>
+            <DailyTaskPanel
+              key={`${preference.current_week}-${preference.current_day_in_week}`}
+              preference={preference}
+            />
+          </AccessGate>
 
           {/* Skill scores */}
           <Card>

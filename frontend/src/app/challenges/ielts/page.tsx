@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -52,7 +52,17 @@ function renderRulesMarkdown(rulesMd: string): string {
     .replace(/(<li>[\s\S]*<\/li>)/g, "<ul>$1</ul>");
 }
 
+// useSearchParams() requires a Suspense boundary for static prerender —
+// without this wrapper `next build` fails on this page.
 export default function IELTSSprintPage() {
+  return (
+    <Suspense fallback={null}>
+      <IELTSSprintPageInner />
+    </Suspense>
+  );
+}
+
+function IELTSSprintPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [rulesOpen, setRulesOpen] = useState(false);

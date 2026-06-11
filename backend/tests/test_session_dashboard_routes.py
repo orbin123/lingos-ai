@@ -37,6 +37,7 @@ from app.modules.sessions.models import (
 )
 from app.modules.sessions.repository import DailySessionRepository
 from app.modules.sessions.service import SessionService
+from app.modules.subscriptions.dependencies import require_active_access
 from scripts.seed_curriculum import seed_archetypes
 
 
@@ -80,6 +81,8 @@ def dashboard_client(monkeypatch):
 
     app.dependency_overrides[get_db] = override_db
     app.dependency_overrides[get_current_user] = lambda: user
+    # Entitlement is covered by test_premium_guard; stub it out here.
+    app.dependency_overrides[require_active_access] = lambda: user
     monkeypatch.setattr(
         sessions_routes,
         "_make_session_service",

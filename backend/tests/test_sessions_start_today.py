@@ -35,6 +35,7 @@ from app.modules.sessions.models import (
     SessionScorecard,
 )
 from app.modules.sessions.routes import router as sessions_router
+from app.modules.subscriptions.dependencies import require_active_access
 from app.modules.sessions.service import SessionService
 from app.modules.skills.models import Skill
 from app.scoring import SUB_SKILLS
@@ -143,6 +144,8 @@ def client(db_session, user, monkeypatch):
 
     app.dependency_overrides[get_db] = _override_db
     app.dependency_overrides[get_current_user] = _override_user
+    # Entitlement is covered by test_premium_guard; stub it out here.
+    app.dependency_overrides[require_active_access] = _override_user
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

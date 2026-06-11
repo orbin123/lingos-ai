@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.responses import routes as response_routes
+from app.modules.subscriptions.dependencies import require_active_access
 
 
 class FakeSTTService:
@@ -36,6 +37,8 @@ def response_client(tmp_path, monkeypatch):
     app = FastAPI()
     app.include_router(response_routes.router)
     app.dependency_overrides[get_current_user] = lambda: user
+    # Entitlement is covered by test_premium_guard; stub it out here.
+    app.dependency_overrides[require_active_access] = lambda: user
     with TestClient(app) as client:
         yield client, fake_stt
 

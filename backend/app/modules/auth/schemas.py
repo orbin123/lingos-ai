@@ -72,6 +72,14 @@ class UserOut(BaseModel):
     roles: list[str] = Field(default_factory=lambda: ["learner"])
     role: str = "learner"
     diagnosis_completed: bool = False  # tells frontend where to send the user
+    # Entitlement view (resolve_access) — the single object frontend routing,
+    # trial banners, and AccessGate read. Defaults are safe for callsites
+    # that build UserOut without an access resolution (e.g. signup).
+    access_state: str = "unverified"
+    subscription_status: str | None = None
+    plan_id: str | None = None
+    trial_ends_at: datetime | None = None
+    days_remaining: int | None = None
     preference: UserCoursePreferenceRead | None = None
     phone_number: str | None = None
     country: str | None = None

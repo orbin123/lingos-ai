@@ -31,7 +31,11 @@ from app.modules.sessions.models import (
     SessionStatus,
 )
 from app.modules.skills.models import Skill
-from app.modules.subscriptions.models import Purchase
+from app.modules.subscriptions.models import (
+    Purchase,
+    Subscription,
+    SubscriptionStatus,
+)
 
 NOW = datetime.now(timezone.utc)
 
@@ -52,6 +56,7 @@ def db():
             Skill.__table__,
             SkillPoints.__table__,
             Purchase.__table__,
+            Subscription.__table__,
             DailySession.__table__,
             ActivityAttempt.__table__,
             ActivityFeedback.__table__,
@@ -73,6 +78,7 @@ def _user(db, name: str, *, days_ago: int) -> User:
         email=f"{name.lower()}@example.com",
         password_hash="x",
         is_active=True,
+        email_verified=True,
         created_at=NOW - timedelta(days=days_ago),
     )
     db.add(user)
@@ -98,13 +104,33 @@ def _paid_purchase(db, user: User, *, expires_in_days: int) -> Purchase:
 # ── Subscribers ────────────────────────────────────────────────────
 
 
+def _trial_subscription(db, user: User, *, ends_in_days: int) -> Subscription:
+    row = Subscription(
+        user_id=user.id,
+        provider="internal",
+        plan_id="beginner-24w",
+        plan_name="24-Week Foundation",
+        status=SubscriptionStatus.TRIAL.value,
+        trial_started_at=NOW + timedelta(days=ends_in_days - 7),
+        trial_ends_at=NOW + timedelta(days=ends_in_days),
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
 def test_subscribers_split_paying_and_trial(db):
+    """Trial state comes from the STORED subscription row (§8.8), never
+    derived from signup date."""
     active = _user(db, "Active", days_ago=400)
     expired_sub = _user(db, "ExpiredSub", days_ago=900)
     fresh_trial = _user(db, "FreshTrial", days_ago=2)
     old_trial = _user(db, "OldTrial", days_ago=30)
+    never_started = _user(db, "NeverStarted", days_ago=60)
     _paid_purchase(db, active, expires_in_days=300)
     _paid_purchase(db, expired_sub, expires_in_days=-5)
+    fresh_row = _trial_subscription(db, fresh_trial, ends_in_days=5)
+    _trial_subscription(db, old_trial, ends_in_days=-23)
     db.commit()
 
     overview = AdminService(db).list_subscribers()
@@ -117,10 +143,12 @@ def test_subscribers_split_paying_and_trial(db):
     trials = {t.user_id: t for t in overview.trials}
     assert trials[fresh_trial.id].status == "trial"
     assert trials[old_trial.id].status == "expired"
-    # Trial end is signup + TRIAL_DAYS (7).
-    assert trials[fresh_trial.id].trial_ends_at == fresh_trial.created_at + timedelta(
-        days=7
-    )
+    # A verified user who never started a trial is "not_started" — old-signup
+    # users no longer look like expired trials.
+    assert trials[never_started.id].status == "not_started"
+    assert trials[never_started.id].trial_ends_at is None
+    # Trial end is the stored value, not signup + TRIAL_DAYS.
+    assert trials[fresh_trial.id].trial_ends_at == fresh_row.trial_ends_at
 
 
 def test_subscriber_access_update_extends_window(db):

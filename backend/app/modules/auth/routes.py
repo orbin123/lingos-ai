@@ -63,6 +63,7 @@ from app.modules.personalization.service import PersonalizationService
 from app.modules.preferences.repository import UserCoursePreferenceRepository
 from app.modules.preferences.schemas import UserCoursePreferenceRead
 from app.modules.subscriptions.schemas import NotificationSettings
+from app.modules.subscriptions.service import AccessResolution, SubscriptionService
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +167,7 @@ def _build_user_out(
     user: User,
     profile: object | None,
     preference: object | None,
+    access: AccessResolution | None = None,
 ) -> UserOut:
     return UserOut(
         id=user.id,
@@ -180,6 +182,13 @@ def _build_user_out(
         roles=_role_names(user),
         role=_primary_role(user),
         diagnosis_completed=bool(profile and profile.diagnosis_completed),
+        access_state=access.state.value if access else (
+            "verified" if user.email_verified else "unverified"
+        ),
+        subscription_status=access.subscription_status if access else None,
+        plan_id=access.plan_id if access else None,
+        trial_ends_at=access.trial_ends_at if access else None,
+        days_remaining=access.days_remaining if access else None,
         preference=(
             UserCoursePreferenceRead.model_validate(preference)
             if preference is not None
@@ -523,7 +532,10 @@ def me(
     """Return the currently logged-in user's profile + diagnosis status."""
     profile = UserProfileRepository(db).get_by_user_id(current_user.id)
     preference = UserCoursePreferenceRepository(db).get_for_user(current_user.id)
-    return _build_user_out(user=current_user, profile=profile, preference=preference)
+    access = SubscriptionService(db).resolve_access(current_user)
+    return _build_user_out(
+        user=current_user, profile=profile, preference=preference, access=access
+    )
 
 
 @router.patch("/me", response_model=UserOut)
@@ -593,7 +605,10 @@ async def update_me(
         db.refresh(profile)
 
     preference = UserCoursePreferenceRepository(db).get_for_user(current_user.id)
-    return _build_user_out(user=current_user, profile=profile, preference=preference)
+    access = SubscriptionService(db).resolve_access(current_user)
+    return _build_user_out(
+        user=current_user, profile=profile, preference=preference, access=access
+    )
 
 
 # ---------------------------------------------------------------------------

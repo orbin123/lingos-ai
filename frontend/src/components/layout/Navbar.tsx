@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, LogOut, Settings, User } from "lucide-react";
@@ -95,6 +95,54 @@ function FlakeIcon() {
     </svg>
   );
 }
+
+function TrialPill({ user }: { user: UserOut | undefined }) {
+  const router = useRouter();
+  const state = user?.access_state;
+
+  // Trial countdown while on trial; "Trial ended" link when expired or
+  // cancelled. Hidden for active/verified/legacy users.
+  if (state !== "trial" && state !== "expired" && state !== "cancelled") {
+    return null;
+  }
+
+  const ended = state !== "trial";
+  const days = user?.days_remaining;
+  const label = ended
+    ? "Trial ended"
+    : days === 1
+      ? "Trial · 1 day left"
+      : `Trial · ${days ?? "—"} days left`;
+
+  return (
+    <button
+      type="button"
+      onClick={() => router.push("/pricing")}
+      title={ended ? "Upgrade to continue learning" : "Upgrade your plan"}
+      style={{
+        height: 40,
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        border: ended
+          ? "1.5px solid oklch(85% 0.06 25)"
+          : "1.5px solid oklch(86% 0.025 240)",
+        borderRadius: 999,
+        background: ended ? "oklch(97% 0.02 25)" : "white",
+        padding: "4px 14px",
+        cursor: "pointer",
+        fontFamily: "inherit",
+        fontSize: 13,
+        fontWeight: 700,
+        color: ended ? "oklch(45% 0.16 25)" : "oklch(38% 0.1 240)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 
 function StreakPill() {
   const [open, setOpen] = useState(false);
@@ -600,6 +648,7 @@ export function Navbar({ user, onSignOut }: NavbarProps) {
 
         {/* Right actions */}
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <TrialPill user={user} />
           <StreakPill />
 
           {/* Avatar / account menu */}

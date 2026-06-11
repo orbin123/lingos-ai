@@ -21,7 +21,14 @@ export function useLogin() {
       return me;
     },
     onSuccess: (me) => {
-      router.push(me.diagnosis_completed ? "/dashboard" : "/diagnosis");
+      if (!me.diagnosis_completed) {
+        router.push("/diagnosis");
+      } else if (me.access_state === "verified") {
+        // Diagnosis done but no trial yet — pick a plan and start it.
+        router.push("/pricing");
+      } else {
+        router.push("/dashboard");
+      }
     },
     onError: (error, variables) => {
       // Correct password but unverified email → route to the verify screen.

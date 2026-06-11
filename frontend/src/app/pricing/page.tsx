@@ -57,43 +57,51 @@ export default function PricingPage() {
   const [confirmPlan, setConfirmPlan] = useState<PlanId | null>(null);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
-  // If already enrolled, no need to be on pricing
+  // Users with running access don't belong on pricing. Keyed on
+  // access_state, NOT preference: a plan-selected-but-no-trial user has a
+  // preference row already and must still reach this page.
   const { data: me } = useQuery({
     queryKey: ["me"],
     queryFn: authApi.me,
     enabled: isAuthenticated,
   });
   useEffect(() => {
-    if (me?.preference) router.replace("/dashboard");
+    if (me && (me.access_state === "trial" || me.access_state === "active")) {
+      router.replace("/dashboard");
+    }
   }, [me, router]);
 
-  const purchaseMutation = useMutation({
-    mutationFn: subscriptionsApi.purchase,
+  // "verified" → choose plan + start free trial (no payment).
+  // "expired"/"cancelled" → upgrade (Razorpay checkout, Phase 4).
+  const isTrialFlow = me?.access_state === "verified";
+
+  const startTrialMutation = useMutation({
+    mutationFn: async (planId: PlanId) => {
+      await subscriptionsApi.selectPlan(planId);
+      return subscriptionsApi.startTrial();
+    },
   });
 
-  const handleConfirmPurchase = async () => {
+  const handleConfirm = async () => {
     if (!confirmPlan) return;
 
     setPurchaseError(null);
     const planId = confirmPlan;
 
-    try {
-      const purchase = await purchaseMutation.mutateAsync(planId);
-      const refreshedUser = await authApi.me();
+    if (!isTrialFlow) {
+      // Upgrade path — Razorpay checkout lands here in Phase 4.
+      setPurchaseError(
+        "Online payments are launching shortly. You'll be able to upgrade here soon.",
+      );
+      return;
+    }
 
-      queryClient.setQueryData(["purchase"], purchase);
-      queryClient.setQueryData(["me"], refreshedUser);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["purchase"] }),
-        queryClient.invalidateQueries({ queryKey: ["me"] }),
-      ]);
+    try {
+      await startTrialMutation.mutateAsync(planId);
+      await queryClient.invalidateQueries({ queryKey: ["me"] });
 
       setConfirmPlan(null);
-      router.replace(
-        `/dashboard?purchase=success&plan=${encodeURIComponent(
-          purchase.plan_name,
-        )}`,
-      );
+      router.replace("/dashboard?trial=started");
     } catch (error) {
       setPurchaseError(getApiErrorMessage(error));
     }
@@ -106,6 +114,12 @@ export default function PricingPage() {
       setConfirmPlan(planId);
     }
   };
+
+  const ctaLabel = !isAuthenticated
+    ? "Get started"
+    : isTrialFlow
+      ? "Start 7-day free trial"
+      : "Upgrade now";
 
   return (
     <main
@@ -312,7 +326,7 @@ export default function PricingPage() {
                 e.currentTarget.style.borderColor = `rgba(100,140,220,0.3)`;
               }}
             >
-              {isAuthenticated ? "Purchase plan" : "Get started"}
+              {ctaLabel}
             </button>
             <p style={{ textAlign: "center", fontSize: 13, color: "oklch(50% 0.05 240)", marginTop: 12 }}>
               7-day free trial without credit card
@@ -472,7 +486,7 @@ export default function PricingPage() {
                 e.currentTarget.style.boxShadow = "0 6px 20px rgba(50,100,220,0.3)";
               }}
             >
-              {isAuthenticated ? "Purchase plan" : "Get started"}
+              {ctaLabel}
             </button>
             <p style={{ textAlign: "center", fontSize: 13, color: "oklch(50% 0.05 240)", marginTop: 12 }}>
               7-day free trial without credit card
@@ -627,7 +641,7 @@ export default function PricingPage() {
                 fontWeight: 800,
               }}
             >
-              Confirm purchase
+              {isTrialFlow ? "Start your free trial" : "Confirm purchase"}
             </h2>
             <p
               style={{
@@ -637,8 +651,9 @@ export default function PricingPage() {
                 lineHeight: 1.55,
               }}
             >
-              Confirm one-time purchase of {PLANS[confirmPlan].name} for ₹
-              {PLANS[confirmPlan].price}?
+              {isTrialFlow
+                ? `Start your 7-day free trial of the ${PLANS[confirmPlan].name} — no payment needed.`
+                : `Confirm one-time purchase of ${PLANS[confirmPlan].name} for ₹${PLANS[confirmPlan].price}?`}
             </p>
             {purchaseError && (
               <p
@@ -678,21 +693,23 @@ export default function PricingPage() {
                 Cancel
               </button>
               <button
-                disabled={purchaseMutation.isPending}
-                onClick={handleConfirmPurchase}
+                disabled={startTrialMutation.isPending}
+                onClick={handleConfirm}
                 style={{
                   borderRadius: 8,
                   padding: "11px 15px",
                   fontSize: 14,
                   fontWeight: 700,
-                  cursor: purchaseMutation.isPending ? "not-allowed" : "pointer",
+                  cursor: startTrialMutation.isPending
+                    ? "not-allowed"
+                    : "pointer",
                   background: `oklch(52% 0.18 ${ACCENT_HUE})`,
                   border: "1px solid transparent",
                   color: "white",
-                  opacity: purchaseMutation.isPending ? 0.7 : 1,
+                  opacity: startTrialMutation.isPending ? 0.7 : 1,
                 }}
               >
-                Confirm purchase
+                {isTrialFlow ? "Start free trial" : "Confirm purchase"}
               </button>
             </div>
           </div>

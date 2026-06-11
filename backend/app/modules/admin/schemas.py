@@ -298,7 +298,7 @@ class SubscriptionUpdate(BaseModel):
 
 
 class SubscriberItem(BaseModel):
-    """A paying learner — backed by a one-time `Purchase` with a 2-year window."""
+    """A paying learner — a paid `Subscription` row or legacy `Purchase`."""
 
     user_id: int
     name: str
@@ -307,22 +307,24 @@ class SubscriberItem(BaseModel):
     plan_name: str | None = None
     amount_paid: float | None = None
     currency: str | None = None
-    # "active" | "expired" | "paused"
+    # "active" | "expired" | "cancelled" | "paused" (legacy Purchase only)
     status: str
     purchased_at: datetime | None = None
     access_expires_at: datetime | None = None
 
 
 class TrialUserItem(BaseModel):
-    """A learner with no purchase — on a derived signup + TRIAL_DAYS trial."""
+    """A non-paying learner — trial state read from the stored subscription."""
 
     user_id: int
     name: str
     email: str
-    # "trial" | "expired"
+    # "unverified" | "not_started" | "trial" | "expired"
     status: str
+    email_verified: bool = True
     signed_up_at: datetime
-    trial_ends_at: datetime
+    trial_started_at: datetime | None = None
+    trial_ends_at: datetime | None = None
 
 
 class SubscribersOverview(BaseModel):

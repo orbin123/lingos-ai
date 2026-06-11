@@ -1255,6 +1255,9 @@ export default function ChatSessionPage() {
   const [events, setEvents] = useState<ChatEvent[]>([]);
   const [composer, setComposer] = useState("");
   const [connectionState, setConnectionState] = useState(initialConnectionState);
+  // Server closed the socket with 4402: trial/subscription no longer grants
+  // premium access. Suppresses reconnects; the UI offers an upgrade instead.
+  const [accessBlocked, setAccessBlocked] = useState(false);
   const [lessonMeta, setLessonMeta] = useState<LessonMeta>({
     title: "Today's lesson",
     focus: "",
@@ -1445,6 +1448,7 @@ export default function ChatSessionPage() {
   // If the socket drops while evaluation/feedback is in flight, reconnect so
   // the resume stream can replay scorecard + feedback widgets.
   useEffect(() => {
+    if (accessBlocked) return;
     if (connectionState !== "closed" && connectionState !== "error") return;
     if (reconnectIntentRef.current !== "none") return;
     if (phase !== "submitted" && loadingType !== "feedback_loading") return;
@@ -1879,8 +1883,14 @@ export default function ChatSessionPage() {
       const queued = pendingSendsRef.current.splice(0);
       queued.forEach((payload) => ws.send(JSON.stringify(payload)));
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (wsRef.current !== ws) return;
+      if (event.code === 4402) {
+        setAccessBlocked(true);
+        setConnectionState("error");
+        setLoadingType(null);
+        return;
+      }
       if (reconnectIntentRef.current !== "none") return;
       setConnectionState("closed");
       setLoadingType(null);
@@ -2436,9 +2446,20 @@ export default function ChatSessionPage() {
           {showConnectionIssue && (
             <div style={{ marginTop: 16 }}>
               <ChatBubble role="ai" name={events.length === 0 ? "LingosAI" : undefined}>
-                {connectionState === "connecting" && "Connecting to your session…"}
-                {connectionState === "closed" && "Connection closed. Reconnecting…"}
-                {connectionState === "error" && "Could not reach the session. Make sure you're signed in."}
+                {accessBlocked ? (
+                  <>
+                    Your trial has ended — upgrade to continue this lesson.{" "}
+                    <a href="/pricing" style={{ fontWeight: 700 }}>
+                      Upgrade now
+                    </a>
+                  </>
+                ) : (
+                  <>
+                    {connectionState === "connecting" && "Connecting to your session…"}
+                    {connectionState === "closed" && "Connection closed. Reconnecting…"}
+                    {connectionState === "error" && "Could not reach the session. Make sure you're signed in."}
+                  </>
+                )}
               </ChatBubble>
             </div>
           )}

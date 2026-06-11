@@ -33,6 +33,10 @@ from app.core.security import decode_token
 from app.core.sentry import capture_to_sentry
 from app.modules.auth.models import ROLE_LEARNER, ROLE_SUPER_ADMIN
 from app.modules.auth.repository import UserRepository
+from app.modules.subscriptions.dependencies import (
+    WS_PAYMENT_REQUIRED,
+    check_ws_access,
+)
 from app.modules.challenges.a2z_game import evaluator
 from app.modules.challenges.a2z_game.repository import A2ZRoundRepository
 from app.modules.challenges.a2z_game.schemas import AudioChunkResponse
@@ -122,6 +126,16 @@ async def stream_round(
             code="unauthorized",
             message="Your session has expired. Please sign in again.",
             close_code=4001,
+        )
+        return
+
+    user = UserRepository(db).get_by_id(user_id)
+    if user is None or not check_ws_access(user, db):
+        await _send_error(
+            websocket,
+            code="payment_required",
+            message="Your trial has ended — upgrade to continue.",
+            close_code=WS_PAYMENT_REQUIRED,
         )
         return
 
