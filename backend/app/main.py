@@ -17,6 +17,7 @@ from app.modules.auth.routes import router as auth_router
 from app.modules.challenges.routes import router as challenges_router
 from app.modules.diagnosis.routes import router as diagnosis_router
 from app.modules.progress.routes import router as progress_router
+from app.modules.subscriptions.payment_routes import payments_router
 from app.modules.subscriptions.routes import (
     subscription_router,
     users_router,
@@ -116,6 +117,7 @@ app.include_router(diagnosis_router, prefix="/diagnosis", tags=["diagnosis"])
 app.include_router(progress_router)
 app.include_router(ai_router)
 app.include_router(subscription_router)
+app.include_router(payments_router)
 app.include_router(users_router)
 app.include_router(challenges_router, prefix="/api")
 app.include_router(sessions_router, prefix="/api")

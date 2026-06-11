@@ -19,12 +19,30 @@ class NotificationSettingsUpdate(BaseModel):
     feature_announcements: bool | None = None
 
 
-class PlanPurchase(BaseModel):
-    plan_id: str = Field(..., min_length=1, max_length=50)
-
-
 class PlanSelect(BaseModel):
     plan_id: str = Field(..., min_length=1, max_length=50)
+
+
+class CreateOrderIn(BaseModel):
+    plan_id: str = Field(..., min_length=1, max_length=50)
+
+
+class CreateOrderOut(BaseModel):
+    """What the Razorpay Checkout widget needs. Amount is in paise and
+    comes from PLAN_CATALOG — never from the client."""
+
+    order_id: str
+    amount: int
+    currency: str
+    key_id: str
+    plan_id: str
+    plan_name: str
+
+
+class PaymentVerifyIn(BaseModel):
+    razorpay_order_id: str = Field(..., min_length=1, max_length=255)
+    razorpay_payment_id: str = Field(..., min_length=1, max_length=255)
+    razorpay_signature: str = Field(..., min_length=1, max_length=512)
 
 
 class EntitlementRead(BaseModel):

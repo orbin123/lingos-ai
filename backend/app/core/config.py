@@ -54,9 +54,6 @@ class Settings(BaseSettings):
     # Free-trial length. Stored on the subscription row when the user
     # starts their trial (start-trial endpoint).
     TRIAL_DAYS: int = 7
-    # Legacy mock-purchase endpoint (superseded by Razorpay). Dev-only escape
-    # hatch; keep False everywhere real.
-    ENABLE_MOCK_PURCHASE: bool = False
 
     # Email delivery — "console" logs emails to the app logger (dev/test
     # default, the OTP shows up in the uvicorn console); "resend" sends real

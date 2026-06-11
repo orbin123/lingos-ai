@@ -9,6 +9,8 @@ import { authApi } from "@/lib/auth-api";
 import { LandingNavbar } from "@/components/layout/LandingNavbar";
 import { LandingFooter } from "@/components/layout/LandingFooter";
 import { subscriptionsApi } from "@/lib/subscriptions-api";
+import { paymentsApi } from "@/lib/payments-api";
+import { useRazorpayCheckout } from "@/hooks/useRazorpayCheckout";
 import { getApiErrorMessage } from "@/lib/errors";
 
 const ACCENT_HUE = 240;
@@ -72,8 +74,10 @@ export default function PricingPage() {
   }, [me, router]);
 
   // "verified" → choose plan + start free trial (no payment).
-  // "expired"/"cancelled" → upgrade (Razorpay checkout, Phase 4).
+  // "expired"/"cancelled" (or mid-trial upgrade) → Razorpay checkout.
   const isTrialFlow = me?.access_state === "verified";
+  const { openCheckout } = useRazorpayCheckout();
+  const [isPaying, setIsPaying] = useState(false);
 
   const startTrialMutation = useMutation({
     mutationFn: async (planId: PlanId) => {
@@ -89,10 +93,39 @@ export default function PricingPage() {
     const planId = confirmPlan;
 
     if (!isTrialFlow) {
-      // Upgrade path — Razorpay checkout lands here in Phase 4.
-      setPurchaseError(
-        "Online payments are launching shortly. You'll be able to upgrade here soon.",
-      );
+      // Upgrade path: order server-side → Razorpay Checkout → server-side
+      // signature verification → ACTIVE.
+      setIsPaying(true);
+      try {
+        const order = await paymentsApi.createOrder(planId);
+        await openCheckout({
+          order,
+          user: me ? { name: me.name, email: me.email } : undefined,
+          onSuccess: async (payload) => {
+            try {
+              await paymentsApi.verify(payload);
+              await queryClient.invalidateQueries({ queryKey: ["me"] });
+              setIsPaying(false);
+              setConfirmPlan(null);
+              router.replace(
+                `/dashboard?purchase=success&plan=${encodeURIComponent(
+                  order.plan_name,
+                )}`,
+              );
+            } catch (error) {
+              setIsPaying(false);
+              setPurchaseError(getApiErrorMessage(error));
+            }
+          },
+          onFailure: (message) => {
+            setIsPaying(false);
+            setPurchaseError(message);
+          },
+        });
+      } catch (error) {
+        setIsPaying(false);
+        setPurchaseError(getApiErrorMessage(error));
+      }
       return;
     }
 
@@ -693,23 +726,28 @@ export default function PricingPage() {
                 Cancel
               </button>
               <button
-                disabled={startTrialMutation.isPending}
+                disabled={startTrialMutation.isPending || isPaying}
                 onClick={handleConfirm}
                 style={{
                   borderRadius: 8,
                   padding: "11px 15px",
                   fontSize: 14,
                   fontWeight: 700,
-                  cursor: startTrialMutation.isPending
-                    ? "not-allowed"
-                    : "pointer",
+                  cursor:
+                    startTrialMutation.isPending || isPaying
+                      ? "not-allowed"
+                      : "pointer",
                   background: `oklch(52% 0.18 ${ACCENT_HUE})`,
                   border: "1px solid transparent",
                   color: "white",
-                  opacity: startTrialMutation.isPending ? 0.7 : 1,
+                  opacity: startTrialMutation.isPending || isPaying ? 0.7 : 1,
                 }}
               >
-                {isTrialFlow ? "Start free trial" : "Confirm purchase"}
+                {isTrialFlow
+                  ? "Start free trial"
+                  : isPaying
+                    ? "Opening checkout…"
+                    : "Pay with Razorpay"}
               </button>
             </div>
           </div>

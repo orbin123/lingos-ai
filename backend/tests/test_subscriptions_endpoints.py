@@ -190,14 +190,14 @@ class TestEntitlementRead:
             assert res.status_code == 409
             assert res.json()["detail"]["code"] == "not_cancellable"
 
-    def test_mock_purchase_410_when_flag_off(self, db_session):
+    def test_mock_purchase_route_removed(self, db_session):
+        """Superseded by /api/payments/create-order + /verify (Phase 4)."""
         user = _user(db_session)
         with _client(db_session, user) as client:
             res = client.post(
                 "/api/subscriptions/purchase", json={"plan_id": "beginner-24w"}
             )
-            assert res.status_code == 410
-            assert res.json()["detail"]["code"] == "mock_purchase_disabled"
+            assert res.status_code == 404
 
 
 class TestAuthMeAccessFields:

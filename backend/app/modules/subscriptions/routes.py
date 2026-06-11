@@ -1,19 +1,14 @@
 """Purchase, notification, and account-action endpoints."""
 
-from datetime import datetime, timezone
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.database import get_db
-from app.modules.admin.audit_service import AdminAuditService
 from app.modules.auth.dependencies import get_current_user, require_verified
 from app.modules.auth.models import User
 from app.modules.auth.repository import UserProfileRepository
-from app.modules.preferences.repository import UserCoursePreferenceRepository
-from app.modules.subscriptions.catalog import PLAN_CATALOG, add_years as _add_years
+from app.modules.subscriptions.catalog import PLAN_CATALOG
 from app.modules.subscriptions.exceptions import (
     NoPlanSelected,
     NotCancellable,
@@ -21,12 +16,11 @@ from app.modules.subscriptions.exceptions import (
     PlanNotFound,
     TrialAlreadyUsed,
 )
-from app.modules.subscriptions.models import Payment, Purchase
+from app.modules.subscriptions.models import Purchase
 from app.modules.subscriptions.schemas import (
     EntitlementRead,
     NotificationSettings,
     NotificationSettingsUpdate,
-    PlanPurchase,
     PlanSelect,
     PurchaseRead,
 )
@@ -143,88 +137,6 @@ def cancel_subscription(
             },
         )
     return _entitlement_out(service.resolve_access(current_user))
-
-
-@subscription_router.post("/purchase", response_model=PurchaseRead)
-def purchase_plan(
-    payload: PlanPurchase,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> PurchaseRead:
-    """Mock a purchase and seed/update the user's course preference.
-
-    Dev-only legacy path, superseded by the Razorpay flow. Disabled unless
-    ENABLE_MOCK_PURCHASE is set.
-    """
-    if not settings.ENABLE_MOCK_PURCHASE:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail={
-                "code": "mock_purchase_disabled",
-                "message": "Mock purchases are disabled.",
-            },
-        )
-    plan = PLAN_CATALOG.get(payload.plan_id)
-    if plan is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Unknown purchase plan.",
-        )
-
-    # Upsert the user's course preference with the plan's course_length.
-    # Lazy-create covers the common case where this is the user's first plan;
-    # an existing row gets its course_length bumped to match the new plan.
-    pref_repo = UserCoursePreferenceRepository(db)
-    preference = pref_repo.get_or_create_for_user(current_user.id)
-    preference.course_length = str(plan["course_length"])
-
-    purchase = db.query(Purchase).filter(Purchase.user_id == current_user.id).first()
-    if purchase is None:
-        purchase = Purchase(user_id=current_user.id)
-        db.add(purchase)
-
-    purchase.plan_id = payload.plan_id
-    purchase.plan_name = str(plan["name"])
-    purchase.amount_paid = float(plan["amount_paid"])
-    purchase.currency = str(plan["currency"])
-    purchase.status = "paid"
-    # A one-time purchase grants a fixed access window from the purchase date.
-    purchase.access_expires_at = _add_years(
-        datetime.now(timezone.utc), settings.ACCESS_WINDOW_YEARS
-    )
-    db.flush()
-
-    payment = Payment(
-        user_id=current_user.id,
-        provider="mock",
-        provider_payment_id=f"mock_{purchase.id}_{uuid4().hex}",
-        amount=purchase.amount_paid,
-        currency=purchase.currency,
-        status="paid",
-        paid_at=datetime.now(timezone.utc),
-    )
-    db.add(payment)
-    db.flush()
-    AdminAuditService(db).record(
-        admin=current_user,
-        action="payment.recorded",
-        resource_type="payment",
-        resource_id=payment.id,
-        old_value=None,
-        new_value={
-            "id": payment.id,
-            "user_id": payment.user_id,
-            "provider": payment.provider,
-            "provider_payment_id": payment.provider_payment_id,
-            "amount": float(payment.amount),
-            "currency": payment.currency,
-            "status": payment.status,
-        },
-    )
-
-    db.commit()
-    db.refresh(purchase)
-    return purchase
 
 
 @subscription_router.patch("/me/pause", response_model=PurchaseRead)

@@ -7,17 +7,6 @@ export interface NotificationSettings {
   feature_announcements: boolean;
 }
 
-export interface PurchaseRead {
-  id: number;
-  user_id: number;
-  plan_id: string;
-  plan_name: string;
-  amount_paid: number;
-  currency: "INR" | string;
-  status: "paid" | "paused" | string;
-  created_at: string;
-}
-
 export type AccessState =
   | "unverified"
   | "verified"
@@ -58,13 +47,8 @@ export const subscriptionsApi = {
   cancel: () =>
     api.post<EntitlementRead>("/api/subscriptions/cancel").then((r) => r.data),
 
-  purchase: (planId: string) =>
-    api
-      .post<PurchaseRead>("/api/subscriptions/purchase", { plan_id: planId })
-      .then((r) => r.data),
-
-  pause: () =>
-    api.patch<PurchaseRead>("/api/subscriptions/me/pause").then((r) => r.data),
+  // Legacy Purchase-row pause (schedule-only; does not affect access).
+  pause: () => api.patch("/api/subscriptions/me/pause").then((r) => r.data),
 
   updateNotifications: (data: Partial<NotificationSettings>) =>
     api
