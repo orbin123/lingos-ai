@@ -86,7 +86,13 @@ export const authApi = {
   },
 
   login: (data: LoginInput) =>
-    api.post<TokenOut>("/auth/login", data).then((r) => r.data),
+    api
+      .post<TokenOut>("/auth/login", {
+        email: data.email,
+        password: data.password,
+        remember_me: data.rememberMe ?? false,
+      })
+      .then((r) => r.data),
 
   verifyEmail: (data: { email: string; code: string }) =>
     api.post<TokenOut>("/auth/verify-email", data).then((r) => r.data),

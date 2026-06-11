@@ -1,9 +1,10 @@
 import { z } from "zod";
 
-// Login: just email + password
+// Login: email + password (+ optional long-lived session)
 export const loginSchema = z.object({
   email: z.string().email("Please enter a valid email"),
   password: z.string().min(1, "Password is required"),
+  rememberMe: z.boolean().optional(),
 });
 
 // Register: extends login + adds name and confirm password

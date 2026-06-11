@@ -64,6 +64,15 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
+    // Best-effort server-side revocation of the refresh session. Raw fetch
+    // (not the shared axios instance) to avoid an import cycle with api.ts;
+    // the httpOnly cookie rides along via credentials: "include".
+    if (typeof window !== "undefined") {
+      fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/auth/logout`,
+        { method: "POST", credentials: "include" },
+      ).catch(() => {});
+    }
     localStorage.removeItem("token");
     set({
       token: null,

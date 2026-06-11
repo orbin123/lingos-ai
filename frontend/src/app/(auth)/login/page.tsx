@@ -113,6 +113,18 @@ function LoginPageInner() {
           {...register("password")}
         />
 
+        <label
+          className="mt-1 flex items-center gap-2 text-[13px] font-medium cursor-pointer select-none"
+          style={{ color: "oklch(35% 0.07 240)" }}
+        >
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5 accent-blue-600 cursor-pointer"
+            {...register("rememberMe")}
+          />
+          Remember me for 90 days
+        </label>
+
         <div className="mt-4">
           <SubmitButton loading={login.isPending} loadingText="Logging in...">
             Log in
