@@ -16,6 +16,7 @@ from app import models  # noqa: F401 — populate the ORM registry
 from app.core.database import Base, get_db
 from app.core.security import hash_password
 from app.modules.auth.models import (
+    AuthSession,
     EmailOtp,
     OAuthAccount,
     Permission,
@@ -36,6 +37,7 @@ AUTH_TABLES = [
     Permission.__table__,
     RolePermission.__table__,
     EmailOtp.__table__,
+    AuthSession.__table__,
 ]
 
 EMAIL = "resetme@example.com"

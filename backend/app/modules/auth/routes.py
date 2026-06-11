@@ -1,10 +1,11 @@
 """Auth HTTP routes - translates between HTTP and AuthService"""
 
 import logging
+from datetime import timedelta
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,7 @@ from app.modules.auth.exceptions import (
     EmailDeliveryFailed,
     EmailNotVerified,
     InvalidCredentials,
+    InvalidRefreshToken,
     OtpAttemptsExceeded,
     OtpCooldownActive,
     OtpMismatch,
@@ -50,6 +52,13 @@ from app.modules.auth.schemas import (
     VerifyEmailIn,
 )
 from app.modules.auth.service import AuthService
+from app.modules.auth.session_service import (
+    REFRESH_COOKIE_NAME,
+    REFRESH_COOKIE_PATH,
+    SessionService,
+    _aware,
+    _utcnow,
+)
 from app.modules.personalization.service import PersonalizationService
 from app.modules.preferences.repository import UserCoursePreferenceRepository
 from app.modules.preferences.schemas import UserCoursePreferenceRead
@@ -105,7 +114,51 @@ def _token_data(user: User) -> dict[str, object]:
         "sub": str(user.id),
         "roles": roles,
         "is_superuser": ROLE_SUPER_ADMIN in roles,
+        # Verification state at mint time — a token minted pre-verification
+        # can be told apart even before the DB row is consulted.
+        "ver": bool(user.email_verified),
     }
+
+
+def _set_refresh_cookie(response: Response, raw: str, *, max_age: int) -> None:
+    response.set_cookie(
+        REFRESH_COOKIE_NAME,
+        raw,
+        max_age=max_age,
+        httponly=True,
+        secure=settings.AUTH_COOKIE_SECURE,
+        samesite="lax",
+        path=REFRESH_COOKIE_PATH,
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(REFRESH_COOKIE_NAME, path=REFRESH_COOKIE_PATH)
+
+
+def _issue_token_pair(
+    response: Response,
+    db: Session,
+    user: User,
+    *,
+    remember: bool = False,
+    request: Request | None = None,
+) -> TokenOut:
+    """Short access token in the body + rotated refresh token as an
+    httpOnly cookie. Used by login, verify-email, and the OAuth callback."""
+    raw, session = SessionService(db).create_session(
+        user=user,
+        remember=remember,
+        user_agent=request.headers.get("user-agent") if request else None,
+        ip=request.client.host if request and request.client else None,
+    )
+    max_age = int((_aware(session.expires_at) - _utcnow()).total_seconds())
+    _set_refresh_cookie(response, raw, max_age=max_age)
+    access = create_access_token(
+        data=_token_data(user),
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_TTL_MINUTES),
+    )
+    return TokenOut(access_token=access)
 
 
 def _build_user_out(
@@ -230,8 +283,14 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)) -> SignupOut:
 
 
 @router.post("/login", response_model=TokenOut)
-def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenOut:
-    """Authenticate user and return a JWT access token"""
+def login(
+    payload: UserLogin,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> TokenOut:
+    """Authenticate user; returns a short access token and sets the
+    httpOnly refresh cookie."""
     try:
         user = AuthService(db).authenticate(
             email=payload.email,
@@ -254,14 +313,20 @@ def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenOut:
             },
         )
 
-    token = create_access_token(data=_token_data(user))
-    return TokenOut(access_token=token)
+    return _issue_token_pair(
+        response, db, user, remember=payload.remember_me, request=request
+    )
 
 
 @router.post("/verify-email", response_model=TokenOut)
-def verify_email(payload: VerifyEmailIn, db: Session = Depends(get_db)) -> TokenOut:
+def verify_email(
+    payload: VerifyEmailIn,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> TokenOut:
     """Confirm the registration OTP; on success the user is verified and
-    logged in (token returned)."""
+    logged in (token returned + refresh cookie set)."""
     try:
         user = OtpService(db).verify(
             email=payload.email,
@@ -290,8 +355,56 @@ def verify_email(payload: VerifyEmailIn, db: Session = Depends(get_db)) -> Token
             detail={"code": "otp_invalid", "message": "Incorrect code."},
         )
 
-    token = create_access_token(data=_token_data(user))
-    return TokenOut(access_token=token)
+    return _issue_token_pair(response, db, user, request=request)
+
+
+@router.post("/refresh", response_model=TokenOut)
+def refresh(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> TokenOut:
+    """Rotate the refresh cookie and mint a fresh access token."""
+    raw = request.cookies.get(REFRESH_COOKIE_NAME)
+    invalid = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid refresh token",
+    )
+    if not raw:
+        raise invalid
+
+    try:
+        new_raw, session = SessionService(db).rotate(raw_token=raw)
+    except InvalidRefreshToken:
+        _clear_refresh_cookie(response)
+        raise invalid
+
+    user = db.get(User, session.user_id)
+    if user is None or not user.is_active:
+        _clear_refresh_cookie(response)
+        raise invalid
+
+    max_age = int((_aware(session.expires_at) - _utcnow()).total_seconds())
+    _set_refresh_cookie(response, new_raw, max_age=max_age)
+    access = create_access_token(
+        data=_token_data(user),
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_TTL_MINUTES),
+    )
+    return TokenOut(access_token=access)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> None:
+    """Revoke the presented refresh session and clear the cookie.
+    Best-effort — no bearer auth required, never fails."""
+    raw = request.cookies.get(REFRESH_COOKIE_NAME)
+    if raw:
+        SessionService(db).revoke(raw_token=raw)
+    _clear_refresh_cookie(response)
 
 
 @router.post("/resend-otp", response_model=MessageOut)
@@ -397,6 +510,9 @@ def password_reset_confirm(
 
     user.password_hash = hash_password(payload.new_password)
     db.commit()
+    # A password reset is a possible account-recovery-from-compromise:
+    # kill every existing session so a stolen refresh token dies too.
+    SessionService(db).revoke_all_for_user(user_id=user.id)
     return MessageOut(message="Password updated. Please log in.")
 
 @router.get("/me", response_model=UserOut)
@@ -630,12 +746,21 @@ def google_callback(
         name=name,
     )
 
-    # --- Issue our own JWT ---
-    jwt_token = create_access_token(data=_token_data(user))
+    # --- Issue our own JWT (short) ---
+    jwt_token = create_access_token(
+        data=_token_data(user),
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_TTL_MINUTES),
+    )
 
     # --- Redirect frontend with token ---
     # We pass the token as a query param. The frontend reads it and stores it.
+    # The refresh token rides as an httpOnly cookie on this redirect response
+    # (backend origin), so OAuth logins get silent refresh like password ones.
     destination = "diagnosis" if is_new else "dashboard"
     redirect_url = f"{frontend_base}/callback?token={jwt_token}&next={destination}"
 
-    return RedirectResponse(url=redirect_url)
+    redirect = RedirectResponse(url=redirect_url)
+    raw, session = SessionService(db).create_session(user=user)
+    max_age = int((_aware(session.expires_at) - _utcnow()).total_seconds())
+    _set_refresh_cookie(redirect, raw, max_age=max_age)
+    return redirect

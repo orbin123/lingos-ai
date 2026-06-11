@@ -18,6 +18,7 @@ from app import models  # noqa: F401 — populate the ORM registry
 from app.core.config import settings
 from app.core.database import Base, get_db
 from app.modules.auth.models import (
+    AuthSession,
     EmailOtp,
     OAuthAccount,
     Permission,
@@ -39,6 +40,7 @@ AUTH_TABLES = [
     Permission.__table__,
     RolePermission.__table__,
     EmailOtp.__table__,
+    AuthSession.__table__,
 ]
 
 SIGNUP = {"email": "new@example.com", "password": "password123", "name": "New"}
