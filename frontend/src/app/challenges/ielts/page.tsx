@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties, ReactNode } from "react";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -13,6 +14,7 @@ import {
   Medal,
   Play,
   RefreshCw,
+  ScrollText,
   Trophy,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
@@ -42,14 +44,47 @@ function formatAttemptDate(value: string): string {
   });
 }
 
-function renderRulesMarkdown(rulesMd: string): string {
-  return rulesMd
-    .replace(/^## (.+)$/gm, "<h3>$1</h3>")
-    .replace(/^- (.+)$/gm, "<li>$1</li>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/^(?!<h3|<li)/gm, "")
-    .replace(/(<li>[\s\S]*<\/li>)/g, "<ul>$1</ul>");
+/** Render inline `**bold**` spans inside a line of rule text. */
+function renderInline(text: string): ReactNode {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
+    const bold = /^\*\*([^*]+)\*\*$/.exec(part);
+    if (bold) {
+      return (
+        <strong key={index} style={{ color: "#0f172a", fontWeight: 800 }}>
+          {bold[1]}
+        </strong>
+      );
+    }
+    return <span key={index}>{part}</span>;
+  });
+}
+
+/** Turn the challenge's `rules_md` into a numbered list. */
+function SprintRules({ rulesMd }: { rulesMd: string }) {
+  const rules: string[] = [];
+  rulesMd.split("\n").forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("# ") || trimmed.startsWith("## ")) return;
+    // Extract text from bullet points
+    if (trimmed.startsWith("- ")) {
+      rules.push(trimmed.slice(2));
+      return;
+    }
+    // Skip bold-only lines and paragraphs that are already covered
+    if (!trimmed.startsWith("**")) {
+      rules.push(trimmed);
+    }
+  });
+
+  return (
+    <ul style={rulesListStyle}>
+      {rules.map((rule, index) => (
+        <li key={index} style={rulesListItemStyle}>
+          {renderInline(rule)}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 // useSearchParams() requires a Suspense boundary for static prerender —
@@ -65,7 +100,6 @@ export default function IELTSSprintPage() {
 function IELTSSprintPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [rulesOpen, setRulesOpen] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const handledQueryRef = useRef<string | null>(null);
   const { logout } = useAuthStore();
@@ -373,40 +407,21 @@ function IELTSSprintPageInner() {
         )}
 
         {challenge?.rules_md && (
-          <section style={{ marginBottom: 16 }}>
-            <button
-              type="button"
-              onClick={() => setRulesOpen((open) => !open)}
-              style={{
-                width: "100%",
-                textAlign: "left",
-                border: "1px solid #dbeafe",
-                borderRadius: 16,
-                padding: "14px 18px",
-                background: "white",
-                fontWeight: 700,
-                color: "#0f172a",
-                cursor: "pointer",
-              }}
-            >
-              {rulesOpen ? "Hide sprint rules" : "Show sprint rules"}
-            </button>
-            {rulesOpen && (
-              <div
-                style={{
-                  marginTop: 10,
-                  background: "white",
-                  borderRadius: 16,
-                  padding: "18px 20px",
-                  color: "#475569",
-                  lineHeight: 1.6,
-                  fontSize: 14,
-                }}
-                dangerouslySetInnerHTML={{
-                  __html: `<div>${renderRulesMarkdown(challenge.rules_md)}</div>`,
-                }}
-              />
-            )}
+          <section style={rulesCardStyle}>
+            <div style={rulesHeaderStyle}>
+              <span style={rulesIconChipStyle}>
+                <ScrollText size={20} aria-hidden />
+              </span>
+              <div>
+                <h2 style={rulesTitleStyle}>How the sprint works</h2>
+                <p style={rulesSubtitleStyle}>
+                  Read this before you start — the timer is strict.
+                </p>
+              </div>
+            </div>
+            <div style={rulesBodyStyle}>
+              <SprintRules rulesMd={challenge.rules_md} />
+            </div>
           </section>
         )}
 
@@ -615,4 +630,114 @@ const alertStyle = {
   padding: "12px 14px",
   fontSize: 14,
   fontWeight: 700,
+};
+
+const rulesCardStyle: CSSProperties = {
+  marginBottom: 16,
+  background: "white",
+  borderRadius: 24,
+  padding: 28,
+  border: "1px solid #eef2f7",
+  boxShadow: "0 4px 20px rgba(0,0,0,0.02)",
+};
+
+const rulesHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 14,
+  marginBottom: 20,
+  paddingBottom: 18,
+  borderBottom: "1px solid #eef2f7",
+};
+
+const rulesIconChipStyle: CSSProperties = {
+  width: 46,
+  height: 46,
+  borderRadius: 14,
+  display: "grid",
+  placeItems: "center",
+  background: "#eef4ff",
+  color: "#0066cc",
+  flexShrink: 0,
+};
+
+const rulesTitleStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 19,
+  fontWeight: 800,
+  color: "#0f172a",
+  letterSpacing: "-0.01em",
+};
+
+const rulesSubtitleStyle: CSSProperties = {
+  margin: "3px 0 0",
+  fontSize: 13.5,
+  color: "#64748b",
+  fontWeight: 500,
+};
+
+const rulesBodyStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+};
+
+const rulesParagraphStyle: CSSProperties = {
+  margin: 0,
+  color: "#475569",
+  fontSize: 14.5,
+  lineHeight: 1.65,
+};
+
+const rulesHeadingStyle: CSSProperties = {
+  margin: "4px 0 0",
+  fontSize: 15,
+  fontWeight: 800,
+  color: "#0f172a",
+};
+
+const rulesWarningStyle: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  alignItems: "flex-start",
+  background: "#fff7ed",
+  border: "1px solid #fed7aa",
+  color: "#9a3412",
+  borderRadius: 14,
+  padding: "13px 16px",
+  fontSize: 14.5,
+  fontWeight: 700,
+  lineHeight: 1.55,
+};
+
+const rulesBulletStyle: CSSProperties = {
+  display: "flex",
+  gap: 10,
+  alignItems: "flex-start",
+  color: "#475569",
+  fontSize: 14.5,
+  lineHeight: 1.6,
+};
+
+const rulesBulletDotStyle: CSSProperties = {
+  width: 7,
+  height: 7,
+  borderRadius: "50%",
+  background: "#0066cc",
+  marginTop: 8,
+  flexShrink: 0,
+};
+
+const rulesListStyle: CSSProperties = {
+  margin: 0,
+  paddingLeft: 24,
+  listStyleType: "disc",
+};
+
+const rulesListItemStyle: CSSProperties = {
+  color: "#475569",
+  fontSize: 14.5,
+  lineHeight: 1.65,
+  fontWeight: 500,
+  marginBottom: 8,
 };

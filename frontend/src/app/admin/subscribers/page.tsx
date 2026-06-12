@@ -19,10 +19,22 @@ import { adminApi, type SubscriberItem, type TrialUserItem } from "@/lib/admin-a
 import { canManageSubscriptions } from "@/lib/admin-access";
 import { authApi } from "@/lib/auth-api";
 
+const STATUS_FILTERS = [
+  "all",
+  "active",
+  "cancelled",
+  "trial",
+  "expired",
+  "not_started",
+  "unverified",
+] as const;
+
 export default function AdminSubscribersPage() {
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const overviewQuery = useQuery({
-    queryKey: ["admin", "subscribers"],
-    queryFn: adminApi.subscribers,
+    queryKey: ["admin", "subscribers", statusFilter],
+    queryFn: () =>
+      adminApi.subscribers(statusFilter === "all" ? undefined : statusFilter),
   });
   const meQuery = useQuery({ queryKey: ["me"], queryFn: authApi.me });
   const canManage = canManageSubscriptions(meQuery.data);
@@ -32,6 +44,22 @@ export default function AdminSubscribersPage() {
 
   return (
     <AdminLayout title="Subscribers" eyebrow="Billing operations">
+      <div style={filterRowStyle}>
+        {STATUS_FILTERS.map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setStatusFilter(value)}
+            style={{
+              ...filterChipStyle,
+              ...(statusFilter === value ? filterChipActiveStyle : {}),
+            }}
+          >
+            {value.replace("_", " ")}
+          </button>
+        ))}
+      </div>
+
       <section style={sectionHeaderStyle}>
         <h2 style={sectionTitleStyle}>Paying subscribers</h2>
         <span style={countStyle}>{subscribers.length}</span>
@@ -74,16 +102,18 @@ export default function AdminSubscribersPage() {
               <th style={thStyle}>User</th>
               <th style={thStyle}>Status</th>
               <th style={thStyle}>Signed up</th>
+              <th style={thStyle}>Trial started</th>
               <th style={thStyle}>Trial ends</th>
+              {canManage && <th style={thStyle}>Manage trial</th>}
             </tr>
           </thead>
           <tbody>
             {trials.map((trial) => (
-              <TrialRow key={trial.user_id} trial={trial} />
+              <TrialRow key={trial.user_id} trial={trial} canManage={canManage} />
             ))}
             {trials.length === 0 && (
               <tr>
-                <td style={tdStyle} colSpan={4}>
+                <td style={tdStyle} colSpan={canManage ? 6 : 5}>
                   {overviewQuery.isLoading ? "Loading…" : "No trial users."}
                 </td>
               </tr>
@@ -151,7 +181,31 @@ function SubscriberRow({
   );
 }
 
-function TrialRow({ trial }: { trial: TrialUserItem }) {
+function TrialRow({
+  trial,
+  canManage,
+}: {
+  trial: TrialUserItem;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [date, setDate] = useState(toDateInput(trial.trial_ends_at));
+  const mutation = useMutation({
+    mutationFn: (endsAt: string) =>
+      adminApi.updateSubscriberSubscription(trial.user_id, {
+        status: "trial",
+        trial_ends_at: endsAt,
+        // Granting a trial to someone who never started one stamps the
+        // start too, so "one trial per user" accounting stays coherent.
+        ...(trial.trial_started_at
+          ? {}
+          : { trial_started_at: new Date().toISOString() }),
+      }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["admin", "subscribers"] }),
+  });
+  const changed = date !== toDateInput(trial.trial_ends_at);
+
   return (
     <tr>
       <td style={tdStyle}>
@@ -162,7 +216,28 @@ function TrialRow({ trial }: { trial: TrialUserItem }) {
         <BillingStatusBadge status={trial.status === "trial" ? "trialing" : trial.status} />
       </td>
       <td style={tdStyle}>{formatAdminDate(trial.signed_up_at)}</td>
+      <td style={tdStyle}>{formatAdminDate(trial.trial_started_at)}</td>
       <td style={tdStyle}>{formatAdminDate(trial.trial_ends_at)}</td>
+      {canManage && (
+        <td style={tdStyle}>
+          <div style={manageStyle}>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              style={dateInputStyle}
+            />
+            <AdminButton
+              tone="secondary"
+              disabled={!date || !changed || mutation.isPending}
+              onClick={() => mutation.mutate(`${date}T00:00:00Z`)}
+            >
+              <Save size={15} />
+              {trial.trial_started_at ? "Save" : "Grant"}
+            </AdminButton>
+          </div>
+        </td>
+      )}
     </tr>
   );
 }
@@ -171,6 +246,31 @@ function toDateInput(value: string | null): string {
   if (!value) return "";
   return new Date(value).toISOString().slice(0, 10);
 }
+
+const filterRowStyle: CSSProperties = {
+  display: "flex",
+  gap: 8,
+  flexWrap: "wrap",
+  marginBottom: 18,
+};
+
+const filterChipStyle: CSSProperties = {
+  border: "1.5px solid oklch(86% 0.025 240)",
+  borderRadius: 999,
+  background: "white",
+  padding: "6px 14px",
+  fontSize: 13,
+  fontWeight: 700,
+  color: "oklch(40% 0.06 240)",
+  cursor: "pointer",
+  textTransform: "capitalize",
+};
+
+const filterChipActiveStyle: CSSProperties = {
+  background: "oklch(35% 0.1 245)",
+  borderColor: "oklch(35% 0.1 245)",
+  color: "white",
+};
 
 const sectionHeaderStyle: CSSProperties = {
   display: "flex",

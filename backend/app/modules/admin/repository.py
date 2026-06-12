@@ -572,13 +572,17 @@ class AdminRepository:
         )
         return [self._payment_out(payment) for payment in rows]
 
-    def list_subscribers(self) -> SubscribersOverview:
+    def list_subscribers(self, *, status: str | None = None) -> SubscribersOverview:
         """Paying subscribers + trial users, read from stored billing rows.
 
         Paying group: paid-lifecycle `Subscription` rows (entered via
         payment) plus legacy `Purchase` rows. Trial group: everyone else,
         with trial state read from the stored subscription row — never
         derived from signup date.
+
+        `status` filters both groups by their displayed (effective) status:
+        subscribers — active|expired|cancelled|paused; trials —
+        unverified|not_started|trial|expired.
         """
         now = datetime.now(timezone.utc)
 
@@ -598,11 +602,11 @@ class AdminRepository:
             paying_ids.add(user.id)
             expires = _as_aware(purchase.access_expires_at)
             if purchase.status == "paused":
-                status = "paused"
+                item_status = "paused"
             elif expires is None or expires > now:
-                status = "active"
+                item_status = "active"
             else:
-                status = "expired"
+                item_status = "expired"
             subscribers.append(
                 SubscriberItem(
                     user_id=user.id,
@@ -612,7 +616,7 @@ class AdminRepository:
                     plan_name=purchase.plan_name,
                     amount_paid=float(purchase.amount_paid),
                     currency=purchase.currency,
-                    status=status,
+                    status=item_status,
                     purchased_at=purchase.created_at,
                     access_expires_at=purchase.access_expires_at,
                 )
@@ -638,9 +642,9 @@ class AdminRepository:
             paying_ids.add(user.id)
             effective = resolve_effective_status(subscription, now)
             if subscription.status == SubscriptionStatus.CANCELLED.value:
-                status = "cancelled"
+                item_status = "cancelled"
             else:
-                status = effective.value
+                item_status = effective.value
             plan = (
                 PLAN_CATALOG.get(subscription.plan_id)
                 if subscription.plan_id
@@ -655,7 +659,7 @@ class AdminRepository:
                     plan_name=subscription.plan_name,
                     amount_paid=float(plan["amount_paid"]) if plan else None,  # type: ignore[arg-type]
                     currency=str(plan["currency"]) if plan else None,
-                    status=status,
+                    status=item_status,
                     purchased_at=subscription.current_period_start,
                     access_expires_at=subscription.current_period_end,
                 )
@@ -671,18 +675,18 @@ class AdminRepository:
                 continue
             subscription = subscription_by_user.get(user.id)
             if not user.email_verified:
-                status = "unverified"
+                item_status = "unverified"
             elif subscription is None or subscription.trial_started_at is None:
-                status = "not_started"
+                item_status = "not_started"
             else:
                 ends = _as_aware(subscription.trial_ends_at)
-                status = "trial" if ends is not None and ends > now else "expired"
+                item_status = "trial" if ends is not None and ends > now else "expired"
             trials.append(
                 TrialUserItem(
                     user_id=user.id,
                     name=user.name,
                     email=user.email,
-                    status=status,
+                    status=item_status,
                     email_verified=user.email_verified,
                     signed_up_at=user.created_at,
                     trial_started_at=(
@@ -693,6 +697,10 @@ class AdminRepository:
                     ),
                 )
             )
+
+        if status:
+            subscribers = [item for item in subscribers if item.status == status]
+            trials = [item for item in trials if item.status == status]
 
         return SubscribersOverview(subscribers=subscribers, trials=trials)
 
@@ -939,9 +947,12 @@ class AdminRepository:
             user=_log_user(payment.user),
             provider=payment.provider,
             provider_payment_id=_mask_provider_id(payment.provider_payment_id),
+            provider_order_id=_mask_provider_id(payment.provider_order_id),
             amount=float(payment.amount),
             currency=payment.currency,
             status=payment.status,
+            method=payment.method,
+            failure_reason=payment.failure_reason,
             paid_at=payment.paid_at,
             created_at=payment.created_at,
         )
@@ -956,9 +967,12 @@ class AdminRepository:
             provider_subscription_id=_mask_provider_id(
                 subscription.provider_subscription_id
             ),
+            plan_id=subscription.plan_id,
             plan_name=subscription.plan_name,
             status=subscription.status,
+            trial_started_at=subscription.trial_started_at,
             trial_ends_at=subscription.trial_ends_at,
+            cancelled_at=subscription.cancelled_at,
             current_period_start=subscription.current_period_start,
             current_period_end=subscription.current_period_end,
             created_at=subscription.created_at,

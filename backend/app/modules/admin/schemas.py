@@ -260,9 +260,12 @@ class PaymentRead(BaseModel):
     user: AdminLogUser | None = None
     provider: str
     provider_payment_id: str | None = None
+    provider_order_id: str | None = None
     amount: float
     currency: str
     status: str
+    method: str | None = None
+    failure_reason: str | None = None
     paid_at: datetime | None = None
     created_at: datetime
 
@@ -274,9 +277,12 @@ class SubscriptionRead(BaseModel):
     provider: str
     provider_customer_id: str | None = None
     provider_subscription_id: str | None = None
+    plan_id: str | None = None
     plan_name: str
     status: str
+    trial_started_at: datetime | None = None
     trial_ends_at: datetime | None = None
+    cancelled_at: datetime | None = None
     current_period_start: datetime | None = None
     current_period_end: datetime | None = None
     created_at: datetime
@@ -338,6 +344,23 @@ class SubscriberAccessUpdate(BaseModel):
     """Admin extends or expires a subscriber's 2-year access window."""
 
     access_expires_at: datetime
+
+
+class SubscriptionAdminUpdate(BaseModel):
+    """Admin edits a user's subscription row (extend/grant trial, set
+    expiry, fix a stuck state). All fields optional — only provided fields
+    are applied. Creating a row for a user without one supports
+    "grant trial"."""
+
+    status: str | None = Field(default=None, min_length=1, max_length=40)
+    plan_id: str | None = Field(default=None, min_length=1, max_length=50)
+    trial_started_at: datetime | None = None
+    trial_ends_at: datetime | None = None
+    current_period_end: datetime | None = None
+
+
+class ExpireTrialsResult(BaseModel):
+    expired: int
 
 
 class AppReviewItem(BaseModel):

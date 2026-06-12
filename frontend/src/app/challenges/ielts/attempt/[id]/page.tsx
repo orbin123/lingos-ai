@@ -7,8 +7,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
-  ArrowLeft,
   BookOpen,
+  Check,
+  ChevronLeft,
   Clock3,
   Headphones,
   Mic,
@@ -16,8 +17,9 @@ import {
   RotateCcw,
   Send,
   Square,
-  Trophy,
 } from "lucide-react";
+import { LandingNavbar } from "@/components/layout/LandingNavbar";
+import { AudioPlayer } from "@/components/ui/AudioPlayer";
 import { authApi } from "@/lib/auth-api";
 import { challengesApi } from "@/lib/challenges-api";
 import type {
@@ -25,7 +27,6 @@ import type {
   ChallengeSpeakingUploadRead,
 } from "@/lib/challenges-api";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
-import { useAuthStore } from "@/store/authStore";
 
 type SectionKey = "listening" | "reading" | "writing" | "speaking";
 
@@ -208,7 +209,6 @@ export default function ChallengeAttemptPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { logout } = useAuthStore();
   const { isReady } = useRequireAuth();
   const attemptId = Number(params.id);
 
@@ -257,6 +257,9 @@ export default function ChallengeAttemptPage() {
       setSubmitError(null);
       setTimerStarted(Boolean(attempt.timer_started_at));
       queryClient.setQueryData(["challenge-attempt", attemptId], attempt);
+      // Results are a destination, not an inline footnote — hand off to the
+      // dedicated result page (the attempt stays reachable for answer review).
+      router.push(`/challenges/ielts/attempt/${attemptId}/result`);
     },
     onError: (error) => {
       autoSubmitTriggeredRef.current = false;
@@ -374,17 +377,22 @@ export default function ChallengeAttemptPage() {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [currentAttempt?.status]);
 
-  const handleLogout = () => {
-    logout();
-    router.push("/login");
-  };
+  // A finished attempt always belongs on the results page — never re-open the
+  // answers for editing or review.
+  useEffect(() => {
+    if (
+      currentAttempt?.status === "completed" ||
+      currentAttempt?.status === "timed_out"
+    ) {
+      router.replace(`/challenges/ielts/attempt/${attemptId}/result`);
+    }
+  }, [currentAttempt?.status, attemptId, router]);
 
   if (!isReady) return null;
 
   const status = currentAttempt?.status;
   const inProgress = status === "in_progress";
   const awaitingBegin = inProgress && !timerStarted;
-  const isComplete = status === "completed" || status === "timed_out";
   const warning = inProgress && timerStarted && remainingSeconds <= 60;
 
   return (
@@ -392,28 +400,16 @@ export default function ChallengeAttemptPage() {
       {/* Dot grid overlay */}
       <div style={dotGridStyle} aria-hidden />
 
-      {/* Top nav */}
-      <header style={topBarStyle}>
-        <div style={topBarInnerStyle}>
-          <button
-            type="button"
-            onClick={() => router.push("/challenges")}
-            style={backLinkStyle}
-          >
-            <ArrowLeft size={14} aria-hidden />
-            Challenges
-          </button>
-          <div style={{ flex: 1 }} />
-          <span style={userNameStyle}>
-            {user?.display_name || user?.name || "Learner"}
-          </span>
-          <button type="button" onClick={handleLogout} style={signOutButtonStyle}>
-            Sign out
-          </button>
-        </div>
-      </header>
-
+      <LandingNavbar variant="minimal" />
       <main style={mainStyle}>
+        <button
+          type="button"
+          onClick={() => router.push("/challenges")}
+          style={backLinkStyle}
+        >
+          <ChevronLeft size={18} aria-hidden />
+          Challenges
+        </button>
         {attemptQuery.isLoading && (
           <div style={panelStyle}>Loading attempt...</div>
         )}
@@ -543,12 +539,6 @@ export default function ChallengeAttemptPage() {
               })}
             </nav>
 
-            {submitMutation.isPending && (
-              <div style={{ ...panelStyle, marginBottom: 16, textAlign: "center" }}>
-                Scoring your responses...
-              </div>
-            )}
-
             {submitError && (
               <div style={{ ...alertStyle, marginBottom: 16 }}>
                 <AlertTriangle size={18} aria-hidden />
@@ -612,7 +602,6 @@ export default function ChallengeAttemptPage() {
               />
             )}
 
-            {isComplete && <ResultsPanel attempt={currentAttempt} />}
               </>
             )}
           </>
@@ -982,6 +971,31 @@ function SpeakingRecorder({
     setAudioUrl(nextUrl);
   };
 
+  const uploadBlob = useCallback(
+    async (blob: Blob, recordedDuration: number) => {
+      if (disabled) return;
+      setUploading(true);
+      setError(null);
+      try {
+        const extension = extensionForMime(blob.type || mimeTypeRef.current);
+        const result = await challengesApi.uploadSpeakingTake(
+          attemptId,
+          promptId,
+          blob,
+          `speaking-${promptId}${extension}`,
+        );
+        const next = { ...result, duration_seconds: recordedDuration };
+        setUploaded(next);
+        onUploaded(promptId, next);
+      } catch {
+        setError("Couldn't save this take. Tap retry to upload it again.");
+      } finally {
+        setUploading(false);
+      }
+    },
+    [attemptId, promptId, disabled, onUploaded],
+  );
+
   const stopRecording = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
       recorderRef.current.stop();
@@ -1022,6 +1036,8 @@ function SpeakingRecorder({
         onUploaded(promptId, null);
         setRecording(false);
         cleanupStream();
+        // Stopping IS the commit — save the take immediately, no extra click.
+        void uploadBlob(blob, recordedDuration);
       };
       recorder.start(250);
       recordingStartedAtRef.current = Date.now();
@@ -1037,31 +1053,6 @@ function SpeakingRecorder({
       setRecording(false);
       cleanupStream();
       setError("Microphone permission is needed for this section.");
-    }
-  };
-
-  const uploadTake = async () => {
-    if (!localBlob || disabled || uploading || recording) return;
-    setUploading(true);
-    setError(null);
-    try {
-      const extension = extensionForMime(localBlob.type || mimeTypeRef.current);
-      const result = await challengesApi.uploadSpeakingTake(
-        attemptId,
-        promptId,
-        localBlob,
-        `speaking-${promptId}${extension}`,
-      );
-      const next = {
-        ...result,
-        duration_seconds: duration,
-      };
-      setUploaded(next);
-      onUploaded(promptId, next);
-    } catch {
-      setError("Upload failed. Please try again or re-record this prompt.");
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -1091,68 +1082,143 @@ function SpeakingRecorder({
     };
   }, [initialAnswer?.audio_url, localBlob, audioUrl]);
 
+  const showReview = Boolean(audioUrl) && !recording;
+
   return (
     <div style={questionCardStyle}>
       <div style={questionStemStyle}>
         <span style={numberBadgeStyle}>{index}</span>
         <span>{prompt}</span>
       </div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <button
-          type="button"
-          disabled={disabled || uploading}
-          onClick={recording ? stopRecording : startRecording}
-          style={{
-            ...iconActionStyle,
-            background: recording ? "#c0392b" : "#0070C4",
-          }}
-          aria-label={recording ? "Stop recording" : "Start recording"}
-        >
-          {recording ? <Square size={19} /> : <Mic size={19} />}
-        </button>
-        <div style={{ color: "#4a6880", fontSize: 14, fontWeight: 700 }}>
-          {recording
-            ? `${formatRemaining(elapsed)} / ${formatRemaining(durationSeconds)}`
-            : uploading
-              ? "Uploading take..."
-              : uploaded
-                ? "Uploaded for scoring"
-            : audioUrl
-              ? "Local recording ready"
-              : "Tap to record"}
-        </div>
-        {audioUrl && !recording && !uploaded && (
-          <button
-            type="button"
-            disabled={disabled || uploading}
-            onClick={uploadTake}
-            style={submitButtonStyle}
-          >
-            <Send size={15} aria-hidden />
-            Use this take
-          </button>
-        )}
-        {audioUrl && !recording && (
-          <button
-            type="button"
-            disabled={disabled || uploading}
-            onClick={startRecording}
-            style={secondaryButtonStyle}
-          >
-            <RotateCcw size={16} aria-hidden />
-            Re-record
-          </button>
+
+      <div className="tw-root">
+        {showReview ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            <AudioPlayer src={audioUrl as string} />
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+              }}
+            >
+              <SaveStatus uploading={uploading} saved={Boolean(uploaded)} failed={Boolean(error)} />
+              <div style={{ flex: 1 }} />
+              {error && !uploading && localBlob && (
+                <button
+                  type="button"
+                  className="tw-action-pill primary"
+                  disabled={disabled}
+                  onClick={() => uploadBlob(localBlob, duration)}
+                >
+                  <Send size={15} aria-hidden />
+                  Retry save
+                </button>
+              )}
+              <button
+                type="button"
+                className="tw-action-pill"
+                disabled={disabled || uploading}
+                onClick={startRecording}
+              >
+                <RotateCcw size={15} aria-hidden />
+                Re-record
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="tw-mic-stage">
+            <div className="tw-mic-prompt">
+              {recording ? "Recording" : `Speaking · up to ${durationSeconds}s`}
+            </div>
+            <div className="tw-mic-button-wrap">
+              <button
+                type="button"
+                className={`tw-mic-button${recording ? " recording" : ""}`}
+                disabled={disabled}
+                onClick={recording ? stopRecording : startRecording}
+                aria-label={recording ? "Stop recording" : "Start recording"}
+              >
+                {recording ? <Square size={26} fill="currentColor" /> : <Mic size={28} />}
+              </button>
+              <span className="tw-mic-ring" aria-hidden />
+            </div>
+            {recording ? (
+              <>
+                <div className="tw-mic-live-bars" aria-hidden>
+                  {LIVE_BAR_DELAYS.map((delay, barIndex) => (
+                    <span
+                      key={barIndex}
+                      className="tw-mic-live-bar"
+                      style={{ animationDelay: `${delay}s` }}
+                    />
+                  ))}
+                </div>
+                <div className="tw-rec-timer">
+                  <span className="tw-rec-dot" />
+                  {formatRemaining(elapsed)} / {formatRemaining(durationSeconds)}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="tw-mic-instruction">Tap to record</div>
+                <div className="tw-mic-sub">
+                  Speak naturally — you can re-record if you&apos;re not happy.
+                </div>
+              </>
+            )}
+          </div>
         )}
       </div>
-      {audioUrl && <audio controls src={audioUrl} style={{ width: "100%", marginTop: 12 }} />}
-      {uploaded && (
-        <div style={{ ...mutedBandStyle, marginTop: 12 }}>
-          Uploaded {Math.round(uploaded.size_bytes / 1024)} KB for prompt {promptId}.
-        </div>
-      )}
       {error && <div style={{ ...alertStyle, marginTop: 12 }}>{error}</div>}
     </div>
   );
+}
+
+const LIVE_BAR_DELAYS = [0, 0.18, 0.36, 0.52, 0.36, 0.18, 0];
+
+function SaveStatus({
+  uploading,
+  saved,
+  failed,
+}: {
+  uploading: boolean;
+  saved: boolean;
+  failed: boolean;
+}) {
+  if (uploading) {
+    return (
+      <span style={{ ...saveChipStyle, color: "#4a6880", background: "#eef3f8" }}>
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: "#4a6880",
+            animation: "pulse 1s ease infinite",
+          }}
+        />
+        Saving…
+      </span>
+    );
+  }
+  if (failed) {
+    return (
+      <span style={{ ...saveChipStyle, color: "#b3261e", background: "#fdecea" }}>
+        Not saved
+      </span>
+    );
+  }
+  if (saved) {
+    return (
+      <span style={{ ...saveChipStyle, color: "#15803d", background: "#dcfce7" }}>
+        <Check size={14} aria-hidden />
+        Saved
+      </span>
+    );
+  }
+  return null;
 }
 
 function QuestionList({
@@ -1308,221 +1374,6 @@ function PlaceholderContent({
   );
 }
 
-function ResultsPanel({ attempt }: { attempt: ChallengeAttemptRead }) {
-  const router = useRouter();
-  const passThreshold = attempt.pass_threshold ?? 6.0;
-  const passed = attempt.passed === true;
-  const levelNumber = attempt.level_number ?? 1;
-  const scores = attempt.section_scores ?? {};
-  const feedbackReport = isRecord(attempt.feedback_report) ? attempt.feedback_report : {};
-  const feedbackSummary =
-    typeof feedbackReport.overall_summary === "string"
-      ? feedbackReport.overall_summary
-      : null;
-  const feedbackSections = isRecord(feedbackReport.sections)
-    ? feedbackReport.sections
-    : {};
-  const nextTips = (["listening", "reading", "writing", "speaking"] as SectionKey[])
-    .map((section) => {
-      const sectionFeedback = feedbackSections[section];
-      if (!isRecord(sectionFeedback) || typeof sectionFeedback.next_tip !== "string") {
-        return null;
-      }
-      return { section, tip: sectionFeedback.next_tip };
-    })
-    .filter((tip): tip is { section: SectionKey; tip: string } => tip !== null);
-
-  const evaluationReport = isRecord(attempt.evaluation_report)
-    ? attempt.evaluation_report
-    : {};
-  const readingReview = isRecord(evaluationReport.reading) ? evaluationReport.reading : null;
-  const listeningReview = isRecord(evaluationReport.listening)
-    ? evaluationReport.listening
-    : null;
-  const writingReview = isRecord(evaluationReport.writing) ? evaluationReport.writing : null;
-  const readingQuestions = Array.isArray(readingReview?.questions)
-    ? readingReview.questions.filter(isRecord)
-    : [];
-  const listeningQuestions = Array.isArray(listeningReview?.questions)
-    ? listeningReview.questions.filter(isRecord)
-    : [];
-  const writingItems = Array.isArray(writingReview?.items)
-    ? writingReview.items.filter(isRecord)
-    : [];
-
-  return (
-    <section style={{ ...panelStyle, marginTop: 18, borderColor: "rgba(0,112,196,0.2)" }}>
-      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
-        <div
-          style={{
-            ...scoreDialStyle,
-            background: passed ? "#dcfce7" : "#fee2e2",
-            color: passed ? "#15803d" : "#b91c1c",
-          }}
-        >
-          <Trophy size={24} aria-hidden />
-          <strong style={{ fontSize: 22, fontWeight: 800 }}>
-            {attempt.overall_score?.toFixed(1) ?? "--"}
-          </strong>
-        </div>
-        <div style={{ flex: "1 1 260px" }}>
-          <h2 style={sectionTitleStyle}>
-            {passed
-              ? "Level passed"
-              : attempt.status === "timed_out"
-                ? "Timed out"
-                : "Level not passed"}
-          </h2>
-          <p style={{ margin: "8px 0 0", color: "#4a6880", lineHeight: 1.6, fontSize: 14 }}>
-            {passed
-              ? `You reached the pass threshold of ${passThreshold.toFixed(1)}.`
-              : `You needed ${passThreshold.toFixed(1)} to pass this level.`}
-          </p>
-          {passed && levelNumber < 3 && (
-            <p style={{ margin: "8px 0 0", color: "#15803d", fontWeight: 700, fontSize: 14 }}>
-              Level {levelNumber + 1} is now unlocked.
-            </p>
-          )}
-          <p style={{ margin: "8px 0 0", color: "#4a6880", lineHeight: 1.6, fontSize: 14 }}>
-            {feedbackSummary ??
-              "Reading and Listening were graded from answer keys, Writing was evaluated, and Speaking was scored from transcripts only."}
-          </p>
-        </div>
-      </div>
-      <div style={scoreGridStyle}>
-        {(["listening", "reading", "writing", "speaking"] as SectionKey[]).map((section) => (
-          <div key={section} style={scoreCellStyle}>
-            <span style={{ textTransform: "capitalize", fontSize: 13, fontWeight: 700 }}>
-              {section}
-            </span>
-            <strong style={{ color: "#0d1f36", fontSize: 15 }}>
-              {scores[section]?.toFixed(1) ?? "--"}
-            </strong>
-          </div>
-        ))}
-      </div>
-      {(readingQuestions.length > 0 || listeningQuestions.length > 0) && (
-        <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
-          {readingQuestions.length > 0 && (
-            <ReviewBlock title="Reading review" questions={readingQuestions} />
-          )}
-          {listeningQuestions.length > 0 && (
-            <ReviewBlock title="Listening review" questions={listeningQuestions} />
-          )}
-        </div>
-      )}
-      {writingItems.length > 0 && (
-        <div style={{ marginTop: 14 }}>
-          <h3 style={{ ...sectionTitleStyle, fontSize: 15, marginBottom: 10 }}>Writing summary</h3>
-          <div style={{ display: "grid", gap: 10 }}>
-            {writingItems.map((item, index) => {
-              const issues = Array.isArray(item.issues) ? item.issues.filter(isRecord) : [];
-              const summary =
-                typeof item.summary === "string" ? item.summary : "Writing feedback unavailable.";
-              return (
-                <div key={String(item.item_id ?? index)} style={feedbackTipStyle}>
-                  <strong style={{ display: "block", marginBottom: 6 }}>{summary}</strong>
-                  {issues.slice(0, 2).map((issue, issueIndex) => (
-                    <p
-                      key={issueIndex}
-                      style={{ margin: "4px 0 0", color: "#4a6880", fontSize: 13.5, lineHeight: 1.5 }}
-                    >
-                      {typeof issue.issue === "string" ? issue.issue : "Review this sentence."}
-                    </p>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      {nextTips.length > 0 && (
-        <div style={feedbackTipGridStyle}>
-          {nextTips.map(({ section, tip }) => (
-            <div key={section} style={feedbackTipStyle}>
-              <span
-                style={{
-                  textTransform: "capitalize",
-                  fontSize: 12,
-                  fontWeight: 800,
-                  color: "#0070C4",
-                  letterSpacing: "0.01em",
-                }}
-              >
-                {section}
-              </span>
-              <p style={{ margin: "6px 0 0", lineHeight: 1.55, color: "#4a6880", fontSize: 13.5 }}>
-                {tip}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
-        <button type="button" style={submitButtonStyle} onClick={() => router.push("/challenges/ielts")}>
-          Back to IELTS Sprint
-        </button>
-        <button
-          type="button"
-          style={secondaryButtonStyle}
-          onClick={() => router.push(`/challenges/ielts?retry=${levelNumber}`)}
-        >
-          <RotateCcw size={16} aria-hidden />
-          Retry level
-        </button>
-        {passed && levelNumber < 3 && (
-          <button
-            type="button"
-            style={submitButtonStyle}
-            onClick={() => router.push(`/challenges/ielts?start=${levelNumber + 1}`)}
-          >
-            Next level
-          </button>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function ReviewBlock({
-  title,
-  questions,
-}: {
-  title: string;
-  questions: Record<string, unknown>[];
-}) {
-  return (
-    <div style={feedbackTipStyle}>
-      <h3 style={{ ...sectionTitleStyle, fontSize: 15, marginBottom: 10 }}>{title}</h3>
-      <div style={{ display: "grid", gap: 8 }}>
-        {questions.map((question, index) => {
-          const correct = question.correct === true;
-          const prompt =
-            typeof question.prompt === "string"
-              ? question.prompt
-              : `Question ${index + 1}`;
-          return (
-            <div
-              key={String(question.item_id ?? index)}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                color: correct ? "#15803d" : "#b91c1c",
-                fontSize: 13.5,
-                fontWeight: 600,
-              }}
-            >
-              <span style={{ color: "#0d1f36", fontWeight: 600 }}>{prompt}</span>
-              <span>{correct ? "Correct" : "Incorrect"}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /* ─── Styles ─── */
 
 const pageWrapperStyle: CSSProperties = {
@@ -1543,61 +1394,26 @@ const dotGridStyle: CSSProperties = {
   zIndex: 0,
 };
 
-const topBarStyle: CSSProperties = {
-  position: "sticky",
-  top: 0,
-  zIndex: 50,
-  backdropFilter: "blur(24px)",
-  WebkitBackdropFilter: "blur(24px)",
-  background: "rgba(220,232,245,0.7)",
-  borderBottom: "1px solid rgba(140,170,220,0.14)",
-};
-
-const topBarInnerStyle: CSSProperties = {
+const mainStyle: CSSProperties = {
+  position: "relative",
+  zIndex: 1,
   maxWidth: 1240,
   margin: "0 auto",
-  padding: "12px 32px",
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
+  padding: "96px 32px 60px",
 };
 
 const backLinkStyle: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 6,
-  fontSize: 13.5,
-  fontWeight: 700,
-  color: "#4a6880",
-  background: "transparent",
+  background: "none",
   border: "none",
+  color: "#0f172a",
+  fontSize: 14,
+  fontWeight: 600,
   cursor: "pointer",
-  padding: "6px 0",
-};
-
-const userNameStyle: CSSProperties = {
-  fontSize: 13.5,
-  fontWeight: 700,
-  color: "#0d1f36",
-};
-
-const signOutButtonStyle: CSSProperties = {
-  padding: "7px 16px",
-  borderRadius: 999,
-  fontSize: 13,
-  fontWeight: 700,
-  color: "#1e3550",
-  background: "white",
-  border: "1.5px solid #d0dde9",
-  cursor: "pointer",
-};
-
-const mainStyle: CSSProperties = {
-  position: "relative",
-  zIndex: 1,
-  maxWidth: 1240,
-  margin: "0 auto",
-  padding: "28px 32px 60px",
+  padding: 0,
+  marginBottom: 20,
 };
 
 const examHeaderStyle: CSSProperties = {
@@ -1934,34 +1750,6 @@ const placeholderIconStyle: CSSProperties = {
   marginBottom: 4,
 };
 
-const secondaryButtonStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 7,
-  border: "1.5px solid #d0dde9",
-  borderRadius: 10,
-  background: "white",
-  color: "#0d1f36",
-  padding: "9px 14px",
-  fontSize: 13,
-  fontWeight: 700,
-  cursor: "pointer",
-  fontFamily: "inherit",
-};
-
-const iconActionStyle: CSSProperties = {
-  width: 48,
-  height: 48,
-  display: "grid",
-  placeItems: "center",
-  border: "1px solid transparent",
-  borderRadius: 12,
-  color: "white",
-  cursor: "pointer",
-  flexShrink: 0,
-};
-
 const alertStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
@@ -1975,50 +1763,12 @@ const alertStyle: CSSProperties = {
   fontWeight: 700,
 };
 
-const scoreDialStyle: CSSProperties = {
-  width: 110,
-  height: 110,
-  borderRadius: "50%",
-  display: "flex",
-  flexDirection: "column",
+const saveChipStyle: CSSProperties = {
+  display: "inline-flex",
   alignItems: "center",
-  justifyContent: "center",
   gap: 6,
-  background: "#d6e8f7",
-  color: "#0070C4",
-};
-
-const scoreGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-  gap: 10,
-  marginTop: 18,
-};
-
-const scoreCellStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 10,
-  border: "1.5px solid #d0dde9",
-  borderRadius: 12,
-  padding: "12px 14px",
-  color: "#4a6880",
-  background: "white",
-};
-
-const feedbackTipGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: 10,
-  marginTop: 14,
-};
-
-const feedbackTipStyle: CSSProperties = {
-  border: "1.5px solid #d0dde9",
-  borderRadius: 12,
-  padding: "14px 16px",
-  color: "#0d1f36",
-  background: "white",
-  fontSize: 14,
+  padding: "5px 11px",
+  borderRadius: 999,
+  fontSize: 12.5,
+  fontWeight: 800,
 };

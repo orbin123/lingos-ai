@@ -27,6 +27,8 @@ from app.modules.admin.schemas import (
     RolePermissionsUpdate,
     SubscriberItem,
     SubscribersOverview,
+    SubscriptionAdminUpdate,
+    SubscriptionRead,
     UserBillingRead,
     UserProgressItem,
     UserRolesUpdate,
@@ -252,8 +254,8 @@ class AdminService:
     def list_payments(self) -> list[PaymentRead]:
         return self.repo.list_payments()
 
-    def list_subscribers(self) -> SubscribersOverview:
-        return self.repo.list_subscribers()
+    def list_subscribers(self, *, status: str | None = None) -> SubscribersOverview:
+        return self.repo.list_subscribers(status=status)
 
     def get_user_billing(self, user_id: int) -> UserBillingRead | None:
         return self.repo.get_user_billing(user_id)
@@ -290,6 +292,123 @@ class AdminService:
             (item for item in overview.subscribers if item.user_id == user_id),
             None,
         )
+
+    def update_subscriber_subscription(
+        self,
+        *,
+        user_id: int,
+        update: SubscriptionAdminUpdate,
+        actor: User,
+        ip_address: str | None = None,
+    ) -> SubscriptionRead | None:
+        """Admin edit of a user's subscription row (grant/extend trial,
+        set expiry, fix a stuck status). Creates the row if the user has
+        none. Returns None if the user doesn't exist; raises ValueError on
+        an invalid status/plan_id."""
+        from app.modules.subscriptions.catalog import PLAN_CATALOG
+        from app.modules.subscriptions.models import Subscription, SubscriptionStatus
+        from app.modules.subscriptions.repository import SubscriptionRepository
+
+        user = self.db.get(User, user_id)
+        if user is None:
+            return None
+
+        if update.status is not None and update.status not in {
+            s.value for s in SubscriptionStatus
+        }:
+            raise ValueError(f"Invalid subscription status {update.status!r}")
+        if update.plan_id is not None and update.plan_id not in PLAN_CATALOG:
+            raise ValueError(f"Unknown plan {update.plan_id!r}")
+
+        subscription = SubscriptionRepository(self.db).get_for_user(user_id)
+        if subscription is None:
+            plan_id = update.plan_id or next(iter(PLAN_CATALOG))
+            plan = PLAN_CATALOG[plan_id]
+            subscription = Subscription(
+                user_id=user_id,
+                provider="admin",
+                plan_id=plan_id,
+                plan_name=str(plan["name"]),
+                status=update.status or SubscriptionStatus.VERIFIED.value,
+            )
+            self.db.add(subscription)
+            self.db.flush()
+            old_value = None
+        else:
+            old_value = self._subscription_snapshot(subscription)
+
+        for field in (
+            "status",
+            "trial_started_at",
+            "trial_ends_at",
+            "current_period_end",
+        ):
+            value = getattr(update, field)
+            if value is not None:
+                setattr(subscription, field, value)
+        if update.plan_id is not None:
+            subscription.plan_id = update.plan_id
+            subscription.plan_name = str(PLAN_CATALOG[update.plan_id]["name"])
+
+        self.db.flush()
+        self.audit.record(
+            admin=actor,
+            action="subscription.admin_update",
+            resource_type="subscription",
+            resource_id=subscription.id,
+            old_value=old_value,
+            new_value=self._subscription_snapshot(subscription),
+            ip_address=ip_address,
+        )
+        self.db.commit()
+        return self.repo._subscription_out(subscription)
+
+    def expire_due_trials(
+        self,
+        *,
+        actor: User,
+        ip_address: str | None = None,
+    ) -> int:
+        """Flip stored status on trials past their end (lazy resolution
+        already blocks access; this cleans up admin reporting). Audited."""
+        from app.modules.subscriptions.service import SubscriptionService
+
+        flipped = SubscriptionService(self.db).expire_due_trials()
+        self.audit.record(
+            admin=actor,
+            action="subscription.expire_due_trials",
+            resource_type="subscription",
+            resource_id=None,
+            old_value=None,
+            new_value={"expired": flipped},
+            ip_address=ip_address,
+        )
+        self.db.commit()
+        return flipped
+
+    def _subscription_snapshot(self, subscription) -> dict[str, Any]:
+        return {
+            "id": subscription.id,
+            "user_id": subscription.user_id,
+            "provider": subscription.provider,
+            "plan_id": subscription.plan_id,
+            "status": subscription.status,
+            "trial_started_at": (
+                subscription.trial_started_at.isoformat()
+                if subscription.trial_started_at
+                else None
+            ),
+            "trial_ends_at": (
+                subscription.trial_ends_at.isoformat()
+                if subscription.trial_ends_at
+                else None
+            ),
+            "current_period_end": (
+                subscription.current_period_end.isoformat()
+                if subscription.current_period_end
+                else None
+            ),
+        }
 
     def _user_status_snapshot(self, user: User) -> dict[str, Any]:
         return {

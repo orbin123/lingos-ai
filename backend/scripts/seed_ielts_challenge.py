@@ -61,13 +61,11 @@ _CHALLENGE = {
         "Timed IELTS-flavoured practice across Listening, Reading, Writing, and Speaking."
     ),
     "rules_md": (
-        "## IELTS Sprint rules\n\n"
-        "- Complete all four sections before the timer expires.\n"
-        "- The timer starts only after you click **Begin Sprint** on the attempt page.\n"
-        "- Reading and Listening are scored from answer keys.\n"
-        "- Writing and Speaking use AI evaluation (Speaking from transcripts only).\n"
-        "- Pass the level threshold to unlock the next level.\n"
-        "- You can resume an in-progress attempt from the landing page.\n"
+        "- IELTS Sprint is IELTS-flavored practice, not a full official mock test.\n"
+        "- Each level includes Listening, Reading, Writing, and Speaking.\n"
+        "- You can retry levels as many times as you want.\n"
+        "- Once you start a section, you can only exit — you cannot resume it later.\n"
+        "- Level unlocks are sequential and based on your best-ever band score.\n"
     ),
     "icon": "award",
     "is_active": True,

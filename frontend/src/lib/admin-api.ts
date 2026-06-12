@@ -216,9 +216,12 @@ export interface AdminPayment {
   user: AdminLogUser | null;
   provider: string;
   provider_payment_id: string | null;
+  provider_order_id: string | null;
   amount: number;
   currency: string;
   status: string;
+  method: string | null;
+  failure_reason: string | null;
   paid_at: string | null;
   created_at: string;
 }
@@ -230,13 +233,24 @@ export interface AdminSubscription {
   provider: string;
   provider_customer_id: string | null;
   provider_subscription_id: string | null;
+  plan_id: string | null;
   plan_name: string;
   status: string;
+  trial_started_at: string | null;
   trial_ends_at: string | null;
+  cancelled_at: string | null;
   current_period_start: string | null;
   current_period_end: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface SubscriptionAdminUpdate {
+  status?: string;
+  plan_id?: string;
+  trial_started_at?: string;
+  trial_ends_at?: string;
+  current_period_end?: string;
 }
 
 export interface AdminUserBilling {
@@ -347,8 +361,12 @@ export const adminApi = {
 
   payments: () => api.get<AdminPayment[]>("/admin/payments").then((r) => r.data),
 
-  subscribers: () =>
-    api.get<SubscribersOverview>("/admin/subscribers").then((r) => r.data),
+  subscribers: (status?: string) =>
+    api
+      .get<SubscribersOverview>("/admin/subscribers", {
+        params: status ? { status } : undefined,
+      })
+      .then((r) => r.data),
 
   userBilling: (userId: number) =>
     api.get<AdminUserBilling>(`/admin/users/${userId}/billing`).then((r) => r.data),
@@ -358,5 +376,21 @@ export const adminApi = {
       .patch<SubscriberItem>(`/admin/subscribers/${userId}/access`, {
         access_expires_at: accessExpiresAt,
       })
+      .then((r) => r.data),
+
+  updateSubscriberSubscription: (
+    userId: number,
+    update: SubscriptionAdminUpdate,
+  ) =>
+    api
+      .patch<AdminSubscription>(
+        `/admin/subscribers/${userId}/subscription`,
+        update,
+      )
+      .then((r) => r.data),
+
+  expireDueTrials: () =>
+    api
+      .post<{ expired: number }>("/admin/subscriptions/expire-due-trials")
       .then((r) => r.data),
 };

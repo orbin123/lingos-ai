@@ -1,6 +1,6 @@
 """Admin HTTP routes."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -19,9 +19,12 @@ from app.modules.admin.schemas import (
     FeedbackReviewUpdate,
     PaymentRead,
     RolePermissionsUpdate,
+    ExpireTrialsResult,
     SubscriberAccessUpdate,
     SubscriberItem,
     SubscribersOverview,
+    SubscriptionAdminUpdate,
+    SubscriptionRead,
     UserBillingRead,
     UserProgressItem,
     UserRolesUpdate,
@@ -276,10 +279,18 @@ def list_payments(
     status_code=status.HTTP_200_OK,
 )
 def list_subscribers(
+    status_filter: str | None = Query(
+        default=None,
+        alias="status",
+        description=(
+            "Filter by displayed status: active|expired|cancelled|paused "
+            "(subscribers) or unverified|not_started|trial|expired (trials)."
+        ),
+    ),
     _current_user: User = Depends(require_permission("payments.read")),
     db: Session = Depends(get_db),
 ) -> SubscribersOverview:
-    return AdminService(db).list_subscribers()
+    return AdminService(db).list_subscribers(status=status_filter)
 
 
 @router.get(
@@ -311,6 +322,11 @@ def update_subscriber_access(
     current_user: User = Depends(require_super_admin),
     db: Session = Depends(get_db),
 ) -> SubscriberItem:
+    """Deprecated: edits the legacy `Purchase` access window only.
+
+    Subscription-backed users are managed via
+    PATCH /admin/subscribers/{user_id}/subscription.
+    """
     subscriber = AdminService(db).update_subscriber_access(
         user_id=user_id,
         access_expires_at=payload.access_expires_at,
@@ -323,6 +339,60 @@ def update_subscriber_access(
             detail="No purchase found for this user",
         )
     return subscriber
+
+
+@router.patch(
+    "/subscribers/{user_id}/subscription",
+    response_model=SubscriptionRead,
+    status_code=status.HTTP_200_OK,
+)
+def update_subscriber_subscription(
+    user_id: int,
+    payload: SubscriptionAdminUpdate,
+    request: Request,
+    _permission_user: User = Depends(require_permission("subscriptions.manage")),
+    current_user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+) -> SubscriptionRead:
+    """Edit a user's subscription row: grant/extend trial, set expiry,
+    fix a stuck status. Creates the row if the user has none."""
+    try:
+        subscription = AdminService(db).update_subscriber_subscription(
+            user_id=user_id,
+            update=payload,
+            actor=current_user,
+            ip_address=client_ip_from_request(request),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        )
+    if subscription is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    return subscription
+
+
+@router.post(
+    "/subscriptions/expire-due-trials",
+    response_model=ExpireTrialsResult,
+    status_code=status.HTTP_200_OK,
+)
+def expire_due_trials(
+    request: Request,
+    _permission_user: User = Depends(require_permission("subscriptions.manage")),
+    current_user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+) -> ExpireTrialsResult:
+    """Flip stored status on trials past their end (reporting hygiene —
+    access is already blocked lazily). Also runnable via
+    `backend/scripts/expire_trials.py` from cron."""
+    flipped = AdminService(db).expire_due_trials(
+        actor=current_user,
+        ip_address=client_ip_from_request(request),
+    )
+    return ExpireTrialsResult(expired=flipped)
 
 
 # ── Feedback review (specific + rag) ───────────────────────────────

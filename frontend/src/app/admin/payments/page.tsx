@@ -29,10 +29,11 @@ export default function AdminPaymentsPage() {
             <tr>
               <th style={thStyle}>User</th>
               <th style={thStyle}>Amount</th>
-              <th style={thStyle}>Currency</th>
               <th style={thStyle}>Status</th>
+              <th style={thStyle}>Method</th>
               <th style={thStyle}>Provider</th>
-              <th style={thStyle}>Provider ID</th>
+              <th style={thStyle}>Order ID</th>
+              <th style={thStyle}>Payment ID</th>
               <th style={thStyle}>Paid</th>
             </tr>
           </thead>
@@ -43,18 +44,22 @@ export default function AdminPaymentsPage() {
                   <UserCell payment={payment} />
                 </td>
                 <td style={tdStyle}>{formatAmount(payment.amount, payment.currency)}</td>
-                <td style={tdStyle}>{payment.currency}</td>
                 <td style={tdStyle}>
                   <BillingStatusBadge status={payment.status} />
+                  {payment.failure_reason && (
+                    <div style={mutedTextStyle}>{payment.failure_reason}</div>
+                  )}
                 </td>
+                <td style={tdStyle}>{payment.method ?? "—"}</td>
                 <td style={tdStyle}>{payment.provider}</td>
+                <td style={tdStyle}>{maskProviderId(payment.provider_order_id)}</td>
                 <td style={tdStyle}>{maskProviderId(payment.provider_payment_id)}</td>
                 <td style={tdStyle}>{formatAdminDateTime(payment.paid_at)}</td>
               </tr>
             ))}
             {payments.length === 0 && (
               <tr>
-                <td style={tdStyle} colSpan={7}>
+                <td style={tdStyle} colSpan={8}>
                   No payments found.
                 </td>
               </tr>
