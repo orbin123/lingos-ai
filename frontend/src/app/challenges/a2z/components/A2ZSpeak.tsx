@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Mic, MicOff } from 'lucide-react';
 
+// If the server's `final` frame never arrives (e.g. upstream stall), finish
+// anyway after this long, scoring whatever words we have so far. The frame
+// normally lands within ~1-2s of stopping, so this is only a safety net.
+const FINALIZE_FALLBACK_MS = 6000;
+
 interface A2ZSpeakProps {
   roundId: number;
   letter: string | null;
@@ -26,6 +31,11 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
   const errorShownRef = useRef(false);
   // wordsRef mirrors the words state so callbacks always see the latest value
   const wordsRef = useRef<string[]>([]);
+  // Fallback timer armed during finalize; cleared once the server's `final`
+  // frame arrives (or fires to finish if it never does).
+  const finalizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Guards proceedToFinish so onFinish runs exactly once per round.
+  const hasProceededRef = useRef(false);
 
   const showError = (message: string) => {
     errorShownRef.current = true;
@@ -48,13 +58,53 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
     if (timerRef.current) clearInterval(timerRef.current);
   };
 
-  const handleFinish = (currentWords: string[]) => {
+  // Idempotent: leave the round, scoring `finalWords`. Triggered by the
+  // server's `final` frame (preferred) or by the fallback timeout.
+  const proceedToFinish = (finalWords: string[]) => {
+    if (hasProceededRef.current) return;
+    hasProceededRef.current = true;
+    if (finalizeTimeoutRef.current) {
+      clearTimeout(finalizeTimeoutRef.current);
+      finalizeTimeoutRef.current = null;
+    }
+    wordsRef.current = finalWords;
+    setWords(finalWords);
+    stopRecording();
+    const pass = finalWords.length >= level.words;
+    onFinish({ pass, words: finalWords });
+  };
+
+  // Begin a graceful finish: flush the last audio chunk, tell the server we're
+  // done so it can drain Deepgram's tail (the lagged final words), and wait for
+  // its `final` frame before scoring — falling back to the words we have if it
+  // never arrives. Replaces the old abrupt finish that closed the socket before
+  // the final chunk and tail transcripts were captured.
+  const beginFinalize = () => {
     if (isFinishingRef.current) return;
     isFinishingRef.current = true;
     setPhase('finishing');
-    stopRecording();
-    const pass = currentWords.length >= level.words;
-    onFinish({ pass, words: currentWords });
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    const mr = mediaRecorderRef.current;
+    const ws = wsRef.current;
+
+    if (mr && mr.state !== 'inactive') {
+      // onstop fires AFTER the final ondataavailable, so by the time we send
+      // `stop` the last chunk has already gone out over the still-open socket.
+      mr.onstop = () => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'stop' }));
+        }
+        streamRef.current?.getTracks().forEach(track => track.stop());
+      };
+      mr.stop();
+    } else if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'stop' }));
+    }
+
+    finalizeTimeoutRef.current = setTimeout(() => {
+      proceedToFinish(wordsRef.current);
+    }, FINALIZE_FALLBACK_MS);
   };
 
   const startListening = async () => {
@@ -102,11 +152,19 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
             return;
           }
 
+          // Drain complete: the server has committed the full word list
+          // (including the lagged tail) and it's safe to score. Runs even while
+          // finishing — this frame is what we were waiting for.
+          if (data.type === 'final') {
+            proceedToFinish(data.accepted_words || wordsRef.current);
+            return;
+          }
+
           if (!isFinishingRef.current) {
             wordsRef.current = data.accepted_words || [];
             setWords(data.accepted_words || []);
             if (data.passed_so_far) {
-              handleFinish(data.accepted_words || []);
+              beginFinalize();
             }
           }
         } catch (e) {
@@ -160,12 +218,13 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
   // When the countdown reaches zero, finish the round
   useEffect(() => {
     if (timeLeft === 0 && phase === 'listening') {
-      handleFinish(wordsRef.current);
+      beginFinalize();
     }
   }, [timeLeft, phase]);
 
   useEffect(() => {
     return () => {
+      if (finalizeTimeoutRef.current) clearTimeout(finalizeTimeoutRef.current);
       stopRecording();
     };
   }, []);

@@ -57,6 +57,11 @@ _DG_URL = (
     "&smart_format=false"
 )
 
+# Extra seconds granted after the client stops sending audio for Deepgram to
+# flush final transcripts for the tail (the lagged last words) before we tear
+# the stream down. A backstop only — the normal drain completes in ~1-2s.
+_DRAIN_MARGIN_SECONDS = 20
+
 
 async def _send_error(
     websocket: WebSocket,
@@ -179,6 +184,7 @@ async def stream_round(
     task = attempt.task_payload or {}
     letter: str = task.get("letter", "")
     target_words: int = task.get("target_words", 10)
+    round_time: int = int(task.get("round_time_seconds", 60) or 60)
     accepted: set[str] = set((attempt.response_payload or {}).get("accepted_words", []))
 
     dg_headers = {"Authorization": f"Token {settings.DEEPGRAM_API_KEY}"}
@@ -210,33 +216,65 @@ async def stream_round(
         await websocket.send_text(event.model_dump_json())
 
     async def _forward_audio(dg_ws: DgConnection) -> None:
-        """Browser → Deepgram: relay raw audio bytes."""
+        """Browser → Deepgram: relay raw audio bytes until the client stops.
+
+        Reads raw WS frames so we can tell audio (binary) apart from the
+        ``{"type": "stop"}`` control frame the client sends when the round ends.
+        On stop (or disconnect) we send Deepgram a ``CloseStream`` so it flushes
+        the final transcripts for the tail — the lagged last words — and we do
+        **not** set ``done``: the drain in ``_handle_transcripts`` must keep
+        reading those flushed finals.
+        """
         try:
             while not done.is_set():
                 try:
-                    data = await asyncio.wait_for(websocket.receive_bytes(), timeout=0.5)
-                    await dg_ws.send(data)
+                    message = await asyncio.wait_for(websocket.receive(), timeout=0.5)
                 except asyncio.TimeoutError:
                     continue
-                except websockets.exceptions.ConnectionClosed:
+
+                if message.get("type") == "websocket.disconnect":
                     break
+
+                data = message.get("bytes")
+                if data is not None:
+                    try:
+                        await dg_ws.send(data)
+                    except websockets.exceptions.ConnectionClosed:
+                        break
+                    continue
+
+                text = message.get("text")
+                if text:
+                    try:
+                        ctrl = json.loads(text)
+                    except json.JSONDecodeError:
+                        continue
+                    if ctrl.get("type") == "stop":
+                        break
         except WebSocketDisconnect:
             pass
         except Exception as exc:
             logger.debug("a2z _forward_audio exit: %s", exc)
         finally:
-            done.set()
+            # No more audio: ask Deepgram to finalize the buffered tail before it
+            # closes. Do NOT set `done` here — the transcript drain must continue.
             try:
                 await dg_ws.send(json.dumps({"type": "CloseStream"}))
             except Exception:
                 pass
 
     async def _handle_transcripts(dg_ws: DgConnection) -> None:
-        """Deepgram → filter → browser: emit newly accepted words."""
+        """Deepgram → filter → browser: emit newly accepted words.
+
+        Runs until Deepgram closes the connection. After the client stops,
+        Deepgram flushes the buffered tail as final transcripts (triggered by
+        the ``CloseStream`` sent in ``_forward_audio``) and only then closes — so
+        by the time this loop ends, every spoken word has been graded and
+        committed. We then send a single ``final`` frame so the browser knows the
+        authoritative word list is persisted and it can safely score the round.
+        """
         try:
             async for raw_msg in dg_ws:
-                if done.is_set():
-                    break
                 if isinstance(raw_msg, bytes):
                     continue
                 try:
@@ -272,13 +310,43 @@ async def stream_round(
             logger.debug("a2z _handle_transcripts exit: %s", exc)
         finally:
             done.set()
+            # The drained word list is committed — tell the browser it's safe to
+            # finish and grade. Distinct `type` so the client routes it to its
+            # finalize path instead of treating it as a live word update.
+            all_accepted = list(accepted)
+            try:
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "final",
+                            "accepted_words": all_accepted,
+                            "valid_word_count": len(all_accepted),
+                            "target_words": target_words,
+                            "passed_so_far": len(all_accepted) >= target_words,
+                        }
+                    )
+                )
+            except Exception:
+                pass
+
+    # Overall ceiling: the active round plus a margin for Deepgram to flush the
+    # tail after the client stops. A backstop against a zombie upstream only —
+    # the normal drain finishes within ~1-2s once CloseStream is sent.
+    stream_deadline = round_time + _DRAIN_MARGIN_SECONDS
 
     try:
         async with websockets.connect(_DG_URL, additional_headers=dg_headers) as dg_ws:
-            await asyncio.gather(
-                _forward_audio(dg_ws),
-                _handle_transcripts(dg_ws),
-            )
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        _forward_audio(dg_ws),
+                        _handle_transcripts(dg_ws),
+                    ),
+                    timeout=stream_deadline,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("a2z stream drain timeout round=%d", round_id)
+                done.set()
     except Exception as exc:
         logger.exception("a2z stream error round=%d: %s", round_id, exc)
         capture_to_sentry(exc)
