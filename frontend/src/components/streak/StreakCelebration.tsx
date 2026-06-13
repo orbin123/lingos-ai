@@ -3,8 +3,9 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import type { StreakCelebrationVariant } from "@/components/streak/streak-demo-presets";
 import type { AnimationType } from "@/lib/streak-api";
+
+type StreakCelebrationVariant = "default" | "on_fire";
 import { streakApi } from "@/lib/streak-api";
 
 interface Props {

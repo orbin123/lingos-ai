@@ -23,9 +23,9 @@ import {
 } from "lucide-react";
 import { LandingNavbar } from "@/components/layout/LandingNavbar";
 import { LandingFooter } from "@/components/layout/LandingFooter";
+import { useMarketingCTA } from "@/hooks/useMarketingCTA";
 
 const ACCENT_HUE = 240;
-const CTA_TEXT = "Try Free Diagnosis";
 
 // ── Glassmorphism card ──────────────────────────────────────────────────────
 function GlassCard({
@@ -185,9 +185,10 @@ function RadarChart({
 
 export default function HowItWorksPage() {
   const router = useRouter();
+  const { isAuthed, ctaLabel, ctaHref } = useMarketingCTA();
 
   const handleCTAClick = () => {
-    router.push("/diagnosis");
+    router.push(isAuthed ? ctaHref : "/diagnosis");
   };
 
   return (
@@ -1041,7 +1042,7 @@ export default function HowItWorksPage() {
                 e.currentTarget.style.transform = "scale(1)";
               }}
             >
-              Try Free Diagnosis <ArrowRight size={18} />
+              {isAuthed ? ctaLabel : "Try Free Diagnosis"} <ArrowRight size={18} />
             </button>
           </div>
         </div>

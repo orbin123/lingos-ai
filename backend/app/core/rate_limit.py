@@ -85,6 +85,10 @@ class AdminRateLimitMiddleware:
         method = str(scope.get("method") or "").upper()
         if path in self._AUTH_SENSITIVE_PATHS and method == "POST":
             return "auth-login"
+        # The public contact form sends email; rate-limit it like login to
+        # blunt spam. It shares the login bucket (no separate limit needed).
+        if path == "/contact" and method == "POST":
+            return "auth-login"
         if path.startswith("/admin"):
             return "admin-api"
         return None

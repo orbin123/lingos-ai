@@ -37,6 +37,7 @@ from app.modules.auth.dependencies import (
     require_super_admin,
 )
 from app.modules.auth.models import ROLE_ADMIN, ROLE_SUPER_ADMIN, User
+from app.modules.feedback.schemas import ReviewStats
 
 require_admin = require_role([ROLE_ADMIN, ROLE_SUPER_ADMIN])
 
@@ -202,10 +203,23 @@ def update_role_permissions(
     status_code=status.HTTP_200_OK,
 )
 def list_app_reviews(
+    rating: int | None = Query(default=None, ge=1, le=5),
     _current_user: User = Depends(require_permission("reviews.read")),
     db: Session = Depends(get_db),
 ) -> list[AppReviewItem]:
-    return AdminService(db).list_app_reviews()
+    return AdminService(db).list_app_reviews(rating=rating)
+
+
+@router.get(
+    "/reviews/stats",
+    response_model=ReviewStats,
+    status_code=status.HTTP_200_OK,
+)
+def review_stats(
+    _current_user: User = Depends(require_permission("reviews.read")),
+    db: Session = Depends(get_db),
+) -> ReviewStats:
+    return AdminService(db).review_stats()
 
 
 @router.get(

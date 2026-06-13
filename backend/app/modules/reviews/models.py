@@ -11,7 +11,13 @@ class AppReview(Base, IDMixin, TimestampMixin):
     """A learner's review of the LingosAI application.
 
     Distinct from per-session feedback: this is the user reviewing the product.
-    The user-facing submission UI is added later; the admin list reads these.
+    Collected by the in-app feedback prompt (see ``app.modules.feedback``); the
+    admin "User Reviews" list reads these rows.
+
+    The three structured text fields (``positive_feedback`` / ``improvement_feedback``
+    / ``bug_report``) are what the prompt collects. ``title``/``body`` are kept and
+    synthesised from them so legacy readers and the older POST /api/reviews path
+    keep working.
     """
 
     __tablename__ = "app_reviews"
@@ -32,6 +38,16 @@ class AppReview(Base, IDMixin, TimestampMixin):
         server_default="published",
         index=True,
     )
+
+    # Structured feedback collected by the in-app prompt.
+    positive_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    improvement_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bug_report: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Context snapshot captured at submission time (for analytics / cohorting).
+    task_count_when_submitted: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    days_since_signup: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    app_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     user = relationship("User")
 

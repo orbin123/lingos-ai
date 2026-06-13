@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Brain, Target, Wrench, Repeat, BarChart, Layers, ArrowRight } from "lucide-react";
 import { LandingNavbar } from "@/components/layout/LandingNavbar";
 import { LandingFooter } from "@/components/layout/LandingFooter";
+import { useMarketingCTA } from "@/hooks/useMarketingCTA";
 
 const ACCENT_HUE = 240;
 
@@ -253,7 +254,7 @@ function RadarChart({
 }
 
 // ── HERO ─────────────────────────────────────────────────────────────────────
-function Hero({ onCTAClick }: { onCTAClick: () => void }) {
+function Hero({ onCTAClick, ctaText }: { onCTAClick: () => void; ctaText: string }) {
   return (
     <section
       style={{
@@ -335,7 +336,7 @@ function Hero({ onCTAClick }: { onCTAClick: () => void }) {
               "0 6px 28px rgba(20,50,120,0.25)";
           }}
         >
-          Start Free Diagnosis <ArrowRight size={18} />
+          {ctaText} <ArrowRight size={18} />
         </button>
       </div>
     </section>
@@ -738,7 +739,7 @@ function FeatureBreakdown() {
 }
 
 // ── CTA ──────────────────────────────────────────────────────────────────────
-function CTA({ onCTAClick }: { onCTAClick: () => void }) {
+function CTA({ onCTAClick, ctaText }: { onCTAClick: () => void; ctaText: string }) {
   return (
     <section
       style={{
@@ -807,7 +808,7 @@ function CTA({ onCTAClick }: { onCTAClick: () => void }) {
                 "0 6px 30px rgba(10,30,100,0.25)";
             }}
           >
-            Try Now <ArrowRight size={18} />
+            {ctaText} <ArrowRight size={18} />
           </button>
         </div>
       </div>
@@ -820,8 +821,9 @@ function CTA({ onCTAClick }: { onCTAClick: () => void }) {
 // ── PAGE ─────────────────────────────────────────────────────────────────────
 export default function FeaturesPage() {
   const router = useRouter();
+  const { isAuthed, ctaLabel, ctaHref } = useMarketingCTA();
 
-  const handleCTA = () => router.push("/register");
+  const handleCTA = () => router.push(ctaHref);
 
   return (
     <div
@@ -838,10 +840,10 @@ export default function FeaturesPage() {
         href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
       />
       <LandingNavbar onCTAClick={handleCTA} showCTA={false} />
-      <Hero onCTAClick={handleCTA} />
+      <Hero onCTAClick={handleCTA} ctaText={isAuthed ? ctaLabel : "Start Free Diagnosis"} />
       <CoreFeatures />
       <FeatureBreakdown />
-      <CTA onCTAClick={handleCTA} />
+      <CTA onCTAClick={handleCTA} ctaText={isAuthed ? ctaLabel : "Try Now"} />
       <LandingFooter />
     </div>
   );

@@ -16,6 +16,7 @@ import { createElement, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 import { ActivityFeedbackCard } from "@/components/sessions/ActivityFeedbackCard";
+import { FeedbackPrompt } from "@/components/feedback/FeedbackPrompt";
 import { PronunciationFeedbackCard } from "@/components/sessions/PronunciationFeedbackCard";
 import { SessionActivityNav } from "@/components/sessions/SessionActivityNav";
 import { getSessionWidget } from "@/components/sessions/widgets/registry";
@@ -93,6 +94,7 @@ export default function SessionShellPage() {
         fontFamily: "'Plus Jakarta Sans', sans-serif",
       }}
     >
+      <FeedbackPrompt source="lesson" />
       {session && (
         <header>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

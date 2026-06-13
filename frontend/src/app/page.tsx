@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { Brain, Target, Wrench, Repeat, BarChart, Layers } from "lucide-react";
 import { LandingNavbar } from "@/components/layout/LandingNavbar";
 import { LandingFooter } from "@/components/layout/LandingFooter";
+import { useMarketingCTA } from "@/hooks/useMarketingCTA";
 
 const ACCENT_HUE = 240;
-const CTA_TEXT = "Start Learning Free";
 const HERO_HEADLINE = "Stop Practicing English.\nStart Improving It.";
 
 // ── Glassmorphism card ──────────────────────────────────────────────────────
@@ -331,7 +331,7 @@ function RadarChart({
 }
 
 // ── HERO ─────────────────────────────────────────────────────────────────────
-function Hero({ onCTAClick }: { onCTAClick: () => void }) {
+function Hero({ onCTAClick, ctaText }: { onCTAClick: () => void; ctaText: string }) {
   const [step, setStep] = useState(0);
   const chatRef = useRef<HTMLDivElement>(null);
 
@@ -501,7 +501,7 @@ function Hero({ onCTAClick }: { onCTAClick: () => void }) {
                   "0 4px 24px rgba(20,50,120,0.22)";
               }}
             >
-              {CTA_TEXT} →
+              {ctaText} →
             </button>
             <button
               style={{
@@ -2055,7 +2055,7 @@ function Testimonials() {
 }
 
 // ── CTA ──────────────────────────────────────────────────────────────────────
-function CTA({ onCTAClick }: { onCTAClick: () => void }) {
+function CTA({ onCTAClick, ctaText }: { onCTAClick: () => void; ctaText: string }) {
   return (
     <section
       style={{
@@ -2146,7 +2146,7 @@ function CTA({ onCTAClick }: { onCTAClick: () => void }) {
                 "0 6px 30px rgba(10,30,100,0.25)";
             }}
           >
-            {CTA_TEXT} — It&apos;s Free →
+            {ctaText} →
           </button>
         </div>
         <div
@@ -2164,8 +2164,11 @@ function CTA({ onCTAClick }: { onCTAClick: () => void }) {
 // ── PAGE ─────────────────────────────────────────────────────────────────────
 export default function LandingPage() {
   const router = useRouter();
+  const { isAuthed, ctaLabel, ctaHref } = useMarketingCTA();
 
-  const handleCTA = () => router.push("/register");
+  const handleCTA = () => router.push(ctaHref);
+  const heroCtaText = isAuthed ? ctaLabel : "Start Learning Free";
+  const finalCtaText = isAuthed ? ctaLabel : "Start Learning Free — It's Free";
 
   return (
     <div
@@ -2182,13 +2185,13 @@ export default function LandingPage() {
         href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap"
       />
       <LandingNavbar onCTAClick={handleCTA} showCTA={true} />
-      <Hero onCTAClick={handleCTA} />
+      <Hero onCTAClick={handleCTA} ctaText={heroCtaText} />
       <Problem />
       <HowItWorks />
       <Features />
       <UIPreview />
       <Testimonials />
-      <CTA onCTAClick={handleCTA} />
+      <CTA onCTAClick={handleCTA} ctaText={finalCtaText} />
       <LandingFooter />
     </div>
   );

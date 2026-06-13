@@ -11,10 +11,10 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { DailyTaskPanel } from "@/components/dashboard/DailyTaskPanel";
 import { SkillScorePreview } from "@/components/dashboard/SkillScorePreview";
 import { ActivityGridCard } from "@/components/streak/ActivityGridCard";
-import { StreakStateDemoPanel } from "@/components/streak/StreakStateDemoPanel";
 import { CurriculumCalendarCard } from "@/components/dashboard/CurriculumCalendarCard";
 import { TrialBanner } from "@/components/dashboard/TrialBanner";
 import { AccessGate } from "@/components/dashboard/AccessGate";
+import { FeedbackPrompt } from "@/components/feedback/FeedbackPrompt";
 import { shouldShowAdminConsoleButton } from "@/lib/admin-access";
 
 // Empty fallback — every legacy sub-skill at 0.0. The dashboard reads real
@@ -392,6 +392,7 @@ export default function DashboardPage() {
             />
           )}
         </DashboardLayout>
+        <FeedbackPrompt source="dashboard" />
       </div>
     </div>
   );
@@ -619,7 +620,6 @@ function EnrolledView({
 
           {/* 13-week activity grid */}
           <ActivityGridCard />
-          <StreakStateDemoPanel />
 
           {/* Yesterday's wins */}
           <Card>

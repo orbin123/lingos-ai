@@ -7,6 +7,7 @@ import { authApi } from "@/lib/auth-api";
 import { progressApi, type DifficultyDistribution, type RecentActivity, type SkillScoreSnapshot } from "@/lib/progress-api";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { ScoreProgressionChart } from "@/components/stats/ScoreProgressionChart";
+import { FeedbackPrompt } from "@/components/feedback/FeedbackPrompt";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuthStore } from "@/store/authStore";
 
@@ -618,6 +619,8 @@ export default function StatsPage() {
         @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
         .stats-fade { animation: fadeIn 0.4s ease both; }
       `}</style>
+
+      <FeedbackPrompt source="stats" />
 
       <div style={{
         minHeight: "100vh",

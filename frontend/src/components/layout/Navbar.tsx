@@ -9,7 +9,6 @@ import type { UserOut } from "@/lib/auth-api";
 import type { ActivityGridCell } from "@/lib/streak-api";
 import { StreakCelebration } from "@/components/streak/StreakCelebration";
 import { useStreakDisplay } from "@/hooks/useStreakDisplay";
-import { useStreakDemoStore } from "@/store/streakDemoStore";
 
 interface NavbarProps {
   user: UserOut | undefined;
@@ -147,11 +146,8 @@ function TrialPill({ user }: { user: UserOut | undefined }) {
 function StreakPill() {
   const [open, setOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const [dismissedPlayKey, setDismissedPlayKey] = useState(0);
 
   const display = useStreakDisplay();
-  const playNonce = useStreakDemoStore((s) => s.playNonce);
-  const setDemoPreset = useStreakDemoStore((s) => s.setPreset);
 
   useEffect(() => {
     if (!open) return;
@@ -183,11 +179,6 @@ function StreakPill() {
 
   const showAutoCelebration =
     display.showAutoCelebration && !!display.autoAnimationType;
-  const showManualCelebration =
-    display.isDemo &&
-    playNonce > 0 &&
-    playNonce !== dismissedPlayKey &&
-    display.demoSnapshot !== null;
 
   const circleStyle: React.CSSProperties = {
     width: 30,
@@ -227,17 +218,6 @@ function StreakPill() {
     return "oklch(65% 0.03 240)";
   }
 
-  function handleManualCelebrationClose() {
-    const frozenPillDemo =
-      display.demoSnapshot?.animationType === "frozen" &&
-      display.demoSnapshot.frozen;
-
-    setDismissedPlayKey(playNonce);
-    if (frozenPillDemo) {
-      setDemoPreset("frozen-to-fire");
-    }
-  }
-
   return (
     <div style={{ position: "relative" }} ref={popoverRef}>
       {showAutoCelebration && display.autoAnimationType && (
@@ -247,17 +227,6 @@ function StreakPill() {
           animationType={display.autoAnimationType}
           variant={display.celebrationVariant}
           onClose={() => display.refetch()}
-        />
-      )}
-      {showManualCelebration && display.demoSnapshot && (
-        <StreakCelebration
-          key={playNonce}
-          streak={display.demoSnapshot.streak}
-          best={display.demoSnapshot.best}
-          animationType={display.demoSnapshot.animationType}
-          variant={display.demoSnapshot.variant}
-          preview
-          onClose={handleManualCelebrationClose}
         />
       )}
       {/* Pill trigger */}

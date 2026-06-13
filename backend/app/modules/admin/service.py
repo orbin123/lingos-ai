@@ -36,6 +36,8 @@ from app.modules.admin.schemas import (
 from app.modules.auth.models import DEFAULT_ROLE_NAMES, ROLE_SUPER_ADMIN, User
 from app.modules.auth.permissions import ALL_PERMISSION_KEYS
 from app.modules.auth.repository import RoleRepository
+from app.modules.feedback.schemas import ReviewStats
+from app.modules.feedback.service import FeedbackAnalyticsService
 from app.modules.subscriptions.models import Purchase
 
 
@@ -233,8 +235,11 @@ class AdminService:
             None,
         )
 
-    def list_app_reviews(self) -> list[AppReviewItem]:
-        return self.repo.list_app_reviews()
+    def list_app_reviews(self, *, rating: int | None = None) -> list[AppReviewItem]:
+        return self.repo.list_app_reviews(rating=rating)
+
+    def review_stats(self) -> ReviewStats:
+        return FeedbackAnalyticsService(self.db).stats()
 
     def list_audit_logs(self) -> list[AdminAuditLogRead]:
         return self.repo.list_audit_logs()

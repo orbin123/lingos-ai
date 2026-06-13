@@ -371,5 +371,8 @@ class AppReviewItem(BaseModel):
     rating: int
     title: str | None = None
     body: str | None = None
+    positive_feedback: str | None = None
+    improvement_feedback: str | None = None
+    bug_report: str | None = None
     status: str
     created_at: datetime

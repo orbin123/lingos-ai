@@ -30,6 +30,7 @@ class ResendEmailClient:
         subject: str,
         html: str,
         text: str | None = None,
+        reply_to: str | None = None,
     ) -> None:
         payload: dict[str, object] = {
             "from": self._from,
@@ -39,6 +40,8 @@ class ResendEmailClient:
         }
         if text:
             payload["text"] = text
+        if reply_to:
+            payload["reply_to"] = [reply_to]
         try:
             response = httpx.post(
                 RESEND_API_URL,

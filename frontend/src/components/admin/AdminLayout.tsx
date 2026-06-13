@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  Newspaper,
   Repeat,
   ShieldCheck,
   Star,
@@ -36,6 +37,7 @@ const NAV_ICONS: Record<string, ReactNode> = {
   "AI Quality": <BarChart3 size={18} />,
   "Feedback Review": <ClipboardCheck size={18} />,
   "User Reviews": <Star size={18} />,
+  Blog: <Newspaper size={18} />,
   "Audit Logs": <ListChecks size={18} />,
   "Roles & Permissions": <ShieldCheck size={18} />,
 };

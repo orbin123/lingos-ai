@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useMarketingCTA } from "@/hooks/useMarketingCTA";
 
 const ACCENT_HUE = 240;
 
@@ -19,7 +20,9 @@ export function LandingNavbar({
 }: LandingNavbarProps) {
   const [scrolled, setScrolled] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
   const isMinimal = variant === "minimal";
+  const { isAuthed, homeHref, ctaLabel, ctaHref } = useMarketingCTA();
 
   useEffect(() => {
     const h = () => setScrolled(window.scrollY > 30);
@@ -53,7 +56,7 @@ export function LandingNavbar({
         }}
       >
         <Link
-          href="/"
+          href={homeHref}
           aria-label="LingosAI home"
           style={{
             display: "flex",
@@ -87,6 +90,7 @@ export function LandingNavbar({
             { label: "How It Works", href: "/how-it-works" },
             { label: "Pricing", href: "/pricing" },
             { label: "About", href: "/about" },
+            { label: "Contact", href: "/contact" },
           ].map((l) => {
             const isActive = pathname === l.href;
             return (
@@ -116,9 +120,9 @@ export function LandingNavbar({
           })}
         </div>
         )}
-        {!isMinimal && showCTA && (
+        {!isMinimal && (isAuthed || showCTA) && (
           <button
-            onClick={onCTAClick}
+            onClick={isAuthed ? () => router.push(ctaHref) : onCTAClick}
             style={{
               padding: "9px 22px",
               borderRadius: 50,
@@ -143,7 +147,7 @@ export function LandingNavbar({
                 "0 2px 12px rgba(30,60,120,0.18)";
             }}
           >
-            Start Learning Free
+            {isAuthed ? ctaLabel : "Start Learning Free"}
           </button>
         )}
       </div>

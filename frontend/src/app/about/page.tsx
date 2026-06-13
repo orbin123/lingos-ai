@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { LandingNavbar } from "@/components/layout/LandingNavbar";
 import { LandingFooter } from "@/components/layout/LandingFooter";
+import { useMarketingCTA } from "@/hooks/useMarketingCTA";
 
 const ACCENT_HUE = 240;
 
@@ -83,6 +84,7 @@ function DotGrid({ opacity = 0.18 }: { opacity?: number }) {
 
 export default function AboutPage() {
   const router = useRouter();
+  const { isAuthed, ctaLabel, ctaHref } = useMarketingCTA();
 
   return (
     <main
@@ -478,7 +480,7 @@ export default function AboutPage() {
           </h2>
           <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
             <button
-              onClick={() => router.push("/register")}
+              onClick={() => router.push(ctaHref)}
               style={{
                 padding: "16px 36px",
                 borderRadius: 50,
@@ -501,7 +503,7 @@ export default function AboutPage() {
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                Try Now <ArrowRight size={18} />
+                {isAuthed ? ctaLabel : "Try Now"} <ArrowRight size={18} />
               </div>
             </button>
             <button

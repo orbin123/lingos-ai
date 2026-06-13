@@ -17,10 +17,12 @@ class ConsoleEmailClient:
         subject: str,
         html: str,
         text: str | None = None,
+        reply_to: str | None = None,
     ) -> None:
         logger.info(
-            "EMAIL (console) to=%s subject=%r body=%r",
+            "EMAIL (console) to=%s reply_to=%s subject=%r body=%r",
             to,
+            reply_to,
             subject,
             text or html,
         )

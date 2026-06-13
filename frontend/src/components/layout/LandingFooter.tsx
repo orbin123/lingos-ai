@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 
+import { useMarketingCTA } from "@/hooks/useMarketingCTA";
+
 const FOOTER_COLUMNS = [
   {
     title: "Product",
@@ -15,20 +17,21 @@ const FOOTER_COLUMNS = [
     title: "Company",
     links: [
       { label: "About", href: "/about" },
-      { label: "Blog", href: "#" },
-      { label: "Contact", href: "#" },
+      { label: "Blog", href: "/blog" },
+      { label: "Contact", href: "/contact" },
     ],
   },
   {
     title: "Legal",
     links: [
-      { label: "Privacy", href: "#" },
-      { label: "Terms", href: "#" },
+      { label: "Privacy", href: "/privacy" },
+      { label: "Terms", href: "/terms" },
     ],
   },
 ] as const;
 
 export function LandingFooter() {
+  const { homeHref } = useMarketingCTA();
   return (
     <footer
       style={{
@@ -48,7 +51,7 @@ export function LandingFooter() {
       >
         <div>
           <Link
-            href="/"
+            href={homeHref}
             style={{
               display: "inline-flex",
               alignItems: "center",

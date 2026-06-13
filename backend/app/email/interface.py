@@ -19,6 +19,11 @@ class IEmailClient(Protocol):
         subject: str,
         html: str,
         text: str | None = None,
+        reply_to: str | None = None,
     ) -> None:
-        """Deliver an email or raise EmailSendError."""
+        """Deliver an email or raise EmailSendError.
+
+        `reply_to` lets a recipient reply to a third party (e.g. the contact
+        form routes replies back to the visitor, not the sender address).
+        """
         ...

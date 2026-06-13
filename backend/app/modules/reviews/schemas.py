@@ -17,6 +17,9 @@ class AppReviewRead(BaseModel):
     rating: int
     title: str | None
     body: str | None
+    positive_feedback: str | None = None
+    improvement_feedback: str | None = None
+    bug_report: str | None = None
     status: str
     created_at: datetime
 

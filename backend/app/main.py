@@ -14,7 +14,12 @@ from app.core.rate_limit import AdminRateLimitMiddleware
 from app.core.sentry import init_sentry
 from app.modules.admin.routes import router as admin_router
 from app.modules.auth.routes import router as auth_router
+from app.modules.blog.routes import (
+    admin_router as blog_admin_router,
+    public_router as blog_public_router,
+)
 from app.modules.challenges.routes import router as challenges_router
+from app.modules.contact.routes import router as contact_router
 from app.modules.diagnosis.routes import router as diagnosis_router
 from app.modules.progress.routes import router as progress_router
 from app.modules.subscriptions.payment_routes import payments_router
@@ -26,6 +31,7 @@ from app.modules.learning_session.router import (
     rest_router as learning_rest_router,
     ws_router as learning_ws_router,
 )
+from app.modules.feedback.routes import feedback_router
 from app.modules.preferences.routes import router as preferences_router
 from app.modules.responses.routes import router as responses_router
 from app.modules.reviews.routes import reviews_router
@@ -88,6 +94,14 @@ app.mount(
     name="images",
 )
 
+_blog_media_root = Path(settings.BLOG_MEDIA_CACHE_DIR).resolve()
+_blog_media_root.mkdir(parents=True, exist_ok=True)
+app.mount(
+    settings.BLOG_MEDIA_PUBLIC_URL_PREFIX,
+    StaticFiles(directory=_blog_media_root),
+    name="blog-media",
+)
+
 
 @app.get("/", tags=["system"])
 def root() -> dict[str, str]:
@@ -127,3 +141,7 @@ app.include_router(responses_router)
 app.include_router(learning_rest_router, prefix="/api")
 app.include_router(learning_ws_router)
 app.include_router(reviews_router)
+app.include_router(feedback_router)
+app.include_router(blog_public_router)
+app.include_router(blog_admin_router)
+app.include_router(contact_router)

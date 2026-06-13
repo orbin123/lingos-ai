@@ -295,9 +295,65 @@ export interface AppReviewItem {
   rating: number;
   title: string | null;
   body: string | null;
+  positive_feedback: string | null;
+  improvement_feedback: string | null;
+  bug_report: string | null;
   status: string;
   created_at: string;
 }
+
+export interface ReviewThemeCount {
+  text: string;
+  count: number;
+}
+
+export interface ReviewTrendPoint {
+  date: string;
+  count: number;
+  average_rating: number;
+}
+
+export interface ReviewStats {
+  total_reviews: number;
+  average_rating: number | null;
+  rating_distribution: Record<string, number>;
+  submission_rate: number | null;
+  prompts_shown: number;
+  prompts_submitted: number;
+  top_improvements: ReviewThemeCount[];
+  top_bugs: ReviewThemeCount[];
+  trend: ReviewTrendPoint[];
+}
+
+export type BlogStatus = "draft" | "published";
+
+export interface BlogPostAdmin {
+  id: number;
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  content: string;
+  cover_image_url: string | null;
+  category: string | null;
+  status: BlogStatus;
+  published_at: string | null;
+  author_id: number | null;
+  author_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BlogPostCreateInput {
+  title: string;
+  slug?: string | null;
+  excerpt?: string | null;
+  content: string;
+  cover_image_url?: string | null;
+  category?: string | null;
+  status?: BlogStatus;
+}
+
+export type BlogPostUpdateInput = Partial<BlogPostCreateInput>;
 
 export const adminApi = {
   summary: () => api.get<AdminSummary>("/admin/summary").then((r) => r.data),
@@ -330,8 +386,15 @@ export const adminApi = {
       .patch<AdminRole>(`/admin/roles/${roleId}/permissions`, data)
       .then((r) => r.data),
 
-  appReviews: () =>
-    api.get<AppReviewItem[]>("/admin/app-reviews").then((r) => r.data),
+  appReviews: (rating?: number) =>
+    api
+      .get<AppReviewItem[]>("/admin/app-reviews", {
+        params: rating ? { rating } : undefined,
+      })
+      .then((r) => r.data),
+
+  reviewStats: () =>
+    api.get<ReviewStats>("/admin/reviews/stats").then((r) => r.data),
 
   auditLogs: () =>
     api.get<AdminAuditLog[]>("/admin/audit-logs").then((r) => r.data),
@@ -393,4 +456,38 @@ export const adminApi = {
     api
       .post<{ expired: number }>("/admin/subscriptions/expire-due-trials")
       .then((r) => r.data),
+
+  // ── Blog management ──────────────────────────────────────────────────
+  blogList: () =>
+    api.get<BlogPostAdmin[]>("/admin/blog").then((r) => r.data),
+
+  blogGet: (postId: number) =>
+    api.get<BlogPostAdmin>(`/admin/blog/${postId}`).then((r) => r.data),
+
+  blogCreate: (data: BlogPostCreateInput) =>
+    api.post<BlogPostAdmin>("/admin/blog", data).then((r) => r.data),
+
+  blogUpdate: (postId: number, data: BlogPostUpdateInput) =>
+    api.patch<BlogPostAdmin>(`/admin/blog/${postId}`, data).then((r) => r.data),
+
+  blogDelete: (postId: number) =>
+    api.delete<void>(`/admin/blog/${postId}`).then((r) => r.data),
+
+  blogPublish: (postId: number) =>
+    api.post<BlogPostAdmin>(`/admin/blog/${postId}/publish`).then((r) => r.data),
+
+  blogUnpublish: (postId: number) =>
+    api
+      .post<BlogPostAdmin>(`/admin/blog/${postId}/unpublish`)
+      .then((r) => r.data),
+
+  blogUploadCover: (postId: number, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api
+      .post<BlogPostAdmin>(`/admin/blog/${postId}/cover`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+      .then((r) => r.data);
+  },
 };

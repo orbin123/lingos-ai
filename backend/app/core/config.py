@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     # Resend sandbox (no verified domain) requires the resend.dev sender and
     # only delivers to the Resend account owner's address.
     EMAIL_FROM: str = "LingosAI <onboarding@resend.dev>"
+    # Where the marketing-site contact form delivers submissions.
+    CONTACT_RECIPIENT_EMAIL: str = "support@lingosai.com"
 
     # Email OTP verification. The pepper keys the HMAC of stored codes —
     # set a dedicated random value in prod; empty falls back to jwt_secret.
@@ -72,6 +74,8 @@ class Settings(BaseSettings):
     OTP_RESEND_COOLDOWN_SECONDS: int = 60
     OTP_MAX_SENDS_PER_HOUR: int = 5
     OTP_MAX_VERIFY_ATTEMPTS: int = 5
+    # Local dev only — accepts "123456" without the HMAC check. NEVER true in prod.
+    DEV_OTP_BYPASS: bool = False
 
     # Auth sessions (refresh tokens). Access tokens issued by the session
     # flow are short; the refresh cookie keeps users logged in. The legacy
@@ -183,6 +187,12 @@ class Settings(BaseSettings):
     OPENAI_IMAGE_OUTPUT_FORMAT: str = "png"
     IMAGEGEN_CACHE_DIR: str = "app/ai/imagegen/_cache"
     IMAGEGEN_PUBLIC_URL_PREFIX: str = "/images"
+
+    # Blog cover images. Stored on disk like the AI media blobs and served
+    # publicly via a StaticFiles mount (set up in app/main.py). Path is
+    # RELATIVE to backend/ so it works regardless of where uvicorn launches.
+    BLOG_MEDIA_CACHE_DIR: str = "app/modules/blog/_media"
+    BLOG_MEDIA_PUBLIC_URL_PREFIX: str = "/blog-media"
 
     # Vector DB (Pinecone)
     PINECONE_API_KEY: str

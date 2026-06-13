@@ -69,7 +69,7 @@ from app.modules.sessions.models import (
     FeedbackRating,
     SessionScorecard,
 )
-from app.modules.reviews.models import AppReview
+from app.modules.reviews.repository import AppReviewRepository
 from app.modules.skills.models import Skill
 from app.modules.subscriptions.catalog import PLAN_CATALOG
 from app.modules.subscriptions.models import (
@@ -377,14 +377,10 @@ class AdminRepository:
             .first()
         )
 
-    def list_app_reviews(self, *, limit: int = 200) -> list[AppReviewItem]:
-        rows = (
-            self.db.query(AppReview)
-            .options(joinedload(AppReview.user))
-            .order_by(AppReview.created_at.desc(), AppReview.id.desc())
-            .limit(limit)
-            .all()
-        )
+    def list_app_reviews(
+        self, *, rating: int | None = None, limit: int = 200
+    ) -> list[AppReviewItem]:
+        rows = AppReviewRepository(self.db).list_for_admin(rating=rating, limit=limit)
         return [
             AppReviewItem(
                 id=review.id,
@@ -392,6 +388,9 @@ class AdminRepository:
                 rating=review.rating,
                 title=review.title,
                 body=review.body,
+                positive_feedback=review.positive_feedback,
+                improvement_feedback=review.improvement_feedback,
+                bug_report=review.bug_report,
                 status=review.status,
                 created_at=review.created_at,
             )
