@@ -4,7 +4,7 @@ The prompt is checked during normal navigation (dashboard / lesson / progress);
 the client never decides eligibility — it only relays the server's verdict.
 """
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -14,9 +14,12 @@ from app.modules.feedback.schemas import (
     DismissResponse,
     FeedbackSubmit,
     FeedbackSubmitResponse,
+    ReactionRequest,
+    ReactionResponse,
     ShouldShowResponse,
 )
-from app.modules.feedback.service import FeedbackPromptService
+from app.modules.feedback.service import FeedbackPromptService, FeedbackReactionService
+from app.modules.sessions.models import FeedbackType
 
 feedback_router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -51,3 +54,36 @@ def dismiss_feedback(
 ) -> DismissResponse:
     FeedbackPromptService(db).record_dismiss(current_user)
     return DismissResponse(dismissed=True)
+
+
+@feedback_router.post("/reaction", response_model=ReactionResponse)
+def set_reaction(
+    payload: ReactionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ReactionResponse:
+    """Set, switch, or clear (toggle-off) the learner's reaction to feedback."""
+    try:
+        result = FeedbackReactionService(db).set_reaction(
+            current_user,
+            feedback_id=payload.feedback_id,
+            feedback_type=payload.feedback_type,
+            reaction=payload.reaction,
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    return ReactionResponse(user_reaction=result)
+
+
+@feedback_router.get("/reaction", response_model=ReactionResponse)
+def get_reaction(
+    feedback_id: int,
+    feedback_type: FeedbackType,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ReactionResponse:
+    """The current learner's reaction to one feedback target (null if none)."""
+    result = FeedbackReactionService(db).get_reaction(
+        current_user, feedback_id=feedback_id, feedback_type=feedback_type
+    )
+    return ReactionResponse(user_reaction=result)

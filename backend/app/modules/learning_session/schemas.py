@@ -1,7 +1,7 @@
 """Pydantic schemas for learning session HTTP + WebSocket payloads."""
 
 from datetime import datetime
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -76,18 +76,6 @@ class StartSessionResponse(BaseModel):
     skill_name: str
     task_type: str
     message: str = "Session ready"
-
-
-class RagRatingRequest(BaseModel):
-    """Learner's thumbs up/down on a session's RAG feedback (Coach's Note)."""
-
-    value: Literal["like", "dislike"]
-
-
-class RagRatingResponse(BaseModel):
-    """Current rating after an upsert/clear — None means no rating."""
-
-    value: Literal["like", "dislike"] | None = None
 
 
 # --- WebSocket --------------------------------------------------------

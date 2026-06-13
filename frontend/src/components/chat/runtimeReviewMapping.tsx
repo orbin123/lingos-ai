@@ -58,6 +58,10 @@ type RuntimeFeedbackPayload = {
   practice_suggestion?: string;
   next_tip?: string | null;
   sub_skill_breakdown?: Record<string, number>;
+  // The backend ActivityFeedback row id + the viewer's persisted reaction,
+  // used to drive the 👍/👎 reaction bar.
+  feedback_id?: number | null;
+  user_reaction?: "LIKE" | "DISLIKE" | null;
 };
 
 type RuntimeFinalScorecardPayload = {
@@ -75,6 +79,7 @@ type RuntimeRagFeedbackPayload = {
   mentor_note?: string | null;
   available?: boolean;
   pending?: boolean;
+  scorecard_id?: number | null;
 };
 
 export function RuntimeEvaluationCard({
@@ -146,6 +151,7 @@ export function RuntimeRagFeedback({
       ragFeedback={buildRagFeedback(payload)}
       answerView={RUNTIME_ANSWER_VIEW}
       state={state}
+      scorecardId={typeof payload.scorecard_id === "number" ? payload.scorecard_id : null}
     />
   );
 }
@@ -209,6 +215,8 @@ function buildActivityFeedback(payload: RuntimeFeedbackPayload): ActivityFeedbac
 
   return {
     taskId: "runtime-feedback",
+    feedbackId: typeof payload.feedback_id === "number" ? payload.feedback_id : null,
+    userReaction: payload.user_reaction ?? null,
     feedbackInput: {
       taskId: "runtime-feedback",
       evaluationRef: "runtime.scorecard",

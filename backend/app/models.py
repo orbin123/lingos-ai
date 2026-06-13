@@ -25,7 +25,6 @@ from app.modules.admin.models import (  # noqa: F401
     AdminAuditLog,
     AIEvaluation,
     AIRequestLog,
-    FeedbackReview,
 )
 from app.modules.skills.models import Skill  # noqa: F401
 from app.modules.curriculum.models import (  # noqa: F401
@@ -53,7 +52,7 @@ from app.modules.sessions.models import (  # noqa: F401
     ActivityEvaluation,
     ActivityFeedback,
     DailySession,
-    FeedbackRating,
+    FeedbackReaction,
     SessionScorecard,
 )
 from app.modules.streaks.models import DailyActivity, StreakFreezeUsage  # noqa: F401

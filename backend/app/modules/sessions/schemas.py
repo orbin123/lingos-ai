@@ -249,6 +249,8 @@ class SessionScorecardRead(BaseModel):
     points_applied: bool
     activities: list[ActivityBreakdown] = Field(default_factory=list)
     mentor_note: str | None = None
-    # The current viewer's thumbs on the Coach's Note, if they rated it.
-    # Populated by the chat scorecard endpoint; None elsewhere.
-    rag_rating: Literal["like", "dislike"] | None = None
+    # The scorecard's own id — the COACH_NOTE reaction target (feedback_id).
+    scorecard_id: int | None = None
+    # The current viewer's reaction to the Coach's Note ("LIKE"/"DISLIKE"),
+    # if any. Populated by the chat scorecard endpoint; None elsewhere.
+    user_reaction: Literal["LIKE", "DISLIKE"] | None = None

@@ -17,7 +17,6 @@ from app.modules.admin.models import (
     AIEvaluation,
     AIRequestLog,
     AdminAuditLog,
-    FeedbackReview,
 )
 from app.modules.admin.sanitization import mask_sensitive_text, sanitize_for_admin
 from app.modules.admin.schemas import (
@@ -39,7 +38,8 @@ from app.modules.admin.schemas import (
     AdminUserListItem,
     AdminUserProfile,
     AppReviewItem,
-    FeedbackReviewItem,
+    FeedbackAnalyticsItem,
+    FeedbackReactionStats,
     PaymentRead,
     SubscriberItem,
     SubscribersOverview,
@@ -66,7 +66,9 @@ from app.modules.sessions.models import (
     ActivityFeedback,
     AttemptStatus,
     DailySession,
-    FeedbackRating,
+    FeedbackReaction,
+    FeedbackType,
+    ReactionValue,
     SessionScorecard,
 )
 from app.modules.reviews.repository import AppReviewRepository
@@ -199,7 +201,12 @@ class AdminRepository:
             ),
             6,
         )
-        pending_feedback_reviews = self.count_pending_feedback_reviews()
+        disliked_feedback = (
+            self.db.query(func.count(FeedbackReaction.id))
+            .filter(FeedbackReaction.reaction == ReactionValue.DISLIKE.value)
+            .scalar()
+            or 0
+        )
         recent_users = [
             AdminRecentUser(
                 id=user.id,
@@ -224,7 +231,7 @@ class AdminRepository:
             ai_errors_24h=ai_errors_24h,
             ai_cost_24h=ai_cost_24h,
             ai_avg_latency_ms_24h=ai_avg_latency_ms_24h,
-            pending_feedback_reviews=pending_feedback_reviews,
+            disliked_feedback=disliked_feedback,
             recent_users=recent_users,
         )
 
@@ -710,172 +717,149 @@ class AdminRepository:
             .first()
         )
 
-    # ── Feedback review (specific + rag) ─────────────────────────────
+    # ── Feedback analytics (learner reactions) ───────────────────────
 
-    def list_feedback_review(self, *, limit: int = 200) -> list[FeedbackReviewItem]:
-        """Both feedback kinds, each annotated with its review row (if any)."""
-        items: list[FeedbackReviewItem] = []
+    @staticmethod
+    def _apply_reaction_filter(query, reaction: str | None):
+        """Constrain an outerjoined-FeedbackReaction query by reaction filter.
 
-        # Per-activity "specific" feedback.
-        specific_rows = (
-            self.db.query(ActivityFeedback, ActivityAttempt, User, FeedbackReview)
-            .join(
-                ActivityAttempt,
-                ActivityAttempt.id == ActivityFeedback.attempt_id,
-            )
-            .join(DailySession, DailySession.id == ActivityAttempt.session_id)
-            .join(User, User.id == DailySession.user_id)
-            .outerjoin(
-                FeedbackReview,
-                (FeedbackReview.feedback_type == "specific")
-                & (FeedbackReview.feedback_id == ActivityFeedback.id),
-            )
-            .order_by(ActivityFeedback.created_at.desc())
-            .limit(limit)
-            .all()
-        )
-        for feedback, attempt, user, review in specific_rows:
-            items.append(
-                FeedbackReviewItem(
-                    feedback_type="specific",
-                    feedback_id=feedback.id,
-                    user=_log_user(user),
-                    context_label=attempt.archetype_id,
-                    score=float(feedback.score),
-                    summary=feedback.summary,
-                    did_well=feedback.did_well,
-                    mistakes=feedback.mistakes,
-                    next_tip=feedback.next_tip,
-                    review_status=review.review_status if review else "pending",
-                    reviewed_by=_log_user(review.reviewer) if review else None,
-                    reviewed_at=review.reviewed_at if review else None,
-                    admin_note=review.admin_note if review else None,
-                    created_at=feedback.created_at,
+        ``LIKE``/``DISLIKE`` → that reaction; ``NONE`` → no reaction row;
+        None/``ALL`` → no constraint.
+        """
+        if reaction in (None, "ALL"):
+            return query
+        if reaction == "NONE":
+            return query.filter(FeedbackReaction.id.is_(None))
+        return query.filter(FeedbackReaction.reaction == reaction)
+
+    def list_feedback_analytics(
+        self,
+        *,
+        feedback_type: str | None = None,
+        reaction: str | None = None,
+        limit: int = 200,
+    ) -> list[FeedbackAnalyticsItem]:
+        """AI feedback items joined to the learner's reaction (read-only).
+
+        ``feedback_type`` filters to ACTIVITY_FEEDBACK / COACH_NOTE (None=both);
+        ``reaction`` filters to LIKE / DISLIKE / NONE (None=all). Each feedback
+        belongs to one learner, so the only possible reaction is theirs.
+        """
+        items: list[FeedbackAnalyticsItem] = []
+        want_activity = feedback_type in (None, FeedbackType.ACTIVITY_FEEDBACK.value)
+        want_coach = feedback_type in (None, FeedbackType.COACH_NOTE.value)
+
+        if want_activity:
+            activity_query = (
+                self.db.query(
+                    ActivityFeedback, ActivityAttempt, User, FeedbackReaction
+                )
+                .join(ActivityAttempt, ActivityAttempt.id == ActivityFeedback.attempt_id)
+                .join(DailySession, DailySession.id == ActivityAttempt.session_id)
+                .join(User, User.id == DailySession.user_id)
+                .outerjoin(
+                    FeedbackReaction,
+                    (
+                        FeedbackReaction.feedback_type
+                        == FeedbackType.ACTIVITY_FEEDBACK.value
+                    )
+                    & (FeedbackReaction.feedback_id == ActivityFeedback.id),
                 )
             )
-
-        # Session-level "rag" Coach's Note.
-        rag_rows = (
-            self.db.query(
-                SessionScorecard, DailySession, User, FeedbackReview, FeedbackRating
-            )
-            .join(DailySession, DailySession.id == SessionScorecard.session_id)
-            .join(User, User.id == DailySession.user_id)
-            .outerjoin(
-                FeedbackReview,
-                (FeedbackReview.feedback_type == "rag")
-                & (FeedbackReview.feedback_id == SessionScorecard.id),
-            )
-            .outerjoin(
-                FeedbackRating,
-                FeedbackRating.scorecard_id == SessionScorecard.id,
-            )
-            .filter(SessionScorecard.mentor_note.isnot(None))
-            .order_by(SessionScorecard.created_at.desc())
-            .limit(limit)
-            .all()
-        )
-        for scorecard, session, user, review, rating in rag_rows:
-            items.append(
-                FeedbackReviewItem(
-                    feedback_type="rag",
-                    feedback_id=scorecard.id,
-                    user=_log_user(user),
-                    context_label=session.day_id,
-                    mentor_note=scorecard.mentor_note,
-                    rating=rating.value if rating else None,
-                    review_status=review.review_status if review else "pending",
-                    reviewed_by=_log_user(review.reviewer) if review else None,
-                    reviewed_at=review.reviewed_at if review else None,
-                    admin_note=review.admin_note if review else None,
-                    created_at=scorecard.created_at,
+            activity_query = self._apply_reaction_filter(activity_query, reaction)
+            for feedback, attempt, user, reaction_row in (
+                activity_query.order_by(ActivityFeedback.created_at.desc())
+                .limit(limit)
+                .all()
+            ):
+                items.append(
+                    FeedbackAnalyticsItem(
+                        feedback_type=FeedbackType.ACTIVITY_FEEDBACK.value,
+                        feedback_id=feedback.id,
+                        user=_log_user(user),
+                        context_label=attempt.archetype_id,
+                        score=float(feedback.score),
+                        summary=feedback.summary,
+                        did_well=feedback.did_well,
+                        mistakes=feedback.mistakes,
+                        next_tip=feedback.next_tip,
+                        user_reaction=reaction_row.reaction if reaction_row else None,
+                        created_at=feedback.created_at,
+                    )
                 )
-            )
 
-        # Surface what needs attention first: disliked / flagged, then
-        # not-yet-reviewed, then the rest — newest within each band.
-        def _priority(item: FeedbackReviewItem) -> int:
-            if item.rating == "dislike" or item.review_status == "flagged":
-                return 0
-            if item.review_status == "pending":
-                return 1
-            return 2
+        if want_coach:
+            coach_query = (
+                self.db.query(SessionScorecard, DailySession, User, FeedbackReaction)
+                .join(DailySession, DailySession.id == SessionScorecard.session_id)
+                .join(User, User.id == DailySession.user_id)
+                .outerjoin(
+                    FeedbackReaction,
+                    (FeedbackReaction.feedback_type == FeedbackType.COACH_NOTE.value)
+                    & (FeedbackReaction.feedback_id == SessionScorecard.id),
+                )
+                .filter(SessionScorecard.mentor_note.isnot(None))
+            )
+            coach_query = self._apply_reaction_filter(coach_query, reaction)
+            for scorecard, session, user, reaction_row in (
+                coach_query.order_by(SessionScorecard.created_at.desc())
+                .limit(limit)
+                .all()
+            ):
+                items.append(
+                    FeedbackAnalyticsItem(
+                        feedback_type=FeedbackType.COACH_NOTE.value,
+                        feedback_id=scorecard.id,
+                        user=_log_user(user),
+                        context_label=session.day_id,
+                        mentor_note=scorecard.mentor_note,
+                        user_reaction=reaction_row.reaction if reaction_row else None,
+                        created_at=scorecard.created_at,
+                    )
+                )
+
+        # Disliked first (the quality signal that needs attention), newest within.
+        def _priority(item: FeedbackAnalyticsItem) -> int:
+            return 0 if item.user_reaction == ReactionValue.DISLIKE.value else 1
 
         items.sort(key=lambda i: (_priority(i), -i.created_at.timestamp()))
-        return items
+        return items[:limit]
 
-    def count_pending_feedback_reviews(self) -> int:
-        """Targets still needing attention (no resolved review row)."""
-        resolved = ("approved", "fixed")
-        specific_total = (
-            self.db.query(func.count(ActivityFeedback.id)).scalar() or 0
-        )
-        specific_resolved = (
-            self.db.query(func.count(FeedbackReview.id))
-            .filter(
-                FeedbackReview.feedback_type == "specific",
-                FeedbackReview.review_status.in_(resolved),
-            )
-            .scalar()
-            or 0
-        )
-        rag_total = (
+    def feedback_reaction_stats(self) -> FeedbackReactionStats:
+        """KPI roll-up: how many feedback items were liked / disliked / ignored."""
+        activity_total = self.db.query(func.count(ActivityFeedback.id)).scalar() or 0
+        coach_total = (
             self.db.query(func.count(SessionScorecard.id))
             .filter(SessionScorecard.mentor_note.isnot(None))
             .scalar()
             or 0
         )
-        rag_resolved = (
-            self.db.query(func.count(FeedbackReview.id))
-            .filter(
-                FeedbackReview.feedback_type == "rag",
-                FeedbackReview.review_status.in_(resolved),
-            )
-            .scalar()
-            or 0
-        )
-        return (specific_total - specific_resolved) + (rag_total - rag_resolved)
+        total_items = activity_total + coach_total
 
-    def feedback_target_exists(self, feedback_type: str, feedback_id: int) -> bool:
-        if feedback_type == "specific":
-            model = ActivityFeedback
-        elif feedback_type == "rag":
-            model = SessionScorecard
-        else:
-            return False
-        return (
-            self.db.query(model.id).filter(model.id == feedback_id).first()
-            is not None
-        )
+        types = (FeedbackType.ACTIVITY_FEEDBACK.value, FeedbackType.COACH_NOTE.value)
 
-    def upsert_feedback_review(
-        self,
-        *,
-        feedback_type: str,
-        feedback_id: int,
-        review_status: str,
-        admin_note: str | None,
-        reviewer: User,
-    ) -> FeedbackReview:
-        row = (
-            self.db.query(FeedbackReview)
-            .filter(
-                FeedbackReview.feedback_type == feedback_type,
-                FeedbackReview.feedback_id == feedback_id,
+        def _count(*conditions) -> int:
+            return (
+                self.db.query(func.count(FeedbackReaction.id))
+                .filter(FeedbackReaction.feedback_type.in_(types), *conditions)
+                .scalar()
+                or 0
             )
-            .first()
+
+        liked = _count(FeedbackReaction.reaction == ReactionValue.LIKE.value)
+        disliked = _count(FeedbackReaction.reaction == ReactionValue.DISLIKE.value)
+        reacted = _count()
+        no_reaction = max(0, total_items - reacted)
+        total_reacted = liked + disliked
+        positive_rate = round(liked / total_reacted, 3) if total_reacted else None
+
+        return FeedbackReactionStats(
+            total_items=total_items,
+            liked=liked,
+            disliked=disliked,
+            no_reaction=no_reaction,
+            positive_rate=positive_rate,
         )
-        if row is None:
-            row = FeedbackReview(
-                feedback_type=feedback_type, feedback_id=feedback_id
-            )
-            self.db.add(row)
-        row.review_status = review_status
-        row.admin_note = admin_note
-        row.reviewed_by = reviewer.id
-        row.reviewed_at = datetime.now(timezone.utc)
-        self.db.flush()
-        return row
 
     def get_user_billing(self, user_id: int) -> UserBillingRead | None:
         user = self.db.get(User, user_id)

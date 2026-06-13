@@ -910,4 +910,5 @@ def _serialize_scorecard(
             ActivityBreakdown.model_validate(a) for a in (scorecard.activities or [])
         ],
         mentor_note=scorecard.mentor_note,
+        scorecard_id=scorecard.id,
     )

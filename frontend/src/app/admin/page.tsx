@@ -48,8 +48,8 @@ export default function AdminDashboardPage() {
           }
         />
         <MetricCard
-          label="Pending feedback"
-          value={summary?.pending_feedback_reviews ?? "—"}
+          label="Disliked feedback"
+          value={summary?.disliked_feedback ?? "—"}
         />
       </div>
 

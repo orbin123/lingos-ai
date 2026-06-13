@@ -31,6 +31,15 @@ from app.modules.feedback.schemas import (
     ThemeCount,
 )
 from app.modules.reviews.repository import AppReviewRepository
+from app.modules.sessions.models import (
+    ActivityAttempt,
+    ActivityFeedback,
+    DailySession,
+    FeedbackReaction,
+    FeedbackType,
+    ReactionValue,
+    SessionScorecard,
+)
 
 
 def _utcnow() -> datetime:
@@ -220,6 +229,123 @@ class FeedbackAnalyticsService:
             top_bugs=_top_themes(bugs),
             trend=_build_trend(self.reviews.trend_rows(since)),
         )
+
+
+def lookup_reaction(
+    db: Session,
+    *,
+    user_id: int,
+    feedback_id: int,
+    feedback_type: str,
+) -> str | None:
+    """The user's stored reaction on one feedback target, or None.
+
+    Reusable read shared by the chat hydration paths (so a persisted 👍/👎
+    re-renders on reload). Returns the raw string value ("LIKE"/"DISLIKE").
+    """
+    row = (
+        db.query(FeedbackReaction.reaction)
+        .filter(
+            FeedbackReaction.user_id == user_id,
+            FeedbackReaction.feedback_id == feedback_id,
+            FeedbackReaction.feedback_type == feedback_type,
+        )
+        .first()
+    )
+    return row[0] if row else None
+
+
+class FeedbackReactionService:
+    """Learner 👍/👎 on AI feedback (activity feedback + Coach's Note).
+
+    One reaction per ``(user, feedback_id, feedback_type)``. Owns its commit.
+    """
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def _owns_target(
+        self, user: User, feedback_id: int, feedback_type: FeedbackType
+    ) -> bool:
+        """Verify the target feedback exists AND belongs to this learner."""
+        if feedback_type is FeedbackType.ACTIVITY_FEEDBACK:
+            query = (
+                self.db.query(ActivityFeedback.id)
+                .join(ActivityAttempt, ActivityAttempt.id == ActivityFeedback.attempt_id)
+                .join(DailySession, DailySession.id == ActivityAttempt.session_id)
+                .filter(
+                    ActivityFeedback.id == feedback_id,
+                    DailySession.user_id == user.id,
+                )
+            )
+        else:  # COACH_NOTE
+            query = (
+                self.db.query(SessionScorecard.id)
+                .join(DailySession, DailySession.id == SessionScorecard.session_id)
+                .filter(
+                    SessionScorecard.id == feedback_id,
+                    DailySession.user_id == user.id,
+                )
+            )
+        return query.first() is not None
+
+    def set_reaction(
+        self,
+        user: User,
+        *,
+        feedback_id: int,
+        feedback_type: FeedbackType,
+        reaction: ReactionValue,
+    ) -> ReactionValue | None:
+        """Create / switch / clear a reaction.
+
+        Returns the resulting reaction, or None when it was toggled off.
+        Raises ``LookupError`` when the target is missing or not the user's.
+        """
+        if not self._owns_target(user, feedback_id, feedback_type):
+            raise LookupError("feedback target not found")
+
+        row = (
+            self.db.query(FeedbackReaction)
+            .filter(
+                FeedbackReaction.user_id == user.id,
+                FeedbackReaction.feedback_id == feedback_id,
+                FeedbackReaction.feedback_type == feedback_type.value,
+            )
+            .first()
+        )
+
+        if row is None:
+            self.db.add(
+                FeedbackReaction(
+                    user_id=user.id,
+                    feedback_id=feedback_id,
+                    feedback_type=feedback_type.value,
+                    reaction=reaction.value,
+                )
+            )
+            result: ReactionValue | None = reaction
+        elif row.reaction == reaction.value:
+            # Same reaction re-sent → toggle off.
+            self.db.delete(row)
+            result = None
+        else:
+            row.reaction = reaction.value
+            result = reaction
+
+        self.db.commit()
+        return result
+
+    def get_reaction(
+        self, user: User, *, feedback_id: int, feedback_type: FeedbackType
+    ) -> ReactionValue | None:
+        raw = lookup_reaction(
+            self.db,
+            user_id=user.id,
+            feedback_id=feedback_id,
+            feedback_type=feedback_type.value,
+        )
+        return ReactionValue(raw) if raw is not None else None
 
 
 # ── Helpers ────────────────────────────────────────────────────────

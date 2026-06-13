@@ -4,6 +4,30 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
+from app.modules.sessions.models import FeedbackType, ReactionValue
+
+
+# ── Feedback reactions (learner 👍/👎 on AI feedback) ───────────────
+
+
+class ReactionRequest(BaseModel):
+    """Set/switch/clear a reaction on one piece of AI feedback.
+
+    Re-sending the reaction that is already stored clears it (toggle-off).
+    ``feedback_id`` targets ``activity_feedback.id`` (ACTIVITY_FEEDBACK) or
+    ``session_scorecards.id`` (COACH_NOTE).
+    """
+
+    feedback_id: int
+    feedback_type: FeedbackType
+    reaction: ReactionValue
+
+
+class ReactionResponse(BaseModel):
+    """The viewer's reaction after the operation (null = no reaction)."""
+
+    user_reaction: ReactionValue | None = None
+
 
 # ── User-facing ────────────────────────────────────────────────────
 

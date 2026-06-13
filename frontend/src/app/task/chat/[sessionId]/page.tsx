@@ -137,6 +137,7 @@ interface RagFeedbackPayload {
   mentor_note?: string | null;
   available?: boolean;
   pending?: boolean;
+  scorecard_id?: number | null;
 }
 
 interface FeedbackError {
@@ -168,6 +169,10 @@ interface FeedbackPayload {
   practice_suggestion?: string;
   next_tip?: string | null;
   sub_skill_breakdown?: Record<string, number>;
+  // Backend ActivityFeedback row id + the viewer's reaction — drive the 👍/👎
+  // reaction bar under the feedback card.
+  feedback_id?: number | null;
+  user_reaction?: "LIKE" | "DISLIKE" | null;
   // Pass-mark gating: present only when the learner has the gate enabled.
   gate?: { passed: boolean; score_pct: number; threshold_pct: number };
 }
@@ -2473,7 +2478,6 @@ export default function ChatSessionPage() {
               {daySessionScorecard ? (
                 <DaySessionScorecard
                   scorecard={daySessionScorecard}
-                  sessionId={sessionId}
                   onGoToDashboard={() => {
                     queryClient.invalidateQueries({ queryKey: ["sessions", "today-plan"] });
                     queryClient.invalidateQueries({ queryKey: ["me"] });

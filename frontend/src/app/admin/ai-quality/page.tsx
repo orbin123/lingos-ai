@@ -178,16 +178,16 @@ function fmtScore(value: number | null | undefined) {
   return value.toFixed(1);
 }
 
-// Map a judged target to its row in the human-review queue and deep-link it.
-//   feedback    -> activity_feedback   (reviewed as "specific")
-//   mentor_note -> session_scorecards  (reviewed as "rag")
+// Map a judged target to its row in the feedback analytics page and deep-link it.
+//   feedback    -> activity_feedback   (ACTIVITY_FEEDBACK)
+//   mentor_note -> session_scorecards  (COACH_NOTE)
 function reviewHref(row: { target_type: string; target_id: string | null }) {
-  const base = "/admin/feedback-review";
+  const base = "/admin/feedback-analytics";
   const feedbackType =
     row.target_type === "mentor_note"
-      ? "rag"
+      ? "COACH_NOTE"
       : row.target_type === "feedback"
-        ? "specific"
+        ? "ACTIVITY_FEEDBACK"
         : null;
   if (!feedbackType || !row.target_id) return base;
   return `${base}?feedback_type=${feedbackType}&feedback_id=${encodeURIComponent(

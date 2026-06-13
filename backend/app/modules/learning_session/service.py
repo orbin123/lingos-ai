@@ -158,6 +158,16 @@ _DAILY_GATE_INCOMPLETE_MESSAGE = (
     "activity and pass it when you're ready."
 )
 
+# Short chat hand-off streamed after a graded activity, carrying the
+# "Next activity" / "Go to dashboard" buttons. The detailed feedback already
+# lives in the feedback card above it, so this MUST only acknowledge completion
+# and point at the buttons — never restate the feedback summary or next tip, or
+# the same text shows up twice on screen.
+_ACTIVITY_COMPLETE_MESSAGE = (
+    "Activity complete — your feedback is in the card above. Choose "
+    '"Next activity" to keep going, or "Go to dashboard" to take a break.'
+)
+
 
 def _validate_teacher_input(**fields) -> None:
     """Guard the teacher-agent boundary. Raises under ``strict_contracts``;
@@ -1475,6 +1485,21 @@ class LearningSessionService:
         self._enrich_state_with_profile(state, session.user_id)
         blueprint = self._session_blueprint_message(session, state)
 
+        # Re-attach the viewer's reaction to the most recent feedback so a
+        # persisted 👍/👎 re-renders on reload (the stored feedback dict carries
+        # `feedback_id`, set at submit time).
+        last_feedback = dict(session.feedback) if session.feedback else None
+        if last_feedback and last_feedback.get("feedback_id") is not None:
+            from app.modules.feedback.service import lookup_reaction
+            from app.modules.sessions.models import FeedbackType
+
+            last_feedback["user_reaction"] = lookup_reaction(
+                self.db,
+                user_id=user_id,
+                feedback_id=int(last_feedback["feedback_id"]),
+                feedback_type=FeedbackType.ACTIVITY_FEEDBACK.value,
+            )
+
         return {
             "session_id": session.session_id,
             "daily_session_id": session.daily_session_id,
@@ -1487,7 +1512,7 @@ class LearningSessionService:
             "current_task": current_task,
             "current_sequence": checkpoint["current_sequence"],
             "last_evaluation": session.evaluation,
-            "last_feedback": session.feedback,
+            "last_feedback": last_feedback,
             "completed_sequences": checkpoint["completed_sequences"],
             "completed_activities": self._completed_activity_summaries(session),
             "teaching_completed": checkpoint["teaching_completed"],
@@ -1872,6 +1897,9 @@ class LearningSessionService:
             "evaluator_notes": evaluation.evaluator_notes,
         }
         feedback_dict = {
+            # The ActivityFeedback row id — lets the chat UI attach a 👍/👎
+            # reaction (feedback_type=ACTIVITY_FEEDBACK) keyed to this feedback.
+            "feedback_id": feedback.id,
             "score": feedback.score,
             "summary": feedback.summary,
             "did_well": list(feedback.did_well or []),
@@ -2115,9 +2143,7 @@ class LearningSessionService:
                 yield msg
             return
 
-        summary_text = feedback.summary or "Good effort."
-        if feedback.next_tip:
-            summary_text = f"{summary_text} {feedback.next_tip}"
+        summary_text = _ACTIVITY_COMPLETE_MESSAGE
         actions = self._next_actions_for_session(session)
         messages.append({"role": "ai", "content": summary_text, "type": "chat"})
         session.messages = messages
@@ -2351,6 +2377,7 @@ class LearningSessionService:
                         "available": False,
                         "pending": True,
                         "source": "feedback_memory",
+                        "scorecard_id": scorecard.id,
                         "_session": session_meta,
                     },
                     session_meta=session_meta,
@@ -2366,6 +2393,7 @@ class LearningSessionService:
                     "available": bool(mentor_note),
                     "pending": False,
                     "source": "feedback_memory",
+                    "scorecard_id": scorecard.id,
                     "_session": session_meta,
                 },
                 session_meta=session_meta,

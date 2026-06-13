@@ -21,8 +21,8 @@ from app.modules.admin.schemas import (
     AdminUserDetail,
     AdminUserListItem,
     AppReviewItem,
-    FeedbackReviewItem,
-    FeedbackReviewUpdate,
+    FeedbackAnalyticsItem,
+    FeedbackReactionStats,
     PaymentRead,
     RolePermissionsUpdate,
     SubscriberItem,
@@ -188,52 +188,18 @@ class AdminService:
             created_at=detail.created_at,
         )
 
-    def list_feedback_review(self) -> list[FeedbackReviewItem]:
-        return self.repo.list_feedback_review()
-
-    def review_feedback(
+    def list_feedback_analytics(
         self,
         *,
-        feedback_type: str,
-        feedback_id: int,
-        payload: FeedbackReviewUpdate,
-        actor: User,
-        ip_address: str | None = None,
-    ) -> FeedbackReviewItem | None:
-        if not self.repo.feedback_target_exists(feedback_type, feedback_id):
-            return None
+        feedback_type: str | None = None,
+        reaction: str | None = None,
+    ) -> list[FeedbackAnalyticsItem]:
+        return self.repo.list_feedback_analytics(
+            feedback_type=feedback_type, reaction=reaction
+        )
 
-        review = self.repo.upsert_feedback_review(
-            feedback_type=feedback_type,
-            feedback_id=feedback_id,
-            review_status=payload.review_status,
-            admin_note=payload.admin_note,
-            reviewer=actor,
-        )
-        self.audit.record(
-            admin=actor,
-            action="feedback.review",
-            resource_type="feedback_review",
-            resource_id=review.id,
-            old_value=None,
-            new_value={
-                "feedback_type": feedback_type,
-                "feedback_id": feedback_id,
-                "review_status": payload.review_status,
-            },
-            ip_address=ip_address,
-        )
-        self.db.commit()
-        # Return the refreshed item from the unified list.
-        return next(
-            (
-                item
-                for item in self.repo.list_feedback_review()
-                if item.feedback_type == feedback_type
-                and item.feedback_id == feedback_id
-            ),
-            None,
-        )
+    def feedback_reaction_stats(self) -> FeedbackReactionStats:
+        return self.repo.feedback_reaction_stats()
 
     def list_app_reviews(self, *, rating: int | None = None) -> list[AppReviewItem]:
         return self.repo.list_app_reviews(rating=rating)

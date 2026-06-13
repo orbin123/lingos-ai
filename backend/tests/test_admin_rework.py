@@ -1,5 +1,5 @@
 """Tests for the admin-console rework: subscribers (2-year access window +
-trial derivation), dual-type feedback review, RAG ratings, and user progress.
+trial derivation), feedback reaction analytics, and user progress.
 
 Uses an explicit table subset (like the other session route tests) so the
 SQLite engine never has to create the raw-JSONB `learning_sessions` table.
@@ -16,8 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from app import models  # noqa: F401  (populate the mapper registry)
 from app.core.database import Base
-from app.modules.admin.models import AdminAuditLog, FeedbackReview
-from app.modules.admin.schemas import FeedbackReviewUpdate
+from app.modules.admin.models import AdminAuditLog
 from app.modules.admin.service import AdminService
 from app.modules.auth.models import Role, User, UserRole
 from app.modules.progress.models import SkillPoints
@@ -26,7 +25,9 @@ from app.modules.sessions.models import (
     ActivityFeedback,
     AttemptStatus,
     DailySession,
-    FeedbackRating,
+    FeedbackReaction,
+    FeedbackType,
+    ReactionValue,
     SessionScorecard,
     SessionStatus,
 )
@@ -61,8 +62,7 @@ def db():
             ActivityAttempt.__table__,
             ActivityFeedback.__table__,
             SessionScorecard.__table__,
-            FeedbackReview.__table__,
-            FeedbackRating.__table__,
+            FeedbackReaction.__table__,
             AdminAuditLog.__table__,
         ],
     )
@@ -169,7 +169,91 @@ def test_subscriber_access_update_extends_window(db):
     assert db.query(AdminAuditLog).filter_by(action="purchase.access_update").count() == 1
 
 
-# ── Feedback review (dual-type) + ratings ──────────────────────────
+# ── Feedback analytics (reactions) ─────────────────────────────────
+
+
+def _react(db, user, *, feedback_id, feedback_type, reaction):
+    row = FeedbackReaction(
+        user_id=user.id,
+        feedback_id=feedback_id,
+        feedback_type=feedback_type.value,
+        reaction=reaction.value,
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def test_feedback_analytics_lists_both_types_with_reaction(db):
+    learner = _user(db, "Learner", days_ago=5)
+    feedback, scorecard = _seed_feedback(db, learner)
+    _react(
+        db,
+        learner,
+        feedback_id=scorecard.id,
+        feedback_type=FeedbackType.COACH_NOTE,
+        reaction=ReactionValue.DISLIKE,
+    )
+    db.commit()
+
+    items = AdminService(db).list_feedback_analytics()
+    by_type = {i.feedback_type: i for i in items}
+    assert set(by_type) == {"ACTIVITY_FEEDBACK", "COACH_NOTE"}
+    assert by_type["ACTIVITY_FEEDBACK"].score == 6.0
+    assert by_type["ACTIVITY_FEEDBACK"].user_reaction is None
+    assert by_type["COACH_NOTE"].mentor_note.startswith("You keep mixing")
+    assert by_type["COACH_NOTE"].user_reaction == "DISLIKE"
+    # The disliked item is surfaced first (needs attention).
+    assert items[0].feedback_type == "COACH_NOTE"
+
+
+def test_feedback_analytics_filters_by_type_and_reaction(db):
+    learner = _user(db, "Learner", days_ago=5)
+    feedback, scorecard = _seed_feedback(db, learner)
+    _react(
+        db,
+        learner,
+        feedback_id=feedback.id,
+        feedback_type=FeedbackType.ACTIVITY_FEEDBACK,
+        reaction=ReactionValue.LIKE,
+    )
+    db.commit()
+    svc = AdminService(db)
+
+    # Type filter.
+    coach_only = svc.list_feedback_analytics(feedback_type="COACH_NOTE")
+    assert {i.feedback_type for i in coach_only} == {"COACH_NOTE"}
+
+    # Reaction filter: only the liked activity feedback.
+    liked = svc.list_feedback_analytics(reaction="LIKE")
+    assert len(liked) == 1
+    assert liked[0].feedback_type == "ACTIVITY_FEEDBACK"
+
+    # No-reaction filter: only the un-reacted Coach Note.
+    none = svc.list_feedback_analytics(reaction="NONE")
+    assert {i.feedback_type for i in none} == {"COACH_NOTE"}
+    assert none[0].user_reaction is None
+
+
+def test_feedback_reaction_stats(db):
+    learner = _user(db, "Learner", days_ago=5)
+    feedback, scorecard = _seed_feedback(db, learner)  # 2 feedback items total
+    _react(
+        db,
+        learner,
+        feedback_id=feedback.id,
+        feedback_type=FeedbackType.ACTIVITY_FEEDBACK,
+        reaction=ReactionValue.LIKE,
+    )
+    db.commit()
+
+    stats = AdminService(db).feedback_reaction_stats()
+    assert stats.total_items == 2  # 1 activity feedback + 1 coach note
+    assert stats.liked == 1
+    assert stats.disliked == 0
+    assert stats.no_reaction == 1
+    # liked / (liked + disliked) = 1 / 1.
+    assert stats.positive_rate == 1.0
 
 
 def _seed_feedback(db, user: User) -> tuple[ActivityFeedback, SessionScorecard]:
@@ -214,58 +298,6 @@ def _seed_feedback(db, user: User) -> tuple[ActivityFeedback, SessionScorecard]:
     db.add(scorecard)
     db.flush()
     return feedback, scorecard
-
-
-def test_feedback_review_lists_both_types_with_rating(db):
-    learner = _user(db, "Learner", days_ago=5)
-    feedback, scorecard = _seed_feedback(db, learner)
-    db.add(
-        FeedbackRating(scorecard_id=scorecard.id, user_id=learner.id, value="dislike")
-    )
-    db.commit()
-
-    items = AdminService(db).list_feedback_review()
-    by_type = {i.feedback_type: i for i in items}
-    assert set(by_type) == {"specific", "rag"}
-    assert by_type["specific"].score == 6.0
-    assert by_type["rag"].mentor_note.startswith("You keep mixing")
-    assert by_type["rag"].rating == "dislike"
-    # Disliked item sorts first.
-    assert items[0].feedback_type == "rag"
-
-
-def test_review_feedback_updates_status_and_pending_count(db):
-    learner = _user(db, "Learner", days_ago=5)
-    feedback, scorecard = _seed_feedback(db, learner)
-    db.commit()
-    actor = _user(db, "Admin", days_ago=1)
-    db.commit()
-
-    svc = AdminService(db)
-    assert svc.repo.count_pending_feedback_reviews() == 2  # 1 specific + 1 rag
-
-    updated = svc.review_feedback(
-        feedback_type="specific",
-        feedback_id=feedback.id,
-        payload=FeedbackReviewUpdate(review_status="approved", admin_note="ok"),
-        actor=actor,
-    )
-    assert updated is not None
-    assert updated.review_status == "approved"
-    # Approving one resolves it → pending drops to 1.
-    assert svc.repo.count_pending_feedback_reviews() == 1
-
-
-def test_review_feedback_unknown_target_returns_none(db):
-    actor = _user(db, "Admin", days_ago=1)
-    db.commit()
-    result = AdminService(db).review_feedback(
-        feedback_type="rag",
-        feedback_id=99999,
-        payload=FeedbackReviewUpdate(review_status="approved"),
-        actor=actor,
-    )
-    assert result is None
 
 
 # ── User progress ──────────────────────────────────────────────────

@@ -26,6 +26,10 @@ export interface ActivityFeedback {
   taskId: string;
   feedbackInput: FeedbackInputSchema;
   outputs: Record<AnswerView, ActivityFeedbackOutput>;
+  // Backend ActivityFeedback row id + the viewer's reaction, present on live
+  // runtime feedback (absent in authored preview data → reactions hidden).
+  feedbackId?: number | null;
+  userReaction?: "LIKE" | "DISLIKE" | null;
 }
 
 export interface RagFeedback {
@@ -36,6 +40,23 @@ export interface RagFeedback {
     learnerHistoryRef: string;
   };
   outputs: Record<AnswerView, string>;
+}
+
+/** Flatten one activity feedback into plain text for the Copy button. */
+export function activityFeedbackToText(output: ActivityFeedbackOutput): string {
+  const sections: string[] = [output.summary];
+  if (output.didWell.length > 0) {
+    sections.push(`What you did well: ${output.didWell.join(" ")}`);
+  }
+  for (const mistake of output.mistakes) {
+    const parts = [mistake.issue];
+    if (mistake.userWrote) parts.push(`You wrote: ${mistake.userWrote}`);
+    if (mistake.correction) parts.push(`Correction: ${mistake.correction}`);
+    if (mistake.rule) parts.push(`Rule: ${mistake.rule}`);
+    sections.push(parts.join(" "));
+  }
+  if (output.nextTip) sections.push(`Next: ${output.nextTip}`);
+  return sections.join("\n\n");
 }
 
 export interface FeedbackDayData {

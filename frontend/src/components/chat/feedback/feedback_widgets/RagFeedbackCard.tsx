@@ -1,6 +1,7 @@
 import { GraduationCap, CloudOff, Loader2 } from "lucide-react";
 import type { AnswerView } from "../../teaching/source";
 import type { RagFeedback } from "../source";
+import { ReactionBar } from "../ReactionBar";
 
 export type RagFeedbackState = "ready" | "pending" | "unavailable";
 
@@ -8,10 +9,12 @@ export function RagFeedbackCard({
   ragFeedback,
   answerView,
   state = "ready",
+  scorecardId = null,
 }: {
   ragFeedback: RagFeedback;
   answerView: AnswerView;
   state?: RagFeedbackState;
+  scorecardId?: number | null;
 }) {
   // Pending + unavailable share a muted, neutral treatment; the ready state
   // keeps the warm "coach" tone. Copy is kept in sync with the REST sessions
@@ -89,6 +92,34 @@ export function RagFeedbackCard({
             ? "Your personalized coaching feedback couldn't be generated right now. Don't worry — your scores and progress are saved. Complete your next session to receive tailored mentor notes."
             : ragFeedback.outputs[answerView]}
       </p>
+
+      {state === "ready" && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            paddingTop: 12,
+            borderTop: "1px solid oklch(90% 0.04 50)",
+          }}
+        >
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: "oklch(45% 0.06 50)",
+            }}
+          >
+            Was this helpful?
+          </span>
+          <ReactionBar
+            feedbackType="COACH_NOTE"
+            feedbackId={scorecardId}
+            copyText={ragFeedback.outputs[answerView] ?? ""}
+            align="start"
+          />
+        </div>
+      )}
     </section>
   );
 }

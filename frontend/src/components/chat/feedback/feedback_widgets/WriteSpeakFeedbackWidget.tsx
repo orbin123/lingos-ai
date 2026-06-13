@@ -1,6 +1,7 @@
 import { Check, Sparkles } from "lucide-react";
 import type { AnswerView } from "../../teaching/source";
-import type { ActivityFeedback } from "../source";
+import { activityFeedbackToText, type ActivityFeedback } from "../source";
+import { ReactionBar } from "../ReactionBar";
 import { FeedbackMistakeRow } from "./FeedbackMistakeRow";
 
 export function WriteSpeakFeedbackWidget({
@@ -85,6 +86,15 @@ export function WriteSpeakFeedbackWidget({
       >
         <strong>Next: </strong>
         {output.nextTip}
+      </div>
+
+      <div style={{ padding: "10px 20px 14px" }}>
+        <ReactionBar
+          feedbackId={feedback.feedbackId}
+          feedbackType="ACTIVITY_FEEDBACK"
+          initialReaction={feedback.userReaction}
+          copyText={activityFeedbackToText(output)}
+        />
       </div>
     </section>
   );

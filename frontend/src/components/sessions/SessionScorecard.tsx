@@ -19,8 +19,6 @@ import { MentorNote } from "./MentorNote";
 interface Props {
   scorecard: SessionScorecardRead;
   onGoToDashboard?: () => void;
-  /** Chat session id — enables the Coach's Note like/dislike control. */
-  sessionId?: string;
 }
 
 const TIER_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
@@ -31,14 +29,15 @@ const TIER_COLORS: Record<string, { bg: string; fg: string; label: string }> = {
   very_poor: { bg: "oklch(94% 0.06 25)",  fg: "oklch(40% 0.16 25)",  label: "Very Poor" },
 };
 
-export function SessionScorecard({ scorecard, onGoToDashboard, sessionId }: Props) {
+export function SessionScorecard({ scorecard, onGoToDashboard }: Props) {
   const {
     points_earned,
     skill_labels,
     points_applied,
     activities,
     mentor_note,
-    rag_rating,
+    scorecard_id,
+    user_reaction,
   } = scorecard;
 
   const orderedActivities = [...(activities ?? [])].sort(
@@ -149,8 +148,8 @@ export function SessionScorecard({ scorecard, onGoToDashboard, sessionId }: Prop
       <div style={{ marginTop: 16 }}>
         <MentorNote
           note={mentor_note}
-          sessionId={sessionId}
-          initialRating={rag_rating ?? null}
+          scorecardId={scorecard_id ?? null}
+          userReaction={user_reaction ?? null}
         />
       </div>
 

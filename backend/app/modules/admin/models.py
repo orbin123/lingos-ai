@@ -1,21 +1,17 @@
 """Admin monitoring models."""
 
-from datetime import datetime
-
 from sqlalchemy import (
-    DateTime,
     ForeignKey,
     JSON,
     Numeric,
     String,
     Text,
-    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
-from app.core.mixins import CreatedAtMixin, IDMixin, TimestampMixin
+from app.core.mixins import CreatedAtMixin, IDMixin
 
 
 class AdminAuditLog(Base, IDMixin, CreatedAtMixin):
@@ -96,47 +92,3 @@ class AIEvaluation(Base, IDMixin, CreatedAtMixin):
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     # "online" (production sampling) | "offline" (golden-set / CI)
     eval_mode: Mapped[str] = mapped_column(String(20), nullable=False)
-
-
-class FeedbackReview(Base, IDMixin, TimestampMixin):
-    """Admin review annotation for a single piece of learner-facing feedback.
-
-    Feedback comes in two shapes that live in different tables:
-      - "specific" → `activity_feedback.id`  (per-activity feedback)
-      - "rag"      → `session_scorecards.id`  (session-level Coach's Note)
-
-    This table is a polymorphic side-car keyed by (feedback_type, feedback_id)
-    so the append-only feedback tables stay untouched. A row is created lazily
-    the first time an admin reviews a target; absence ⇒ status "pending".
-    """
-
-    __tablename__ = "feedback_reviews"
-    __table_args__ = (
-        UniqueConstraint(
-            "feedback_type", "feedback_id", name="uq_feedback_review_target"
-        ),
-    )
-
-    # "specific" | "rag" — which source table `feedback_id` points at.
-    feedback_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    # No hard FK: the id targets one of two tables depending on feedback_type.
-    feedback_id: Mapped[int] = mapped_column(nullable=False, index=True)
-    # "pending" | "approved" | "flagged" | "fixed"
-    review_status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="pending",
-        server_default="pending",
-        index=True,
-    )
-    reviewed_by: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    reviewed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    reviewer = relationship("User")

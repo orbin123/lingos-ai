@@ -19,7 +19,7 @@ export interface AdminSummary {
   ai_errors_24h: number;
   ai_cost_24h: number;
   ai_avg_latency_ms_24h: number | null;
-  pending_feedback_reviews: number;
+  disliked_feedback: number;
   recent_users: AdminUserListItem[];
 }
 
@@ -183,32 +183,36 @@ export interface AIQualityReport {
   series: AIQualityTimeSeriesPoint[];
 }
 
-export interface FeedbackReviewItem {
-  feedback_type: "specific" | "rag";
+export type FeedbackReactionType = "ACTIVITY_FEEDBACK" | "COACH_NOTE";
+export type FeedbackReactionValue = "LIKE" | "DISLIKE";
+
+export interface FeedbackAnalyticsItem {
+  feedback_type: FeedbackReactionType;
   feedback_id: number;
   user: AdminLogUser | null;
   context_label: string;
-  // Specific-feedback fields.
+  // Activity-feedback fields.
   score: number | null;
   summary: string | null;
   did_well: string[];
   mistakes: Record<string, unknown>[];
   next_tip: string | null;
-  // RAG-feedback fields.
+  // Coach's-Note field.
   mentor_note: string | null;
-  rating: "like" | "dislike" | null;
-  // Review annotation.
-  review_status: "pending" | "approved" | "flagged" | "fixed";
-  reviewed_by: AdminLogUser | null;
-  reviewed_at: string | null;
-  admin_note: string | null;
+  // The learner's reaction to this feedback.
+  user_reaction: FeedbackReactionValue | null;
   created_at: string;
 }
 
-export interface FeedbackReviewUpdate {
-  review_status: FeedbackReviewItem["review_status"];
-  admin_note?: string | null;
+export interface FeedbackReactionStats {
+  total_items: number;
+  liked: number;
+  disliked: number;
+  no_reaction: number;
+  positive_rate: number | null;
 }
+
+export type FeedbackReactionFilter = "LIKE" | "DISLIKE" | "NONE";
 
 export interface AdminPayment {
   id: number;
@@ -407,19 +411,24 @@ export const adminApi = {
   aiQuality: (days = 7) =>
     api.get<AIQualityReport>(`/admin/ai-quality?days=${days}`).then((r) => r.data),
 
-  feedbackReview: () =>
-    api.get<FeedbackReviewItem[]>("/admin/feedback-review").then((r) => r.data),
-
-  updateFeedbackReview: (
-    feedbackType: "specific" | "rag",
-    feedbackId: number,
-    data: FeedbackReviewUpdate,
-  ) =>
-    api
-      .patch<FeedbackReviewItem>(
-        `/admin/feedback-review/${feedbackType}/${feedbackId}`,
-        data,
+  feedbackAnalytics: (filters?: {
+    feedbackType?: FeedbackReactionType;
+    reaction?: FeedbackReactionFilter;
+  }) => {
+    const params = new URLSearchParams();
+    if (filters?.feedbackType) params.set("feedback_type", filters.feedbackType);
+    if (filters?.reaction) params.set("reaction", filters.reaction);
+    const query = params.toString();
+    return api
+      .get<FeedbackAnalyticsItem[]>(
+        `/admin/feedback-analytics${query ? `?${query}` : ""}`,
       )
+      .then((r) => r.data);
+  },
+
+  feedbackAnalyticsStats: () =>
+    api
+      .get<FeedbackReactionStats>("/admin/feedback-analytics/stats")
       .then((r) => r.data),
 
   payments: () => api.get<AdminPayment[]>("/admin/payments").then((r) => r.data),

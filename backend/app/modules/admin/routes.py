@@ -1,5 +1,7 @@
 """Admin HTTP routes."""
 
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
@@ -15,8 +17,8 @@ from app.modules.admin.schemas import (
     AdminUserDetail,
     AdminUserListItem,
     AppReviewItem,
-    FeedbackReviewItem,
-    FeedbackReviewUpdate,
+    FeedbackAnalyticsItem,
+    FeedbackReactionStats,
     PaymentRead,
     RolePermissionsUpdate,
     ExpireTrialsResult,
@@ -409,49 +411,32 @@ def expire_due_trials(
     return ExpireTrialsResult(expired=flipped)
 
 
-# ── Feedback review (specific + rag) ───────────────────────────────
+# ── Feedback analytics (learner reactions) ─────────────────────────
 
 
 @router.get(
-    "/feedback-review",
-    response_model=list[FeedbackReviewItem],
+    "/feedback-analytics",
+    response_model=list[FeedbackAnalyticsItem],
     status_code=status.HTTP_200_OK,
 )
-def list_feedback_review(
+def list_feedback_analytics(
+    feedback_type: Literal["ACTIVITY_FEEDBACK", "COACH_NOTE"] | None = None,
+    reaction: Literal["LIKE", "DISLIKE", "NONE"] | None = None,
     _current_user: User = Depends(require_permission("feedback_logs.read")),
     db: Session = Depends(get_db),
-) -> list[FeedbackReviewItem]:
-    return AdminService(db).list_feedback_review()
+) -> list[FeedbackAnalyticsItem]:
+    return AdminService(db).list_feedback_analytics(
+        feedback_type=feedback_type, reaction=reaction
+    )
 
 
-@router.patch(
-    "/feedback-review/{feedback_type}/{feedback_id}",
-    response_model=FeedbackReviewItem,
+@router.get(
+    "/feedback-analytics/stats",
+    response_model=FeedbackReactionStats,
     status_code=status.HTTP_200_OK,
 )
-def update_feedback_review(
-    feedback_type: str,
-    feedback_id: int,
-    payload: FeedbackReviewUpdate,
-    request: Request,
-    current_user: User = Depends(require_permission("feedback_quality.review")),
+def feedback_analytics_stats(
+    _current_user: User = Depends(require_permission("feedback_logs.read")),
     db: Session = Depends(get_db),
-) -> FeedbackReviewItem:
-    if feedback_type not in ("specific", "rag"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="feedback_type must be 'specific' or 'rag'",
-        )
-    item = AdminService(db).review_feedback(
-        feedback_type=feedback_type,
-        feedback_id=feedback_id,
-        payload=payload,
-        actor=current_user,
-        ip_address=client_ip_from_request(request),
-    )
-    if item is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Feedback not found",
-        )
-    return item
+) -> FeedbackReactionStats:
+    return AdminService(db).feedback_reaction_stats()

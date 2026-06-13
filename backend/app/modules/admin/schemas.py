@@ -36,7 +36,9 @@ class AdminSummary(BaseModel):
     # Estimated AI spend and mean latency over the last 24h (derived from logs).
     ai_cost_24h: float = 0.0
     ai_avg_latency_ms_24h: int | None = None
-    pending_feedback_reviews: int = 0
+    # Count of AI feedback items the learners disliked — the new "needs
+    # attention" signal that replaced the old pending-review count.
+    disliked_feedback: int = 0
     recent_users: list[AdminRecentUser]
 
 
@@ -219,39 +221,44 @@ class AIQualityReport(BaseModel):
     series: list[AIQualityTimeSeriesPoint] = []
 
 
-class FeedbackReviewItem(BaseModel):
-    """One reviewable piece of feedback — either a per-activity "specific"
-    feedback row or a session-level "rag" Coach's Note."""
+class FeedbackAnalyticsItem(BaseModel):
+    """One piece of AI feedback plus the learner's reaction to it.
 
-    feedback_type: Literal["specific", "rag"]
+    Read-only analytics row (no moderation). ``feedback_type`` is the unified
+    reaction type: ACTIVITY_FEEDBACK (per-activity) or COACH_NOTE (session-level
+    Coach's Note). ``user_reaction`` is the learner's 👍/👎 or None.
+    """
+
+    feedback_type: Literal["ACTIVITY_FEEDBACK", "COACH_NOTE"]
     feedback_id: int
     user: AdminLogUser | None = None
-    # archetype id (specific) or day_id (rag) — context for the reviewer.
+    # archetype id (activity) or day_id (coach note) — context for the reader.
     context_label: str
 
-    # Specific-feedback fields.
+    # Activity-feedback fields.
     score: float | None = None
     summary: str | None = None
     did_well: list[str] = Field(default_factory=list)
     mistakes: list[dict] = Field(default_factory=list)
     next_tip: str | None = None
 
-    # RAG-feedback fields.
+    # Coach's-Note field.
     mentor_note: str | None = None
-    # Learner's thumbs on the Coach's Note, if they rated it.
-    rating: Literal["like", "dislike"] | None = None
 
-    # Review annotation (defaults represent the lazy "not yet reviewed" state).
-    review_status: str = "pending"
-    reviewed_by: AdminLogUser | None = None
-    reviewed_at: datetime | None = None
-    admin_note: str | None = None
+    # The learner's reaction to this feedback ("LIKE"/"DISLIKE"/None).
+    user_reaction: Literal["LIKE", "DISLIKE"] | None = None
     created_at: datetime
 
 
-class FeedbackReviewUpdate(BaseModel):
-    review_status: Literal["pending", "approved", "flagged", "fixed"]
-    admin_note: str | None = Field(default=None, max_length=2000)
+class FeedbackReactionStats(BaseModel):
+    """KPI roll-up for the feedback analytics dashboard."""
+
+    total_items: int
+    liked: int
+    disliked: int
+    no_reaction: int
+    # liked / (liked + disliked) — share of reacted feedback that was positive.
+    positive_rate: float | None = None
 
 
 class PaymentRead(BaseModel):

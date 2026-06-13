@@ -319,37 +319,73 @@ class SessionScorecard(Base, IDMixin, CreatedAtMixin):
         )
 
 
-# ── FeedbackRating ─────────────────────────────────────────────────
+# ── FeedbackReaction ───────────────────────────────────────────────
 
 
-class FeedbackRating(Base, IDMixin, TimestampMixin):
-    """Learner thumbs up/down on a session's RAG feedback (Coach's Note).
+class FeedbackType(str, Enum):
+    """Which AI-feedback artifact a reaction targets.
 
-    Keyed on the scorecard because the mentor note physically lives there.
-    One rating per user per scorecard — toggling like↔dislike upserts in place.
-    Liked notes surface as positive in admin Feedback Review; disliked as flagged.
+    ``feedback_id`` resolves by type:
+      - ACTIVITY_FEEDBACK → ``activity_feedback.id``
+      - COACH_NOTE        → ``session_scorecards.id`` (the mentor note)
     """
 
-    __tablename__ = "feedback_ratings"
+    ACTIVITY_FEEDBACK = "ACTIVITY_FEEDBACK"
+    COACH_NOTE = "COACH_NOTE"
+
+
+class ReactionValue(str, Enum):
+    """A learner's reaction to one piece of AI feedback.
+
+    Stored as a plain string column (not a DB enum) so future values
+    (e.g. FLAGGED_AS_INCORRECT / FLAGGED_AS_CONFUSING / FLAGGED_AS_TOO_GENERIC)
+    can be added without a schema migration.
+    """
+
+    LIKE = "LIKE"
+    DISLIKE = "DISLIKE"
+
+
+class FeedbackReaction(Base, IDMixin, TimestampMixin):
+    """Learner reaction (👍/👎) to a single piece of AI-generated feedback.
+
+    One unified table covering both feedback surfaces — per-activity
+    ``ActivityFeedback`` and the session-level Coach's Note on
+    ``SessionScorecard`` — keyed polymorphically by ``(feedback_type,
+    feedback_id)``. No hard FK on ``feedback_id`` because it targets one of
+    two tables depending on ``feedback_type``.
+
+    One reaction per ``(user_id, feedback_id, feedback_type)``. Re-sending the
+    same reaction clears it (toggle-off); a different reaction updates in place.
+    ``reaction``/``feedback_type`` are strings (enum-validated at the edge) so
+    new reaction kinds need no migration.
+    """
+
+    __tablename__ = "feedback_reactions"
     __table_args__ = (
-        UniqueConstraint("scorecard_id", "user_id", name="uq_feedback_rating_user"),
+        UniqueConstraint(
+            "user_id",
+            "feedback_id",
+            "feedback_type",
+            name="uq_feedback_reaction_target",
+        ),
     )
 
-    scorecard_id: Mapped[int] = mapped_column(
-        ForeignKey("session_scorecards.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    # "like" | "dislike"
-    value: Mapped[str] = mapped_column(String(10), nullable=False)
+    # Targets activity_feedback.id or session_scorecards.id (per feedback_type).
+    feedback_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    # "ACTIVITY_FEEDBACK" | "COACH_NOTE"
+    feedback_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    # "LIKE" | "DISLIKE" (future: "FLAGGED_AS_*")
+    reaction: Mapped[str] = mapped_column(String(40), nullable=False)
 
     def __repr__(self) -> str:
         return (
-            f"<FeedbackRating(scorecard_id={self.scorecard_id}, "
-            f"user_id={self.user_id}, value={self.value!r})>"
+            f"<FeedbackReaction(user_id={self.user_id}, "
+            f"feedback_type={self.feedback_type!r}, "
+            f"feedback_id={self.feedback_id}, reaction={self.reaction!r})>"
         )
