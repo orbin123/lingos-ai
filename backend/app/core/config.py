@@ -1,5 +1,6 @@
 """Application configuration loaded from environment variables."""
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -15,6 +16,16 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = True
     log_level: str = "info"
+
+    # CORS — comma-separated allowed origins per environment. The dev default
+    # matches the local Next.js server; prod MUST override with the real
+    # frontend origin(s). The prod guard below rejects any localhost origin.
+    cors_origins: str = "http://localhost:3000"
+
+    # SQL statement logging. Decoupled from `debug` so prod can keep generic
+    # debug off without ever echoing queries (which would leak schema/PII to
+    # logs). The prod guard forces this False when environment=production.
+    sql_echo: bool = False
 
     # Sentry error tracking. Empty = disabled (local/test default).
     sentry_dsn: str = ""
@@ -231,6 +242,56 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Allowed CORS origins as a clean list (empty entries dropped)."""
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def _guard_production(self) -> "Settings":
+        """Fail-fast safety net for production.
+
+        The app already crashes on missing required vars; this extends that
+        philosophy to "unsafe-in-prod" combinations so a single forgotten env
+        override on the server can never silently ship a dev-only setting
+        (OTP bypass, SQL query logging, localhost CORS, insecure cookies).
+        Only enforced when ENVIRONMENT=production — dev and tests are untouched.
+        """
+        if self.environment != "production":
+            return self
+
+        violations: list[str] = []
+        if self.debug:
+            violations.append("DEBUG must be false")
+        if self.sql_echo:
+            violations.append("SQL_ECHO must be false")
+        if self.DEV_OTP_BYPASS:
+            violations.append("DEV_OTP_BYPASS must be false (magic OTP 123456)")
+        if not self.OTP_HASHING_SECRET:
+            violations.append(
+                "OTP_HASHING_SECRET must be set (no jwt_secret fallback in prod)"
+            )
+        if not self.AUTH_COOKIE_SECURE:
+            violations.append("AUTH_COOKIE_SECURE must be true behind https")
+        local_origins = [
+            o
+            for o in self.cors_origins_list
+            if "localhost" in o or "127.0.0.1" in o
+        ]
+        if local_origins:
+            violations.append(
+                f"CORS_ORIGINS must not contain localhost origins: {local_origins}"
+            )
+        if not self.cors_origins_list:
+            violations.append("CORS_ORIGINS must be set")
+
+        if violations:
+            raise ValueError(
+                "Unsafe production configuration — refusing to boot:\n  - "
+                + "\n  - ".join(violations)
+            )
+        return self
 
 
 

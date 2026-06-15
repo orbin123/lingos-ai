@@ -7,16 +7,15 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user, require_verified
 from app.modules.auth.models import User
-from app.modules.auth.repository import UserProfileRepository
 from app.modules.subscriptions.catalog import PLAN_CATALOG
 from app.modules.subscriptions.exceptions import (
     NoPlanSelected,
     NotCancellable,
     PlanLocked,
     PlanNotFound,
+    PurchaseNotFound,
     TrialAlreadyUsed,
 )
-from app.modules.subscriptions.models import Purchase
 from app.modules.subscriptions.schemas import (
     EntitlementRead,
     NotificationSettings,
@@ -151,15 +150,10 @@ def pause_course_access(
     access on `purchase.status == "paused"`, that lookup happens at the
     sessions route.
     """
-    purchase = db.query(Purchase).filter(Purchase.user_id == current_user.id).first()
-    if purchase is None:
+    try:
+        return SubscriptionService(db).pause_course(current_user)
+    except PurchaseNotFound:
         raise HTTPException(status_code=404, detail="No purchase found.")
-
-    purchase.status = "paused"
-
-    db.commit()
-    db.refresh(purchase)
-    return purchase
 
 
 @users_router.patch("/me/notifications", response_model=NotificationSettings)
@@ -169,18 +163,9 @@ def update_notifications(
     db: Session = Depends(get_db),
 ) -> NotificationSettings:
     """Patch notification preferences immediately after a toggle change."""
-    profile_repo = UserProfileRepository(db)
-    profile = profile_repo.get_by_user_id(current_user.id)
-    if profile is None:
-        profile = profile_repo.create_default(current_user.id)
-
-    updates = payload.model_dump(exclude_unset=True)
-    for field, value in updates.items():
-        if value is not None:
-            setattr(profile, field, value)
-
-    db.commit()
-    db.refresh(profile)
+    profile = SubscriptionService(db).update_notifications(
+        current_user, payload.model_dump(exclude_unset=True)
+    )
     return _settings_from_profile(profile)
 
 
@@ -190,5 +175,4 @@ def delete_account(
     db: Session = Depends(get_db),
 ) -> None:
     """Permanently delete the current account."""
-    db.delete(current_user)
-    db.commit()
+    SubscriptionService(db).delete_account(current_user)

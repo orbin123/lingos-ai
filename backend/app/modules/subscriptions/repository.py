@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.modules.auth.models import User
 from app.modules.subscriptions.models import (
     Purchase,
     Subscription,
@@ -37,6 +38,12 @@ class SubscriptionRepository:
         return self.db.execute(
             select(Purchase).where(Purchase.user_id == user_id)
         ).scalar_one_or_none()
+
+    # ── write ─────────────────────────────────────────────────────────
+
+    def delete_user(self, user: User) -> None:
+        """Remove a user row (account deletion). Caller owns the commit."""
+        self.db.delete(user)
 
     # ── upsert ────────────────────────────────────────────────────────
 

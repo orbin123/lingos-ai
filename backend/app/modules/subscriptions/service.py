@@ -18,7 +18,8 @@ from enum import Enum
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.modules.auth.models import User
+from app.modules.auth.models import User, UserProfile
+from app.modules.auth.repository import UserProfileRepository
 from app.modules.preferences.repository import UserCoursePreferenceRepository
 from app.modules.subscriptions.catalog import PLAN_CATALOG, add_years
 from app.modules.subscriptions.exceptions import (
@@ -26,6 +27,7 @@ from app.modules.subscriptions.exceptions import (
     NotCancellable,
     PlanLocked,
     PlanNotFound,
+    PurchaseNotFound,
     TrialAlreadyUsed,
 )
 from app.modules.subscriptions.models import (
@@ -125,6 +127,7 @@ class SubscriptionService:
         self.db = db
         self.repo = SubscriptionRepository(db)
         self.pref_repo = UserCoursePreferenceRepository(db)
+        self.profile_repo = UserProfileRepository(db)
 
     # ── the one function everything calls ─────────────────────────────
 
@@ -292,6 +295,46 @@ class SubscriptionService:
         subscription.cancelled_at = now
         self.db.commit()
         return subscription
+
+    # ── account / plan actions ────────────────────────────────────────
+
+    def pause_course(self, user: User) -> Purchase:
+        """Pause the learner's plan without changing purchase history.
+
+        The status flip lives on `Purchase` only — it was always a
+        schedule-only flag, never an access gate (see resolve_access /
+        `_resolve_legacy_purchase`).
+        """
+        purchase = self.repo.get_purchase_for_user(user.id)
+        if purchase is None:
+            raise PurchaseNotFound()
+        purchase.status = "paused"
+        self.db.commit()
+        self.db.refresh(purchase)
+        return purchase
+
+    def update_notifications(
+        self, user: User, updates: dict[str, object]
+    ) -> UserProfile:
+        """Patch notification preferences, creating a default profile if none.
+
+        `updates` is the request's set fields (model_dump(exclude_unset=True));
+        None values are ignored so a partial PATCH only touches sent fields.
+        """
+        profile = self.profile_repo.get_by_user_id(user.id)
+        if profile is None:
+            profile = self.profile_repo.create_default(user.id)
+        for field, value in updates.items():
+            if value is not None:
+                setattr(profile, field, value)
+        self.db.commit()
+        self.db.refresh(profile)
+        return profile
+
+    def delete_account(self, user: User) -> None:
+        """Permanently delete the current account."""
+        self.repo.delete_user(user)
+        self.db.commit()
 
     # ── maintenance ───────────────────────────────────────────────────
 

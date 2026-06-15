@@ -14,7 +14,7 @@ _db_url = settings.database_url.replace(
 
 engine = create_engine(
     _db_url,
-    echo=settings.debug,
+    echo=settings.sql_echo,
     pool_size=5,
     max_overflow=10,
     pool_pre_ping=True,

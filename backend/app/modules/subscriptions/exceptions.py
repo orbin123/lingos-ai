@@ -26,3 +26,7 @@ class TrialAlreadyUsed(SubscriptionError):
 
 class NotCancellable(SubscriptionError):
     """cancel called with no trial/active subscription to cancel."""
+
+
+class PurchaseNotFound(SubscriptionError):
+    """No Purchase row exists for the user (e.g. pause requested pre-purchase)."""
