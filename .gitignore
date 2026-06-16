@@ -45,6 +45,8 @@ backend/scripts/*
 !backend/scripts/run_evals.py
 !backend/scripts/calibrate_judge.py
 !backend/scripts/golden_set.json
+# Production entrypoint — part of the deploy contract, must be committed:
+!backend/scripts/start-prod.sh
 
 # Local archive of deprecated files (kept locally, not committed)
 backend/.archive/
