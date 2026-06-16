@@ -738,7 +738,7 @@ def google_callback(
     # means a forged or replayed callback — reject it before doing anything.
     state_payload = decode_token(state) if state else None
     state_mode = state_payload.get("mode") if state_payload else None
-    if state_mode not in ("google_login", "google_relink"):
+    if state_payload is None or state_mode not in ("google_login", "google_relink"):
         return RedirectResponse(url=f"{frontend_base}/callback?error=google_failed")
 
     if state_mode == "google_relink":
