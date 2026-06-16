@@ -2069,7 +2069,7 @@ def _coerce_correct_index(raw: dict, options: list[str]) -> int | None:
             if len(answer_text) == 1 and answer_text.upper() in "ABCD":
                 return ord(answer_text.upper()) - ord("A")
     try:
-        idx = int(value)
+        idx = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
     if value_source == "answer_index" and 1 <= idx <= len(options):
@@ -2228,14 +2228,10 @@ def _items_from_legacy_activity(activity: dict) -> list[dict]:
     questions = activity.get("questions")
     if not isinstance(questions, dict):
         return []
-    answers = (
-        activity.get("answers") if isinstance(activity.get("answers"), dict) else {}
-    )
-    explanations = (
-        activity.get("explanations")
-        if isinstance(activity.get("explanations"), dict)
-        else {}
-    )
+    answers_raw = activity.get("answers")
+    answers = answers_raw if isinstance(answers_raw, dict) else {}
+    explanations_raw = activity.get("explanations")
+    explanations = explanations_raw if isinstance(explanations_raw, dict) else {}
     items: list[dict] = []
     for index, (qid, raw_sentence) in enumerate(questions.items(), start=1):
         sentence = _blank_sentence(raw_sentence)

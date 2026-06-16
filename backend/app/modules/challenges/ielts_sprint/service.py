@@ -34,6 +34,7 @@ from app.ai.storage import (
 from app.ai.stt import STTError, TranscriptionResult, get_default_stt_service
 from app.ai.tts import SynthesisResult, TTSError, get_default_tts_service
 from app.modules.challenges.ielts_sprint.evaluation_schemas import (
+    FeedbackSections,
     IELTSFeedbackReport,
     ReadingEvaluationReport,
     ReadingQuestionEvaluation,
@@ -1146,8 +1147,8 @@ class ChallengeReadService:
                 "Your responses were saved and scored. Detailed AI feedback is "
                 "temporarily unavailable, so this report uses a concise local summary."
             ),
-            sections={
-                "listening": SectionFeedback(
+            sections=FeedbackSections(
+                listening=SectionFeedback(
                     went_well=[
                         f"You answered {listening_correct} of {listening_total} listening items correctly."
                     ],
@@ -1156,7 +1157,7 @@ class ChallengeReadService:
                     ],
                     next_tip="Listen for the sentence that directly supports each answer.",
                 ),
-                "reading": SectionFeedback(
+                reading=SectionFeedback(
                     went_well=[
                         f"You answered {reading_correct} of {reading_total} reading items correctly."
                     ],
@@ -1165,7 +1166,7 @@ class ChallengeReadService:
                     ],
                     next_tip="Underline the exact sentence that supports each answer.",
                 ),
-                "writing": SectionFeedback(
+                writing=SectionFeedback(
                     went_well=[
                         f"Your Writing band was recorded as {evaluation_report.writing.section_band:.1f}."
                     ],
@@ -1177,7 +1178,7 @@ class ChallengeReadService:
                         "specific supporting example."
                     ),
                 ),
-                "speaking": SectionFeedback(
+                speaking=SectionFeedback(
                     went_well=[
                         (
                             f"Your transcript-only Speaking band was {speaking_band:.1f} "
@@ -1195,7 +1196,7 @@ class ChallengeReadService:
                         "for clearer organisation."
                     ),
                 ),
-            },
+            ),
         )
 
     def _detail_for(self, *, challenge: Challenge, user_id: int) -> ChallengeDetailRead:
@@ -1700,7 +1701,7 @@ class ChallengeReadService:
 def _take_items(items: list, count: int) -> list:
     if count <= len(items):
         return items[:count]
-    repeated = []
+    repeated: list = []
     while len(repeated) < count:
         repeated.extend(items)
     return repeated[:count]

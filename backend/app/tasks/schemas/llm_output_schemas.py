@@ -6,7 +6,7 @@ These schemas are only passed to ``ILLMClient.generate_structured``.
 
 from __future__ import annotations
 
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.tasks.schemas.task_schemas import BlankItem, FillInBlanksTask
 
@@ -22,10 +22,14 @@ class FillInBlanksTaskLLM(FillInBlanksTask):
 
     model_config = ConfigDict(extra="forbid")
 
-    items: list[BlankItemLLM] = Field(default_factory=list, min_length=4, max_length=5)
+    # Narrows the base `list[BlankItem]` to the extra="forbid" item model; lists
+    # are invariant so mypy flags the override even though it's intentional.
+    items: list[BlankItemLLM] = Field(  # type: ignore[assignment]
+        default_factory=list, min_length=4, max_length=5
+    )
 
 
-def assert_openai_structured_schema(model: type) -> None:
+def assert_openai_structured_schema(model: type[BaseModel]) -> None:
     """Every object in the JSON schema must declare ``additionalProperties: false``."""
     schema = model.model_json_schema()
     defs = schema.get("$defs", {})

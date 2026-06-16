@@ -186,7 +186,9 @@ def _build_user_out(
         email_verified=user.email_verified,
         roles=_role_names(user),
         role=_primary_role(user),
-        diagnosis_completed=bool(profile and profile.diagnosis_completed),
+        diagnosis_completed=bool(
+            profile and getattr(profile, "diagnosis_completed", False)
+        ),
         access_state=access.state.value
         if access
         else ("verified" if user.email_verified else "unverified"),

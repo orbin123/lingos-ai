@@ -40,8 +40,8 @@ jobs:
 
   types:
     runs-on: ubuntu-latest
-    # Advisory until app/ is mypy-clean, then drop continue-on-error.
-    continue-on-error: true
+    # Blocking: app/ is mypy-clean (config + per-module stub overrides in
+    # pyproject.toml). Run `uv run mypy app` locally before pushing.
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

@@ -308,7 +308,7 @@ def _mcq_submitted_answer_map(user_response: dict) -> dict[str, int]:
             if not isinstance(answer, dict) or "item_id" not in answer:
                 continue
             try:
-                submitted[str(answer["item_id"])] = int(answer.get("selected_index"))
+                submitted[str(answer["item_id"])] = int(answer.get("selected_index"))  # type: ignore[arg-type]
             except (TypeError, ValueError):
                 continue
 

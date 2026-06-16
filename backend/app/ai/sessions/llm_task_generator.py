@@ -745,8 +745,8 @@ class LLMTaskGenerator:
     def _is_interview_task(archetype: ArchetypeSpec) -> bool:
         return archetype.archetype_id == "SPEAK_INTERVIEW"
 
+    @staticmethod
     async def _attach_required_image(
-        self,
         *,
         content: dict,
         archetype: ArchetypeSpec,
@@ -754,7 +754,7 @@ class LLMTaskGenerator:
         if content.get("image_url"):
             return content
         try:
-            return await self._attach_image(content=content)
+            return await LLMTaskGenerator._attach_image(content=content)
         except Exception as exc:
             logger.exception(
                 "Required image generation failed for archetype=%s",
