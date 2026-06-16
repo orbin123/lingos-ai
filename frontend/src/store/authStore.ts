@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { API_BASE_URL } from "@/lib/api-config";
+
 interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
@@ -68,10 +70,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     // (not the shared axios instance) to avoid an import cycle with api.ts;
     // the httpOnly cookie rides along via credentials: "include".
     if (typeof window !== "undefined") {
-      fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/auth/logout`,
-        { method: "POST", credentials: "include" },
-      ).catch(() => {});
+      fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      }).catch(() => {});
     }
     localStorage.removeItem("token");
     set({

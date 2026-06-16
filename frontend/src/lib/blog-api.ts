@@ -4,7 +4,7 @@
 // which is bound to localStorage/window) so they work inside React Server
 // Components. Published-post reads are unauthenticated.
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { API_BASE_URL as API_BASE } from "@/lib/api-config";
 
 // Revalidate published content every 60s (ISR) — good enough for a blog and
 // keeps the pages SEO-friendly without going fully dynamic.

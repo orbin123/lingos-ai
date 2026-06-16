@@ -1,8 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from "axios";
 
+import { API_BASE_URL as BASE_URL } from "@/lib/api-config";
 import { useAuthStore } from "@/store/authStore";
-
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 // One axios instance, used everywhere in the app.
 // withCredentials so the httpOnly refresh cookie rides on /auth requests.
