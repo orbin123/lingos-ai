@@ -9,7 +9,7 @@ from app.modules.sessions.task_generator import (
     normalize_read_aloud_payload,
 )
 from app.scoring import get_archetype
-from tests.test_llm_session_agents import FakeLLMClient
+from tests.mocks.llm import FakeLLMClient
 
 
 _PAST_PASSAGE = (

@@ -1,6 +1,5 @@
 """Unit tests for the A2Z evaluator — pure function tests, no DB needed."""
 
-import pytest
 
 from app.modules.challenges.a2z_game.evaluator import (
     extract_valid_words,

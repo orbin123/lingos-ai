@@ -1,0 +1,43 @@
+name: contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/app/**"
+      - "backend/openapi.json"
+      - "backend/scripts/export_openapi.py"
+      - ".github/workflows/contract.yml"
+  pull_request:
+    paths:
+      - "backend/app/**"
+      - "backend/openapi.json"
+      - "backend/scripts/export_openapi.py"
+      - "frontend/src/lib/**"
+      - ".github/workflows/contract.yml"
+
+concurrency:
+  group: contract-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  openapi-drift:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Regenerate OpenAPI snapshot
+        run: uv run python scripts/export_openapi.py
+      - name: Fail if snapshot drifted
+        run: |
+          git diff --exit-code openapi.json \
+            || (echo "::error::openapi.json is stale — run 'uv run python scripts/export_openapi.py' and commit" && exit 1)

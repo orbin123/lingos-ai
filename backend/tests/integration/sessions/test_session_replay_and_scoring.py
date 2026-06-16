@@ -34,9 +34,13 @@ from app.modules.sessions.models import (
 from app.modules.sessions.service import SessionService
 from app.modules.skills.models import Skill
 from app.scoring import (
+    ActivityScore,
     CourseLength,
     MAX_POINTS_PER_SUBSKILL,
     SUB_SKILLS,
+    aggregate_session,
+    apply_to_totals,
+    get_archetype,
 )
 from scripts.seed_curriculum import seed_archetypes
 
@@ -234,24 +238,32 @@ class TestReplayRule:
 class TestScoringIntegration:
     @pytest.mark.asyncio
     async def test_scorecard_matches_engine_math(self, db_session):
-        """Two READ_CLOZE + one WRITE_SENT_TRANS at Excellent should produce
-        deterministic points matching what the engine would compute directly."""
-        # READ_CLOZE weights: grammar 0.50, vocabulary 0.35, expression 0.15
-        # WRITE_SENT_TRANS weights: grammar 0.70, vocabulary 0.20, expression 0.10
-        # At score 8.0 (Excellent → 55 pts 24w):
-        #   READ_CLOZE  → grammar 27.5,  vocabulary 19.25, expression 8.25
-        #   WRITE_SENT  → grammar 38.5,  vocabulary 11.0,  expression 5.5
-        # Aggregated then rounded:
-        #   grammar:     66.0 → 66
-        #   vocabulary:  30.25 → 30
-        #   expression:  13.75 → 14
+        """The persisted scorecard's points must equal what the pure scoring
+        engine computes directly from the same evaluated activities.
+
+        This proves the session pipeline *delegates* to `app.scoring` rather
+        than re-deriving the math, and stays correct regardless of which
+        archetypes the (file-authored) day actually emits — we read the
+        activities back from the scorecard and look each weight_map up from the
+        registry, the single source of truth for sub-skill distribution.
+        """
         await _run_complete_session(db_session, score=8.0, tasks_per_day=2)
         scorecard = db_session.query(SessionScorecard).one()
-        assert scorecard.points_earned == {
-            "grammar": 66,
-            "vocabulary": 30,
-            "expression": 14,
-        }
+
+        expected = aggregate_session(
+            [
+                ActivityScore(
+                    archetype_id=a["archetype_id"],
+                    raw_score=a["raw_score"],
+                    weight_map=dict(get_archetype(a["archetype_id"]).weight_map),
+                )
+                for a in scorecard.activities
+            ],
+            CourseLength.WEEKS_24,
+        )
+        assert expected, "expected at least one sub-skill to earn points"
+        assert scorecard.points_earned == expected
+        assert set(expected) <= set(SUB_SKILLS)
 
     @pytest.mark.asyncio
     async def test_subskill_totals_after_reflects_starting_points(self, db_session):
@@ -267,9 +279,20 @@ class TestScoringIntegration:
 
         await _run_complete_session(db_session, score=8.0, tasks_per_day=2)
         scorecard = db_session.query(SessionScorecard).one()
-        assert scorecard.subskill_totals_after["grammar"] == 3000 + 66
-        assert scorecard.subskill_totals_after["vocabulary"] == 3000 + 30
-        assert scorecard.subskill_totals_after["expression"] == 14
+
+        # totals_after = starting totals + earned delta (capped), per sub-skill.
+        # The engine carries the FULL sub-skill set forward — see
+        # SessionService._current_points_for, which 0-fills every SUB_SKILL
+        # before overlaying the user's seeded points — so the starting map must
+        # span all of them, not just the two we seeded above.
+        starting = {s: 0 for s in SUB_SKILLS}
+        starting["grammar"] = 3000
+        starting["vocabulary"] = 3000
+        expected_totals = apply_to_totals(scorecard.points_earned, starting)
+        assert scorecard.subskill_totals_after == expected_totals
+        # The seeded skills carry their 3000 baseline forward.
+        assert scorecard.subskill_totals_after["grammar"] == 3000 + scorecard.points_earned.get("grammar", 0)
+        assert scorecard.subskill_totals_after["vocabulary"] == 3000 + scorecard.points_earned.get("vocabulary", 0)
 
     @pytest.mark.asyncio
     async def test_cap_does_not_block_earned_log(self, db_session):

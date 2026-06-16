@@ -11,27 +11,90 @@ on:
       - "backend/**"
       - ".github/workflows/backend.yml"
 
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: backend
+
 jobs:
-  lint-and-test:
+  lint:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Sync deps
-        run: uv sync
-
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
       - name: Ruff lint
         run: uv run ruff check app tests
+      - name: Ruff format check (advisory)
+        # Advisory only: the repo carries pre-existing format drift (~197 files).
+        # Flip to a blocking gate after a dedicated `ruff format` pass.
+        continue-on-error: true
+        run: uv run ruff format --check app tests
 
-      - name: Core pytest
+  types:
+    runs-on: ubuntu-latest
+    # Advisory until app/ is mypy-clean, then drop continue-on-error.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Mypy
+        run: uv run mypy app
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Unit tests
+        run: uv run pytest tests/unit -q
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Integration tests
+        run: uv run pytest tests/integration -q
+
+  coverage:
+    # Coverage floor is a whole-suite measure, so the gate runs the full suite
+    # in one process via bare `pytest` (testpaths=["tests"], natural order).
+    # NB: keep the natural order — `pytest tests/unit tests/integration` flips
+    # collection order and trips a pre-existing isolation bug in the a2z STT
+    # tests. Floor = measured 75% − 2% ratchet buffer (testing-strategy.md).
+    # Raise it as new tests land; never lower it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Full suite + coverage gate
         run: |
           uv run pytest \
-            tests/test_llm_session_agents.py::TestGeneratorOutputProjectsThroughContract \
-            tests/test_contract_validation_gate.py \
-            tests/test_session_lifecycle.py -q
+            --cov=app --cov-report=term-missing --cov-report=xml \
+            --cov-fail-under=73
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml

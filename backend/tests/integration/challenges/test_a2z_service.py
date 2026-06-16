@@ -22,14 +22,13 @@ import app.models  # noqa: F401
 
 from app.modules.challenges.a2z_game.constants import A2Z_LETTERS, TOTAL_LETTERS
 from app.modules.challenges.a2z_game.service import (
-    A2ZGameCompleted,
     A2ZLetterNotAvailable,
     A2ZRestartNotAllowed,
     A2ZRoundNotFound,
     A2ZRoundNotInProgress,
     A2ZService,
 )
-from app.modules.challenges.models import Challenge, ChallengeAttemptStatus, ChallengeLevel
+from app.modules.challenges.models import Challenge, ChallengeLevel
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────
@@ -65,10 +64,11 @@ def seeded_db(db_session: Session):
     # we'll insert raw rows instead.
     from sqlalchemy import text
 
-    # Create a minimal users table row (just id)
+    # Create a minimal users table row (just id). Columns must match the
+    # real User model: password_hash (not hashed_password) and a non-null name.
     db_session.execute(text(
-        "INSERT INTO users (id, email, hashed_password, is_active, created_at, updated_at) "
-        "VALUES (1, 'test@test.com', 'hashed', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        "INSERT INTO users (id, email, password_hash, name, is_active, created_at, updated_at) "
+        "VALUES (1, 'test@test.com', 'hashed', 'Test User', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
     ))
 
     challenge = Challenge(
@@ -217,7 +217,11 @@ class TestStartRound:
         challenge = svc._load_challenge()
         progress = repo.get_or_create(user_id=USER_ID, challenge_id=challenge.id)
         # Clear all letters except "Z"
-        progress.cleared_letters = {"1": [l for l in A2Z_LETTERS if l != "Z"], "2": [], "3": []}
+        progress.cleared_letters = {
+            "1": [letter for letter in A2Z_LETTERS if letter != "Z"],
+            "2": [],
+            "3": [],
+        }
         from sqlalchemy.orm.attributes import flag_modified
         flag_modified(progress, "cleared_letters")
         seeded_db.flush()
@@ -402,7 +406,7 @@ class TestAudioChunkIngest:
             "words": None,
         }
 
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             svc.ingest_audio_chunk(
                 user_id=USER_ID,
                 round_id=round_result.round_id,
@@ -426,7 +430,7 @@ class TestAudioChunkIngest:
             "duration_seconds": 2.5,
             "words": None,
         }
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             svc.ingest_audio_chunk(
                 user_id=USER_ID,
                 round_id=round_result.round_id,
@@ -443,7 +447,7 @@ class TestAudioChunkIngest:
             "duration_seconds": 2.5,
             "words": None,
         }
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             svc.ingest_audio_chunk(
                 user_id=USER_ID,
                 round_id=round_result.round_id,
@@ -461,7 +465,7 @@ class TestAudioChunkIngest:
     def test_chunk_for_nonexistent_round_raises(self, seeded_db, stub_stt, stub_blob):
         svc = make_service(seeded_db, stt=stub_stt, blob=stub_blob)
         with pytest.raises(A2ZRoundNotFound):
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 svc.ingest_audio_chunk(
                     user_id=USER_ID,
                     round_id=99999,
