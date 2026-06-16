@@ -30,15 +30,17 @@ from app.scoring import ArchetypeSpec
 
 logger = logging.getLogger(__name__)
 
-_DETERMINISTIC_MCQ_ARCHETYPES = frozenset({
-    "LISTEN_MCQ",
-    "LISTEN_INFER",
-    "LISTEN_TONE",
-    "READ_COMP_MCQ",
-    "READ_CONTEXT_MCQ",
-    "READ_WORD_MATCH",
-    "READ_TONE_ID",
-})
+_DETERMINISTIC_MCQ_ARCHETYPES = frozenset(
+    {
+        "LISTEN_MCQ",
+        "LISTEN_INFER",
+        "LISTEN_TONE",
+        "READ_COMP_MCQ",
+        "READ_CONTEXT_MCQ",
+        "READ_WORD_MATCH",
+        "READ_TONE_ID",
+    }
+)
 _DETERMINISTIC_CLOZE_ARCHETYPES = frozenset({"READ_CLOZE", "LISTEN_CLOZE"})
 
 
@@ -97,12 +99,9 @@ class LLMEvaluator:
                 user_response=user_response,
             )
 
-        if (
-            archetype.archetype_id in _DETERMINISTIC_CLOZE_ARCHETYPES
-            or (
-                task_content.get("widget") == "listen_and_respond"
-                and task_content.get("inner_widget") == "fill_in_blanks"
-            )
+        if archetype.archetype_id in _DETERMINISTIC_CLOZE_ARCHETYPES or (
+            task_content.get("widget") == "listen_and_respond"
+            and task_content.get("inner_widget") == "fill_in_blanks"
         ):
             return self._evaluate_listen_cloze(
                 archetype=archetype,
@@ -140,7 +139,8 @@ class LLMEvaluator:
         except LLMError as exc:
             logger.warning(
                 "LLM evaluator failed for archetype=%s: %s",
-                archetype.archetype_id, exc,
+                archetype.archetype_id,
+                exc,
             )
             return EvaluationResult(
                 raw_score=5.0,
@@ -178,10 +178,12 @@ class LLMEvaluator:
                 continue
             error = sentence.get("error")
             if isinstance(error, dict) and error.get("token_id"):
-                correct_errors.append({
-                    **error,
-                    "sentence_id": sentence.get("sentence_id"),
-                })
+                correct_errors.append(
+                    {
+                        **error,
+                        "sentence_id": sentence.get("sentence_id"),
+                    }
+                )
 
         correct_ids = {str(error["token_id"]) for error in correct_errors}
         found_ids = sorted(selected_ids & correct_ids)
@@ -193,7 +195,9 @@ class LLMEvaluator:
         ]
         total_errors = int(task_content.get("total_errors") or len(correct_ids) or 0)
         correct_count = len(found_ids)
-        raw_score = round((correct_count / total_errors) * 10, 2) if total_errors else 0.0
+        raw_score = (
+            round((correct_count / total_errors) * 10, 2) if total_errors else 0.0
+        )
         notes = {
             "task_type": "error_spotting",
             "selected_token_ids": sorted(selected_ids),
@@ -234,7 +238,7 @@ class LLMEvaluator:
                 continue
             item_id = str(row.get("item_id") or "")
             try:
-                selected_by_id[item_id] = int(row.get("selected_index"))
+                selected_by_id[item_id] = int(row.get("selected_index"))  # type: ignore[arg-type]
             except (TypeError, ValueError):
                 continue
 
@@ -247,7 +251,7 @@ class LLMEvaluator:
             item_id = str(item.get("item_id") or f"q{idx}")
             options = item.get("options") or []
             try:
-                correct_index = int(item.get("correct_index"))
+                correct_index = int(item.get("correct_index"))  # type: ignore[arg-type]
             except (TypeError, ValueError):
                 continue
             if not isinstance(options, list) or not (0 <= correct_index < len(options)):
@@ -264,9 +268,8 @@ class LLMEvaluator:
             raw_score = 0.0
         else:
             raw_score = round((correct / total) * 10, 1)
-        notes = (
-            f"Deterministic listening MCQ score: {correct}/{total} correct"
-            + (f", {missing} missing." if missing else ".")
+        notes = f"Deterministic listening MCQ score: {correct}/{total} correct" + (
+            f", {missing} missing." if missing else "."
         )
         return EvaluationResult(
             raw_score=raw_score,
@@ -348,7 +351,10 @@ class LLMEvaluator:
             if isinstance(pronun, dict):
                 raw_score = round(pronun.get("overall_score", 0.0) / 10, 1)
                 rubric_scores = {r: raw_score for r in archetype.rubric}
-                notes = json.dumps({"task_type": "speak_read_aloud", "pronunciation": pronun}, ensure_ascii=False)
+                notes = json.dumps(
+                    {"task_type": "speak_read_aloud", "pronunciation": pronun},
+                    ensure_ascii=False,
+                )
                 return EvaluationResult(
                     raw_score=raw_score,
                     rubric_scores=rubric_scores,
@@ -374,7 +380,9 @@ class LLMEvaluator:
             # that a transient Azure failure on the frontend does not permanently
             # corrupt the scorecard (which would be frozen by the idempotency
             # guard in complete_session).
-            fallback_score = 5.0 if archetype.archetype_id == "SPEAK_READ_ALOUD" else 0.0
+            fallback_score = (
+                5.0 if archetype.archetype_id == "SPEAK_READ_ALOUD" else 0.0
+            )
             fallback_notes = (
                 "Pronunciation API score unavailable; neutral fallback applied."
                 if archetype.archetype_id == "SPEAK_READ_ALOUD"
@@ -405,7 +413,8 @@ class LLMEvaluator:
         except LLMError as exc:
             logger.warning(
                 "LLM speaking evaluator failed for archetype=%s: %s",
-                archetype.archetype_id, exc,
+                archetype.archetype_id,
+                exc,
             )
             return EvaluationResult(
                 raw_score=5.0,
@@ -423,7 +432,9 @@ class LLMEvaluator:
 
 def _listen_mcq_answer_rows(user_response: dict) -> list:
     inner_response = user_response.get("inner_response")
-    if isinstance(inner_response, dict) and isinstance(inner_response.get("answers"), list):
+    if isinstance(inner_response, dict) and isinstance(
+        inner_response.get("answers"), list
+    ):
         return inner_response["answers"]
     answers = user_response.get("answers")
     if isinstance(answers, list):
@@ -434,7 +445,12 @@ def _listen_mcq_answer_rows(user_response: dict) -> list:
     # correct answers as missing.
     rows = []
     for key, value in user_response.items():
-        if key in {"inner_response", "listen_analytics", "time_spent_seconds", "answers"}:
+        if key in {
+            "inner_response",
+            "listen_analytics",
+            "time_spent_seconds",
+            "answers",
+        }:
             continue
         try:
             rows.append({"item_id": str(key), "selected_index": int(value)})
@@ -446,7 +462,9 @@ def _listen_mcq_answer_rows(user_response: dict) -> list:
 def _listen_cloze_answer_map(user_response: dict) -> dict[str, str]:
     inner_response = user_response.get("inner_response")
     rows = []
-    if isinstance(inner_response, dict) and isinstance(inner_response.get("answers"), list):
+    if isinstance(inner_response, dict) and isinstance(
+        inner_response.get("answers"), list
+    ):
         rows = inner_response["answers"]
     elif isinstance(user_response.get("answers"), list):
         rows = user_response["answers"]
@@ -461,7 +479,12 @@ def _listen_cloze_answer_map(user_response: dict) -> dict[str, str]:
             out[item_id] = str(answer)
 
     for key, value in user_response.items():
-        if key in {"inner_response", "listen_analytics", "time_spent_seconds", "answers"}:
+        if key in {
+            "inner_response",
+            "listen_analytics",
+            "time_spent_seconds",
+            "answers",
+        }:
             continue
         if isinstance(value, str):
             out.setdefault(key, value)

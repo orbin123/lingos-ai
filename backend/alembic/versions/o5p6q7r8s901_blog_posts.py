@@ -129,9 +129,7 @@ def upgrade() -> None:
             "status IN ('draft', 'published')", name="ck_blog_posts_status"
         ),
     )
-    op.create_index(
-        op.f("ix_blog_posts_slug"), "blog_posts", ["slug"], unique=True
-    )
+    op.create_index(op.f("ix_blog_posts_slug"), "blog_posts", ["slug"], unique=True)
     op.create_index(op.f("ix_blog_posts_author_id"), "blog_posts", ["author_id"])
 
     # ── Seed the two example posts ────────────────────────────────────────

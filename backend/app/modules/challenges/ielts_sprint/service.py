@@ -34,6 +34,7 @@ from app.ai.storage import (
 from app.ai.stt import STTError, TranscriptionResult, get_default_stt_service
 from app.ai.tts import SynthesisResult, TTSError, get_default_tts_service
 from app.modules.challenges.ielts_sprint.evaluation_schemas import (
+    FeedbackSections,
     IELTSFeedbackReport,
     ReadingEvaluationReport,
     ReadingQuestionEvaluation,
@@ -51,7 +52,9 @@ from app.modules.challenges.ielts_sprint.evaluation_schemas import (
     WritingIssue,
     WritingPromptEvaluation,
 )
-from app.modules.challenges.ielts_sprint.generator_schemas import GeneratedIELTSTaskPayload
+from app.modules.challenges.ielts_sprint.generator_schemas import (
+    GeneratedIELTSTaskPayload,
+)
 from app.modules.challenges.models import (
     Challenge,
     ChallengeAttempt,
@@ -296,7 +299,9 @@ class ChallengeReadService:
             raise ChallengeLevelNotFound(
                 f"level {level_number!r} not found for challenge {slug!r}"
             )
-        if not self._level_is_unlocked(challenge=challenge, level=level, user_id=user_id):
+        if not self._level_is_unlocked(
+            challenge=challenge, level=level, user_id=user_id
+        ):
             raise ChallengeLevelLocked(
                 f"level {level_number!r} is locked for challenge {slug!r}"
             )
@@ -476,9 +481,7 @@ class ChallengeReadService:
 
         extension = _extension_for_audio_type(normalized_type)
         digest = hashlib.sha256(audio_bytes).hexdigest()[:20]
-        storage_key = (
-            f"{digest}-attempt{attempt.id}-{prompt_id}{extension}"
-        )
+        storage_key = f"{digest}-attempt{attempt.id}-{prompt_id}{extension}"
         stored = await self._get_speaking_audio_storage().put(
             key=storage_key,
             data=audio_bytes,
@@ -618,7 +621,9 @@ class ChallengeReadService:
         storage_key = _storage_key_from_audio_url(result["audio_url"])
         listening["audio_url"] = result["audio_url"]
         listening["audio_storage_key"] = storage_key
-        listening["audio_duration_seconds"] = round(float(result["duration_seconds"]), 2)
+        listening["audio_duration_seconds"] = round(
+            float(result["duration_seconds"]), 2
+        )
         listening["audio_cache_hit"] = bool(result["cache_hit"])
         listening["instructions"] = (
             "Listen to the audio clip and choose the best answer for each question."
@@ -1100,9 +1105,7 @@ class ChallengeReadService:
                 )
             )
 
-        section_band = round_to_half_band(
-            sum(item.band for item in items) / len(items)
-        )
+        section_band = round_to_half_band(sum(item.band for item in items) / len(items))
         return SpeakingEvaluationReport(
             mode="ai_speaking_phase_6",
             items=items,
@@ -1144,8 +1147,8 @@ class ChallengeReadService:
                 "Your responses were saved and scored. Detailed AI feedback is "
                 "temporarily unavailable, so this report uses a concise local summary."
             ),
-            sections={
-                "listening": SectionFeedback(
+            sections=FeedbackSections(
+                listening=SectionFeedback(
                     went_well=[
                         f"You answered {listening_correct} of {listening_total} listening items correctly."
                     ],
@@ -1154,7 +1157,7 @@ class ChallengeReadService:
                     ],
                     next_tip="Listen for the sentence that directly supports each answer.",
                 ),
-                "reading": SectionFeedback(
+                reading=SectionFeedback(
                     went_well=[
                         f"You answered {reading_correct} of {reading_total} reading items correctly."
                     ],
@@ -1163,7 +1166,7 @@ class ChallengeReadService:
                     ],
                     next_tip="Underline the exact sentence that supports each answer.",
                 ),
-                "writing": SectionFeedback(
+                writing=SectionFeedback(
                     went_well=[
                         f"Your Writing band was recorded as {evaluation_report.writing.section_band:.1f}."
                     ],
@@ -1175,7 +1178,7 @@ class ChallengeReadService:
                         "specific supporting example."
                     ),
                 ),
-                "speaking": SectionFeedback(
+                speaking=SectionFeedback(
                     went_well=[
                         (
                             f"Your transcript-only Speaking band was {speaking_band:.1f} "
@@ -1193,7 +1196,7 @@ class ChallengeReadService:
                         "for clearer organisation."
                     ),
                 ),
-            },
+            ),
         )
 
     def _detail_for(self, *, challenge: Challenge, user_id: int) -> ChallengeDetailRead:
@@ -1219,9 +1222,8 @@ class ChallengeReadService:
             if previous is None:
                 continue
             previous_best = best_scores.get(previous.id)
-            if (
-                previous_best is not None
-                and previous_best >= float(previous.pass_threshold)
+            if previous_best is not None and previous_best >= float(
+                previous.pass_threshold
             ):
                 unlocked_level_numbers.add(level.level_number)
 
@@ -1271,9 +1273,8 @@ class ChallengeReadService:
             level_ids=[previous.id],
         )
         previous_best = best_scores.get(previous.id)
-        return (
-            previous_best is not None
-            and previous_best >= float(previous.pass_threshold)
+        return previous_best is not None and previous_best >= float(
+            previous.pass_threshold
         )
 
     @staticmethod
@@ -1283,11 +1284,7 @@ class ChallengeReadService:
         level_number: int,
     ) -> ChallengeLevel | None:
         return next(
-            (
-                level
-                for level in challenge.levels
-                if level.level_number == level_number
-            ),
+            (level for level in challenge.levels if level.level_number == level_number),
             None,
         )
 
@@ -1704,7 +1701,7 @@ class ChallengeReadService:
 def _take_items(items: list, count: int) -> list:
     if count <= len(items):
         return items[:count]
-    repeated = []
+    repeated: list = []
     while len(repeated) < count:
         repeated.extend(items)
     return repeated[:count]

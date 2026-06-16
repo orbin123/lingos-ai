@@ -36,10 +36,24 @@ backup*.sql
 
 # Test Files
 backend/scratch
-backend/scripts
+# Ignore scripts/ contents (ad-hoc DB tools), but git must descend into the dir
+# so the negations below can re-include the test/CI-contract scripts. Excluding
+# the dir itself (`backend/scripts`) would make those negations a no-op.
+backend/scripts/*
+# …but these are part of the test/CI contract, not ad-hoc tooling:
+!backend/scripts/export_openapi.py
+!backend/scripts/run_evals.py
+!backend/scripts/calibrate_judge.py
+!backend/scripts/golden_set.json
 
 # Local archive of deprecated files (kept locally, not committed)
 backend/.archive/
+
+# Coverage (pytest-cov / coverage.py)
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 
 # TTS audio cache (regenerated on demand from OpenAI)
 backend/app/ai/tts/_cache/

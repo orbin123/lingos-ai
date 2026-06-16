@@ -50,8 +50,6 @@ from app.modules.sessions.exceptions import (
 logger = logging.getLogger(__name__)
 
 
-
-
 # --- REST -------------------------------------------------------------
 
 rest_router = APIRouter(
@@ -59,9 +57,6 @@ rest_router = APIRouter(
     tags=["learning_session"],
     dependencies=[Depends(require_learner)],
 )
-
-
-
 
 
 @rest_router.post(
@@ -150,7 +145,8 @@ async def get_session_state(
     service = LearningSessionService(db)
     try:
         snapshot = await service.get_state_snapshot(
-            session_id=session_id, user_id=current_user.id,
+            session_id=session_id,
+            user_id=current_user.id,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -190,7 +186,9 @@ async def reset_activity(
     except Exception as exc:  # pragma: no cover — unexpected
         logger.exception(
             "reset_activity failed session_id=%s sequence=%s user_id=%s",
-            session_id, sequence, current_user.id,
+            session_id,
+            sequence,
+            current_user.id,
         )
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -289,6 +287,7 @@ async def get_scorecard_for_chat_session(
     from app.modules.sessions.models import AttemptStatus as _AttemptStatus
     from app.modules.sessions.models import SessionStatus as _SessionStatus
     from app.modules.sessions.repository import ActivityAttemptRepository as _AttRepo
+
     _all_evaluated = False
     if daily.status == _SessionStatus.COMPLETED:
         _all_evaluated = True
@@ -307,7 +306,8 @@ async def get_scorecard_for_chat_session(
             # Azure API failure) and the learner re-ran the session to get a
             # real pronunciation score.
             await service.complete_session(
-                session_id=daily.session_id, user_id=current_user.id,
+                session_id=daily.session_id,
+                user_id=current_user.id,
             )
         except Exception:  # noqa: BLE001
             # Unexpected error — roll back so the DB session is clean for the
@@ -325,7 +325,8 @@ async def get_scorecard_for_chat_session(
         )
 
     scorecard = service.get_scorecard(
-        session_id=daily.session_id, user_id=current_user.id,
+        session_id=daily.session_id,
+        user_id=current_user.id,
     )
     if scorecard is None:
         raise HTTPException(
@@ -363,9 +364,6 @@ async def get_scorecard_for_chat_session(
 # --- WebSocket --------------------------------------------------------
 
 ws_router = APIRouter()
-
-
-
 
 
 def _resolve_user_from_token(token: str | None, db: Session) -> User | None:
@@ -433,9 +431,7 @@ async def learning_session_ws(
             except (json.JSONDecodeError, ValidationError) as exc:
                 await _send(
                     websocket,
-                    WSOutgoingMessage(
-                        type="error", content=f"Bad message: {exc}"
-                    ),
+                    WSOutgoingMessage(type="error", content=f"Bad message: {exc}"),
                 )
                 continue
 
@@ -458,9 +454,7 @@ async def learning_session_ws(
                 async for msg in stream:
                     await _send(websocket, msg)
             except Exception as exc:  # pragma: no cover — unexpected
-                logger.exception(
-                    "ws process_message failed session_id=%s", session_id
-                )
+                logger.exception("ws process_message failed session_id=%s", session_id)
                 capture_to_sentry(exc)
                 await _send(
                     websocket,
@@ -470,5 +464,3 @@ async def learning_session_ws(
 
     except WebSocketDisconnect:
         return
-
-

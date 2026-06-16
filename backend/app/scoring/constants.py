@@ -21,9 +21,9 @@ SUB_SKILLS: Final[tuple[str, ...]] = (
     "vocabulary",
     "pronunciation",
     "fluency",
-    "expression",        # doc calls this "thought_org"
-    "comprehension",     # doc calls this "listening"
-    "tone",              # doc calls this "tone_social"
+    "expression",  # doc calls this "thought_org"
+    "comprehension",  # doc calls this "listening"
+    "tone",  # doc calls this "tone_social"
 )
 
 # Doc → legacy code mapping. Use only at the doc/code boundary; never store
@@ -91,8 +91,8 @@ REWARDS_48W: Final[dict[Tier, int]] = {
 
 # ── Dashboard / caps ───────────────────────────────────────────────
 
-POINTS_PER_DASHBOARD_UNIT: Final[int] = 1000   # 1000 internal pts = 1.0 visible
-MAX_POINTS_PER_SUBSKILL: Final[int] = 10000    # display caps at 10.0/10
+POINTS_PER_DASHBOARD_UNIT: Final[int] = 1000  # 1000 internal pts = 1.0 visible
+MAX_POINTS_PER_SUBSKILL: Final[int] = 10000  # display caps at 10.0/10
 
 
 # ── Validation tolerance ───────────────────────────────────────────

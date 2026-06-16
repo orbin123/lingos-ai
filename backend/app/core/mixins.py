@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+
 # ID Mixin
 class IDMixin:
     """
@@ -14,6 +15,7 @@ class IDMixin:
     """
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
 
 # CreatedAt Mixin
 class CreatedAtMixin:
@@ -30,6 +32,7 @@ class CreatedAtMixin:
         nullable=False,
     )
 
+
 # UpdatedAt Mixin
 class UpdatedAtMixin:
     """
@@ -41,10 +44,11 @@ class UpdatedAtMixin:
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        server_default=func.now(),   # set on INSERT
-        onupdate=func.now(),         # refreshed on every UPDATE
+        server_default=func.now(),  # set on INSERT
+        onupdate=func.now(),  # refreshed on every UPDATE
         nullable=False,
     )
+
 
 # Timestamp Mixin (convenience)
 class TimestampMixin(CreatedAtMixin, UpdatedAtMixin):

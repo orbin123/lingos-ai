@@ -131,20 +131,24 @@ class FeedbackRAGService:
 
             logger.info(
                 "rag.store.activity vector_id=%s user=%d attempt=%d",
-                vector_id, user_id, attempt_id,
+                vector_id,
+                user_id,
+                attempt_id,
             )
             return vector_id
 
         except EmbeddingError:
             logger.warning(
                 "Failed to store activity feedback memory for attempt=%d",
-                attempt_id, exc_info=True,
+                attempt_id,
+                exc_info=True,
             )
             return None
         except Exception:
             logger.warning(
                 "Unexpected error storing activity feedback memory for attempt=%d",
-                attempt_id, exc_info=True,
+                attempt_id,
+                exc_info=True,
             )
             return None
 
@@ -203,20 +207,24 @@ class FeedbackRAGService:
 
             logger.info(
                 "rag.store.session vector_id=%s user=%d session=%d",
-                vector_id, user_id, session_id,
+                vector_id,
+                user_id,
+                session_id,
             )
             return vector_id
 
         except EmbeddingError:
             logger.warning(
                 "Failed to store session summary memory for session=%d",
-                session_id, exc_info=True,
+                session_id,
+                exc_info=True,
             )
             return None
         except Exception:
             logger.warning(
                 "Unexpected error storing session summary for session=%d",
-                session_id, exc_info=True,
+                session_id,
+                exc_info=True,
             )
             capture_to_sentry()
             return None
@@ -236,7 +244,8 @@ class FeedbackRAGService:
         except Exception:
             logger.warning(
                 "Failed to delete activity memory for attempt=%d",
-                attempt_id, exc_info=True,
+                attempt_id,
+                exc_info=True,
             )
 
     async def delete_session_summary(self, session_id: int) -> None:
@@ -248,7 +257,8 @@ class FeedbackRAGService:
         except Exception:
             logger.warning(
                 "Failed to delete session summary for session=%d",
-                session_id, exc_info=True,
+                session_id,
+                exc_info=True,
             )
 
     async def _delete_vectors(self, vector_ids: list[str]) -> None:
@@ -256,7 +266,8 @@ class FeedbackRAGService:
         if not vector_ids:
             return
         await self._vector_store.delete(
-            vector_ids=vector_ids, namespace=self._namespace,
+            vector_ids=vector_ids,
+            namespace=self._namespace,
         )
         self._repo.delete_by_vector_ids(vector_ids)
         logger.info("rag.delete count=%d ids=%s", len(vector_ids), vector_ids)
@@ -295,9 +306,7 @@ class FeedbackRAGService:
         # Today + recurrence come from Postgres and never depend on Pinecone,
         # so compute them first and independently of the vector query.
         if current_session_id is not None:
-            result["today_activities"] = self._today_activity_docs(
-                current_session_id
-            )
+            result["today_activities"] = self._today_activity_docs(current_session_id)
         result["recurring_patterns"] = self._compute_recurring_patterns(user_id)
 
         try:
@@ -319,7 +328,8 @@ class FeedbackRAGService:
                 namespace=self._namespace,
             )
             result["similar_past_mistakes"] = [
-                m for m in activity_matches
+                m
+                for m in activity_matches
                 # Exclude matches from today's session
                 if m.get("metadata", {}).get("day_id") != current_day_id
             ][:5]
@@ -339,12 +349,16 @@ class FeedbackRAGService:
         except EmbeddingError:
             logger.warning(
                 "RAG retrieval failed for user=%d day=%s",
-                user_id, current_day_id, exc_info=True,
+                user_id,
+                current_day_id,
+                exc_info=True,
             )
         except Exception:
             logger.warning(
                 "Unexpected error in RAG retrieval for user=%d day=%s",
-                user_id, current_day_id, exc_info=True,
+                user_id,
+                current_day_id,
+                exc_info=True,
             )
 
         return result
@@ -386,13 +400,17 @@ class FeedbackRAGService:
                 return None
             logger.info(
                 "rag.retrieve.activity user=%d archetype=%s hits=%d",
-                user_id, archetype_id, len(lines),
+                user_id,
+                archetype_id,
+                len(lines),
             )
             return "\n".join(lines)
         except Exception:
             logger.warning(
                 "Per-activity RAG retrieval failed user=%d archetype=%s",
-                user_id, archetype_id, exc_info=True,
+                user_id,
+                archetype_id,
+                exc_info=True,
             )
             return None
 
@@ -423,19 +441,16 @@ class FeedbackRAGService:
         Note does not harp on them.
         """
         threshold = (
-            min_count
-            if min_count is not None
-            else settings.RAG_RECURRENCE_MIN_COUNT
+            min_count if min_count is not None else settings.RAG_RECURRENCE_MIN_COUNT
         )
         counts: dict[tuple, int] = {}
         examples: dict[tuple, dict] = {}
         try:
-            logs = self._repo.list_for_user(
-                user_id, memory_type="activity_feedback"
-            )
+            logs = self._repo.list_for_user(user_id, memory_type="activity_feedback")
         except Exception:
             logger.warning(
-                "Failed to load logs for recurrence user=%d", user_id,
+                "Failed to load logs for recurrence user=%d",
+                user_id,
                 exc_info=True,
             )
             return []
@@ -481,12 +496,11 @@ class FeedbackRAGService:
         counts: dict[str, int] = {}
         labels: dict[str, str] = {}
         try:
-            logs = self._repo.list_for_user(
-                user_id, memory_type="activity_feedback"
-            )
+            logs = self._repo.list_for_user(user_id, memory_type="activity_feedback")
         except Exception:
             logger.warning(
-                "Failed to load logs for strengths user=%d", user_id,
+                "Failed to load logs for strengths user=%d",
+                user_id,
                 exc_info=True,
             )
             return []

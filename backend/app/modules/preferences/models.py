@@ -63,25 +63,46 @@ class UserCoursePreference(Base, IDMixin, TimestampMixin):
         server_default="24w",
     )
     tasks_per_day: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=2, server_default="2",
+        Integer,
+        nullable=False,
+        default=2,
+        server_default="2",
     )
     allow_read: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default="true",
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
     )
     allow_write: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default="true",
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
     )
     allow_listen: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default="true",
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
     )
     allow_speak: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default="true",
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
     )
     current_week: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1, server_default="1",
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
     )
     current_day_in_week: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1, server_default="1",
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
     )
     current_day_started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -93,10 +114,16 @@ class UserCoursePreference(Base, IDMixin, TimestampMixin):
     # on an activity before advancing, otherwise they retry it. Off by default
     # so existing learners are unaffected.
     require_pass_to_advance: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false",
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
     )
     pass_threshold_pct: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=65, server_default="65",
+        Integer,
+        nullable=False,
+        default=65,
+        server_default="65",
     )
 
     def __repr__(self) -> str:

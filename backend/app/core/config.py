@@ -3,6 +3,7 @@
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     """
     Central configuration object.
@@ -40,7 +41,7 @@ class Settings(BaseSettings):
     strict_contracts: bool = True
 
     # Database
-    database_url: str 
+    database_url: str
 
     # Redis
     redis_url: str
@@ -275,9 +276,7 @@ class Settings(BaseSettings):
         if not self.AUTH_COOKIE_SECURE:
             violations.append("AUTH_COOKIE_SECURE must be true behind https")
         local_origins = [
-            o
-            for o in self.cors_origins_list
-            if "localhost" in o or "127.0.0.1" in o
+            o for o in self.cors_origins_list if "localhost" in o or "127.0.0.1" in o
         ]
         if local_origins:
             violations.append(
@@ -294,6 +293,6 @@ class Settings(BaseSettings):
         return self
 
 
-
-# Single shared instance
-settings = Settings()
+# Single shared instance. Fields are populated from the environment by
+# pydantic-settings, which mypy can't see — hence the call-arg suppression.
+settings = Settings()  # type: ignore[call-arg]

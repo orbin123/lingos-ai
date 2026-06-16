@@ -30,6 +30,7 @@ class WordTimestamp(TypedDict):
     The `confidence` field is reserved for providers that do
     (e.g. Deepgram, AssemblyAI) — for whisper-1 it's always None.
     """
+
     word: str
     start_seconds: float
     end_seconds: float
@@ -42,6 +43,7 @@ class TranscriptionResult(TypedDict):
     `words` is None when timestamps weren't requested (cheaper + faster
     response). When requested, it's the full list of word timings.
     """
+
     text: str
     language: str
     duration_seconds: float

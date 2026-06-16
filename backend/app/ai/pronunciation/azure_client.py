@@ -39,12 +39,25 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({
-    "wav", "mp3", "ogg", "flac", "mp4", "m4a",
-})
-_COMPRESSED_EXTENSIONS: frozenset[str] = frozenset({
-    "mp3", "ogg", "flac", "mp4", "m4a",
-})
+_SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        "wav",
+        "mp3",
+        "ogg",
+        "flac",
+        "mp4",
+        "m4a",
+    }
+)
+_COMPRESSED_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        "mp3",
+        "ogg",
+        "flac",
+        "mp4",
+        "m4a",
+    }
+)
 _DEFAULT_LANGUAGE = "en-US"
 _MAX_RETRIES = 3
 
@@ -143,7 +156,10 @@ class AzurePronunciationClient:
                 delay = (2 ** (attempt - 1)) * (1 + random.uniform(-0.25, 0.25))
                 logger.warning(
                     "pronunciation_retry attempt=%d/%d delay=%.2fs err=%s",
-                    attempt, self._max_retries, delay, type(exc).__name__,
+                    attempt,
+                    self._max_retries,
+                    delay,
+                    type(exc).__name__,
                 )
                 await asyncio.sleep(delay)
 

@@ -23,6 +23,7 @@ from app.ai.llm import LLMError, LLMValidationError, get_default_llm_client
 # 1. OUTPUT SCHEMA — what the LLM must return
 # ---------------------------------------------------------------------------
 
+
 class DiagnosisWritingScores(BaseModel):
     """Structured writing assessment used by the diagnosis scoring formula.
 
@@ -94,6 +95,7 @@ Return your answer in the required JSON schema. Nothing else.
 # 3. HUMAN MESSAGE BUILDER
 # ---------------------------------------------------------------------------
 
+
 def _build_human_message(*, prompt_id: str, response_text: str) -> str:
     return f"""\
 WRITING TASK
@@ -113,6 +115,7 @@ Score this answer now.
 # ---------------------------------------------------------------------------
 # 4. PUBLIC ENTRY POINT
 # ---------------------------------------------------------------------------
+
 
 async def evaluate_writing(
     *,

@@ -1,0 +1,123 @@
+{
+  "description": "Hand-picked golden set for offline LLM-as-judge regression (Part B Phase 3). Each case feeds the real evaluator -> feedback pipeline, then FeedbackJudge scores the produced feedback. Spans grammar / vocab / writing / listening / speaking. Only LLM-graded archetypes are included (deterministic MCQ/cloze/error-spot feedback is arithmetic and not worth a judge call).",
+  "cases": [
+    {
+      "id": "grammar_past_tense_01",
+      "archetype_id": "WRITE_ERROR_CORR",
+      "task": "Correct the errors in this sentence: 'Yesterday I go to the market and buyed some apple.'",
+      "sample_answer": "Yesterday I went to the market and bought some apples.",
+      "ideal_feedback_notes": "Confirm both past-tense fixes (go->went, buyed->bought) and the plural (apple->apples). No invented mistakes."
+    },
+    {
+      "id": "grammar_articles_02",
+      "archetype_id": "WRITE_ERROR_CORR",
+      "task": "Fix the article errors: 'I saw a elephant at zoo and it was the biggest animal I ever seen.'",
+      "sample_answer": "I saw an elephant at the zoo and it was the biggest animal I had ever seen.",
+      "ideal_feedback_notes": "Praise a->an before a vowel sound and the missing 'the' before zoo; note 'ever seen'->'had ever seen'. Stay grounded in this sentence."
+    },
+    {
+      "id": "vocab_upgrade_03",
+      "archetype_id": "WRITE_WORD_UPGRADE",
+      "task": "Replace the underlined words with stronger vocabulary: 'The movie was very good and the actors were very good too.'",
+      "sample_answer": "The movie was excellent and the actors were superb too.",
+      "ideal_feedback_notes": "Acknowledge 'excellent' and 'superb' as good upgrades; could suggest avoiding repetition. No grammar nitpicks that aren't there."
+    },
+    {
+      "id": "vocab_collocation_04",
+      "archetype_id": "WRITE_WORD_UPGRADE",
+      "task": "Improve the word choice: 'He made a big decision to do a business.'",
+      "sample_answer": "He made an important decision to start a business.",
+      "ideal_feedback_notes": "Note 'start a business' is the natural collocation and 'important' improves on 'big'. Keep it specific to the wording."
+    },
+    {
+      "id": "write_para_05",
+      "archetype_id": "WRITE_PARA",
+      "task": "Write a short paragraph (3-4 sentences) about your favourite hobby and why you enjoy it.",
+      "sample_answer": "My favourite hobby is painting. I started painting when I was a child. It help me to relax after work. I feel very happy when I create something new.",
+      "ideal_feedback_notes": "Praise structure and personal detail; flag the subject-verb error 'It help'->'It helps'. Give one concrete next step."
+    },
+    {
+      "id": "write_email_06",
+      "archetype_id": "WRITE_EMAIL",
+      "task": "Write a short email to your manager requesting a day off next Friday.",
+      "sample_answer": "Dear Manager, I am writing for request a day off in next Friday. I have a personal appointment. Thank you for your understand.",
+      "ideal_feedback_notes": "Note tone is appropriate; correct 'for request'->'to request', 'in next Friday'->'next Friday', 'your understand'->'your understanding'. Don't invent extra errors."
+    },
+    {
+      "id": "write_open_sent_07",
+      "archetype_id": "WRITE_OPEN_SENT",
+      "task": "Write one sentence using the present perfect tense to describe an experience.",
+      "sample_answer": "I have visited Japan three times and I love it.",
+      "ideal_feedback_notes": "Confirm correct present-perfect usage ('have visited'); the sentence is accurate, so the score should be high and feedback should not fabricate problems."
+    },
+    {
+      "id": "write_sent_trans_08",
+      "archetype_id": "WRITE_SENT_TRANS",
+      "task": "Rewrite in the passive voice: 'The chef cooked a delicious meal.'",
+      "sample_answer": "A delicious meal was cooked by the chef.",
+      "ideal_feedback_notes": "The transformation is correct; feedback should confirm it and not claim an error. Optionally mention by-agent is optional."
+    },
+    {
+      "id": "write_paraphrase_09",
+      "archetype_id": "WRITE_PARAPHRASE",
+      "task": "Paraphrase: 'Many people believe that exercise is essential for good health.'",
+      "sample_answer": "A lot of people think that working out is necessary to stay healthy.",
+      "ideal_feedback_notes": "Good paraphrase preserving meaning; praise synonyms (essential->necessary, exercise->working out). Stay grounded."
+    },
+    {
+      "id": "write_idea_para_10",
+      "archetype_id": "WRITE_IDEA_PARA",
+      "task": "Write a paragraph arguing for or against remote work.",
+      "sample_answer": "Remote work is benefit for many people. It save commuting time and give more flexibility. However, some people feels lonely without colleagues. Overall I think the advantages is bigger.",
+      "ideal_feedback_notes": "Praise clear argument and counterpoint; flag 'is benefit'->'is beneficial', 'save'->'saves', 'feels'->'feel', 'advantages is'->'advantages are'. Don't over-flag."
+    },
+    {
+      "id": "write_timed_11",
+      "archetype_id": "WRITE_TIMED",
+      "task": "In 5 minutes, write about a memorable trip you took.",
+      "sample_answer": "Last summer I traveled to the mountains with my family. The view was breathtaking and the air was fresh. We hiked every morning and cooked dinner together at night. It was the best holiday I have ever had.",
+      "ideal_feedback_notes": "Strong, error-light response; feedback should reward it and keep any suggestions minor and genuine."
+    },
+    {
+      "id": "write_bullets_to_para_12",
+      "archetype_id": "WRITE_BULLETS_TO_PARA",
+      "task": "Turn these notes into a paragraph: 'city - crowded; transport - cheap; food - amazing; rent - expensive'.",
+      "sample_answer": "The city is very crowded but the transport is cheap and easy to use. The food is amazing and there is a lot of variety. The only downside is that the rent is quite expensive.",
+      "ideal_feedback_notes": "Praise smooth linking of the notes into coherent prose; the response is accurate so avoid inventing grammar issues."
+    },
+    {
+      "id": "listen_retell_13",
+      "archetype_id": "LISTEN_RETELL",
+      "task": "Listen to the short story and retell it in your own words.",
+      "sample_answer": "The story was about a young boy who lost his dog in the park. He searched everywhere and finally found it near the lake. He was very happy and they went home together.",
+      "ideal_feedback_notes": "Assess completeness and coherence of the retell; reward capturing the main events. Don't penalise wording the learner could not have known."
+    },
+    {
+      "id": "listen_infer_14",
+      "archetype_id": "LISTEN_INFER",
+      "task": "Based on the dialogue, why was the speaker upset? Explain in 2-3 sentences.",
+      "sample_answer": "The speaker was upset because her friend forgot her birthday. She felt ignored and unimportant. She expected at least a message.",
+      "ideal_feedback_notes": "Judge whether the inference is reasonable and supported; reward clear reasoning. Keep feedback about the inference quality."
+    },
+    {
+      "id": "speak_opinion_15",
+      "archetype_id": "SPEAK_OPINION",
+      "task": "Speak for one minute giving your opinion: Should public transport be free?",
+      "sample_answer": "I think public transport should be free because it help reduce traffic and pollution. Also it help poor people to travel for work. But the government need money to maintain it, so maybe it can be free only for students and old people.",
+      "user_response": {
+        "transcript": "I think public transport should be free because it help reduce traffic and pollution. Also it help poor people to travel for work. But the government need money to maintain it, so maybe it can be free only for students and old people."
+      },
+      "ideal_feedback_notes": "Reward clear opinion with reasons and a nuanced conclusion; gently note 'it help'->'it helps' and 'government need'->'government needs'. Grade on spoken fluency, not perfection."
+    },
+    {
+      "id": "speak_interview_16",
+      "archetype_id": "SPEAK_INTERVIEW",
+      "task": "Answer the interview question: 'Tell me about a challenge you overcame at work.'",
+      "sample_answer": "Last year my team had a tight deadline for a important project. I organized daily meetings and split the tasks clearly. It was stressful but we finished on time and the client was very happy.",
+      "user_response": {
+        "transcript": "Last year my team had a tight deadline for a important project. I organized daily meetings and split the tasks clearly. It was stressful but we finished on time and the client was very happy."
+      },
+      "ideal_feedback_notes": "Praise the STAR-like structure; note 'a important'->'an important'. Keep feedback encouraging and grounded in what was said."
+    }
+  ]
+}

@@ -169,6 +169,7 @@ class LoggingLLMClient:
         except Exception:  # pragma: no cover - defensive
             # Observability must never break the learner flow.
             logger.warning(
-                "AIRequestLog write failed for agent=%s", self._agent_name,
+                "AIRequestLog write failed for agent=%s",
+                self._agent_name,
                 exc_info=True,
             )

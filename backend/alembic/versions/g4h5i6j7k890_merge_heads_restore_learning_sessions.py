@@ -49,10 +49,16 @@ def upgrade() -> None:
         sa.Column("session_id", sa.String(length=64), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("daily_session_id", sa.Integer(), nullable=False),
-        sa.Column("phase", sa.String(length=32), nullable=False, server_default="teaching"),
+        sa.Column(
+            "phase", sa.String(length=32), nullable=False, server_default="teaching"
+        ),
         sa.Column("topic", sa.String(length=200), nullable=False, server_default=""),
-        sa.Column("skill_name", sa.String(length=50), nullable=False, server_default=""),
-        sa.Column("activity_type", sa.String(length=50), nullable=False, server_default=""),
+        sa.Column(
+            "skill_name", sa.String(length=50), nullable=False, server_default=""
+        ),
+        sa.Column(
+            "activity_type", sa.String(length=50), nullable=False, server_default=""
+        ),
         sa.Column("task_type", sa.String(length=50), nullable=False, server_default=""),
         sa.Column("user_level", sa.Integer(), nullable=False, server_default="5"),
         sa.Column(
@@ -67,7 +73,9 @@ def upgrade() -> None:
             nullable=False,
             server_default="[]",
         ),
-        sa.Column("current_task_index", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column(
+            "current_task_index", sa.Integer(), nullable=False, server_default="0"
+        ),
         sa.Column(
             "messages",
             postgresql.JSONB(astext_type=sa.Text()),

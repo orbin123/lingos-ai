@@ -46,7 +46,9 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["challenge_id"], ["challenges.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["challenge_id"], ["challenges.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "user_id", "challenge_id", name="uq_a2z_user_progress_user_challenge"

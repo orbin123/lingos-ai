@@ -1,6 +1,5 @@
 """Purchase, notification, and account-action endpoints."""
 
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -151,7 +150,9 @@ def pause_course_access(
     sessions route.
     """
     try:
-        return SubscriptionService(db).pause_course(current_user)
+        return PurchaseRead.model_validate(
+            SubscriptionService(db).pause_course(current_user)
+        )
     except PurchaseNotFound:
         raise HTTPException(status_code=404, detail="No purchase found.")
 

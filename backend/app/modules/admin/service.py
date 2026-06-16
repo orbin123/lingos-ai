@@ -137,7 +137,11 @@ class AdminService:
             resource_type="role",
             resource_id=role.id,
             old_value=old_value,
-            new_value={"id": role.id, "name": role.name, "permissions": sorted(requested)},
+            new_value={
+                "id": role.id,
+                "name": role.name,
+                "permissions": sorted(requested),
+            },
             ip_address=ip_address,
         )
         self.db.commit()
@@ -159,7 +163,9 @@ class AdminService:
             return None
         if target.id == actor.id and not is_active:
             raise ValueError("Admins cannot deactivate their own account")
-        if target.has_any_role({ROLE_SUPER_ADMIN}) and not actor.has_any_role({ROLE_SUPER_ADMIN}):
+        if target.has_any_role({ROLE_SUPER_ADMIN}) and not actor.has_any_role(
+            {ROLE_SUPER_ADMIN}
+        ):
             raise PermissionError("Only super admins can update a super admin")
 
         old_value = self._user_status_snapshot(target)
@@ -211,7 +217,9 @@ class AdminService:
         return self.repo.list_audit_logs()
 
     def list_ai_logs(self, *, actor: User) -> list[AIRequestLogRead]:
-        return self.repo.list_ai_logs(include_sensitive=self._can_see_sensitive_ai(actor))
+        return self.repo.list_ai_logs(
+            include_sensitive=self._can_see_sensitive_ai(actor)
+        )
 
     def get_ai_log(self, log_id: int, *, actor: User) -> AIRequestLogRead | None:
         return self.repo.get_ai_log(

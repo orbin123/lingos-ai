@@ -90,9 +90,7 @@ def upgrade() -> None:
     )
 
     # ── Drop the retired tables ──────────────────────────────────────────
-    op.drop_index(
-        op.f("ix_feedback_ratings_user_id"), table_name="feedback_ratings"
-    )
+    op.drop_index(op.f("ix_feedback_ratings_user_id"), table_name="feedback_ratings")
     op.drop_index(
         op.f("ix_feedback_ratings_scorecard_id"), table_name="feedback_ratings"
     )
@@ -182,9 +180,7 @@ def downgrade() -> None:
             ["scorecard_id"], ["session_scorecards.id"], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.UniqueConstraint(
-            "scorecard_id", "user_id", name="uq_feedback_rating_user"
-        ),
+        sa.UniqueConstraint("scorecard_id", "user_id", name="uq_feedback_rating_user"),
     )
     op.create_index(
         op.f("ix_feedback_ratings_scorecard_id"),

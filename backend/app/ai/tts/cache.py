@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 class TTSDurationMetadata(TypedDict):
     """Sidecar metadata persisted alongside cached audio."""
+
     duration_seconds: float
 
 
@@ -65,13 +66,15 @@ def _compute_cache_key(
     on gpt-4o-mini-tts. None and "" must hash differently from
     "speak slowly" so we normalize None → "".
     """
-    parts = "|".join([
-        model,
-        voice,
-        f"{speed:.2f}",
-        style_instructions or "",
-        text,
-    ])
+    parts = "|".join(
+        [
+            model,
+            voice,
+            f"{speed:.2f}",
+            style_instructions or "",
+            text,
+        ]
+    )
     digest = hashlib.sha256(parts.encode("utf-8")).hexdigest()[:16]
     return f"{digest}.{audio_format}"
 
@@ -102,12 +105,12 @@ class CachedTTSService:
         # mp3 is the only content_type we currently produce; if you ever
         # change the format, update the lookup below.
         self._content_type_map: dict[str, str] = {
-            "mp3":  "audio/mpeg",
+            "mp3": "audio/mpeg",
             "opus": "audio/opus",
-            "aac":  "audio/aac",
+            "aac": "audio/aac",
             "flac": "audio/flac",
-            "wav":  "audio/wav",
-            "pcm":  "audio/L16",
+            "wav": "audio/wav",
+            "pcm": "audio/L16",
         }
 
     # ------------------------------------------------------------------
@@ -213,7 +216,8 @@ class CachedTTSService:
         except StorageError as exc:
             logger.warning(
                 "tts_cache_metadata_read_failed key=%s err=%s; backfilling",
-                metadata_key, exc,
+                metadata_key,
+                exc,
             )
             raw_metadata = None
 
@@ -230,7 +234,8 @@ class CachedTTSService:
             ) as exc:
                 logger.warning(
                     "tts_cache_metadata_corrupt key=%s err=%s; backfilling",
-                    metadata_key, exc,
+                    metadata_key,
+                    exc,
                 )
             else:
                 return duration
@@ -240,7 +245,8 @@ class CachedTTSService:
         except StorageError as exc:
             logger.warning(
                 "tts_cache_audio_read_failed key=%s err=%s; returning 0.0",
-                cache_key, exc,
+                cache_key,
+                exc,
             )
             return 0.0
 
@@ -258,7 +264,8 @@ class CachedTTSService:
         )
         logger.info(
             "tts_cache_metadata_backfilled key=%s duration=%.2f",
-            cache_key, duration,
+            cache_key,
+            duration,
         )
         return duration
 
@@ -286,7 +293,8 @@ class CachedTTSService:
         except StorageError as exc:
             logger.warning(
                 "tts_cache_metadata_write_failed key=%s err=%s; continuing",
-                metadata_key, exc,
+                metadata_key,
+                exc,
             )
 
 

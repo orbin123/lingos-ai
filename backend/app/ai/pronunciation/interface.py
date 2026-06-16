@@ -34,25 +34,28 @@ class PhonemeScore(TypedDict):
     level lets us tell the user 'your /θ/ in "think" sounds like /s/'
     instead of just 'word was wrong.'
     """
-    phoneme: str          # IPA symbol, e.g. "θ", "iː"
+
+    phoneme: str  # IPA symbol, e.g. "θ", "iː"
     accuracy_score: float  # 0.0–100.0 (provider-normalised)
 
 
 class WordScore(TypedDict):
     """One word, its overall accuracy, and per-phoneme breakdown."""
+
     word: str
-    accuracy_score: float          # 0.0–100.0
-    error_type: str | None         # "mispronunciation" | "omission" | "insertion" | None
+    accuracy_score: float  # 0.0–100.0
+    error_type: str | None  # "mispronunciation" | "omission" | "insertion" | None
     phonemes: list[PhonemeScore]
 
 
 class PronunciationResult(TypedDict):
     """Full output of one pronunciation-assessment call."""
-    overall_score: float           # 0.0–100.0 — single headline number
-    accuracy_score: float          # how close to native phonemes
-    fluency_score: float           # pacing, pauses, run-on
-    completeness_score: float      # did they say all expected words?
-    prosody_score: float           # intonation, rhythm, word stress
+
+    overall_score: float  # 0.0–100.0 — single headline number
+    accuracy_score: float  # how close to native phonemes
+    fluency_score: float  # pacing, pauses, run-on
+    completeness_score: float  # did they say all expected words?
+    prosody_score: float  # intonation, rhythm, word stress
     words: list[WordScore]
 
 

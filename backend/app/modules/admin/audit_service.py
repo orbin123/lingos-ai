@@ -22,7 +22,7 @@ class AdminAuditService:
         admin: User,
         action: str,
         resource_type: str,
-        resource_id: int | str,
+        resource_id: int | str | None,
         old_value: dict[str, Any] | None = None,
         new_value: dict[str, Any] | None = None,
         ip_address: str | None = None,

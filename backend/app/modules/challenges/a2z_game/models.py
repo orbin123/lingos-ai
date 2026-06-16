@@ -28,7 +28,9 @@ class A2ZUserProgress(Base, IDMixin, TimestampMixin):
 
     __tablename__ = "a2z_user_progress"
     __table_args__ = (
-        UniqueConstraint("user_id", "challenge_id", name="uq_a2z_user_progress_user_challenge"),
+        UniqueConstraint(
+            "user_id", "challenge_id", name="uq_a2z_user_progress_user_challenge"
+        ),
         Index("ix_a2z_user_progress_user_id", "user_id"),
         Index("ix_a2z_user_progress_challenge_id", "challenge_id"),
     )

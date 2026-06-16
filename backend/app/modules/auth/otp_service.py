@@ -84,8 +84,7 @@ class OtpService:
         hour_ago = now - timedelta(hours=1)
         sends_last_hour = (
             self.db.execute(
-                select(EmailOtp)
-                .where(
+                select(EmailOtp).where(
                     EmailOtp.email == email,
                     EmailOtp.purpose == purpose.value,
                     EmailOtp.created_at >= hour_ago,
@@ -107,9 +106,7 @@ class OtpService:
         ).scalars():
             row.consumed_at = now
 
-        code = "".join(
-            secrets.choice("0123456789") for _ in range(settings.OTP_LENGTH)
-        )
+        code = "".join(secrets.choice("0123456789") for _ in range(settings.OTP_LENGTH))
         otp = EmailOtp(
             user_id=user.id,
             email=email,

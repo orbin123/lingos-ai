@@ -33,8 +33,12 @@ class DailySessionRepository:
         return self.db.execute(
             select(DailySession)
             .options(
-                selectinload(DailySession.attempts).selectinload(ActivityAttempt.evaluation),
-                selectinload(DailySession.attempts).selectinload(ActivityAttempt.feedback),
+                selectinload(DailySession.attempts).selectinload(
+                    ActivityAttempt.evaluation
+                ),
+                selectinload(DailySession.attempts).selectinload(
+                    ActivityAttempt.feedback
+                ),
                 selectinload(DailySession.scorecard),
             )
             .where(DailySession.session_id == session_id)
@@ -82,11 +86,13 @@ class DailySessionRepository:
 
     def has_completed_for_day(self, *, user_id: int, day_id: str) -> bool:
         existing = self.db.execute(
-            select(DailySession.id).where(
+            select(DailySession.id)
+            .where(
                 DailySession.user_id == user_id,
                 DailySession.day_id == day_id,
                 DailySession.status == SessionStatus.COMPLETED,
-            ).limit(1)
+            )
+            .limit(1)
         ).first()
         return existing is not None
 
@@ -165,9 +171,7 @@ class FeedbackRepository:
 
     def delete_for_attempt(self, attempt_id: int) -> None:
         self.db.execute(
-            delete(ActivityFeedback).where(
-                ActivityFeedback.attempt_id == attempt_id
-            )
+            delete(ActivityFeedback).where(ActivityFeedback.attempt_id == attempt_id)
         )
 
 
@@ -187,7 +191,5 @@ class ScorecardRepository:
 
     def delete_for_session(self, session_pk: int) -> None:
         self.db.execute(
-            delete(SessionScorecard).where(
-                SessionScorecard.session_id == session_pk
-            )
+            delete(SessionScorecard).where(SessionScorecard.session_id == session_pk)
         )

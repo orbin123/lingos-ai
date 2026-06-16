@@ -81,7 +81,9 @@ class AIEvaluation(Base, IDMixin, CreatedAtMixin):
     # "feedback" | "mentor_note" | "task_generation" | "evaluation"
     target_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     # The judged artifact's id (e.g. activity_feedback.id), stringified.
-    target_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    target_id: Mapped[str | None] = mapped_column(
+        String(120), nullable=True, index=True
+    )
     judge_model: Mapped[str] = mapped_column(String(120), nullable=False)
     accuracy: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)
     relevance: Mapped[float | None] = mapped_column(Numeric(4, 2), nullable=True)

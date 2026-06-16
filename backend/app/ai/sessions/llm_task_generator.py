@@ -51,16 +51,26 @@ logger = logging.getLogger(__name__)
 def _agent_debug_log(message: str, data: dict, hypothesis_id: str) -> None:
     # region agent log
     try:
-        with open("/Users/orbin/Documents/GitHub/ai-english-tutor/.cursor/debug-dfa507.log", "a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "sessionId": "dfa507",
-                "runId": "initial",
-                "hypothesisId": hypothesis_id,
-                "location": "backend/app/ai/sessions/llm_task_generator.py",
-                "message": message,
-                "data": data,
-                "timestamp": int(time.time() * 1000),
-            }, default=str) + "\n")
+        with open(
+            "/Users/orbin/Documents/GitHub/ai-english-tutor/.cursor/debug-dfa507.log",
+            "a",
+            encoding="utf-8",
+        ) as fh:
+            fh.write(
+                json.dumps(
+                    {
+                        "sessionId": "dfa507",
+                        "runId": "initial",
+                        "hypothesisId": hypothesis_id,
+                        "location": "backend/app/ai/sessions/llm_task_generator.py",
+                        "message": message,
+                        "data": data,
+                        "timestamp": int(time.time() * 1000),
+                    },
+                    default=str,
+                )
+                + "\n"
+            )
     except Exception:
         pass
     # endregion
@@ -318,7 +328,9 @@ class ErrorSpottingTaskLLM(BaseModel):
     task_intro: str
     primary_text: str = ""
     estimated_time_minutes: int | None = None
-    passage_sentences: list[ErrorSpottingSentenceLLM] = Field(min_length=5, max_length=5)
+    passage_sentences: list[ErrorSpottingSentenceLLM] = Field(
+        min_length=5, max_length=5
+    )
     total_errors: int = 5
 
 
@@ -479,7 +491,9 @@ class LLMTaskGenerator:
                     validation_feedback = str(exc)
                 logger.warning(
                     "Task generation attempt %d/3 failed for archetype=%s: %s",
-                    attempt_no + 1, archetype.archetype_id, exc,
+                    attempt_no + 1,
+                    archetype.archetype_id,
+                    exc,
                 )
 
         raise TaskGenerationFailed(
@@ -515,7 +529,9 @@ class LLMTaskGenerator:
             output_model: type[BaseModel] = ErrorSpottingTaskLLM
         elif archetype.ui_widget == "ErrorCorrection":
             output_model = ErrorCorrectionTask
-        elif archetype.ui_widget == "FillInBlanks" and archetype.core_activity == "read":
+        elif (
+            archetype.ui_widget == "FillInBlanks" and archetype.core_activity == "read"
+        ):
             output_model = FillInBlanksTaskLLM
         elif archetype.archetype_id == "LISTEN_DICTATION":
             output_model = ListenDictationTaskLLM
@@ -581,9 +597,7 @@ class LLMTaskGenerator:
             if task_spec.get("estimated_time_minutes") and not content.get(
                 "estimated_time_minutes"
             ):
-                content["estimated_time_minutes"] = task_spec[
-                    "estimated_time_minutes"
-                ]
+                content["estimated_time_minutes"] = task_spec["estimated_time_minutes"]
 
         content = normalize_task_content(archetype.archetype_id, content)
 
@@ -622,7 +636,8 @@ class LLMTaskGenerator:
         except Exception as exc:
             logger.warning(
                 "TTS synthesis failed for archetype=%s: %s — audio_url will be null",
-                archetype.archetype_id, exc,
+                archetype.archetype_id,
+                exc,
             )
             return content
 
@@ -730,8 +745,8 @@ class LLMTaskGenerator:
     def _is_interview_task(archetype: ArchetypeSpec) -> bool:
         return archetype.archetype_id == "SPEAK_INTERVIEW"
 
+    @staticmethod
     async def _attach_required_image(
-        self,
         *,
         content: dict,
         archetype: ArchetypeSpec,
@@ -739,7 +754,7 @@ class LLMTaskGenerator:
         if content.get("image_url"):
             return content
         try:
-            return await self._attach_image(content=content)
+            return await LLMTaskGenerator._attach_image(content=content)
         except Exception as exc:
             logger.exception(
                 "Required image generation failed for archetype=%s",
@@ -756,7 +771,9 @@ class LLMTaskGenerator:
     async def _attach_image(*, content: dict) -> dict:
         image_alt = str(content.get("image_alt") or "").strip()
         if not image_alt:
-            raise ValueError("image_alt is required for picture-description image generation")
+            raise ValueError(
+                "image_alt is required for picture-description image generation"
+            )
         from app.ai.imagegen import get_default_imagegen_service
 
         service = get_default_imagegen_service()

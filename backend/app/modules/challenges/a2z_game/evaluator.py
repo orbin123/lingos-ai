@@ -5,7 +5,6 @@ Pure functions — no LLM, no DB, no I/O. Safe to call from anywhere.
 
 from __future__ import annotations
 
-import re
 import string
 
 

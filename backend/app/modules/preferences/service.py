@@ -40,4 +40,3 @@ class PreferenceService:
         self.db.commit()
         self.db.refresh(pref)
         return pref
-

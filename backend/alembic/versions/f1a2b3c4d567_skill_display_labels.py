@@ -36,13 +36,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 _LABELS: tuple[tuple[str, str], ...] = (
-    ("grammar",       "Grammar"),
-    ("vocabulary",    "Vocabulary"),
+    ("grammar", "Grammar"),
+    ("vocabulary", "Vocabulary"),
     ("pronunciation", "Pronunciation"),
-    ("fluency",       "Fluency"),
-    ("expression",    "Thought Organization"),
+    ("fluency", "Fluency"),
+    ("expression", "Thought Organization"),
     ("comprehension", "Listening"),
-    ("tone",          "Tone & Social"),
+    ("tone", "Tone & Social"),
 )
 
 

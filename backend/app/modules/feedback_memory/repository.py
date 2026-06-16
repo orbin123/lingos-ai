@@ -24,9 +24,7 @@ class FeedbackMemoryRepository:
 
     def get_by_vector_id(self, vector_id: str) -> FeedbackMemoryLog | None:
         return self.db.execute(
-            select(FeedbackMemoryLog).where(
-                FeedbackMemoryLog.vector_id == vector_id
-            )
+            select(FeedbackMemoryLog).where(FeedbackMemoryLog.vector_id == vector_id)
         ).scalar_one_or_none()
 
     def upsert_by_vector_id(
@@ -78,12 +76,16 @@ class FeedbackMemoryRepository:
     def get_session_summary_for_session(
         self, session_id: int
     ) -> FeedbackMemoryLog | None:
-        return self.db.execute(
-            select(FeedbackMemoryLog)
-            .where(FeedbackMemoryLog.session_id == session_id)
-            .where(FeedbackMemoryLog.memory_type == "session_summary")
-            .order_by(FeedbackMemoryLog.id.desc())
-        ).scalars().first()
+        return (
+            self.db.execute(
+                select(FeedbackMemoryLog)
+                .where(FeedbackMemoryLog.session_id == session_id)
+                .where(FeedbackMemoryLog.memory_type == "session_summary")
+                .order_by(FeedbackMemoryLog.id.desc())
+            )
+            .scalars()
+            .first()
+        )
 
     def delete_by_vector_ids(self, vector_ids: list[str]) -> int:
         """Delete log rows by vector_id. Returns count deleted."""

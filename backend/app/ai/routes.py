@@ -66,6 +66,7 @@ async def ping_llm() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 class TTSRequest(BaseModel):
     """Body for /debug/ai/tts/synthesize."""
+
     text: str = Field(min_length=1, max_length=4000)
     voice: str | None = Field(
         default=None,
@@ -124,6 +125,7 @@ async def tts_synthesize(req: TTSRequest) -> SynthesisResult:
 # ---------------------------------------------------------------------------
 class ImageGenerationRequest(BaseModel):
     """Body for /debug/ai/image/generate."""
+
     prompt: str = Field(min_length=1, max_length=4000)
     aspect_ratio: AspectRatio = Field(
         default="square",

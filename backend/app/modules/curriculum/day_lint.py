@@ -123,9 +123,7 @@ def lint_day_structure(day: FileDayRecord) -> list[DayLintIssue]:
         )
 
     activity_count = len(day.task_archetypes_used)
-    if not (
-        len(day.task_specs) == len(day.activity_contracts) == activity_count == 4
-    ):
+    if not (len(day.task_specs) == len(day.activity_contracts) == activity_count == 4):
         issues.append(
             _issue(
                 severity="error",

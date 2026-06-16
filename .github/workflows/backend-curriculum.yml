@@ -4,6 +4,8 @@ name: backend-curriculum
 # both the 24w and 48w calendars from the band source files. These checks run
 # offline — tests/conftest.py sets dummy env vars + a SQLite DATABASE_URL, so no
 # Postgres/Redis/OpenAI keys are needed.
+#
+# Paths/test targets follow the Phase-4 test tree (tests/unit/, tests/integration/).
 
 on:
   push:
@@ -11,16 +13,11 @@ on:
     paths:
       - "backend/app/modules/curriculum/**"
       - "backend/scripts/seed_curriculum.py"
-      - "backend/tests/test_curriculum_v2_data.py"
-      - "backend/tests/test_curriculum_seed_smoke.py"
-      - "backend/tests/test_file_source.py"
-      - "backend/tests/test_a1a2_teacher_integrity.py"
-      - "backend/tests/test_curriculum_teacher_steps.py"
+      - "backend/tests/unit/curriculum/**"
+      - "backend/tests/integration/curriculum/**"
+      - "backend/tests/unit/contracts/test_contract_validation_gate.py"
+      - "backend/tests/unit/ai/test_teacher_*.py"
       - "backend/app/ai/agents/teacher.py"
-      - "backend/tests/test_teacher_agent_prompt.py"
-      - "backend/tests/test_contract_validation_gate.py"
-      - "backend/tests/test_curriculum_task_spec_validation.py"
-      - "backend/tests/test_all_calendar_days_integrity.py"
       - "backend/app/modules/curriculum/day_lint.py"
       - "backend/app/modules/sessions/contracts/**"
       - ".github/workflows/backend-curriculum.yml"
@@ -28,16 +25,11 @@ on:
     paths:
       - "backend/app/modules/curriculum/**"
       - "backend/scripts/seed_curriculum.py"
-      - "backend/tests/test_curriculum_v2_data.py"
-      - "backend/tests/test_curriculum_seed_smoke.py"
-      - "backend/tests/test_file_source.py"
-      - "backend/tests/test_a1a2_teacher_integrity.py"
-      - "backend/tests/test_curriculum_teacher_steps.py"
+      - "backend/tests/unit/curriculum/**"
+      - "backend/tests/integration/curriculum/**"
+      - "backend/tests/unit/contracts/test_contract_validation_gate.py"
+      - "backend/tests/unit/ai/test_teacher_*.py"
       - "backend/app/ai/agents/teacher.py"
-      - "backend/tests/test_teacher_agent_prompt.py"
-      - "backend/tests/test_contract_validation_gate.py"
-      - "backend/tests/test_curriculum_task_spec_validation.py"
-      - "backend/tests/test_all_calendar_days_integrity.py"
       - "backend/app/modules/curriculum/day_lint.py"
       - "backend/app/modules/sessions/contracts/**"
       - ".github/workflows/backend-curriculum.yml"
@@ -72,13 +64,9 @@ jobs:
       - name: Seed + composer + file-source + teacher tests
         run: |
           uv run pytest \
-            tests/test_curriculum_seed_smoke.py \
-            tests/test_curriculum_v2_data.py \
-            tests/test_composer.py \
-            tests/test_file_source.py \
-            tests/test_a1a2_teacher_integrity.py \
-            tests/test_curriculum_teacher_steps.py \
-            tests/test_teacher_agent_prompt.py \
-            tests/test_contract_validation_gate.py \
-            tests/test_curriculum_task_spec_validation.py \
-            tests/test_all_calendar_days_integrity.py -q
+            tests/unit/curriculum/ \
+            tests/integration/curriculum/test_curriculum_seed_smoke.py \
+            tests/unit/contracts/test_contract_validation_gate.py \
+            tests/unit/ai/test_teacher_prompt.py \
+            tests/unit/ai/test_teacher_validation.py \
+            tests/unit/ai/test_teacher_repair.py -q

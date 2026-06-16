@@ -11,7 +11,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import create_access_token, decode_token, hash_password, verify_password
+from app.core.security import (
+    create_access_token,
+    decode_token,
+    hash_password,
+    verify_password,
+)
 from app.email import get_default_email_client
 from app.email.exceptions import EmailError
 from app.email.templates import account_exists_email
@@ -181,10 +186,12 @@ def _build_user_out(
         email_verified=user.email_verified,
         roles=_role_names(user),
         role=_primary_role(user),
-        diagnosis_completed=bool(profile and profile.diagnosis_completed),
-        access_state=access.state.value if access else (
-            "verified" if user.email_verified else "unverified"
+        diagnosis_completed=bool(
+            profile and getattr(profile, "diagnosis_completed", False)
         ),
+        access_state=access.state.value
+        if access
+        else ("verified" if user.email_verified else "unverified"),
         subscription_status=access.subscription_status if access else None,
         plan_id=access.plan_id if access else None,
         trial_ends_at=access.trial_ends_at if access else None,
@@ -197,7 +204,9 @@ def _build_user_out(
         phone_number=getattr(profile, "phone_number", None) if profile else None,
         country=getattr(profile, "country", None) if profile else None,
         native_language=getattr(profile, "native_language", None) if profile else None,
-        primary_goals=_split_csv(getattr(profile, "primary_goals", "") if profile else ""),
+        primary_goals=_split_csv(
+            getattr(profile, "primary_goals", "") if profile else ""
+        ),
         personalisation_context=(
             getattr(profile, "personalisation_context", "") if profile else ""
         ),
@@ -215,7 +224,9 @@ def _build_user_out(
             daily_practice_reminder=(
                 getattr(profile, "daily_practice_reminder", True) if profile else True
             ),
-            streak_reminder=getattr(profile, "streak_reminder", True) if profile else True,
+            streak_reminder=getattr(profile, "streak_reminder", True)
+            if profile
+            else True,
             weekly_progress_email=(
                 getattr(profile, "weekly_progress_email", False) if profile else False
             ),
@@ -225,9 +236,11 @@ def _build_user_out(
         ),
     )
 
+
 # ---------------------------------------------------------------------------
 # Standard email / password routes
 # ---------------------------------------------------------------------------
+
 
 @router.post("/signup", response_model=SignupOut, status_code=status.HTTP_201_CREATED)
 def signup(payload: UserCreate, db: Session = Depends(get_db)) -> SignupOut:
@@ -255,16 +268,12 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)) -> SignupOut:
                         to=existing.email, subject=subject, html=html, text=text
                     )
                 except EmailError:
-                    logger.warning(
-                        "account-exists notice failed for an existing email"
-                    )
+                    logger.warning("account-exists notice failed for an existing email")
             else:
                 # Unverified re-signup: re-issue the code to the existing
                 # account; never create a duplicate user.
                 try:
-                    OtpService(db).issue(
-                        user=existing, purpose=OtpPurpose.REGISTRATION
-                    )
+                    OtpService(db).issue(user=existing, purpose=OtpPurpose.REGISTRATION)
                 except (
                     OtpCooldownActive,
                     OtpSendLimitExceeded,
@@ -307,8 +316,7 @@ def login(
         )
     except InvalidCredentials:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
         )
     except EmailNotVerified:
         # Structured contract the frontend branches on to route the user to
@@ -524,6 +532,7 @@ def password_reset_confirm(
     SessionService(db).revoke_all_for_user(user_id=user.id)
     return MessageOut(message="Password updated. Please log in.")
 
+
 @router.get("/me", response_model=UserOut)
 def me(
     current_user: User = Depends(get_current_user),
@@ -578,11 +587,14 @@ async def update_me(
 
     # Snapshot the personalization-relevant fields before mutation so we can
     # tell whether a refresh is needed.
-    before = {
-        field: getattr(profile, field, None) for field in _PERSONALIZATION_FIELDS
-    }
+    before = {field: getattr(profile, field, None) for field in _PERSONALIZATION_FIELDS}
 
-    for field in ("phone_number", "country", "native_language", "personalisation_context"):
+    for field in (
+        "phone_number",
+        "country",
+        "native_language",
+        "personalisation_context",
+    ):
         if field in updates:
             value = updates[field]
             setattr(profile, field, value.strip() if isinstance(value, str) else value)
@@ -707,7 +719,7 @@ def google_callback(
         )
 
     google_user = userinfo_response.json()
-    google_user_id: str = google_user["sub"]        # Google's unique user ID
+    google_user_id: str = google_user["sub"]  # Google's unique user ID
     email: str = google_user["email"]
     name: str = google_user.get("name", email.split("@")[0])
     frontend_base = settings.frontend_url
@@ -724,7 +736,9 @@ def google_callback(
             provider_user_id=google_user_id,
         )
         if existing_link is not None and existing_link.user_id != user.id:
-            redirect_url = f"{frontend_base}/callback?error=google_account_in_use&next=profile"
+            redirect_url = (
+                f"{frontend_base}/callback?error=google_account_in_use&next=profile"
+            )
             return RedirectResponse(url=redirect_url)
 
         existing_email_user = AuthService(db).users.get_by_email(email)

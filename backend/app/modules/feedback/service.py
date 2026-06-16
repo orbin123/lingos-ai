@@ -204,9 +204,7 @@ class FeedbackAnalyticsService:
         distribution = self.reviews.rating_distribution()
 
         prompts_shown, prompts_submitted = self.prompts.prompt_totals()
-        submission_rate = (
-            prompts_submitted / prompts_shown if prompts_shown else None
-        )
+        submission_rate = prompts_submitted / prompts_shown if prompts_shown else None
 
         improvements: list[str] = []
         bugs: list[str] = []
@@ -271,7 +269,9 @@ class FeedbackReactionService:
         if feedback_type is FeedbackType.ACTIVITY_FEEDBACK:
             query = (
                 self.db.query(ActivityFeedback.id)
-                .join(ActivityAttempt, ActivityAttempt.id == ActivityFeedback.attempt_id)
+                .join(
+                    ActivityAttempt, ActivityAttempt.id == ActivityFeedback.attempt_id
+                )
                 .join(DailySession, DailySession.id == ActivityAttempt.session_id)
                 .filter(
                     ActivityFeedback.id == feedback_id,
@@ -368,12 +368,59 @@ def _synthesize_title_body(payload: FeedbackSubmit) -> tuple[str | None, str]:
 # Words too common to be a useful "theme".
 _STOPWORDS = frozenset(
     {
-        "the", "and", "for", "you", "your", "are", "but", "not", "with", "this",
-        "that", "have", "has", "was", "were", "can", "could", "would", "should",
-        "more", "less", "very", "really", "just", "some", "any", "all", "from",
-        "they", "them", "what", "when", "which", "there", "their", "about",
-        "into", "than", "then", "also", "like", "want", "need", "make", "made",
-        "it's", "its", "app", "lingos", "please", "would", "thing", "things",
+        "the",
+        "and",
+        "for",
+        "you",
+        "your",
+        "are",
+        "but",
+        "not",
+        "with",
+        "this",
+        "that",
+        "have",
+        "has",
+        "was",
+        "were",
+        "can",
+        "could",
+        "would",
+        "should",
+        "more",
+        "less",
+        "very",
+        "really",
+        "just",
+        "some",
+        "any",
+        "all",
+        "from",
+        "they",
+        "them",
+        "what",
+        "when",
+        "which",
+        "there",
+        "their",
+        "about",
+        "into",
+        "than",
+        "then",
+        "also",
+        "like",
+        "want",
+        "need",
+        "make",
+        "made",
+        "it's",
+        "its",
+        "app",
+        "lingos",
+        "please",
+        "would",
+        "thing",
+        "things",
     }
 )
 

@@ -55,7 +55,9 @@ class ChallengeAttemptRepository:
             .options(selectinload(ChallengeAttempt.level))
         ).scalar_one_or_none()
 
-    def best_scores_by_level(self, *, user_id: int, level_ids: list[int]) -> dict[int, float]:
+    def best_scores_by_level(
+        self, *, user_id: int, level_ids: list[int]
+    ) -> dict[int, float]:
         if not level_ids:
             return {}
         rows = self.db.execute(
@@ -163,13 +165,18 @@ class ChallengeAttemptRepository:
         return list(
             self.db.execute(
                 select(ChallengeAttempt)
-                .join(ChallengeLevel, ChallengeLevel.id == ChallengeAttempt.challenge_level_id)
+                .join(
+                    ChallengeLevel,
+                    ChallengeLevel.id == ChallengeAttempt.challenge_level_id,
+                )
                 .where(
                     ChallengeAttempt.user_id == user_id,
                     ChallengeLevel.challenge_id == challenge_id,
                 )
                 .options(selectinload(ChallengeAttempt.level))
-                .order_by(ChallengeAttempt.created_at.desc(), ChallengeAttempt.id.desc())
+                .order_by(
+                    ChallengeAttempt.created_at.desc(), ChallengeAttempt.id.desc()
+                )
             ).scalars()
         )
 
@@ -183,14 +190,19 @@ class ChallengeAttemptRepository:
         return list(
             self.db.execute(
                 select(ChallengeAttempt)
-                .join(ChallengeLevel, ChallengeLevel.id == ChallengeAttempt.challenge_level_id)
+                .join(
+                    ChallengeLevel,
+                    ChallengeLevel.id == ChallengeAttempt.challenge_level_id,
+                )
                 .where(
                     ChallengeAttempt.user_id == user_id,
                     ChallengeLevel.challenge_id == challenge_id,
                     ChallengeAttempt.status == ChallengeAttemptStatus.COMPLETED,
                 )
                 .options(selectinload(ChallengeAttempt.level))
-                .order_by(ChallengeAttempt.completed_at.desc(), ChallengeAttempt.id.desc())
+                .order_by(
+                    ChallengeAttempt.completed_at.desc(), ChallengeAttempt.id.desc()
+                )
                 .limit(limit)
             ).scalars()
         )

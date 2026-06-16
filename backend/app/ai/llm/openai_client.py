@@ -29,7 +29,7 @@ import openai
 import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, SecretStr, ValidationError
 
 from app.ai.llm.exceptions import (
     LLMAuthError,
@@ -55,7 +55,7 @@ T = TypeVar("T", bound=BaseModel)
 _DEFAULT_MODEL = "gpt-4o-mini"
 _DEFAULT_TEMPERATURE = 0.7
 _DEFAULT_TIMEOUT_S = 30.0
-_MAX_RETRIES = 3   # ChatOpenAI's built-in retry handles transient errors
+_MAX_RETRIES = 3  # ChatOpenAI's built-in retry handles transient errors
 
 
 class OpenAILLMClient:
@@ -87,7 +87,7 @@ class OpenAILLMClient:
             temperature=temperature,
             timeout=timeout,
             max_retries=max_retries,
-            api_key=settings.OPENAI_API_KEY,
+            api_key=SecretStr(settings.OPENAI_API_KEY),
         )
 
     @property
@@ -201,7 +201,9 @@ class OpenAILLMClient:
 
         # A schema mismatch is surfaced here (not raised by ainvoke) when
         # include_raw=True. Treat it the same as the ValidationError path.
-        parsing_error = result.get("parsing_error") if isinstance(result, dict) else None
+        parsing_error = (
+            result.get("parsing_error") if isinstance(result, dict) else None
+        )
         if parsing_error is not None:
             log.warning(
                 "llm_structured_validation_failed",
@@ -244,9 +246,7 @@ class OpenAILLMClient:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _maybe_rebind_temperature(
-        self, temperature: float | None
-    ) -> ChatOpenAI:
+    def _maybe_rebind_temperature(self, temperature: float | None) -> ChatOpenAI:
         """Return a ChatOpenAI with a temperature override, or the
         default instance if no override is given.
 
@@ -259,7 +259,7 @@ class OpenAILLMClient:
         return ChatOpenAI(
             model=self._model,
             temperature=temperature,
-            api_key=settings.OPENAI_API_KEY,
+            api_key=SecretStr(settings.OPENAI_API_KEY),
             max_retries=_MAX_RETRIES,
             timeout=_DEFAULT_TIMEOUT_S,
         )

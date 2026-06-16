@@ -8,7 +8,16 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status, UploadFile, File, Form
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Response,
+    status,
+    UploadFile,
+    File,
+    Form,
+)
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -29,7 +38,11 @@ from app.modules.curriculum.file_source import (
     get_day_by_id as file_get_day_by_id,
     resolve_archetypes as file_resolve_archetypes,
 )
-from app.modules.curriculum.models import CurriculumDay, EnrollmentStatus, UserEnrollment
+from app.modules.curriculum.models import (
+    CurriculumDay,
+    EnrollmentStatus,
+    UserEnrollment,
+)
 from app.modules.curriculum.repository import (
     CurriculumDayRepository,
     CurriculumWeekRepository,
@@ -77,6 +90,7 @@ from app.scoring import CourseLength, get_archetype
 def _get_user_interests(db: Session, user_id: int) -> list[str] | None:
     """Return the learner's free-text interests as a single-item list, or None."""
     from app.modules.auth.repository import UserProfileRepository
+
     profile = UserProfileRepository(db).get_by_user_id(user_id)
     if profile is None or not profile.interests:
         return None
@@ -120,14 +134,16 @@ def _make_session_service(db: Session) -> SessionService:
     try:
         embedding_gen, mentor_gen = build_rag_services()
         service._rag_service = FeedbackRAGService(
-            db, embedding_generator=embedding_gen,
+            db,
+            embedding_generator=embedding_gen,
         )
         service._mentor_generator = mentor_gen
     except Exception:
         # RAG is optional — if Pinecone/OpenAI embeddings aren't configured,
         # the service runs without mentor notes.
         logging.getLogger(__name__).warning(
-            "RAG services unavailable — mentor notes disabled", exc_info=True,
+            "RAG services unavailable — mentor notes disabled",
+            exc_info=True,
         )
 
     return service
@@ -383,7 +399,8 @@ def _resolve_day_from_preference(
             f"week={pref.current_week}"
         )
     day = CurriculumDayRepository(db).get_for_week(
-        week_pk=week.id, day_number=pref.current_day_in_week,
+        week_pk=week.id,
+        day_number=pref.current_day_in_week,
     )
     if day is None:
         raise DayNotFound(
@@ -419,7 +436,9 @@ def today_plan(
         day_id = day.day_id
         allowed = _allowed_for_pref(pref)
         display = _dashboard_display_fields(day=day, course_length=pref.course_length)
-        existing = _load_existing_today_session(db, user_id=current_user.id, day_id=day_id)
+        existing = _load_existing_today_session(
+            db, user_id=current_user.id, day_id=day_id
+        )
         if _abandon_stale_file_session_if_unstarted(
             db,
             existing,
@@ -480,12 +499,14 @@ def advance_day(
 async def start_or_continue_today(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> DashboardStartResponse:
+) -> DashboardTodayPlanResponse | DashboardStartResponse:
     try:
         day, pref = _resolve_day_from_preference(db, current_user.id)
         day_id = day.day_id
         display = _dashboard_display_fields(day=day, course_length=pref.course_length)
-        existing = _load_existing_today_session(db, user_id=current_user.id, day_id=day_id)
+        existing = _load_existing_today_session(
+            db, user_id=current_user.id, day_id=day_id
+        )
         if existing is not None:
             mode = (
                 "continue"
@@ -603,7 +624,8 @@ async def start_today_session(
             ),
         )
     day = CurriculumDayRepository(db).get_for_week(
-        week_pk=week.id, day_number=pref.current_day_in_week,
+        week_pk=week.id,
+        day_number=pref.current_day_in_week,
     )
     if day is None:
         raise HTTPException(
@@ -619,7 +641,8 @@ async def start_today_session(
     # Resume an existing session for today if one exists. Abandoned sessions
     # are skipped so the user can start a fresh attempt.
     existing = service.sessions_repo.get_latest_for_day(
-        user_id=current_user.id, day_id=day.day_id,
+        user_id=current_user.id,
+        day_id=day.day_id,
     )
     if existing is not None and existing.status.value != "abandoned":
         # Re-fetch with attempts eagerly loaded for serialization.
@@ -773,7 +796,8 @@ async def complete_session(
         )
         logger.info(
             "session %s completed: %s",
-            session_id, {"applied": report.applied, "reason": report.reason},
+            session_id,
+            {"applied": report.applied, "reason": report.reason},
         )
         # Generate + persist the Coach's Note before responding so the scorecard
         # is returned with mentor_note populated (no client re-fetch needed).
@@ -815,7 +839,9 @@ def get_scorecard(
 ) -> SessionScorecardRead | None:
     try:
         service = _make_session_service(db)
-        scorecard = service.get_scorecard(session_id=session_id, user_id=current_user.id)
+        scorecard = service.get_scorecard(
+            session_id=session_id, user_id=current_user.id
+        )
         if scorecard is None:
             raise HTTPException(
                 status_code=404,

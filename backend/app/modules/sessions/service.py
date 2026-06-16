@@ -208,7 +208,10 @@ class SessionService:
         if day is None:
             raise DayNotFound(f"day_id={day_id!r} not found in curriculum_days")
 
-        if self.sessions_repo.get_in_progress(user_id=user_id, day_id=day_id) is not None:
+        if (
+            self.sessions_repo.get_in_progress(user_id=user_id, day_id=day_id)
+            is not None
+        ):
             raise SessionAlreadyOpen(
                 f"user {user_id} already has an in-progress session for day {day_id!r}"
             )
@@ -279,7 +282,8 @@ class SessionService:
                     "task_spec": task_spec or None,
                 }
                 for sequence, (_orig_index, spec, task_spec) in enumerate(
-                    source_plan, start=1,
+                    source_plan,
+                    start=1,
                 )
             ]
         else:
@@ -412,7 +416,9 @@ class SessionService:
             generator=type(self.task_generator).__name__,
         )
         repaired = await self._regenerate_task_content(
-            attempt=attempt, archetype=spec, prior=content,
+            attempt=attempt,
+            archetype=spec,
+            prior=content,
         )
         attempt.task_content = repaired
         self.db.commit()
@@ -439,9 +445,8 @@ class SessionService:
             or archetype.name
         )
         explanation_brief = (
-            (source_context[0].explanation_brief if source_context else "")
-            or str(prior.get("explanation_brief") or "").strip()
-        )
+            source_context[0].explanation_brief if source_context else ""
+        ) or str(prior.get("explanation_brief") or "").strip()
         cefr_level = (
             (source_context[0].cefr_level if source_context else "")
             or str(prior.get("cefr_level") or "A1").strip()
@@ -492,7 +497,8 @@ class SessionService:
 
     @staticmethod
     def _file_repair_context_for_attempt(
-        attempt: ActivityAttempt, archetype: ArchetypeSpec,
+        attempt: ActivityAttempt,
+        archetype: ArchetypeSpec,
     ) -> tuple[Any, dict] | None:
         """Return file-authored day/spec context for stale persisted attempts."""
         try:
@@ -758,7 +764,10 @@ class SessionService:
                 }
                 scores_changed = False
                 for att in current_attempts:
-                    if att.status is not AttemptStatus.EVALUATED or att.evaluation is None:
+                    if (
+                        att.status is not AttemptStatus.EVALUATED
+                        or att.evaluation is None
+                    ):
                         continue
                     current_raw = float(att.evaluation.raw_score)
                     stored_raw = stored_scores.get(att.id)
@@ -768,7 +777,9 @@ class SessionService:
 
                 if not scores_changed:
                     return existing, ApplyReport(
-                        applied=False, rows_written=0, rows_skipped=0,
+                        applied=False,
+                        rows_written=0,
+                        rows_skipped=0,
                         reason="session already completed",
                     )
 
@@ -791,9 +802,7 @@ class SessionService:
         # awarded for this session. Treat that as already-applied so a
         # re-completion rebuilds the scorecard with the new scores WITHOUT
         # awarding a second batch of points.
-        if not old_points_applied and self.points_log_repo.has_for_session(
-            session.id
-        ):
+        if not old_points_applied and self.points_log_repo.has_for_session(session.id):
             old_points_applied = True
 
         # Build ActivityScore list from every EVALUATED attempt.
@@ -806,24 +815,29 @@ class SessionService:
             if attempt.evaluation is None:
                 continue
             spec = get_archetype(attempt.archetype_id)
-            scored.append(ActivityScore(
-                archetype_id=attempt.archetype_id,
-                raw_score=float(attempt.evaluation.raw_score),
-                weight_map=dict(spec.weight_map),
-            ))
+            scored.append(
+                ActivityScore(
+                    archetype_id=attempt.archetype_id,
+                    raw_score=float(attempt.evaluation.raw_score),
+                    weight_map=dict(spec.weight_map),
+                )
+            )
             raw = float(attempt.evaluation.raw_score)
-            activities_breakdown.append({
-                "attempt_id": attempt.id,
-                "sequence": attempt.sequence,
-                "archetype_id": attempt.archetype_id,
-                "archetype_label": spec.name,
-                "raw_score": raw,
-                "tier": tier_for_score(raw).value,
-                "base_reward": int(attempt.evaluation.base_reward),
-                "weighted_points": {
-                    k: float(v) for k, v in dict(attempt.evaluation.weighted_points).items()
-                },
-            })
+            activities_breakdown.append(
+                {
+                    "attempt_id": attempt.id,
+                    "sequence": attempt.sequence,
+                    "archetype_id": attempt.archetype_id,
+                    "archetype_label": spec.name,
+                    "raw_score": raw,
+                    "tier": tier_for_score(raw).value,
+                    "base_reward": int(attempt.evaluation.base_reward),
+                    "weighted_points": {
+                        k: float(v)
+                        for k, v in dict(attempt.evaluation.weighted_points).items()
+                    },
+                }
+            )
 
         current_totals = self._current_points_for(session.user_id)
         course_length = CourseLength(session.course_length)
@@ -850,12 +864,16 @@ class SessionService:
         # to avoid double-counting points in SkillPoints.
         if old_points_applied:
             report = ApplyReport(
-                applied=False, rows_written=0, rows_skipped=0,
+                applied=False,
+                rows_written=0,
+                rows_skipped=0,
                 reason="rebuilt scorecard — points already applied from first completion",
             )
             scorecard.points_applied = True  # preserve applied status
         else:
-            report = apply_session_scorecard(self.db, session=session, scorecard=scorecard)
+            report = apply_session_scorecard(
+                self.db, session=session, scorecard=scorecard
+            )
             scorecard.points_applied = report.applied
 
         # The Coach's Note is NOT generated here. Completion stays fast and the
@@ -971,8 +989,7 @@ class SessionService:
                 day_id=session.day_id,
                 activities_summary=activities_breakdown,
                 points_earned={
-                    k: int(v)
-                    for k, v in dict(scorecard.points_earned or {}).items()
+                    k: int(v) for k, v in dict(scorecard.points_earned or {}).items()
                 },
                 mentor_note=mentor_note,
             )
@@ -1102,7 +1119,9 @@ class SessionService:
 
     # ── read ───────────────────────────────────────────────────────
 
-    def get_scorecard(self, *, session_id: str, user_id: int) -> SessionScorecard | None:
+    def get_scorecard(
+        self, *, session_id: str, user_id: int
+    ) -> SessionScorecard | None:
         session = self._load_owned(session_id=session_id, user_id=user_id)
         return self.scorecards_repo.get_for_session(session.id)
 
@@ -1404,9 +1423,7 @@ class SessionService:
             "mandatory": bool(spec.get("mandatory", is_mandatory)),
         }
         contract = {
-            key: value
-            for key, value in contract.items()
-            if value not in (None, "", {})
+            key: value for key, value in contract.items() if value not in (None, "", {})
         }
         content["activity_contract"] = contract
         content.setdefault("task_widget", contract["task_widget"])

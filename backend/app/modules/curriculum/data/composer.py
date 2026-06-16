@@ -116,8 +116,7 @@ def _get_band_week(band: LevelBand, source_week: int) -> WeekSource:
         if week.week_number == source_week:
             return week
     raise ValueError(
-        f"source_week={source_week} not found in band {band} "
-        f"(has {len(weeks)} weeks)"
+        f"source_week={source_week} not found in band {band} (has {len(weeks)} weeks)"
     )
 
 

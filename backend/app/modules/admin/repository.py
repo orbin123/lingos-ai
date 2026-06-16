@@ -249,7 +249,9 @@ class AdminRepository:
             return None
 
         base = _user_list_item(user)
-        profile = self.db.query(UserProfile).filter(UserProfile.user_id == user.id).first()
+        profile = (
+            self.db.query(UserProfile).filter(UserProfile.user_id == user.id).first()
+        )
         return AdminUserDetail(
             **base.model_dump(),
             profile=self._profile_out(profile),
@@ -268,9 +270,7 @@ class AdminRepository:
 
         # Completed (evaluated) activity counts, grouped by learner.
         count_rows = (
-            self.db.query(
-                DailySession.user_id, func.count(ActivityAttempt.id)
-            )
+            self.db.query(DailySession.user_id, func.count(ActivityAttempt.id))
             .join(ActivityAttempt, ActivityAttempt.session_id == DailySession.id)
             .filter(ActivityAttempt.status == AttemptStatus.EVALUATED)
             .group_by(DailySession.user_id)
@@ -296,17 +296,14 @@ class AdminRepository:
             )
 
         purchases = {
-            purchase.user_id: purchase
-            for purchase in self.db.query(Purchase).all()
+            purchase.user_id: purchase for purchase in self.db.query(Purchase).all()
         }
 
         items: list[UserProgressItem] = []
         for user in users:
             skills = skills_by_user.get(user.id, [])
             dashboard_score = (
-                round(sum(s.score for s in skills) / len(skills), 1)
-                if skills
-                else None
+                round(sum(s.score for s in skills) / len(skills), 1) if skills else None
             )
             purchase = purchases.get(user.id)
             items.append(
@@ -316,9 +313,7 @@ class AdminRepository:
                     email=user.email,
                     plan_id=purchase.plan_id if purchase else None,
                     plan_name=purchase.plan_name if purchase else None,
-                    purchase_complete=bool(
-                        purchase and purchase.status == "paid"
-                    ),
+                    purchase_complete=bool(purchase and purchase.status == "paid"),
                     access_expires_at=(
                         purchase.access_expires_at if purchase else None
                     ),
@@ -337,7 +332,11 @@ class AdminRepository:
     def list_roles(self) -> list[AdminRoleRead]:
         rows = (
             self.db.query(Role)
-            .options(selectinload(Role.permission_links).joinedload(RolePermission.permission))
+            .options(
+                selectinload(Role.permission_links).joinedload(
+                    RolePermission.permission
+                )
+            )
             .order_by(Role.name.asc())
             .all()
         )
@@ -379,7 +378,11 @@ class AdminRepository:
     def get_role(self, role_id: int) -> Role | None:
         return (
             self.db.query(Role)
-            .options(selectinload(Role.permission_links).joinedload(RolePermission.permission))
+            .options(
+                selectinload(Role.permission_links).joinedload(
+                    RolePermission.permission
+                )
+            )
             .filter(Role.id == role_id)
             .first()
         )
@@ -427,7 +430,9 @@ class AdminRepository:
             .limit(limit)
             .all()
         )
-        return [self._ai_log_out(row, include_sensitive=include_sensitive) for row in rows]
+        return [
+            self._ai_log_out(row, include_sensitive=include_sensitive) for row in rows
+        ]
 
     def get_ai_log(
         self,
@@ -652,9 +657,7 @@ class AdminRepository:
             else:
                 item_status = effective.value
             plan = (
-                PLAN_CATALOG.get(subscription.plan_id)
-                if subscription.plan_id
-                else None
+                PLAN_CATALOG.get(subscription.plan_id) if subscription.plan_id else None
             )
             subscribers.append(
                 SubscriberItem(
@@ -711,11 +714,7 @@ class AdminRepository:
         return SubscribersOverview(subscribers=subscribers, trials=trials)
 
     def get_purchase_for_user(self, user_id: int) -> Purchase | None:
-        return (
-            self.db.query(Purchase)
-            .filter(Purchase.user_id == user_id)
-            .first()
-        )
+        return self.db.query(Purchase).filter(Purchase.user_id == user_id).first()
 
     # ── Feedback analytics (learner reactions) ───────────────────────
 
@@ -751,10 +750,10 @@ class AdminRepository:
 
         if want_activity:
             activity_query = (
-                self.db.query(
-                    ActivityFeedback, ActivityAttempt, User, FeedbackReaction
+                self.db.query(ActivityFeedback, ActivityAttempt, User, FeedbackReaction)
+                .join(
+                    ActivityAttempt, ActivityAttempt.id == ActivityFeedback.attempt_id
                 )
-                .join(ActivityAttempt, ActivityAttempt.id == ActivityFeedback.attempt_id)
                 .join(DailySession, DailySession.id == ActivityAttempt.session_id)
                 .join(User, User.id == DailySession.user_id)
                 .outerjoin(
@@ -891,7 +890,9 @@ class AdminRepository:
         return UserBillingRead(
             user=AdminLogUser(id=user.id, name=user.name, email=user.email),
             subscription=(
-                self._subscription_out(subscription) if subscription is not None else None
+                self._subscription_out(subscription)
+                if subscription is not None
+                else None
             ),
             payments=[self._payment_out(payment) for payment in payments],
         )
@@ -1028,16 +1029,12 @@ class AdminRepository:
             for row, skill in points_rows
         ]
 
-    def _recent_tasks(
-        self, user_id: int, *, limit: int = 10
-    ) -> list[AdminRecentTask]:
+    def _recent_tasks(self, user_id: int, *, limit: int = 10) -> list[AdminRecentTask]:
         rows = (
             self.db.query(ActivityAttempt)
             .join(DailySession, DailySession.id == ActivityAttempt.session_id)
             .filter(DailySession.user_id == user_id)
-            .order_by(
-                ActivityAttempt.created_at.desc(), ActivityAttempt.id.desc()
-            )
+            .order_by(ActivityAttempt.created_at.desc(), ActivityAttempt.id.desc())
             .limit(limit)
             .all()
         )
@@ -1065,9 +1062,7 @@ class AdminRepository:
             )
             .join(DailySession, DailySession.id == ActivityAttempt.session_id)
             .filter(DailySession.user_id == user_id)
-            .order_by(
-                ActivityFeedback.created_at.desc(), ActivityFeedback.id.desc()
-            )
+            .order_by(ActivityFeedback.created_at.desc(), ActivityFeedback.id.desc())
             .limit(limit)
             .all()
         )

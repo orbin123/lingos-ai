@@ -98,9 +98,7 @@ class DiagnosisService:
         # 1. Load + guard profile
         profile = self.profiles.get_by_user_id(user_id)
         if profile is None:
-            raise DiagnosisInvalidPayload(
-                f"No profile found for user {user_id}"
-            )
+            raise DiagnosisInvalidPayload(f"No profile found for user {user_id}")
         if profile.diagnosis_completed:
             raise DiagnosisAlreadyCompleted(
                 f"User {user_id} has already completed diagnosis"

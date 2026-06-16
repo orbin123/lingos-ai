@@ -20,7 +20,7 @@ generic.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ValidationError
 
@@ -157,8 +157,7 @@ def _base_task_fields(
         or _str(content.get("instruction")),
         "sub_skill": _str(content.get("sub_skill")) or _default_sub_skill(contract),
         "estimated_minutes": _int(
-            content.get("estimated_minutes")
-            or content.get("estimated_time_minutes"),
+            content.get("estimated_minutes") or content.get("estimated_time_minutes"),
             default=3,
         ),
         "grammar_rule": _str(content.get("grammar_rule"))
@@ -231,13 +230,9 @@ def _tfng_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _error_spotting_body(
-    archetype_id: str, content: dict[str, Any]
-) -> dict[str, Any]:
+def _error_spotting_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]:
     raw_sentences = content.get("passage_sentences") or content.get("sentences")
-    sentences = _build_items(
-        archetype_id, raw_sentences, _error_spotting_sentence
-    )
+    sentences = _build_items(archetype_id, raw_sentences, _error_spotting_sentence)
     return {
         "passage_title": _str(content.get("passage_title")),
         "sentences": sentences,
@@ -388,9 +383,7 @@ def _error_correction_body(
     return {"items": items}
 
 
-def _read_structure_body(
-    archetype_id: str, content: dict[str, Any]
-) -> dict[str, Any]:
+def _read_structure_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]:
     items = _build_items(
         archetype_id,
         content.get("items"),
@@ -425,7 +418,9 @@ def _speaking_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]
             role = _str(raw.get("role"))
             text = _str(raw.get("text"))
             speaker_raw = _str(raw.get("speaker")).lower()
-            speaker = "learner" if speaker_raw == "learner" else "partner"
+            speaker: Literal["partner", "learner", "ai"] = (
+                "learner" if speaker_raw == "learner" else "partner"
+            )
             if role and text:
                 turns.append(DialogueTurn(role=role, text=text, speaker=speaker))
         dialogue_turns = tuple(turns)
@@ -456,20 +451,20 @@ def _speaking_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]
             or content.get("passage")
             or content.get("primary_text")
         ):
-            prompts = (
-                _str(content.get("instructions")) or "Read the passage aloud.",
-            )
+            prompts = (_str(content.get("instructions")) or "Read the passage aloud.",)
     if not prompts and dialogue_turns:
         prompts = (_str(content.get("instructions")) or "Respond in the dialogue.",)
-    _required_prompt_archetypes = frozenset({
-        "SPEAK_TIMED",
-        "SPEAK_PIC_DESC",
-        "SPEAK_OPINION",
-        "SPEAK_PRESENT",
-        "SPEAK_SMALLTALK",
-        "SPEAK_ROLEPLAY",
-        "SPEAK_DEBATE",
-    })
+    _required_prompt_archetypes = frozenset(
+        {
+            "SPEAK_TIMED",
+            "SPEAK_PIC_DESC",
+            "SPEAK_OPINION",
+            "SPEAK_PRESENT",
+            "SPEAK_SMALLTALK",
+            "SPEAK_ROLEPLAY",
+            "SPEAK_DEBATE",
+        }
+    )
     if archetype_id in _required_prompt_archetypes and not prompts:
         raise ContractValidationError(
             archetype_id,

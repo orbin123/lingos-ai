@@ -51,6 +51,7 @@ _INNER_WIDGET_ALIASES = {
     "speakandrecord": "speak_and_record",
 }
 
+
 @dataclass(frozen=True)
 class GeneratedTask:
     """Wrapper that distinguishes the rendered content from optional notes.
@@ -109,9 +110,8 @@ class StubTaskGenerator:
             "core_activity": archetype.core_activity,
             "topic": spec_dict.get("topic_override") or day_topic,
             "explanation_brief": explanation_brief,
-            "instructions": spec_dict.get("instructions_override") or (
-                f"Practice {archetype.name.lower()} on the topic '{day_topic}'."
-            ),
+            "instructions": spec_dict.get("instructions_override")
+            or (f"Practice {archetype.name.lower()} on the topic '{day_topic}'."),
             "primary_text": spec_dict.get("primary_text_seed", ""),
             "target_words": list(spec_dict.get("target_words", [])),
             "cefr_level": cefr_level,
@@ -149,192 +149,229 @@ class StubTaskGenerator:
                     "passage",
                     "Maria ___ up at seven. She always ___ coffee first.",
                 )
-                content.setdefault("items", [
-                    {
-                        "item_id": "b1",
-                        "blank_id": "b1",
-                        "sentence_with_blank": "Maria ___ up at seven.",
-                        "base_verb": "wake",
-                        "correct_answer": "wakes",
-                        "options": ["wakes", "wake", "waking"],
-                        "explanation": "Third person singular adds -s: she wakes.",
-                    },
-                    {
-                        "item_id": "b2",
-                        "blank_id": "b2",
-                        "sentence_with_blank": "She always ___ coffee first.",
-                        "base_verb": "drink",
-                        "correct_answer": "drinks",
-                        "options": ["drinks", "drink", "drinking"],
-                        "explanation": "Third person singular adds -s: she drinks.",
-                    },
-                ])
+                content.setdefault(
+                    "items",
+                    [
+                        {
+                            "item_id": "b1",
+                            "blank_id": "b1",
+                            "sentence_with_blank": "Maria ___ up at seven.",
+                            "base_verb": "wake",
+                            "correct_answer": "wakes",
+                            "options": ["wakes", "wake", "waking"],
+                            "explanation": "Third person singular adds -s: she wakes.",
+                        },
+                        {
+                            "item_id": "b2",
+                            "blank_id": "b2",
+                            "sentence_with_blank": "She always ___ coffee first.",
+                            "base_verb": "drink",
+                            "correct_answer": "drinks",
+                            "options": ["drinks", "drink", "drinking"],
+                            "explanation": "Third person singular adds -s: she drinks.",
+                        },
+                    ],
+                )
             elif archetype.archetype_id == "LISTEN_DICTATION":
                 content.setdefault("inner_widget", "open_text")
-                content.setdefault("items", [
-                    {
-                        "item_id": "d1",
-                        "prompt": "Type sentence 1.",
-                        "correct_answer": "Maria wakes up at seven every morning.",
-                        "explanation": "Listen for the full sentence.",
-                    },
-                    {
-                        "item_id": "d2",
-                        "prompt": "Type sentence 2.",
-                        "correct_answer": "She always drinks coffee first.",
-                        "explanation": "Listen for the full sentence.",
-                    },
-                    {
-                        "item_id": "d3",
-                        "prompt": "Type sentence 3.",
-                        "correct_answer": "Then she usually reads the news for ten minutes.",
-                        "explanation": "Listen for the full sentence.",
-                    },
-                ])
+                content.setdefault(
+                    "items",
+                    [
+                        {
+                            "item_id": "d1",
+                            "prompt": "Type sentence 1.",
+                            "correct_answer": "Maria wakes up at seven every morning.",
+                            "explanation": "Listen for the full sentence.",
+                        },
+                        {
+                            "item_id": "d2",
+                            "prompt": "Type sentence 2.",
+                            "correct_answer": "She always drinks coffee first.",
+                            "explanation": "Listen for the full sentence.",
+                        },
+                        {
+                            "item_id": "d3",
+                            "prompt": "Type sentence 3.",
+                            "correct_answer": "Then she usually reads the news for ten minutes.",
+                            "explanation": "Listen for the full sentence.",
+                        },
+                    ],
+                )
             else:
                 content.setdefault("inner_widget", "mcq")
-                content.setdefault("items", [
-                    {
-                        "item_id": "q1",
-                        "prompt": "What time does Maria wake up?",
-                        "options": ["Six o'clock", "Seven o'clock", "Eight o'clock", "Nine o'clock"],
-                        "correct_index": 1,
-                        "explanation": "The script says she wakes up at seven every morning.",
-                    },
-                    {
-                        "item_id": "q2",
-                        "prompt": "What does Maria always do first?",
-                        "options": ["Eat breakfast", "Read the news", "Drink coffee", "Walk to work"],
-                        "correct_index": 2,
-                        "explanation": "She always drinks coffee first.",
-                    },
-                    {
-                        "item_id": "q3",
-                        "prompt": "How long does Maria usually read the news?",
-                        "options": ["Five minutes", "Ten minutes", "Fifteen minutes", "Twenty minutes"],
-                        "correct_index": 1,
-                        "explanation": "She reads for ten minutes.",
-                    },
-                    {
-                        "item_id": "q4",
-                        "prompt": "When do Maria and her husband sometimes walk to work?",
-                        "options": [
-                            "Every day",
-                            "When it is cold",
-                            "When the weather is nice",
-                            "On weekends only",
-                        ],
-                        "correct_index": 2,
-                        "explanation": "They walk together when the weather is nice.",
-                    },
-                ])
+                content.setdefault(
+                    "items",
+                    [
+                        {
+                            "item_id": "q1",
+                            "prompt": "What time does Maria wake up?",
+                            "options": [
+                                "Six o'clock",
+                                "Seven o'clock",
+                                "Eight o'clock",
+                                "Nine o'clock",
+                            ],
+                            "correct_index": 1,
+                            "explanation": "The script says she wakes up at seven every morning.",
+                        },
+                        {
+                            "item_id": "q2",
+                            "prompt": "What does Maria always do first?",
+                            "options": [
+                                "Eat breakfast",
+                                "Read the news",
+                                "Drink coffee",
+                                "Walk to work",
+                            ],
+                            "correct_index": 2,
+                            "explanation": "She always drinks coffee first.",
+                        },
+                        {
+                            "item_id": "q3",
+                            "prompt": "How long does Maria usually read the news?",
+                            "options": [
+                                "Five minutes",
+                                "Ten minutes",
+                                "Fifteen minutes",
+                                "Twenty minutes",
+                            ],
+                            "correct_index": 1,
+                            "explanation": "She reads for ten minutes.",
+                        },
+                        {
+                            "item_id": "q4",
+                            "prompt": "When do Maria and her husband sometimes walk to work?",
+                            "options": [
+                                "Every day",
+                                "When it is cold",
+                                "When the weather is nice",
+                                "On weekends only",
+                            ],
+                            "correct_index": 2,
+                            "explanation": "They walk together when the weather is nice.",
+                        },
+                    ],
+                )
             if archetype.archetype_id == "LISTEN_DICTATION":
                 content = normalize_dictation_payload(content)
             else:
                 content = normalize_listen_and_respond_payload(content)
         if archetype.archetype_id == "SPEAK_READ_ALOUD":
-            content = normalize_read_aloud_payload({
-                **content,
-                "text_to_read_aloud": (
-                    "Last Saturday, Maria visited her grandparents in the countryside. "
-                    "They played cards and talked about school. She ate homemade soup, "
-                    "watched an old film, and laughed with her cousins. Maria enjoyed "
-                    "the quiet evening and went home feeling happy. She told her parents "
-                    "about the trip before she fell asleep."
-                ),
-                "grammar_rule_to_practice": (
-                    "Use the simple past tense to describe completed actions. "
-                    "Regular verbs typically end in -ed; irregular verbs change form."
-                ),
-                "target_words": [
-                    "visited", "played", "talked", "ate", "watched",
-                    "laughed", "enjoyed", "went", "told",
-                ],
-                "task_intro": "Read the passage above out loud.",
-                "instructions": "Read the connected passage aloud clearly.",
-                "speaking_duration_seconds": 45,
-            })
+            content = normalize_read_aloud_payload(
+                {
+                    **content,
+                    "text_to_read_aloud": (
+                        "Last Saturday, Maria visited her grandparents in the countryside. "
+                        "They played cards and talked about school. She ate homemade soup, "
+                        "watched an old film, and laughed with her cousins. Maria enjoyed "
+                        "the quiet evening and went home feeling happy. She told her parents "
+                        "about the trip before she fell asleep."
+                    ),
+                    "grammar_rule_to_practice": (
+                        "Use the simple past tense to describe completed actions. "
+                        "Regular verbs typically end in -ed; irregular verbs change form."
+                    ),
+                    "target_words": [
+                        "visited",
+                        "played",
+                        "talked",
+                        "ate",
+                        "watched",
+                        "laughed",
+                        "enjoyed",
+                        "went",
+                        "told",
+                    ],
+                    "task_intro": "Read the passage above out loud.",
+                    "instructions": "Read the connected passage aloud clearly.",
+                    "speaking_duration_seconds": 45,
+                }
+            )
         if archetype.archetype_id == "SPEAK_INTERVIEW":
-            content = normalize_interview_speaking_payload({
-                **content,
-                "interview_context": (
-                    "A friendly stranger asks you a few simple questions. "
-                    "Answer each one aloud in a short, full sentence."
-                ),
-                "grammar_rule_to_practice": (
-                    "Use simple present tense to talk about yourself "
-                    "(I am, I work, I like)."
-                ),
-                "target_words": ["My name is", "I'm a", "I like"],
-                "questions": [
-                    {
-                        "item_id": "q1",
-                        "interviewer_prompt": "What is your name?",
-                        "sample_answer": "My name is Sam.",
-                        "answer_hint": "Start with 'My name is'.",
-                    },
-                    {
-                        "item_id": "q2",
-                        "interviewer_prompt": "What do you do?",
-                        "sample_answer": "I'm a teacher.",
-                        "answer_hint": "Start with 'I'm a'.",
-                    },
-                    {
-                        "item_id": "q3",
-                        "interviewer_prompt": "What is a hobby you like?",
-                        "sample_answer": "I like reading books.",
-                        "answer_hint": "Start with 'I like'.",
-                    },
-                ],
-                "task_intro": "Answer the interview questions out loud.",
-                "speaking_duration_seconds": 30,
-            })
+            content = normalize_interview_speaking_payload(
+                {
+                    **content,
+                    "interview_context": (
+                        "A friendly stranger asks you a few simple questions. "
+                        "Answer each one aloud in a short, full sentence."
+                    ),
+                    "grammar_rule_to_practice": (
+                        "Use simple present tense to talk about yourself "
+                        "(I am, I work, I like)."
+                    ),
+                    "target_words": ["My name is", "I'm a", "I like"],
+                    "questions": [
+                        {
+                            "item_id": "q1",
+                            "interviewer_prompt": "What is your name?",
+                            "sample_answer": "My name is Sam.",
+                            "answer_hint": "Start with 'My name is'.",
+                        },
+                        {
+                            "item_id": "q2",
+                            "interviewer_prompt": "What do you do?",
+                            "sample_answer": "I'm a teacher.",
+                            "answer_hint": "Start with 'I'm a'.",
+                        },
+                        {
+                            "item_id": "q3",
+                            "interviewer_prompt": "What is a hobby you like?",
+                            "sample_answer": "I like reading books.",
+                            "answer_hint": "Start with 'I like'.",
+                        },
+                    ],
+                    "task_intro": "Answer the interview questions out loud.",
+                    "speaking_duration_seconds": 30,
+                }
+            )
         if archetype.archetype_id == "READ_STRUCTURE_ID":
-            content = normalize_read_structure_payload({
-                **content,
-                "passage_title": "My Morning Routine",
-                "items": [
-                    {
-                        "item_id": "para_1",
-                        "prompt": (
-                            "Every morning I follow the same routine because it "
-                            "helps me feel calm and ready for the day."
-                        ),
-                        "options": ["Intro", "Body", "Conclusion"],
-                        "correct_answer": "Intro",
-                        "explanation": "It states the main idea before any details.",
-                    },
-                    {
-                        "item_id": "para_2",
-                        "prompt": (
-                            "First, I wake up at six. Then I drink a glass of water. "
-                            "After that, I stretch for ten minutes, and finally I eat "
-                            "breakfast."
-                        ),
-                        "options": ["Intro", "Body", "Conclusion"],
-                        "correct_answer": "Body",
-                        "explanation": (
-                            "It gives ordered details with sequence words "
-                            "(first, then, after that, finally)."
-                        ),
-                    },
-                    {
-                        "item_id": "para_3",
-                        "prompt": (
-                            "This simple routine helps me start every day feeling "
-                            "organised and positive."
-                        ),
-                        "options": ["Intro", "Body", "Conclusion"],
-                        "correct_answer": "Conclusion",
-                        "explanation": "It closes with a final thought about the routine.",
-                    },
-                ],
-                "task_intro": "Read the passage and label each paragraph.",
-                "instructions": (
-                    "Label each paragraph as the intro, body, or conclusion."
-                ),
-                "estimated_time_minutes": 10,
-            })
+            content = normalize_read_structure_payload(
+                {
+                    **content,
+                    "passage_title": "My Morning Routine",
+                    "items": [
+                        {
+                            "item_id": "para_1",
+                            "prompt": (
+                                "Every morning I follow the same routine because it "
+                                "helps me feel calm and ready for the day."
+                            ),
+                            "options": ["Intro", "Body", "Conclusion"],
+                            "correct_answer": "Intro",
+                            "explanation": "It states the main idea before any details.",
+                        },
+                        {
+                            "item_id": "para_2",
+                            "prompt": (
+                                "First, I wake up at six. Then I drink a glass of water. "
+                                "After that, I stretch for ten minutes, and finally I eat "
+                                "breakfast."
+                            ),
+                            "options": ["Intro", "Body", "Conclusion"],
+                            "correct_answer": "Body",
+                            "explanation": (
+                                "It gives ordered details with sequence words "
+                                "(first, then, after that, finally)."
+                            ),
+                        },
+                        {
+                            "item_id": "para_3",
+                            "prompt": (
+                                "This simple routine helps me start every day feeling "
+                                "organised and positive."
+                            ),
+                            "options": ["Intro", "Body", "Conclusion"],
+                            "correct_answer": "Conclusion",
+                            "explanation": "It closes with a final thought about the routine.",
+                        },
+                    ],
+                    "task_intro": "Read the passage and label each paragraph.",
+                    "instructions": (
+                        "Label each paragraph as the intro, body, or conclusion."
+                    ),
+                    "estimated_time_minutes": 10,
+                }
+            )
         return GeneratedTask(content=content)
 
 
@@ -361,7 +398,14 @@ def authored_fill_in_blanks_content(task_spec: dict | None) -> dict | None:
 
     has_direct_payload = any(
         key in spec
-        for key in ("items", "blanks", "activities", "source", "passage", "primary_text")
+        for key in (
+            "items",
+            "blanks",
+            "activities",
+            "source",
+            "passage",
+            "primary_text",
+        )
     )
     if not has_direct_payload:
         return None
@@ -401,12 +445,40 @@ def authored_error_spotting_content(task_spec: dict | None) -> dict | None:
     return normalized if is_valid_error_spotting_payload(normalized) else None
 
 
-_BLANK_HINT_WORDS = frozenset({
-    "i", "me", "you", "he", "him", "she", "her", "it", "we", "us", "they", "them",
-    "mine", "yours", "his", "hers", "ours", "theirs",
-    "my", "your", "our", "their", "its",
-    "a", "an", "the", "this", "that", "these", "those",
-})
+_BLANK_HINT_WORDS = frozenset(
+    {
+        "i",
+        "me",
+        "you",
+        "he",
+        "him",
+        "she",
+        "her",
+        "it",
+        "we",
+        "us",
+        "they",
+        "them",
+        "mine",
+        "yours",
+        "his",
+        "hers",
+        "ours",
+        "theirs",
+        "my",
+        "your",
+        "our",
+        "their",
+        "its",
+        "a",
+        "an",
+        "the",
+        "this",
+        "that",
+        "these",
+        "those",
+    }
+)
 _POST_BLANK_PARENS_RE = re.compile(r"___(\s*\([^)]+\))+")
 
 
@@ -520,7 +592,9 @@ def normalize_fill_in_blanks_payload(content: dict) -> dict:
                 base_verb = str(item.get("base_verb") or "").strip()
                 sentence = item.get("sentence_with_blank")
                 if base_verb and isinstance(sentence, str):
-                    item["sentence_with_blank"] = _strip_inline_verb_hint(sentence, base_verb)
+                    item["sentence_with_blank"] = _strip_inline_verb_hint(
+                        sentence, base_verb
+                    )
             sentence = item.get("sentence_with_blank")
             if isinstance(sentence, str):
                 sentence = _strip_post_blank_parentheticals(sentence)
@@ -534,7 +608,9 @@ def normalize_fill_in_blanks_payload(content: dict) -> dict:
 
     instruction = normalized.get("instructions") or normalized.get("instruction")
     if not instruction and legacy_activity is not None:
-        instruction = legacy_activity.get("instructions") or legacy_activity.get("instruction")
+        instruction = legacy_activity.get("instructions") or legacy_activity.get(
+            "instruction"
+        )
     if isinstance(instruction, str) and instruction.strip():
         normalized["instructions"] = instruction.strip()
 
@@ -584,11 +660,13 @@ def normalize_listen_and_respond_payload(content: dict) -> dict:
         normalized["items"] = _normalize_mcq_items(normalized.get("items"))
     elif normalized.get("inner_widget") == "fill_in_blanks":
         fill_payload = normalize_fill_in_blanks_payload(normalized)
-        normalized.update({
-            key: value
-            for key, value in fill_payload.items()
-            if key in {"items", "blanks", "total_blanks", "passage", "instructions"}
-        })
+        normalized.update(
+            {
+                key: value
+                for key, value in fill_payload.items()
+                if key in {"items", "blanks", "total_blanks", "passage", "instructions"}
+            }
+        )
 
     audio_script = normalized.get("audio_script") or normalized.get("primary_text")
     if isinstance(audio_script, str) and audio_script.strip():
@@ -602,16 +680,67 @@ _DICTATION_PROMPT_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
-_DICTATION_STOP_WORDS = frozenset({
-    "i", "you", "he", "she", "it", "we", "they",
-    "am", "is", "are", "was", "were", "be", "been", "being",
-    "a", "an", "the", "to", "at", "in", "on", "for", "of", "and", "or",
-    "my", "your", "his", "her", "its", "our", "their",
-    "this", "that", "these", "those",
-    "now", "right", "usually", "always", "often", "sometimes", "never",
-    "every", "each", "just", "very", "so", "too", "also",
-    "do", "does", "did", "have", "has", "had",
-})
+_DICTATION_STOP_WORDS = frozenset(
+    {
+        "i",
+        "you",
+        "he",
+        "she",
+        "it",
+        "we",
+        "they",
+        "am",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "being",
+        "a",
+        "an",
+        "the",
+        "to",
+        "at",
+        "in",
+        "on",
+        "for",
+        "of",
+        "and",
+        "or",
+        "my",
+        "your",
+        "his",
+        "her",
+        "its",
+        "our",
+        "their",
+        "this",
+        "that",
+        "these",
+        "those",
+        "now",
+        "right",
+        "usually",
+        "always",
+        "often",
+        "sometimes",
+        "never",
+        "every",
+        "each",
+        "just",
+        "very",
+        "so",
+        "too",
+        "also",
+        "do",
+        "does",
+        "did",
+        "have",
+        "has",
+        "had",
+    }
+)
 
 
 def _normalize_dictation_word(token: str) -> str:
@@ -741,13 +870,15 @@ def normalize_dictation_payload(content: dict) -> dict:
             target_words=target_words,
         )
         item_id = str(raw.get("item_id") or raw.get("id") or f"d{index}").strip()
-        items.append({
-            "item_id": item_id or f"d{index}",
-            "prompt": display_prompt,
-            "correct_answer": answer,
-            "sample_answer": answer,
-            "explanation": str(raw.get("explanation") or "").strip(),
-        })
+        items.append(
+            {
+                "item_id": item_id or f"d{index}",
+                "prompt": display_prompt,
+                "correct_answer": answer,
+                "sample_answer": answer,
+                "explanation": str(raw.get("explanation") or "").strip(),
+            }
+        )
     normalized["items"] = items
     return normalized
 
@@ -785,16 +916,15 @@ def normalize_listen_retell_payload(content: dict) -> dict:
         prompts = [_DEFAULT_RETELL_PROMPT]
     normalized["speaking_prompts"] = prompts[:1]
 
-    samples_raw: Any = (
-        normalized.get("sample_responses") or normalized.get("sample_answers")
+    samples_raw: Any = normalized.get("sample_responses") or normalized.get(
+        "sample_answers"
     )
     samples: list[str] = []
     if isinstance(samples_raw, list):
         samples = [str(s).strip() for s in samples_raw if str(s).strip()]
     if not samples:
-        single_sample = (
-            normalized.get("sample_response")
-            or normalized.get("sample_answer")
+        single_sample = normalized.get("sample_response") or normalized.get(
+            "sample_answer"
         )
         if isinstance(single_sample, str) and single_sample.strip():
             samples = [single_sample.strip()]
@@ -817,13 +947,16 @@ def normalize_listen_retell_payload(content: dict) -> dict:
         elif passage:
             normalized["sample_responses"] = [passage]
     elif archetype_id == "LISTEN_SHADOW":
-        shadow_text = _first_text(
-            normalized.get("text_to_shadow"),
-            normalized.get("text_to_read_aloud"),
-            normalized.get("passage_to_retell"),
-            audio_script,
-            primary_text,
-        ) or ""
+        shadow_text = (
+            _first_text(
+                normalized.get("text_to_shadow"),
+                normalized.get("text_to_read_aloud"),
+                normalized.get("passage_to_retell"),
+                audio_script,
+                primary_text,
+            )
+            or ""
+        )
         if shadow_text:
             normalized["text_to_shadow"] = shadow_text
 
@@ -835,14 +968,21 @@ def normalize_listen_retell_payload(content: dict) -> dict:
     except (TypeError, ValueError):
         duration_int = 0
     if duration_int <= 0:
-        normalized["speaking_duration_seconds"] = 60 if archetype_id == "LISTEN_RETELL" else 45
+        normalized["speaking_duration_seconds"] = (
+            60 if archetype_id == "LISTEN_RETELL" else 45
+        )
 
     return normalized
 
 
 def is_valid_listening_payload(content: dict) -> bool:
     """Return True when a listening payload is safe to render and score."""
-    if normalize_widget_key(str(content.get("widget") or content.get("ui_widget") or "")) != "listen_and_respond":
+    if (
+        normalize_widget_key(
+            str(content.get("widget") or content.get("ui_widget") or "")
+        )
+        != "listen_and_respond"
+    ):
         return False
     if not str(content.get("audio_script") or "").strip():
         return False
@@ -864,7 +1004,11 @@ def is_valid_listening_payload(content: dict) -> bool:
     if inner_widget == "open_text":
         return is_valid_open_text_payload(content)
     if inner_widget == "speak_and_record":
-        return bool(str(content.get("text_to_shadow") or content.get("audio_script") or "").strip())
+        return bool(
+            str(
+                content.get("text_to_shadow") or content.get("audio_script") or ""
+            ).strip()
+        )
     return False
 
 
@@ -892,9 +1036,16 @@ def normalize_open_text_payload(content: dict) -> dict:
     return normalized
 
 
-def is_valid_open_text_payload(content: dict, *, expected_items: int | None = None) -> bool:
+def is_valid_open_text_payload(
+    content: dict, *, expected_items: int | None = None
+) -> bool:
     """Return True when an open-text payload is safe to render/evaluate."""
-    if normalize_widget_key(str(content.get("widget") or content.get("ui_widget") or "")) != "open_text":
+    if (
+        normalize_widget_key(
+            str(content.get("widget") or content.get("ui_widget") or "")
+        )
+        != "open_text"
+    ):
         return False
     items = content.get("items")
     if not isinstance(items, list) or not items:
@@ -937,9 +1088,16 @@ def normalize_sentence_transform_payload(content: dict) -> dict:
     return normalized
 
 
-def is_valid_sentence_transform_payload(content: dict, *, expected_items: int | None = None) -> bool:
+def is_valid_sentence_transform_payload(
+    content: dict, *, expected_items: int | None = None
+) -> bool:
     """Return True when a sentence-transform payload is safe to render/evaluate."""
-    if normalize_widget_key(str(content.get("widget") or content.get("ui_widget") or "")) != "sentence_transform":
+    if (
+        normalize_widget_key(
+            str(content.get("widget") or content.get("ui_widget") or "")
+        )
+        != "sentence_transform"
+    ):
         return False
     items = content.get("items")
     if not isinstance(items, list) or not items:
@@ -956,9 +1114,16 @@ def is_valid_sentence_transform_payload(content: dict, *, expected_items: int | 
     )
 
 
-def is_valid_error_correction_payload(content: dict, *, expected_items: int | None = None) -> bool:
+def is_valid_error_correction_payload(
+    content: dict, *, expected_items: int | None = None
+) -> bool:
     """Return True when an error-correction payload is safe to render/evaluate."""
-    if normalize_widget_key(str(content.get("widget") or content.get("ui_widget") or "")) != "error_correction":
+    if (
+        normalize_widget_key(
+            str(content.get("widget") or content.get("ui_widget") or "")
+        )
+        != "error_correction"
+    ):
         return False
     items = content.get("items")
     if not isinstance(items, list) or not items:
@@ -1060,9 +1225,12 @@ def normalize_read_structure_payload(content: dict) -> dict:
 
 def is_valid_read_structure_payload(content: dict) -> bool:
     """Return True when a read-structure payload is safe to render/score."""
-    if normalize_widget_key(
-        str(content.get("widget") or content.get("ui_widget") or "")
-    ) != "read_structure":
+    if (
+        normalize_widget_key(
+            str(content.get("widget") or content.get("ui_widget") or "")
+        )
+        != "read_structure"
+    ):
         return False
     labels = content.get("structure_labels")
     if not isinstance(labels, list) or len(labels) < 2:
@@ -1109,7 +1277,9 @@ def is_valid_mcq_payload(content: dict) -> bool:
         str(content.get("widget") or content.get("ui_widget") or "")
     )
     if widget == "listen_and_respond":
-        return is_valid_listening_payload(content) and content.get("inner_widget") == "mcq"
+        return (
+            is_valid_listening_payload(content) and content.get("inner_widget") == "mcq"
+        )
     if widget != "mcq":
         return False
     items = _normalize_mcq_items(content.get("items"))
@@ -1132,9 +1302,7 @@ def is_valid_tfng_payload(content: dict) -> bool:
     return all(
         isinstance(item, dict)
         and str(item.get("prompt") or item.get("statement") or "").strip()
-        and str(item.get("correct_answer") or item.get("answer") or "")
-        .strip()
-        .lower()
+        and str(item.get("correct_answer") or item.get("answer") or "").strip().lower()
         in _TFNG_ANSWERS
         for item in items
     )
@@ -1182,9 +1350,7 @@ def is_valid_dictation_payload(content: dict) -> bool:
     return all(
         isinstance(item, dict)
         and str(item.get("prompt") or "").strip()
-        and str(
-            item.get("correct_answer") or item.get("sample_answer") or ""
-        ).strip()
+        and str(item.get("correct_answer") or item.get("sample_answer") or "").strip()
         and str(item.get("explanation") or "").strip()
         for item in items
     )
@@ -1220,9 +1386,12 @@ def normalize_error_spotting_payload(content: dict) -> dict:
 
 def is_valid_error_spotting_payload(content: dict) -> bool:
     """Return True when an error-spotting payload is safe to render/score."""
-    if normalize_widget_key(
-        str(content.get("widget") or content.get("ui_widget") or "")
-    ) != "error_spotting":
+    if (
+        normalize_widget_key(
+            str(content.get("widget") or content.get("ui_widget") or "")
+        )
+        != "error_spotting"
+    ):
         return False
     sentences = content.get("passage_sentences")
     if not isinstance(sentences, list) or len(sentences) != 5:
@@ -1266,17 +1435,11 @@ def _normalize_error_sentence(sentence: dict, sentence_index: int) -> dict:
     raw_tokens = sentence.get("tokens")
     if not isinstance(raw_tokens, list) or not raw_tokens:
         raw_text = str(sentence.get("sentence") or sentence.get("text") or "")
-        raw_tokens = [
-            {"text": part}
-            for part in raw_text.split()
-            if part.strip()
-        ]
+        raw_tokens = [{"text": part} for part in raw_text.split() if part.strip()]
 
     error = dict(sentence.get("error") or {})
     legacy_error_text = str(
-        sentence.get("incorrect_phrase")
-        or error.get("incorrect_phrase")
-        or ""
+        sentence.get("incorrect_phrase") or error.get("incorrect_phrase") or ""
     ).strip()
     tokens: list[dict] = []
     error_token_id = str(error.get("token_id") or "")
@@ -1286,16 +1449,22 @@ def _normalize_error_sentence(sentence: dict, sentence_index: int) -> dict:
         text = str(raw.get("text") or "").strip()
         token_id = str(raw.get("token_id") or f"{sentence_id}_t{token_index}")
         is_error = bool(raw.get("is_error"))
-        if not error_token_id and legacy_error_text and text.strip(".,!?;:\"'").lower() == legacy_error_text.lower():
+        if (
+            not error_token_id
+            and legacy_error_text
+            and text.strip(".,!?;:\"'").lower() == legacy_error_text.lower()
+        ):
             is_error = True
             error_token_id = token_id
         if error_token_id and token_id == error_token_id:
             is_error = True
-        tokens.append({
-            "token_id": token_id,
-            "text": text,
-            "is_error": is_error,
-        })
+        tokens.append(
+            {
+                "token_id": token_id,
+                "text": text,
+                "is_error": is_error,
+            }
+        )
 
     if not error_token_id:
         for token in tokens:
@@ -1333,32 +1502,38 @@ def _legacy_error_sentences(sentences: object) -> list[dict]:
         sentence_id = str(sentence.get("sentence_id") or f"s{idx}")
         incorrect = str(sentence.get("incorrect_phrase") or "").strip()
         tokens = []
-        for token_idx, text in enumerate(str(sentence.get("sentence") or "").split(), start=1):
+        for token_idx, text in enumerate(
+            str(sentence.get("sentence") or "").split(), start=1
+        ):
             clean = text.strip(".,!?;:\"'")
-            tokens.append({
-                "token_id": f"{sentence_id}_t{token_idx}",
-                "text": text,
-                "is_error": bool(incorrect and clean.lower() == incorrect.lower()),
-            })
-        out.append({
-            "sentence_id": sentence_id,
-            "tokens": tokens,
-            "error": {
-                "token_id": next(
-                    (
-                        token["token_id"]
-                        for token in tokens
-                        if token.get("is_error")
+            tokens.append(
+                {
+                    "token_id": f"{sentence_id}_t{token_idx}",
+                    "text": text,
+                    "is_error": bool(incorrect and clean.lower() == incorrect.lower()),
+                }
+            )
+        out.append(
+            {
+                "sentence_id": sentence_id,
+                "tokens": tokens,
+                "error": {
+                    "token_id": next(
+                        (
+                            token["token_id"]
+                            for token in tokens
+                            if token.get("is_error")
+                        ),
+                        "",
                     ),
-                    "",
-                ),
-                "incorrect_phrase": incorrect,
-                "correction": sentence.get("correction") or "",
-                "error_type": sentence.get("error_type") or "unknown",
-                "rule": sentence.get("explanation") or "",
-                "explanation": sentence.get("explanation") or "",
-            },
-        })
+                    "incorrect_phrase": incorrect,
+                    "correction": sentence.get("correction") or "",
+                    "error_type": sentence.get("error_type") or "unknown",
+                    "rule": sentence.get("explanation") or "",
+                    "explanation": sentence.get("explanation") or "",
+                },
+            }
+        )
     return out
 
 
@@ -1456,15 +1631,15 @@ def normalize_speak_and_record_payload(content: dict) -> dict:
     if prompts:
         normalized["speaking_prompts"] = prompts
 
-    samples_raw: Any = (
-        normalized.get("sample_responses") or normalized.get("sample_answers")
+    samples_raw: Any = normalized.get("sample_responses") or normalized.get(
+        "sample_answers"
     )
     samples: list[str] = []
     if isinstance(samples_raw, list):
         samples = [str(s).strip() for s in samples_raw]
     if not samples:
-        single_sample = (
-            normalized.get("sample_response") or normalized.get("sample_answer")
+        single_sample = normalized.get("sample_response") or normalized.get(
+            "sample_answer"
         )
         if isinstance(single_sample, str) and single_sample.strip():
             samples = [single_sample.strip()]
@@ -1530,15 +1705,15 @@ def normalize_speak_pic_desc_payload(content: dict) -> dict:
     if prompts:
         normalized["speaking_prompts"] = prompts[:1]
 
-    samples_raw: Any = (
-        normalized.get("sample_responses") or normalized.get("sample_answers")
+    samples_raw: Any = normalized.get("sample_responses") or normalized.get(
+        "sample_answers"
     )
     samples: list[str] = []
     if isinstance(samples_raw, list):
         samples = [str(s).strip() for s in samples_raw if str(s).strip()]
     if not samples:
-        single_sample = (
-            normalized.get("sample_response") or normalized.get("sample_answer")
+        single_sample = normalized.get("sample_response") or normalized.get(
+            "sample_answer"
         )
         if isinstance(single_sample, str) and single_sample.strip():
             samples = [single_sample.strip()]
@@ -1587,9 +1762,12 @@ def is_valid_speak_pic_desc_payload(content: dict) -> bool:
 
 def is_valid_speak_and_record_payload(content: dict) -> bool:
     """Return True when a speaking payload is safe to render/evaluate."""
-    if normalize_widget_key(
-        str(content.get("widget") or content.get("ui_widget") or "")
-    ) != "speak_and_record":
+    if (
+        normalize_widget_key(
+            str(content.get("widget") or content.get("ui_widget") or "")
+        )
+        != "speak_and_record"
+    ):
         return False
     prompts = content.get("speaking_prompts")
     if not isinstance(prompts, list) or not prompts:
@@ -1606,7 +1784,9 @@ def is_valid_speak_and_record_payload(content: dict) -> bool:
     return True
 
 
-_DIALOGUE_SPEAKING_WIDGETS = frozenset({"speak_roleplay", "speak_smalltalk", "speak_debate"})
+_DIALOGUE_SPEAKING_WIDGETS = frozenset(
+    {"speak_roleplay", "speak_smalltalk", "speak_debate"}
+)
 
 
 def _word_count(text: str) -> int:
@@ -1681,11 +1861,17 @@ def normalize_dialogue_speaking_payload(content: dict) -> dict:
     if isinstance(samples_raw, list):
         samples = [str(s).strip() for s in samples_raw if str(s).strip()]
     if not samples:
-        single_sample = normalized.get("sample_response") or normalized.get("sample_answer")
+        single_sample = normalized.get("sample_response") or normalized.get(
+            "sample_answer"
+        )
         if isinstance(single_sample, str) and single_sample.strip():
             samples = [single_sample.strip()]
     if not samples:
-        samples = [str(t.get("text") or "").strip() for t in learner_turns if str(t.get("text") or "").strip()]
+        samples = [
+            str(t.get("text") or "").strip()
+            for t in learner_turns
+            if str(t.get("text") or "").strip()
+        ]
     while len(samples) < n_learner:
         samples.append(samples[-1] if samples else "")
     normalized["sample_responses"] = samples[:n_learner] if samples else [""]
@@ -1776,7 +1962,8 @@ def normalize_interview_speaking_payload(content: dict) -> dict:
                 continue
             questions.append(
                 {
-                    "item_id": str(item.get("item_id") or "").strip() or f"item_{index}",
+                    "item_id": str(item.get("item_id") or "").strip()
+                    or f"item_{index}",
                     "interviewer_prompt": prompt,
                     "sample_answer": str(item.get("sample_answer") or "").strip(),
                     "answer_hint": str(item.get("answer_hint") or "").strip(),
@@ -1847,18 +2034,22 @@ def _normalize_mcq_items(raw_items: Any) -> list[dict]:
         options = raw.get("options") or raw.get("choices") or []
         if not isinstance(options, list):
             continue
-        clean_options = [str(option).strip() for option in options if str(option).strip()]
+        clean_options = [
+            str(option).strip() for option in options if str(option).strip()
+        ]
         correct_index = _coerce_correct_index(raw, clean_options)
         if not prompt or len(clean_options) < 3 or correct_index is None:
             continue
         item_id = str(raw.get("item_id") or raw.get("id") or f"q{index}").strip()
-        items.append({
-            "item_id": item_id or f"q{index}",
-            "prompt": prompt,
-            "options": clean_options,
-            "correct_index": correct_index,
-            "explanation": str(raw.get("explanation") or "").strip(),
-        })
+        items.append(
+            {
+                "item_id": item_id or f"q{index}",
+                "prompt": prompt,
+                "options": clean_options,
+                "correct_index": correct_index,
+                "explanation": str(raw.get("explanation") or "").strip(),
+            }
+        )
     return items
 
 
@@ -1878,7 +2069,7 @@ def _coerce_correct_index(raw: dict, options: list[str]) -> int | None:
             if len(answer_text) == 1 and answer_text.upper() in "ABCD":
                 return ord(answer_text.upper()) - ord("A")
     try:
-        idx = int(value)
+        idx = int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
     if value_source == "answer_index" and 1 <= idx <= len(options):
@@ -2037,12 +2228,10 @@ def _items_from_legacy_activity(activity: dict) -> list[dict]:
     questions = activity.get("questions")
     if not isinstance(questions, dict):
         return []
-    answers = activity.get("answers") if isinstance(activity.get("answers"), dict) else {}
-    explanations = (
-        activity.get("explanations")
-        if isinstance(activity.get("explanations"), dict)
-        else {}
-    )
+    answers_raw = activity.get("answers")
+    answers = answers_raw if isinstance(answers_raw, dict) else {}
+    explanations_raw = activity.get("explanations")
+    explanations = explanations_raw if isinstance(explanations_raw, dict) else {}
     items: list[dict] = []
     for index, (qid, raw_sentence) in enumerate(questions.items(), start=1):
         sentence = _blank_sentence(raw_sentence)
@@ -2160,5 +2349,3 @@ def is_valid_task_content(archetype_id: str, content: dict) -> bool:
         return True
     except ContractValidationError:
         return False
-
-

@@ -44,9 +44,7 @@ def upgrade() -> None:
             nullable=False,
         ),
     )
-    op.create_index(
-        op.f("ix_ai_evaluations_trace_id"), "ai_evaluations", ["trace_id"]
-    )
+    op.create_index(op.f("ix_ai_evaluations_trace_id"), "ai_evaluations", ["trace_id"])
     op.create_index(
         op.f("ix_ai_evaluations_target_type"), "ai_evaluations", ["target_type"]
     )

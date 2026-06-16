@@ -63,9 +63,7 @@ class CurriculumDayRepository:
             select(CurriculumDay).where(CurriculumDay.day_id == day_id)
         ).scalar_one_or_none()
 
-    def get_for_week(
-        self, *, week_pk: int, day_number: int
-    ) -> CurriculumDay | None:
+    def get_for_week(self, *, week_pk: int, day_number: int) -> CurriculumDay | None:
         return self.db.execute(
             select(CurriculumDay).where(
                 CurriculumDay.week_id == week_pk,

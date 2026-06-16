@@ -58,16 +58,16 @@ class PersonalizationService:
         self.db = db
         self._profile_repo = UserProfileRepository(db)
 
-    async def refresh_for_user(
-        self, user_id: int
-    ) -> StructuredPersonalisation | None:
+    async def refresh_for_user(self, user_id: int) -> StructuredPersonalisation | None:
         """Re-extract structured personalisation for one user.
 
         Returns the new payload, or None if the user has no profile.
         """
         profile = self._profile_repo.get_by_user_id(user_id)
         if profile is None:
-            logger.info("personalization_refresh_skipped_no_profile user_id=%s", user_id)
+            logger.info(
+                "personalization_refresh_skipped_no_profile user_id=%s", user_id
+            )
             return None
 
         extraction_input = _profile_to_extraction_input(profile)
@@ -92,14 +92,14 @@ class PersonalizationService:
                 user_id=user_id, payload=payload
             )
         except Exception:
-            logger.exception(
-                "personalization_persist_failed user_id=%s", user_id
-            )
+            logger.exception("personalization_persist_failed user_id=%s", user_id)
             return structured
 
         return structured
 
-    async def write_empty_default(self, user_id: int) -> StructuredPersonalisation | None:
+    async def write_empty_default(
+        self, user_id: int
+    ) -> StructuredPersonalisation | None:
         """Seed an empty default for a brand-new user without calling the LLM.
 
         Useful right after signup so downstream agents always read a
@@ -111,8 +111,6 @@ class PersonalizationService:
                 user_id=user_id, payload=structured.model_dump(mode="json")
             )
         except Exception:
-            logger.exception(
-                "personalization_empty_default_failed user_id=%s", user_id
-            )
+            logger.exception("personalization_empty_default_failed user_id=%s", user_id)
             return None
         return structured

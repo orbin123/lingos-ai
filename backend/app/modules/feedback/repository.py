@@ -108,9 +108,7 @@ class FeedbackPromptRepository:
 
         Summed in Python from started_at/completed_at to stay dialect-safe.
         """
-        stmt = select(
-            DailySession.started_at, DailySession.completed_at
-        ).where(
+        stmt = select(DailySession.started_at, DailySession.completed_at).where(
             DailySession.user_id == user_id,
             DailySession.completed_at.is_not(None),
         )
@@ -127,12 +125,15 @@ class FeedbackPromptRepository:
 
     def prompt_totals(self) -> tuple[int, int]:
         """(total prompts shown, prompts that led to a submission)."""
-        total = self.db.execute(
-            select(func.count(FeedbackPromptLog.id))
-        ).scalar_one() or 0
-        submitted = self.db.execute(
-            select(func.count(FeedbackPromptLog.id)).where(
-                FeedbackPromptLog.submitted.is_(True)
-            )
-        ).scalar_one() or 0
+        total = (
+            self.db.execute(select(func.count(FeedbackPromptLog.id))).scalar_one() or 0
+        )
+        submitted = (
+            self.db.execute(
+                select(func.count(FeedbackPromptLog.id)).where(
+                    FeedbackPromptLog.submitted.is_(True)
+                )
+            ).scalar_one()
+            or 0
+        )
         return total, submitted

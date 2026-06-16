@@ -95,7 +95,8 @@ class CachedPronunciationService:
             except StorageReadError as exc:
                 logger.warning(
                     "pronunciation_cache_read_failed key=%s err=%s; rescoring",
-                    cache_key, exc,
+                    cache_key,
+                    exc,
                 )
                 cached_bytes = None
 
@@ -105,18 +106,21 @@ class CachedPronunciationService:
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     logger.warning(
                         "pronunciation_cache_corrupt key=%s err=%s; rescoring",
-                        cache_key, exc,
+                        cache_key,
+                        exc,
                     )
                 else:
                     logger.info(
                         "pronunciation_cache_hit key=%s bytes=%d",
-                        cache_key, len(audio_bytes),
+                        cache_key,
+                        len(audio_bytes),
                     )
                     return cast(PronunciationResult, parsed)
 
         logger.info(
             "pronunciation_cache_miss key=%s bytes=%d",
-            cache_key, len(audio_bytes),
+            cache_key,
+            len(audio_bytes),
         )
         result = await self._provider.score(
             audio_bytes=audio_bytes,
@@ -135,7 +139,8 @@ class CachedPronunciationService:
         except StorageError as exc:
             logger.warning(
                 "pronunciation_cache_write_failed key=%s err=%s; returning result anyway",
-                cache_key, exc,
+                cache_key,
+                exc,
             )
 
         return result

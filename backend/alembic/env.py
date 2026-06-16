@@ -22,9 +22,7 @@ if config.config_file_name is not None:
 
 # Override the URL from alembic.ini with our .env value
 # Convert postgresql:// → postgresql+psycopg:// for the correct driver
-_db_url = settings.database_url.replace(
-    "postgresql://", "postgresql+psycopg://", 1
-)
+_db_url = settings.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 config.set_main_option("sqlalchemy.url", _db_url)
 
 # add your model's MetaData object here
@@ -77,9 +75,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

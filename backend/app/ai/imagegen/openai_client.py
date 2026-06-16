@@ -36,9 +36,14 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _SUPPORTED_OUTPUT_FORMATS: frozenset[str] = frozenset({"png", "jpeg", "webp"})
-_SUPPORTED_QUALITIES: frozenset[str] = frozenset({
-    "low", "medium", "high", "auto",
-})
+_SUPPORTED_QUALITIES: frozenset[str] = frozenset(
+    {
+        "low",
+        "medium",
+        "high",
+        "auto",
+    }
+)
 
 
 class OpenAIImageGenClient:
@@ -183,7 +188,10 @@ class OpenAIImageGenClient:
                 delay = (2 ** (attempt - 1)) * (1 + random.uniform(-0.25, 0.25))
                 logger.warning(
                     "imagegen_retry attempt=%d/%d delay=%.2fs err=%s",
-                    attempt, self._max_retries, delay, type(exc).__name__,
+                    attempt,
+                    self._max_retries,
+                    delay,
+                    type(exc).__name__,
                 )
                 await asyncio.sleep(delay)
             except Exception as exc:

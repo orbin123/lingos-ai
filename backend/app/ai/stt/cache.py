@@ -147,7 +147,8 @@ class CachedSTTService:
                 # the whole request — we can always re-transcribe.
                 logger.warning(
                     "stt_cache_read_failed key=%s err=%s; falling back to provider",
-                    cache_key, exc,
+                    cache_key,
+                    exc,
                 )
                 cached_bytes = None
 
@@ -158,19 +159,23 @@ class CachedSTTService:
                     # Cache file is corrupt — log + re-transcribe, don't crash.
                     logger.warning(
                         "stt_cache_corrupt key=%s err=%s; re-transcribing",
-                        cache_key, exc,
+                        cache_key,
+                        exc,
                     )
                 else:
                     logger.info(
                         "stt_cache_hit key=%s bytes=%d",
-                        cache_key, len(audio_bytes),
+                        cache_key,
+                        len(audio_bytes),
                     )
                     return cast(TranscriptionResult, parsed)
 
         # ---- 2. Cache miss — call provider
         logger.info(
             "stt_cache_miss key=%s bytes=%d with_timestamps=%s",
-            cache_key, len(audio_bytes), with_timestamps,
+            cache_key,
+            len(audio_bytes),
+            with_timestamps,
         )
         result = await self._provider.transcribe(
             audio_bytes=audio_bytes,
@@ -192,7 +197,8 @@ class CachedSTTService:
         except StorageError as exc:
             logger.warning(
                 "stt_cache_write_failed key=%s err=%s; returning result anyway",
-                cache_key, exc,
+                cache_key,
+                exc,
             )
 
         return result

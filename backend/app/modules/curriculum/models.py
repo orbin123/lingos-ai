@@ -56,7 +56,9 @@ class EnrollmentStatus(str, Enum):
 class Course(Base, IDMixin, TimestampMixin):
     __tablename__ = "courses"
 
-    slug: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    slug: Mapped[str] = mapped_column(
+        String(50), unique=True, index=True, nullable=False
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     duration_weeks: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -91,7 +93,10 @@ class Course(Base, IDMixin, TimestampMixin):
 class UserEnrollment(Base, IDMixin, TimestampMixin):
     __tablename__ = "user_enrollments"
     __table_args__ = (
-        CheckConstraint("tasks_per_day BETWEEN 2 AND 4", name="ck_user_enrollments_tasks_per_day_2_4"),
+        CheckConstraint(
+            "tasks_per_day BETWEEN 2 AND 4",
+            name="ck_user_enrollments_tasks_per_day_2_4",
+        ),
     )
 
     user_id: Mapped[int] = mapped_column(
@@ -205,9 +210,7 @@ class CurriculumWeek(Base, IDMixin, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<CurriculumWeek({self.week_id}: {self.theme_type.value} — {self.title!r})>"
-        )
+        return f"<CurriculumWeek({self.week_id}: {self.theme_type.value} — {self.title!r})>"
 
 
 # ── CurriculumDay ──────────────────────────────────────────────────
