@@ -33,10 +33,9 @@ jobs:
       - run: uv sync
       - name: Ruff lint
         run: uv run ruff check app tests
-      - name: Ruff format check (advisory)
-        # Advisory only: the repo carries pre-existing format drift (~197 files).
-        # Flip to a blocking gate after a dedicated `ruff format` pass.
-        continue-on-error: true
+      - name: Ruff format check
+        # Blocking: the repo was fully `ruff format`'d, so any drift is a real
+        # regression. Run `uv run ruff format .` locally before pushing.
         run: uv run ruff format --check app tests
 
   types:
