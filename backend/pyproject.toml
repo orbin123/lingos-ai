@@ -9,6 +9,7 @@ dependencies = [
     "azure-cognitiveservices-speech>=1.48.0",
     "bcrypt==4.0.1",
     "fastapi>=0.136.1",
+    "gunicorn>=23.0.0",
     "httpx>=0.28.1",
     "langchain>=1.2.15",
     "langchain-openai>=1.2.1",

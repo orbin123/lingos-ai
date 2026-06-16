@@ -1,6 +1,7 @@
 """Auth HTTP routes - translates between HTTP and AuthService"""
 
 import logging
+import secrets
 from datetime import timedelta
 from urllib.parse import urlencode
 
@@ -655,8 +656,15 @@ def google_login() -> RedirectResponse:
 
     The frontend calls this URL. The browser is redirected to Google.
     After consent, Google redirects back to /auth/google/callback.
+
+    We attach a signed, short-TTL ``state`` (a JWT carrying a random nonce) so
+    the callback can reject forged/replayed callbacks (login CSRF, audit D1).
     """
-    return RedirectResponse(url=_google_auth_url())
+    state = create_access_token(
+        data={"mode": "google_login", "nonce": secrets.token_urlsafe(16)},
+        expires_delta=timedelta(minutes=10),
+    )
+    return RedirectResponse(url=_google_auth_url(state=state))
 
 
 @router.post("/google/relink-url")
@@ -724,8 +732,16 @@ def google_callback(
     name: str = google_user.get("name", email.split("@")[0])
     frontend_base = settings.frontend_url
 
+    # --- Validate state (audit D1) ---
+    # state is a signed JWT we minted on /google/login (mode=google_login) or
+    # /google/relink-url (mode=google_relink). A missing/invalid/expired state
+    # means a forged or replayed callback — reject it before doing anything.
     state_payload = decode_token(state) if state else None
-    if state_payload and state_payload.get("mode") == "google_relink":
+    state_mode = state_payload.get("mode") if state_payload else None
+    if state_payload is None or state_mode not in ("google_login", "google_relink"):
+        return RedirectResponse(url=f"{frontend_base}/callback?error=google_failed")
+
+    if state_mode == "google_relink":
         user_id = int(state_payload["sub"])
         user = db.get(User, user_id)
         if user is None:
@@ -764,9 +780,10 @@ def google_callback(
         db.commit()
         db.refresh(user)
 
-        jwt_token = create_access_token(data=_token_data(user))
-        redirect_url = f"{frontend_base}/callback?token={jwt_token}&next=profile"
-        return RedirectResponse(url=redirect_url)
+        # Relink keeps the user's existing session/refresh cookie — no token
+        # needs to ride in the URL (audit D2). The frontend mints a fresh
+        # access token from the refresh cookie on /callback.
+        return RedirectResponse(url=f"{frontend_base}/callback?next=profile")
 
     # --- Find or create the user in our DB ---
     user, is_new = AuthService(db).get_or_create_google_user(
@@ -775,20 +792,13 @@ def google_callback(
         name=name,
     )
 
-    # --- Issue our own JWT (short) ---
-    jwt_token = create_access_token(
-        data=_token_data(user),
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_TTL_MINUTES),
-    )
-
-    # --- Redirect frontend with token ---
-    # We pass the token as a query param. The frontend reads it and stores it.
-    # The refresh token rides as an httpOnly cookie on this redirect response
-    # (backend origin), so OAuth logins get silent refresh like password ones.
+    # --- Redirect frontend WITHOUT a token in the URL (audit D2) ---
+    # The access token is never put in the redirect query string (it would leak
+    # via proxy logs, browser history, and Referer headers). Instead we set the
+    # httpOnly refresh cookie here (backend origin); the frontend /callback page
+    # mints a short-lived access token from it via /auth/refresh.
     destination = "diagnosis" if is_new else "dashboard"
-    redirect_url = f"{frontend_base}/callback?token={jwt_token}&next={destination}"
-
-    redirect = RedirectResponse(url=redirect_url)
+    redirect = RedirectResponse(url=f"{frontend_base}/callback?next={destination}")
     raw, session = SessionService(db).create_session(user=user)
     max_age = int((_aware(session.expires_at) - _utcnow()).total_seconds())
     _set_refresh_cookie(redirect, raw, max_age=max_age)

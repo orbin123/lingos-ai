@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { WS_BASE_URL } from "@/lib/api-config";
 
 import { tasksApi } from "@/lib/tasks-api";
 import {
@@ -1860,9 +1861,7 @@ export default function ChatSessionPage() {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
     if (!token) return;
 
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    const wsBase = apiBase.replace(/^http/, "ws");
-    const url = `${wsBase}/ws/learning/${sessionId}?token=${encodeURIComponent(token || "")}`;
+    const url = `${WS_BASE_URL}/ws/learning/${sessionId}?token=${encodeURIComponent(token || "")}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;

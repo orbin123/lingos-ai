@@ -1,14 +1,18 @@
 """FastAPI application entry point."""
 
+import logging
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app.ai.routes import router as ai_router
 from app.core.config import settings
+from app.core.database import engine
 from app.core.logging import AccessLogMiddleware, TraceIDMiddleware, configure_logging
 from app.core.rate_limit import AdminRateLimitMiddleware
 from app.core.sentry import init_sentry
@@ -121,8 +125,56 @@ def favicon() -> Response:
 
 @app.get("/health", tags=["system"])
 def health_check() -> dict[str, str]:
-    """Liveness probe - confirms server is up."""
+    """Liveness probe — confirms the process is up. Always 200; no dependencies.
+
+    Use this for the container/orchestrator liveness check: a 200 means "the
+    process is alive, don't kill it". For "is this task ready to serve traffic"
+    use /health/ready, which checks DB + Redis.
+    """
     return {"status": "ok"}
+
+
+@app.get("/health/ready", tags=["system"])
+def readiness_check() -> JSONResponse:
+    """Readiness probe — 200 only when DB **and** Redis are reachable.
+
+    Wired to the ALB/ECS target-group health check so a task with a broken
+    dependency is pulled out of rotation instead of serving 500s. Returns 503
+    with a per-dependency breakdown when anything is down.
+    """
+    checks: dict[str, str] = {}
+    ready = True
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception as exc:  # pragma: no cover - exercised manually
+        ready = False
+        checks["database"] = "error"
+        logging.getLogger("app.health").warning("readiness_db_failed: %s", exc)
+
+    try:
+        import redis
+
+        client = redis.Redis.from_url(
+            settings.redis_url,
+            socket_connect_timeout=0.5,
+            socket_timeout=0.5,
+        )
+        client.ping()
+        checks["redis"] = "ok"
+    except Exception as exc:  # pragma: no cover - exercised manually
+        ready = False
+        checks["redis"] = "error"
+        logging.getLogger("app.health").warning("readiness_redis_failed: %s", exc)
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK
+        if ready
+        else status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={"status": "ready" if ready else "not_ready", "checks": checks},
+    )
 
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])

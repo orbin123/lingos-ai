@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Mic, MicOff } from 'lucide-react';
 
+import { WS_BASE_URL } from '@/lib/api-config';
+
 // If the server's `final` frame never arrives (e.g. upstream stall), finish
 // anyway after this long, scoring whatever words we have so far. The frame
 // normally lands within ~1-2s of stopping, so this is only a safety net.
@@ -124,12 +126,10 @@ export function A2ZSpeak({ roundId, letter, level, reduceMotion, onFinish, onClo
       const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       mediaRecorderRef.current = mediaRecorder;
 
-      // Build WebSocket URL — swap http(s) → ws(s), add JWT as query param
-      // (browsers cannot set Authorization headers on WebSocket connections)
-      const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const wsBase = apiBase.replace(/^http/, 'ws');
+      // Build WebSocket URL — add JWT as query param (browsers cannot set
+      // Authorization headers on WebSocket connections).
       const token = encodeURIComponent(localStorage.getItem('token') || '');
-      const wsUrl = `${wsBase}/api/v1/challenges/a2z/rounds/${roundId}/stream?token=${token}`;
+      const wsUrl = `${WS_BASE_URL}/api/v1/challenges/a2z/rounds/${roundId}/stream?token=${token}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 

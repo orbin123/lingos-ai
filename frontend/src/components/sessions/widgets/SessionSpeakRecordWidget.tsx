@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { tasksApi } from "@/lib/tasks-api";
 import { sessionsApi, type PronunciationResult } from "@/lib/sessions-api";
 import { blobToWav } from "@/lib/audio-utils";
+import { resolveMediaUrl } from "@/lib/api-config";
 import type { SessionWidgetProps } from "./types";
 
 interface SpeakRoleplayTurn {
@@ -93,8 +94,7 @@ function resolveAudioUrl(url?: string | null): string | null {
   if (/^https?:\/\//.test(url) || url.startsWith("blob:") || url.startsWith("data:")) {
     return url;
   }
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  return `${apiBase.replace(/\/$/, "")}${url.startsWith("/") ? "" : "/"}${url}`;
+  return resolveMediaUrl(url);
 }
 
 function nowMs(): number {

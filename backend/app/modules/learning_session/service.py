@@ -108,7 +108,11 @@ from app.scoring import CourseLength, get_archetype
 
 log = structlog.get_logger(__name__)
 
-# Guard against concurrent complete_session calls (e.g. WS submit + resume).
+# Same-process fast path against concurrent complete_session calls (e.g. WS
+# submit + resume) so one worker doesn't redundantly re-run completion work.
+# This is per-process and NOT the correctness boundary across workers — the
+# unique constraint on session_scorecards.session_id is the source of truth
+# (SessionService.complete_session catches the IntegrityError). See audit B4.
 _completing_daily_uuids: set[str] = set()
 
 # Strong refs to in-flight Coach's Note workers so a timed-out (shielded) task

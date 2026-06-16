@@ -4,7 +4,7 @@
 // attaches a JWT and redirects to /login on 401) since the marketing contact
 // form is for logged-out visitors. Same rationale as `lib/blog-api.ts`.
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { API_BASE_URL as API_BASE } from "@/lib/api-config";
 
 export interface ContactRequest {
   full_name: string;

@@ -8,6 +8,7 @@ import {
   SPATIAL_NAV_ROOT_ATTR,
   spatialFieldProps,
 } from "@/lib/spatial-field-navigation";
+import { resolveMediaUrl } from "@/lib/api-config";
 
 /** Shared submit button for live interactive task widgets (M4). */
 export function SubmitButton({
@@ -438,8 +439,7 @@ function resolveAudioUrl(audioUrl?: string | null): string | null {
   if (!audioUrl) return null;
   if (/^(https?:|blob:|data:)/i.test(audioUrl)) return audioUrl;
   if (audioUrl.startsWith("/")) {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    return `${apiBase.replace(/\/$/, "")}${audioUrl}`;
+    return resolveMediaUrl(audioUrl);
   }
   return audioUrl;
 }

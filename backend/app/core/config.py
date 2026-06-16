@@ -109,7 +109,9 @@ class Settings(BaseSettings):
 
     # AI / LLM
     OPENAI_API_KEY: str
-    LANGCHAIN_TRACING_V2: bool = True
+    # Off by default (data-residency, audit A5): tracing ships learner content
+    # to LangSmith, so it must be enabled consciously. Dev .env can set it True.
+    LANGCHAIN_TRACING_V2: bool = False
     LANGCHAIN_API_KEY: str
     LANGCHAIN_PROJECT: str = "ai-english-coach"
     LANGCHAIN_ENDPOINT: str = "https://api.smith.langchain.com"

@@ -22,6 +22,7 @@ from typing import Any
 from uuid import uuid4
 
 import structlog
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.ai.llm.eval_context import (
@@ -856,7 +857,26 @@ class SessionService:
             completed_at=now,
             points_applied=False,
         )
-        self.scorecards_repo.add(scorecard)
+        # Surface a cross-process completion race (audit B4) deterministically:
+        # add() flushes the insert, so a duplicate trips the unique constraint
+        # on session_scorecards.session_id here — BEFORE we apply points —
+        # rather than failing inside apply_session_scorecard's own flush. The
+        # constraint — not the in-memory guard — is the source of truth, so two
+        # workers completing the same session resolve to one scorecard with
+        # points applied once.
+        try:
+            self.scorecards_repo.add(scorecard)
+        except IntegrityError:
+            self.db.rollback()
+            winner = self.scorecards_repo.get_for_session(session.id)
+            if winner is None:
+                raise
+            return winner, ApplyReport(
+                applied=False,
+                rows_written=0,
+                rows_skipped=0,
+                reason="session already completed (concurrent completion)",
+            )
 
         # Flush so apply_session_scorecard sees committed scorecard + session state.
         # If we are rebuilding a scorecard that already had its points applied
@@ -884,7 +904,25 @@ class SessionService:
         session.status = SessionStatus.COMPLETED
         session.completed_at = now
 
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError:
+            # Cross-process race (audit B4): another worker committed the
+            # scorecard for this session first. The unique constraint on
+            # session_scorecards.session_id is the source of truth — roll back
+            # this duplicate (which also discards our points writes, since they
+            # share the transaction) and return the winner's scorecard so
+            # completion is idempotent across workers without an in-memory lock.
+            self.db.rollback()
+            winner = self.scorecards_repo.get_for_session(session.id)
+            if winner is None:
+                raise
+            return winner, ApplyReport(
+                applied=False,
+                rows_written=0,
+                rows_skipped=0,
+                reason="session already completed (concurrent completion)",
+            )
         self.db.refresh(scorecard)
 
         # Background (own DB session): index per-activity vectors only. The note

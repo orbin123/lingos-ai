@@ -11,13 +11,13 @@ import {
   StatusDot,
   TaskWidgetFrame,
 } from "./TaskWidgetFrame";
+import { resolveMediaUrl } from "@/lib/api-config";
 
 function resolveImageUrl(imageUrl?: string | null): string | null {
   if (!imageUrl) return null;
   if (/^(https?:|blob:|data:)/i.test(imageUrl)) return imageUrl;
   if (imageUrl.startsWith("/")) {
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-    return `${apiBase.replace(/\/$/, "")}${imageUrl}`;
+    return resolveMediaUrl(imageUrl);
   }
   return imageUrl;
 }
