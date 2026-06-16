@@ -170,7 +170,9 @@ def readiness_check() -> JSONResponse:
         logging.getLogger("app.health").warning("readiness_redis_failed: %s", exc)
 
     return JSONResponse(
-        status_code=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE,
+        status_code=status.HTTP_200_OK
+        if ready
+        else status.HTTP_503_SERVICE_UNAVAILABLE,
         content={"status": "ready" if ready else "not_ready", "checks": checks},
     )
 
