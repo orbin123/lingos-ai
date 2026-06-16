@@ -16,6 +16,7 @@ import logging
 import json
 import time
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -44,7 +45,7 @@ def _agent_debug_log(message: str, data: dict[str, Any], hypothesis_id: str) -> 
     # region agent log
     try:
         with open(
-            "/Users/orbin/Documents/GitHub/ai-english-tutor/.cursor/debug-dfa507.log",
+            Path(__file__).parents[4] / ".cursor" / "debug-dfa507.log",
             "a",
             encoding="utf-8",
         ) as fh:
