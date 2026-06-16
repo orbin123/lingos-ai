@@ -41,6 +41,12 @@ backend/scripts
 # Local archive of deprecated files (kept locally, not committed)
 backend/.archive/
 
+# Coverage (pytest-cov / coverage.py)
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
 # TTS audio cache (regenerated on demand from OpenAI)
 backend/app/ai/tts/_cache/
 

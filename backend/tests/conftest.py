@@ -20,3 +20,17 @@ os.environ.setdefault("STRICT_CONTRACTS", "true")
 # user id never trip a limit and the limiter never dials Redis. Dedicated
 # tests opt back in via monkeypatch + reset_limiter_for_tests().
 os.environ.setdefault("AI_RATE_LIMIT_ENABLED", "false")
+
+
+# Shared fixtures live in dedicated modules and are registered as plugins so
+# every test (regardless of folder) can request `db_session`, `client`,
+# `seed_archetypes`, factories, etc. without re-declaring them. See
+# docs/testing-strategy.md (Phase 3). Env vars above MUST be set before these
+# import, because they pull in `app.*` (which reads settings at import time).
+# (Factories under tests/factories/ are plain functions — imported directly,
+# e.g. `from tests.factories.users import make_user` — not registered here.)
+pytest_plugins = [
+    "tests.fixtures.db",
+    "tests.fixtures.client",
+    "tests.fixtures.curriculum",
+]

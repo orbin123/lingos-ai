@@ -6,7 +6,6 @@ audio chunk ingestion with live STT, and game restart.
 
 from __future__ import annotations
 
-import hashlib
 import random
 from datetime import datetime, timedelta, timezone
 
@@ -33,10 +32,7 @@ from app.modules.challenges.a2z_game.schemas import (
     FinishRoundResponse,
     StartRoundResponse,
 )
-from app.modules.challenges.models import (
-    ChallengeAttempt,
-    ChallengeAttemptStatus,
-)
+from app.modules.challenges.models import ChallengeAttemptStatus
 from app.modules.challenges.repository import (
     ChallengeAttemptRepository,
     ChallengeRepository,

@@ -9,7 +9,7 @@ from app.modules.sessions.contracts.validation import (
     normalize_task_content,
     validate_and_project_task_content,
 )
-from tests.test_task_content_validation import _valid_content_for
+from tests.fixtures.task_content import _valid_content_for
 
 THE_34 = frozenset(ARCHETYPE_CONTRACTS)
 
