@@ -75,10 +75,10 @@ jobs:
 
   coverage:
     # Coverage floor is a whole-suite measure, so the gate runs the full suite
-    # in one process via bare `pytest` (testpaths=["tests"], natural order).
-    # NB: keep the natural order — `pytest tests/unit tests/integration` flips
-    # collection order and trips a pre-existing isolation bug in the a2z STT
-    # tests. Floor = measured 75% − 2% ratchet buffer (testing-strategy.md).
+    # in one process via bare `pytest` (testpaths=["tests"]). The suite is order-
+    # independent now (the historical a2z STT isolation leak is fixed — both
+    # natural order and `pytest tests/unit tests/integration` are green).
+    # Floor = measured 75% − 2% ratchet buffer (testing-strategy.md).
     # Raise it as new tests land; never lower it.
     runs-on: ubuntu-latest
     steps:
