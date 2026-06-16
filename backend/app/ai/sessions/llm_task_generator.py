@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -52,7 +53,7 @@ def _agent_debug_log(message: str, data: dict, hypothesis_id: str) -> None:
     # region agent log
     try:
         with open(
-            "/Users/orbin/Documents/GitHub/ai-english-tutor/.cursor/debug-dfa507.log",
+            Path(__file__).parents[4] / ".cursor" / "debug-dfa507.log",
             "a",
             encoding="utf-8",
         ) as fh:
