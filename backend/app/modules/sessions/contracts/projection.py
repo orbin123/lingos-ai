@@ -20,7 +20,7 @@ generic.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ValidationError
 
@@ -418,7 +418,9 @@ def _speaking_body(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]
             role = _str(raw.get("role"))
             text = _str(raw.get("text"))
             speaker_raw = _str(raw.get("speaker")).lower()
-            speaker = "learner" if speaker_raw == "learner" else "partner"
+            speaker: Literal["partner", "learner", "ai"] = (
+                "learner" if speaker_raw == "learner" else "partner"
+            )
             if role and text:
                 turns.append(DialogueTurn(role=role, text=text, speaker=speaker))
         dialogue_turns = tuple(turns)

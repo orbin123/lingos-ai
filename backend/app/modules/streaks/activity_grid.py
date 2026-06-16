@@ -48,6 +48,8 @@ def count_evaluated_activities_by_local_date(
 
     counts: dict[date, int] = {}
     for submitted_at in submitted_times:
+        if submitted_at is None:
+            continue
         if submitted_at.tzinfo is None:
             submitted_at = submitted_at.replace(tzinfo=timezone.utc)
         local_d = submitted_at.astimezone(zone).date()

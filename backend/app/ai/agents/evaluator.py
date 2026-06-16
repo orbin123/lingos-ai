@@ -1318,7 +1318,7 @@ class EvaluationService:
                     continue
                 item_id = str(row.get("item_id") or "")
                 try:
-                    selected_by_id[item_id] = int(row.get("selected_index"))
+                    selected_by_id[item_id] = int(row.get("selected_index"))  # type: ignore[arg-type]
                 except (TypeError, ValueError):
                     continue
 
@@ -1342,7 +1342,11 @@ class EvaluationService:
 
             per_question[item_id] = {
                 "correct": is_correct,
-                "user_answer": options[selected_index] if selected_valid else "",
+                "user_answer": (
+                    options[selected_index]
+                    if selected_valid and selected_index is not None
+                    else ""
+                ),
                 "correct_answer": options[correct_index] if correct_valid else "",
                 "selected_index": selected_index,
                 "correct_index": correct_index,
@@ -1437,7 +1441,7 @@ class EvaluationService:
 
         item_eval_by_id = {item.item_id: item for item in llm_result.items}
         samples = task_content.get("sample_responses") or []
-        questions: dict[str, dict] = {}
+        questions = {}
         correct_count = 0
         answered_count = 0
 

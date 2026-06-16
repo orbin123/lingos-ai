@@ -29,7 +29,7 @@ import openai
 import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, SecretStr, ValidationError
 
 from app.ai.llm.exceptions import (
     LLMAuthError,
@@ -87,7 +87,7 @@ class OpenAILLMClient:
             temperature=temperature,
             timeout=timeout,
             max_retries=max_retries,
-            api_key=settings.OPENAI_API_KEY,
+            api_key=SecretStr(settings.OPENAI_API_KEY),
         )
 
     @property
@@ -259,7 +259,7 @@ class OpenAILLMClient:
         return ChatOpenAI(
             model=self._model,
             temperature=temperature,
-            api_key=settings.OPENAI_API_KEY,
+            api_key=SecretStr(settings.OPENAI_API_KEY),
             max_retries=_MAX_RETRIES,
             timeout=_DEFAULT_TIMEOUT_S,
         )

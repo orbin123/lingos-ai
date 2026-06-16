@@ -96,7 +96,9 @@ def build_speaking_eval_items(
     )
     sample = task_content.get("sample_response") or ""
     for key in ("prompt_1", "read_aloud", "retell"):
-        recording = recordings.get(key)
+        if key not in recordings:
+            continue
+        recording = recordings[key]
         if recording is not None:
             return [
                 {

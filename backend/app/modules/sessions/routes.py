@@ -499,7 +499,7 @@ def advance_day(
 async def start_or_continue_today(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> DashboardStartResponse:
+) -> DashboardTodayPlanResponse | DashboardStartResponse:
     try:
         day, pref = _resolve_day_from_preference(db, current_user.id)
         day_id = day.day_id

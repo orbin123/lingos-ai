@@ -293,5 +293,6 @@ class Settings(BaseSettings):
         return self
 
 
-# Single shared instance
-settings = Settings()
+# Single shared instance. Fields are populated from the environment by
+# pydantic-settings, which mypy can't see — hence the call-arg suppression.
+settings = Settings()  # type: ignore[call-arg]

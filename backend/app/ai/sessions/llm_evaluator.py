@@ -238,7 +238,7 @@ class LLMEvaluator:
                 continue
             item_id = str(row.get("item_id") or "")
             try:
-                selected_by_id[item_id] = int(row.get("selected_index"))
+                selected_by_id[item_id] = int(row.get("selected_index"))  # type: ignore[arg-type]
             except (TypeError, ValueError):
                 continue
 
@@ -251,7 +251,7 @@ class LLMEvaluator:
             item_id = str(item.get("item_id") or f"q{idx}")
             options = item.get("options") or []
             try:
-                correct_index = int(item.get("correct_index"))
+                correct_index = int(item.get("correct_index"))  # type: ignore[arg-type]
             except (TypeError, ValueError):
                 continue
             if not isinstance(options, list) or not (0 <= correct_index < len(options)):

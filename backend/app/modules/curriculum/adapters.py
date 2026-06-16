@@ -24,7 +24,7 @@ def v2_course_topic(
     """
     weight_map = dict(archetype.weight_map or {})
     if weight_map:
-        dominant_sub_skill = max(weight_map, key=weight_map.get)
+        dominant_sub_skill = max(weight_map, key=lambda k: weight_map[k])
     else:
         dominant_sub_skill = archetype.core_activity
 

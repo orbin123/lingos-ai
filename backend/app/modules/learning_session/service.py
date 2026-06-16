@@ -26,7 +26,7 @@ import re
 import time
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from sqlalchemy.orm import Session
@@ -48,7 +48,7 @@ from app.ai.graphs.nodes import (
     stream_answer_question,
     task_delivery_node,
 )
-from app.ai.graphs.state import LearningSessionState
+from app.ai.graphs.state import LearningSessionState, PhaseType
 from app.modules.auth.repository import UserProfileRepository
 from app.modules.curriculum.adapters import v2_course_topic
 from app.modules.curriculum.repository import (
@@ -498,7 +498,7 @@ def _is_short_affirmative_or_short_reply(text: str) -> bool:
     return any(phrase in cleaned for phrase in soft_positive)
 
 
-def _scripted_plan_length(state: dict) -> int:
+def _scripted_plan_length(state: LearningSessionState) -> int:
     """Return the length of the authored scripted plan, or 0 if absent."""
     daily_plan = state.get("daily_plan") or {}
     instructions = daily_plan.get("teacher_instructions") if daily_plan else None
@@ -514,7 +514,7 @@ def _should_force_transition_to_practice(
     *,
     user_text: str,
     messages: list[dict],
-    state: dict,
+    state: LearningSessionState,
 ) -> bool:
     """Escape valve: progress to practice when the strict gate misses it.
 
@@ -1123,7 +1123,7 @@ class LearningSessionService:
         session.understanding_confirmed = False
         session.phase = "teaching"
         session.current_task_index = 0
-        session.pre_generated_tasks = None
+        session.pre_generated_tasks = {}
 
         # Reset all activity attempts for this daily session so the full
         # activity queue becomes available again from the beginning. Delegate to
@@ -1818,8 +1818,8 @@ class LearningSessionService:
                 state["task_type"] = self._task_type_for_attempt(attempt)
                 state["current_sequence"] = attempt.sequence
                 state["current_task_index"] = attempt.sequence - 1
-                session.pre_generated_tasks = state["task_content"]
-                session.task_type = state["task_type"]
+                session.pre_generated_tasks = state["task_content"] or {}
+                session.task_type = state["task_type"] or ""
                 session.current_task_index = state["current_task_index"]
 
                 update = await task_delivery_node(state)
@@ -2257,8 +2257,8 @@ class LearningSessionService:
             state["current_sequence"] = attempt.sequence
             state["current_task_index"] = attempt.sequence - 1
             state["phase"] = "practice_task"
-            session.pre_generated_tasks = state["task_content"]
-            session.task_type = state["task_type"]
+            session.pre_generated_tasks = state["task_content"] or {}
+            session.task_type = state["task_type"] or ""
             session.current_task_index = state["current_task_index"]
             session.user_submission = None
             session.evaluation = None
@@ -2602,7 +2602,7 @@ class LearningSessionService:
             "daily_session_uuid": daily.session_id if daily is not None else None,
             "task_queue": list(session.task_queue or []),
             "current_task_index": session.current_task_index,
-            "phase": session.phase,
+            "phase": cast(PhaseType, session.phase),
             "messages": list(session.messages or []),
             "topic": session.topic,
             "skill_name": session.skill_name,
