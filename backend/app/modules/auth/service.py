@@ -29,14 +29,14 @@ class AuthService:
 
     def signup(self, *, email: str, password: str, name: str) -> User:
         """Register a new user and create their default profile.
-        
+
         Raises:
             EmailAlreadyExists: if email is already registered.
         """
         # 1. Check Uniqueness
         if self.users.email_exists(email):
             raise EmailAlreadyExists(f"Email already registered: {email}")
-        
+
         # 2. Hash Password
         password_hash = hash_password(password)
 

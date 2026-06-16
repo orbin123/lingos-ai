@@ -188,7 +188,9 @@ class TestOwnership:
         # next_activity is sync (no LLM); a plain sync test is fine.
         service = SessionService(db_session)
         with pytest.raises(SessionNotFound):
-            service.next_activity(session_id="does-not-exist", user_id=_user_id(db_session))
+            service.next_activity(
+                session_id="does-not-exist", user_id=_user_id(db_session)
+            )
 
     @pytest.mark.asyncio
     async def test_other_users_session_is_invisible(self, db_session):

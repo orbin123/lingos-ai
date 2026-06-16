@@ -27,7 +27,11 @@ import sys
 import sentry_sdk
 from sentry_sdk.types import Event, Hint
 
-from app.ai.imagegen.exceptions import ImageGenRateLimited, ImageGenTimeout, ImageGenValidationError
+from app.ai.imagegen.exceptions import (
+    ImageGenRateLimited,
+    ImageGenTimeout,
+    ImageGenValidationError,
+)
 from app.ai.llm.eval_context import get_eval_context
 from app.ai.llm.exceptions import LLMRateLimited, LLMTimeout, LLMValidationError
 from app.ai.pronunciation.exceptions import (

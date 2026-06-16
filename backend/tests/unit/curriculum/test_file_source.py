@@ -68,7 +68,9 @@ def test_get_day_by_id_returns_populated_w1_d2() -> None:
 
     speak_spec = file_source.task_spec_for(day, 3)
     assert "Read past simple passage aloud" in speak_spec["topic_override"]
-    assert "connected simple past narrative passage" in speak_spec["instructions_override"]
+    assert (
+        "connected simple past narrative passage" in speak_spec["instructions_override"]
+    )
     assert "50-60 words" in speak_spec["instructions_override"]
     assert "text_to_read_aloud" in speak_spec["widget_requirements"]
     assert "single connected past tense passage" in speak_spec["widget_requirements"]
@@ -106,9 +108,7 @@ def test_w1d1_activity_order_includes_writing_third() -> None:
         "SPEAK_TIMED",
     ]
     writing_spec = file_source.task_spec_for(day, 2)
-    assert writing_spec["topic_override"] == (
-        "Write simple present routine sentences"
-    )
+    assert writing_spec["topic_override"] == ("Write simple present routine sentences")
     assert "I, he, she" in writing_spec["instructions_override"]
     assert day.activity_contracts[2]["task_widget"] == "open_text"
     assert day.activity_contracts[2]["evaluation_widget"] == "write_speak_evaluation"
@@ -120,7 +120,9 @@ def test_build_teacher_instructions_returns_minimal_lesson_context() -> None:
     instr = file_source.build_teacher_instructions(day)
 
     assert instr["lesson_description"] == day.explanation_brief
-    assert instr["lesson_goal"] == "Teach simple present for facts, routines, and habits."
+    assert (
+        instr["lesson_goal"] == "Teach simple present for facts, routines, and habits."
+    )
     assert instr["readiness_prompt"] == "Ready to try the practice task?"
     assert "subject-verb" in instr["lesson_description"]
 

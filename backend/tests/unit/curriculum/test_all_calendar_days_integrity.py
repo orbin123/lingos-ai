@@ -55,7 +55,11 @@ def _assert_no_errors(issues, *, day_id: str) -> None:  # noqa: ANN001
         return
     lines = [
         f"{issue.check}: {issue.message}"
-        + (f" (archetype={issue.archetype_id}, seq={issue.sequence})" if issue.archetype_id else "")
+        + (
+            f" (archetype={issue.archetype_id}, seq={issue.sequence})"
+            if issue.archetype_id
+            else ""
+        )
         for issue in errors
     ]
     pytest.fail(f"{day_id}:\n" + "\n".join(lines))

@@ -147,9 +147,7 @@ class TestSignup:
     ):
         first = client.post("/auth/signup", json=SIGNUP).json()
         code = mailbox.last_code()
-        client.post(
-            "/auth/verify-email", json={"email": SIGNUP["email"], "code": code}
-        )
+        client.post("/auth/verify-email", json={"email": SIGNUP["email"], "code": code})
         res = client.post("/auth/signup", json=SIGNUP)
         assert res.status_code == 201
         assert res.json() == first  # indistinguishable from a fresh signup
@@ -265,9 +263,7 @@ class TestResend:
     def test_verified_email_generic_200_no_send(self, client, db_session, mailbox):
         client.post("/auth/signup", json=SIGNUP)
         code = mailbox.last_code()
-        client.post(
-            "/auth/verify-email", json={"email": SIGNUP["email"], "code": code}
-        )
+        client.post("/auth/verify-email", json={"email": SIGNUP["email"], "code": code})
         sent_before = len(mailbox.sent)
         res = client.post("/auth/resend-otp", json={"email": SIGNUP["email"]})
         assert res.status_code == 200
@@ -298,9 +294,7 @@ class TestLoginContract:
     def test_verified_login_succeeds(self, client, mailbox):
         client.post("/auth/signup", json=SIGNUP)
         code = mailbox.last_code()
-        client.post(
-            "/auth/verify-email", json={"email": SIGNUP["email"], "code": code}
-        )
+        client.post("/auth/verify-email", json={"email": SIGNUP["email"], "code": code})
         res = client.post(
             "/auth/login",
             json={"email": SIGNUP["email"], "password": SIGNUP["password"]},

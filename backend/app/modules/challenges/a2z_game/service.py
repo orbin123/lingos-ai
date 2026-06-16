@@ -142,7 +142,9 @@ class A2ZService:
                     level_number=lvl.level_number,
                     name=lvl.name,
                     target_words=cfg.get("target_words", lvl.time_limit_seconds),
-                    round_time_seconds=cfg.get("round_time_seconds", lvl.time_limit_seconds),
+                    round_time_seconds=cfg.get(
+                        "round_time_seconds", lvl.time_limit_seconds
+                    ),
                 )
             )
 
@@ -184,7 +186,9 @@ class A2ZService:
 
         # Check if game is already complete
         if progress.game_completed_at is not None:
-            raise A2ZGameCompleted("Game is already completed. Use restart to play again.")
+            raise A2ZGameCompleted(
+                "Game is already completed. Use restart to play again."
+            )
 
         if not open_ltrs:
             # All letters cleared on current level — shouldn't happen because
@@ -322,6 +326,7 @@ class A2ZService:
 
         # Flag the column as modified for SQLAlchemy JSON mutation tracking
         from sqlalchemy.orm.attributes import flag_modified
+
         flag_modified(attempt, "response_payload")
         self.db.commit()
 
@@ -335,9 +340,7 @@ class A2ZService:
 
     def finish_round(self, user_id: int, round_id: int) -> FinishRoundResponse:
         """Finalize a round: grade the transcript and update progress."""
-        attempt = self._round_repo.get_for_user(
-            round_id=round_id, user_id=user_id
-        )
+        attempt = self._round_repo.get_for_user(round_id=round_id, user_id=user_id)
         if attempt is None:
             raise A2ZRoundNotFound(f"Round {round_id} not found.")
         if attempt.status != ChallengeAttemptStatus.IN_PROGRESS:
@@ -383,6 +386,7 @@ class A2ZService:
         attempt.response_payload = response
 
         from sqlalchemy.orm.attributes import flag_modified
+
         flag_modified(attempt, "response_payload")
         flag_modified(attempt, "evaluation_report")
 
@@ -450,6 +454,7 @@ class A2ZService:
         progress.last_restarted_at = now
 
         from sqlalchemy.orm.attributes import flag_modified
+
         flag_modified(progress, "cleared_letters")
         self._progress_repo.save(progress)
         self.db.commit()

@@ -171,9 +171,9 @@ class TestPremiumRouteWiring:
             "/sessions/{session_id}/complete",
             "/sessions/pronunciation-score",
         ):
-            assert require_active_access in _route_dependency_funcs(
-                router, path
-            ), f"{path} missing require_active_access"
+            assert require_active_access in _route_dependency_funcs(router, path), (
+                f"{path} missing require_active_access"
+            )
 
     def test_learning_routes_declare_guard(self):
         from app.modules.learning_session.router import rest_router

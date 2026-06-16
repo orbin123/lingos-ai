@@ -98,7 +98,9 @@ def test_extract_returns_empty_when_profile_is_blank(monkeypatch) -> None:
             raise RuntimeError("LLM should not have been called")
 
     monkeypatch.setattr(
-        personalization_module, "get_default_llm_client", lambda: LoudLLM(),
+        personalization_module,
+        "get_default_llm_client",
+        lambda: LoudLLM(),
     )
 
     result = asyncio.run(extract_structured_personalisation(profile={}))
@@ -113,7 +115,9 @@ def test_extract_falls_back_when_llm_raises(monkeypatch) -> None:
             raise RuntimeError("LLM unavailable")
 
     monkeypatch.setattr(
-        personalization_module, "get_default_llm_client", lambda: ExplodingLLM(),
+        personalization_module,
+        "get_default_llm_client",
+        lambda: ExplodingLLM(),
     )
 
     result = asyncio.run(
@@ -153,7 +157,9 @@ def test_extract_passes_through_llm_output(monkeypatch) -> None:
             return llm_responses.pop(0)
 
     monkeypatch.setattr(
-        personalization_module, "get_default_llm_client", lambda: StubLLM(),
+        personalization_module,
+        "get_default_llm_client",
+        lambda: StubLLM(),
     )
 
     engineer = asyncio.run(
@@ -200,7 +206,9 @@ def test_extract_sanitises_pii_from_llm_output(monkeypatch) -> None:
             )
 
     monkeypatch.setattr(
-        personalization_module, "get_default_llm_client", lambda: LeakyLLM(),
+        personalization_module,
+        "get_default_llm_client",
+        lambda: LeakyLLM(),
     )
 
     result = asyncio.run(
@@ -209,7 +217,5 @@ def test_extract_sanitises_pii_from_llm_output(monkeypatch) -> None:
         )
     )
     assert "alice@example.com" not in result.domain
-    assert not any(
-        "alice@example.com" in c for c in result.communication_contexts
-    )
+    assert not any("alice@example.com" in c for c in result.communication_contexts)
     assert not any("555-0199" in c for c in result.communication_contexts)

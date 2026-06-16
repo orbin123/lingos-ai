@@ -57,10 +57,10 @@ _DEFAULT_ACTIVITIES: tuple[str, ...] = ("read", "write", "listen", "speak")
 # Which two activities every day MUST contain. The remainder are "optional"
 # and surface only when the user picks tasks_per_day > 2.
 _MANDATORY_BY_THEME: dict[str, tuple[str, ...]] = {
-    "grammar":       ("read", "write"),
+    "grammar": ("read", "write"),
     "communication": ("write", "speak"),
-    "vocabulary":    ("read", "write"),
-    "confidence":    ("listen", "speak"),
+    "vocabulary": ("read", "write"),
+    "confidence": ("listen", "speak"),
 }
 
 # Per-theme archetype pools, ordered loosely from simplest to richest. The
@@ -69,30 +69,57 @@ _MANDATORY_BY_THEME: dict[str, tuple[str, ...]] = {
 # tests assert this.
 _CANDIDATES_BY_THEME: dict[str, dict[str, tuple[str, ...]]] = {
     "grammar": {
-        "read":   ("READ_CLOZE", "READ_COMP_MCQ", "READ_ERROR_SPOT"),
-        "write":  ("WRITE_OPEN_SENT", "WRITE_SENT_TRANS", "WRITE_ERROR_CORR", "WRITE_PARA"),
+        "read": ("READ_CLOZE", "READ_COMP_MCQ", "READ_ERROR_SPOT"),
+        "write": (
+            "WRITE_OPEN_SENT",
+            "WRITE_SENT_TRANS",
+            "WRITE_ERROR_CORR",
+            "WRITE_PARA",
+        ),
         "listen": ("LISTEN_MCQ", "LISTEN_CLOZE", "LISTEN_DICTATION"),
-        "speak":  ("SPEAK_READ_ALOUD", "SPEAK_TIMED"),
+        "speak": ("SPEAK_READ_ALOUD", "SPEAK_TIMED"),
     },
     "communication": {
-        "read":   ("READ_COMP_MCQ", "READ_TFNG", "READ_STRUCTURE_ID"),
-        "write":  ("WRITE_SENT_TRANS", "WRITE_EMAIL", "WRITE_PARA",
-                   "WRITE_PARAPHRASE", "WRITE_BULLETS_TO_PARA", "WRITE_IDEA_PARA"),
+        "read": ("READ_COMP_MCQ", "READ_TFNG", "READ_STRUCTURE_ID"),
+        "write": (
+            "WRITE_SENT_TRANS",
+            "WRITE_EMAIL",
+            "WRITE_PARA",
+            "WRITE_PARAPHRASE",
+            "WRITE_BULLETS_TO_PARA",
+            "WRITE_IDEA_PARA",
+        ),
         "listen": ("LISTEN_MCQ", "LISTEN_INFER", "LISTEN_RETELL"),
-        "speak":  ("SPEAK_PIC_DESC", "SPEAK_ROLEPLAY", "SPEAK_INTERVIEW", "SPEAK_OPINION"),
+        "speak": (
+            "SPEAK_PIC_DESC",
+            "SPEAK_ROLEPLAY",
+            "SPEAK_INTERVIEW",
+            "SPEAK_OPINION",
+        ),
     },
     "vocabulary": {
-        "read":   ("READ_WORD_MATCH", "READ_CONTEXT_MCQ"),
-        "write":  ("WRITE_SENT_TRANS", "WRITE_WORD_UPGRADE", "WRITE_PARA", "WRITE_PARAPHRASE"),
+        "read": ("READ_WORD_MATCH", "READ_CONTEXT_MCQ"),
+        "write": (
+            "WRITE_SENT_TRANS",
+            "WRITE_WORD_UPGRADE",
+            "WRITE_PARA",
+            "WRITE_PARAPHRASE",
+        ),
         "listen": ("LISTEN_MCQ", "LISTEN_DICTATION"),
-        "speak":  ("SPEAK_PIC_DESC", "SPEAK_TIMED"),
+        "speak": ("SPEAK_PIC_DESC", "SPEAK_TIMED"),
     },
     "confidence": {
-        "read":   ("READ_COMP_MCQ", "READ_TONE_ID"),
-        "write":  ("WRITE_SENT_TRANS", "WRITE_TIMED"),
+        "read": ("READ_COMP_MCQ", "READ_TONE_ID"),
+        "write": ("WRITE_SENT_TRANS", "WRITE_TIMED"),
         "listen": ("LISTEN_SHADOW", "LISTEN_MCQ", "LISTEN_TONE"),
-        "speak":  ("SPEAK_READ_ALOUD", "SPEAK_TIMED", "SPEAK_PIC_DESC",
-                   "SPEAK_SMALLTALK", "SPEAK_PRESENT", "SPEAK_DEBATE"),
+        "speak": (
+            "SPEAK_READ_ALOUD",
+            "SPEAK_TIMED",
+            "SPEAK_PIC_DESC",
+            "SPEAK_SMALLTALK",
+            "SPEAK_PRESENT",
+            "SPEAK_DEBATE",
+        ),
     },
 }
 
@@ -102,16 +129,27 @@ _CANDIDATES_BY_THEME: dict[str, dict[str, tuple[str, ...]]] = {
 # eligibility. Sub-levels (1–10) handle finer-grained difficulty inside the
 # Task Generator.
 _CEFR_RANK: dict[str, int] = {
-    "A1": 1, "A2": 2, "B1": 3, "B1+": 3, "B2": 4, "B2+": 4, "C1": 5, "C2": 6,
+    "A1": 1,
+    "A2": 2,
+    "B1": 3,
+    "B1+": 3,
+    "B2": 4,
+    "B2+": 4,
+    "C1": 5,
+    "C2": 6,
 }
 
 
 def _cefr_compatible(archetype_id: str, week_cefr: str) -> bool:
     spec = get_archetype(archetype_id)
-    return _CEFR_RANK[spec.cefr_min] <= _CEFR_RANK[week_cefr] <= _CEFR_RANK[spec.cefr_max]
+    return (
+        _CEFR_RANK[spec.cefr_min] <= _CEFR_RANK[week_cefr] <= _CEFR_RANK[spec.cefr_max]
+    )
 
 
-def _suggested_archetypes(theme_type: str, cefr_level: str) -> dict[str, tuple[str, ...]]:
+def _suggested_archetypes(
+    theme_type: str, cefr_level: str
+) -> dict[str, tuple[str, ...]]:
     pool = _CANDIDATES_BY_THEME[theme_type]
     return {
         activity: tuple(aid for aid in ids if _cefr_compatible(aid, cefr_level))

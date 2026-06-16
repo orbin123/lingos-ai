@@ -9,4 +9,3 @@ def test_error_spotting_widget_normalizes_to_chat_widget_key() -> None:
 def test_error_correction_widget_normalizes_to_chat_widget_key() -> None:
     assert normalize_widget_key("ErrorCorrection") == "error_correction"
     assert normalize_widget_key("error_correction") == "error_correction"
-

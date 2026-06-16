@@ -55,9 +55,9 @@ class SessionStatus(str, Enum):
 class AttemptStatus(str, Enum):
     """Lifecycle of one activity inside a session."""
 
-    PENDING = "pending"       # task delivered, user hasn't submitted yet
-    SUBMITTED = "submitted"   # response stored, evaluator hasn't run
-    EVALUATED = "evaluated"   # scored + feedback written
+    PENDING = "pending"  # task delivered, user hasn't submitted yet
+    SUBMITTED = "submitted"  # response stored, evaluator hasn't run
+    EVALUATED = "evaluated"  # scored + feedback written
 
 
 # ── DailySession ───────────────────────────────────────────────────
@@ -157,9 +157,7 @@ class ActivityAttempt(Base, IDMixin, TimestampMixin):
         index=True,
     )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
-    is_mandatory: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True
-    )
+    is_mandatory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     status: Mapped[AttemptStatus] = mapped_column(
         SQLAlchemyEnum(
             AttemptStatus,
@@ -303,11 +301,10 @@ class SessionScorecard(Base, IDMixin, CreatedAtMixin):
     completed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    points_applied: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    points_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     mentor_note: Mapped[str | None] = mapped_column(
-        Text, nullable=True,
+        Text,
+        nullable=True,
     )
 
     session: Mapped[DailySession] = relationship(back_populates="scorecard")

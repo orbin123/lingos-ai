@@ -66,7 +66,9 @@ def adapt_day_source(
         teacher_agent_behaviour=_teacher_script(day),
         teacher_instructions=_teacher_instructions(day, week),
         task_specs=tuple(_task_spec(activity) for activity in activities),
-        activity_contracts=tuple(_activity_contract(activity) for activity in activities),
+        activity_contracts=tuple(
+            _activity_contract(activity) for activity in activities
+        ),
         evaluator_overrides=_evaluation_overrides(activities),
         feedback_overrides=_feedback_overrides(activities),
         final_review={
@@ -98,9 +100,7 @@ def _ordered_activities(
 
 def _teacher_script(day: DaySource) -> tuple[str, ...]:
     return tuple(
-        step.instruction
-        for step in day.teacher.steps
-        if step.instruction.strip()
+        step.instruction for step in day.teacher.steps if step.instruction.strip()
     )
 
 

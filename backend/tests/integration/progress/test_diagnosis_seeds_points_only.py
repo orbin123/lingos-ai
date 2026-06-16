@@ -119,9 +119,13 @@ def _sample_payload() -> DiagnosisSubmitRequest:
             words=[
                 PronunciationWordIn(word="every", accuracy_score=95.0, error_type=None),
                 PronunciationWordIn(
-                    word="neighbours", accuracy_score=40.0, error_type="Mispronunciation"
+                    word="neighbours",
+                    accuracy_score=40.0,
+                    error_type="Mispronunciation",
                 ),
-                PronunciationWordIn(word="clearly", accuracy_score=55.0, error_type=None),
+                PronunciationWordIn(
+                    word="clearly", accuracy_score=55.0, error_type=None
+                ),
             ],
         ),
     )
@@ -187,9 +191,7 @@ class TestDiagnosisWritesPointsOnly:
 
         # 7 skill points rows, one per sub-skill.
         rows = (
-            db_session.query(SkillPoints)
-            .filter(SkillPoints.user_id == user.id)
-            .all()
+            db_session.query(SkillPoints).filter(SkillPoints.user_id == user.id).all()
         )
         assert len(rows) == 7
 
@@ -214,9 +216,7 @@ class TestModuleShape:
     """
 
     def test_no_userskillscore_import(self):
-        source = Path(
-            inspect.getsourcefile(diagnosis_service_module)
-        ).read_text()
+        source = Path(inspect.getsourcefile(diagnosis_service_module)).read_text()
         # Drop the module docstring before scanning — a comment that
         # mentions the legacy table by name (for context) is fine.
         code = source.split('"""', 2)[-1] if source.startswith('"""') else source

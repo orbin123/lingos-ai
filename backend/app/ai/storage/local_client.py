@@ -58,7 +58,8 @@ class LocalBlobStorage:
         self._root.mkdir(parents=True, exist_ok=True)
         logger.info(
             "local_blob_storage_init root=%s url_prefix=%s",
-            self._root, self._url_prefix,
+            self._root,
+            self._url_prefix,
         )
 
     # ------------------------------------------------------------------
@@ -90,7 +91,9 @@ class LocalBlobStorage:
         size = len(data)
         logger.info(
             "blob_stored key=%s size=%d content_type=%s",
-            key, size, content_type,
+            key,
+            size,
+            content_type,
         )
         return StoredBlob(
             public_url=public_url,

@@ -52,11 +52,7 @@ def test_validate_allows_one_sentence_ask() -> None:
 
 def test_teaching_output_rejects_extended_production_ask() -> None:
     with pytest.raises(ValueError, match="extended_production_ask"):
-        TeachingOutput(
-            messages=[
-                "Nice. Can you write a paragraph about yesterday?"
-            ]
-        )
+        TeachingOutput(messages=["Nice. Can you write a paragraph about yesterday?"])
 
 
 def test_validate_flags_multiple_questions() -> None:
@@ -128,9 +124,7 @@ def test_question_marks_inside_quotes_do_not_count_as_extra_questions() -> None:
 
 
 def test_repair_closes_dangling_quote_before_final_question() -> None:
-    raw = (
-        "For example, you could say, \"Do you usually smoke?"
-    )
+    raw = 'For example, you could say, "Do you usually smoke?'
     repaired = _deterministic_repair(raw)
     assert repaired.count('"') % 2 == 0
     assert repaired.endswith('smoke?"')

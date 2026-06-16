@@ -22,22 +22,28 @@ DEFAULT_ROLE_NAMES = (ROLE_LEARNER, ROLE_ADMIN, ROLE_SUPER_ADMIN)
 # Enums for UserProfile
 class SelfAssessedLevel(str, Enum):
     """User's own opinion of their English Level"""
+
     BEGINNER = "beginner"
     INTERMEDIATE = "intermediate"
     ADVANCED = "advanced"
 
+
 class ContentExposure(str, Enum):
     """How often user consumes English content (reading, video, etc...)"""
+
     NONE = "none"
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
 
+
 class UserGoal(str, Enum):
     """Why the user is learning English"""
+
     CASUAL = "casual"
     PROFESSIONAL = "professional"
     ACADEMIC = "academic"
+
 
 # User Base Class
 class User(Base, IDMixin, TimestampMixin):
@@ -66,10 +72,7 @@ class User(Base, IDMixin, TimestampMixin):
         default=None,
     )
 
-    name: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False
-    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
 
     is_superuser: Mapped[bool] = mapped_column(
         Boolean,
@@ -434,33 +437,45 @@ class UserProfile(Base, IDMixin, TimestampMixin):
     )
 
     current_streak: Mapped[int] = mapped_column(
-        Integer, default=0, server_default="0", nullable=False,
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
     )
 
     longest_streak: Mapped[int] = mapped_column(
-        Integer, default=0, server_default="0", nullable=False,
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
     )
 
     # Date-only, expressed in the user's local timezone (NOT UTC).
     last_activity_date: Mapped[date | None] = mapped_column(
-        Date, nullable=True,
+        Date,
+        nullable=True,
     )
 
     streak_freezes: Mapped[int] = mapped_column(
-        Integer, default=0, server_default="0", nullable=False,
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
     )
 
     # Local-date the celebration animation was last acknowledged by the
     # client. Prevents replay on refresh.
     last_seen_streak_animation_date: Mapped[date | None] = mapped_column(
-        Date, nullable=True,
+        Date,
+        nullable=True,
     )
 
     # The animation kind to play next time the dashboard loads — set
     # inside record_daily_activity, cleared once acknowledged.
     # One of: "rekindle" | "on_fire" | "frozen_to_fire" | "frozen" | None
     last_animation_type: Mapped[str | None] = mapped_column(
-        String(20), nullable=True,
+        String(20),
+        nullable=True,
     )
 
     # Relationships
@@ -524,14 +539,11 @@ class EmailOtp(Base, IDMixin, CreatedAtMixin):
         nullable=True,
     )
 
-    __table_args__ = (
-        Index("ix_email_otp_email_purpose", "email", "purpose"),
-    )
+    __table_args__ = (Index("ix_email_otp_email_purpose", "email", "purpose"),)
 
     def __repr__(self) -> str:
         return (
-            f"<EmailOtp(id={self.id}, email={self.email!r}, "
-            f"purpose={self.purpose!r})>"
+            f"<EmailOtp(id={self.id}, email={self.email!r}, purpose={self.purpose!r})>"
         )
 
 

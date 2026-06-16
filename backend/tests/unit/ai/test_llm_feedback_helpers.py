@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.ai.sessions.llm_feedback import FeedbackOutput, LLMFeedbackGenerator, MistakeOutSchema
+from app.ai.sessions.llm_feedback import (
+    FeedbackOutput,
+    LLMFeedbackGenerator,
+    MistakeOutSchema,
+)
 from app.scoring import get_archetype
 
 # Canonical fakes (Phase 3 — moved out of this file into tests/mocks/).
@@ -21,10 +25,26 @@ class TestComputeWrongItems:
     def _task(self):
         return {
             "items": [
-                {"item_id": "b1", "correct_answer": "brush", "explanation": "base verb for I"},
-                {"item_id": "b2", "correct_answer": "eats",  "explanation": "she adds -s"},
-                {"item_id": "b3", "correct_answer": "walks", "explanation": "he adds -s"},
-                {"item_id": "b4", "correct_answer": "drink", "explanation": "they takes base verb"},
+                {
+                    "item_id": "b1",
+                    "correct_answer": "brush",
+                    "explanation": "base verb for I",
+                },
+                {
+                    "item_id": "b2",
+                    "correct_answer": "eats",
+                    "explanation": "she adds -s",
+                },
+                {
+                    "item_id": "b3",
+                    "correct_answer": "walks",
+                    "explanation": "he adds -s",
+                },
+                {
+                    "item_id": "b4",
+                    "correct_answer": "drink",
+                    "explanation": "they takes base verb",
+                },
             ]
         }
 
@@ -64,7 +84,11 @@ class TestComputeWrongItems:
         task_content = {
             "items": [
                 {"item_id": "b1", "correct_answer": "got", "explanation": "get -> got"},
-                {"item_id": "b2", "correct_answer": "had", "explanation": "have -> had"},
+                {
+                    "item_id": "b2",
+                    "correct_answer": "had",
+                    "explanation": "have -> had",
+                },
             ]
         }
         user_response = {
@@ -95,6 +119,7 @@ class TestFeedbackConfirmedMistakes:
 
     def _eval(self):
         from app.modules.sessions.evaluator import EvaluationResult
+
         return EvaluationResult(raw_score=7.5, rubric_scores={}, evaluator_notes=None)
 
     def _canned_feedback(self, spec):
@@ -115,10 +140,26 @@ class TestFeedbackConfirmedMistakes:
 
         task_content = {
             "items": [
-                {"item_id": "b1", "correct_answer": "brush", "explanation": "base verb for I"},
-                {"item_id": "b2", "correct_answer": "eats",  "explanation": "she adds -s"},
-                {"item_id": "b3", "correct_answer": "walks", "explanation": "he adds -s"},
-                {"item_id": "b4", "correct_answer": "drink", "explanation": "they takes base verb"},
+                {
+                    "item_id": "b1",
+                    "correct_answer": "brush",
+                    "explanation": "base verb for I",
+                },
+                {
+                    "item_id": "b2",
+                    "correct_answer": "eats",
+                    "explanation": "she adds -s",
+                },
+                {
+                    "item_id": "b3",
+                    "correct_answer": "walks",
+                    "explanation": "he adds -s",
+                },
+                {
+                    "item_id": "b4",
+                    "correct_answer": "drink",
+                    "explanation": "they takes base verb",
+                },
             ]
         }
         user_response = {"b1": "brush", "b2": "eat", "b3": "walks", "b4": "drink"}
@@ -133,7 +174,9 @@ class TestFeedbackConfirmedMistakes:
         prompt = fake.calls[0]["user_prompt"]
         # Confirmed section must be present.
         marker = "confirmed wrong answers"
-        assert marker in prompt.lower(), "Expected 'Confirmed wrong answers' section in prompt"
+        assert marker in prompt.lower(), (
+            "Expected 'Confirmed wrong answers' section in prompt"
+        )
         # Extract only the confirmed section (everything after the marker).
         confirmed_section = prompt.lower().split(marker, 1)[1]
         # b2 (the wrong answer) must appear in the confirmed section.
@@ -184,16 +227,28 @@ class TestFeedbackConfirmedMistakes:
                 "widget": "listen_and_respond",
                 "inner_widget": "fill_in_blanks",
                 "items": [
-                    {"item_id": "b1", "correct_answer": "got", "explanation": "get -> got"},
-                    {"item_id": "b2", "correct_answer": "had", "explanation": "have -> had"},
+                    {
+                        "item_id": "b1",
+                        "correct_answer": "got",
+                        "explanation": "get -> got",
+                    },
+                    {
+                        "item_id": "b2",
+                        "correct_answer": "had",
+                        "explanation": "have -> had",
+                    },
                 ],
             },
         )
 
-        confirmed_section = fake.calls[0]["user_prompt"].lower().split(
-            "confirmed wrong answers",
-            1,
-        )[1]
+        confirmed_section = (
+            fake.calls[0]["user_prompt"]
+            .lower()
+            .split(
+                "confirmed wrong answers",
+                1,
+            )[1]
+        )
         assert '"b2"' in confirmed_section
         assert '"b1"' not in confirmed_section
 
@@ -201,20 +256,22 @@ class TestFeedbackConfirmedMistakes:
     async def test_read_word_match_mcq_feedback_uses_option_labels_not_indices(self):
         """Standalone MCQ widgets (e.g. READ_WORD_MATCH) must show option text."""
         spec = get_archetype("READ_WORD_MATCH")
-        fake = FakeLLMClient([
-            FeedbackOutput(
-                score=8,
-                summary="Good effort on articles.",
-                mistakes=[
-                    MistakeOutSchema(
-                        issue="Wrong pick for hour",
-                        user_wrote="0",
-                        correction="1",
-                        rule="Use an before vowel sounds.",
-                    )
-                ],
-            )
-        ])
+        fake = FakeLLMClient(
+            [
+                FeedbackOutput(
+                    score=8,
+                    summary="Good effort on articles.",
+                    mistakes=[
+                        MistakeOutSchema(
+                            issue="Wrong pick for hour",
+                            user_wrote="0",
+                            correction="1",
+                            rule="Use an before vowel sounds.",
+                        )
+                    ],
+                )
+            ]
+        )
         agent = LLMFeedbackGenerator(fake)
 
         task_content = {
@@ -228,7 +285,13 @@ class TestFeedbackConfirmedMistakes:
                 }
             ]
         }
-        user_response = {"hour": 0, "inner_response": {"widget": "mcq", "answers": [{"item_id": "hour", "selected_index": 0}]}}
+        user_response = {
+            "hour": 0,
+            "inner_response": {
+                "widget": "mcq",
+                "answers": [{"item_id": "hour", "selected_index": 0}],
+            },
+        }
 
         result = await agent.generate(
             archetype=spec,
@@ -244,5 +307,3 @@ class TestFeedbackConfirmedMistakes:
 
 
 # ── Registry sanity (Phase 4: every archetype must be invokable) ───
-
-

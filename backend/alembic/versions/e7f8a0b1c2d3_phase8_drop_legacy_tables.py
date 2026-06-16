@@ -60,26 +60,44 @@ depends_on: Union[str, Sequence[str], None] = None
 # Reused by `tasks.task_type` and
 # `enrollment_skill_history.last_activity_type` in the legacy schema.
 _TASK_TYPE_VALUES: tuple[str, ...] = (
-    "reading", "writing", "speaking", "listening",
-    "fill_in_blanks", "error_spotting", "sentence_transformation",
-    "voice_conversion", "error_correction", "speak_with_tense",
-    "curriculum_grammar_fill_blanks", "curriculum_grammar_open_text",
-    "curriculum_grammar_listen_mcq", "curriculum_grammar_speak",
-    "curriculum_vocab_mcq", "curriculum_vocab_open_text",
-    "curriculum_vocab_listen_mcq", "curriculum_vocab_speak",
-    "curriculum_pron_read_aloud", "curriculum_pron_phonetic_mcq",
-    "curriculum_pron_listen_discriminate", "curriculum_pron_speak_drill",
-    "curriculum_fluency_speed_read", "curriculum_fluency_timed_write",
-    "curriculum_fluency_shadow", "curriculum_fluency_speak",
-    "curriculum_expression_summarize", "curriculum_expression_essay",
+    "reading",
+    "writing",
+    "speaking",
+    "listening",
+    "fill_in_blanks",
+    "error_spotting",
+    "sentence_transformation",
+    "voice_conversion",
+    "error_correction",
+    "speak_with_tense",
+    "curriculum_grammar_fill_blanks",
+    "curriculum_grammar_open_text",
+    "curriculum_grammar_listen_mcq",
+    "curriculum_grammar_speak",
+    "curriculum_vocab_mcq",
+    "curriculum_vocab_open_text",
+    "curriculum_vocab_listen_mcq",
+    "curriculum_vocab_speak",
+    "curriculum_pron_read_aloud",
+    "curriculum_pron_phonetic_mcq",
+    "curriculum_pron_listen_discriminate",
+    "curriculum_pron_speak_drill",
+    "curriculum_fluency_speed_read",
+    "curriculum_fluency_timed_write",
+    "curriculum_fluency_shadow",
+    "curriculum_fluency_speak",
+    "curriculum_expression_summarize",
+    "curriculum_expression_essay",
     "curriculum_expression_listen_structure",
     "curriculum_expression_storyboard",
     "curriculum_comprehension_read_mcq",
     "curriculum_comprehension_write_answers",
     "curriculum_comprehension_listen_mcq",
     "curriculum_comprehension_retell",
-    "curriculum_tone_read_mcq", "curriculum_tone_rewrite",
-    "curriculum_tone_listen_mcq", "curriculum_tone_roleplay",
+    "curriculum_tone_read_mcq",
+    "curriculum_tone_rewrite",
+    "curriculum_tone_listen_mcq",
+    "curriculum_tone_roleplay",
 )
 
 _LEGACY_TABLES_DROP_ORDER: tuple[str, ...] = (
@@ -150,7 +168,9 @@ def downgrade() -> None:
         sa.Column(
             "target_level",
             sa.Enum(
-                "beginner", "intermediate", "advanced",
+                "beginner",
+                "intermediate",
+                "advanced",
                 name="course_level_enum",
             ),
             nullable=False,
@@ -158,26 +178,30 @@ def downgrade() -> None:
         sa.Column(
             "status",
             sa.Enum(
-                "draft", "active", "archived",
+                "draft",
+                "active",
+                "archived",
                 name="course_status_enum",
             ),
             nullable=False,
         ),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_courses_slug"), "courses", ["slug"], unique=True)
-    op.create_index(
-        op.f("ix_courses_status"), "courses", ["status"], unique=False
-    )
+    op.create_index(op.f("ix_courses_status"), "courses", ["status"], unique=False)
 
     # user_enrollments
     op.create_table(
@@ -193,13 +217,17 @@ def downgrade() -> None:
         sa.Column("allow_speaking", sa.Boolean(), nullable=False),
         sa.Column(
             "current_day_started_at",
-            sa.DateTime(timezone=True), nullable=False,
+            sa.DateTime(timezone=True),
+            nullable=False,
         ),
         sa.Column("last_completed_on", sa.Date(), nullable=True),
         sa.Column(
             "status",
             sa.Enum(
-                "active", "paused", "completed", "abandoned",
+                "active",
+                "paused",
+                "completed",
+                "abandoned",
                 name="enrollment_status_enum",
             ),
             nullable=False,
@@ -207,36 +235,42 @@ def downgrade() -> None:
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.CheckConstraint(
             "tasks_per_day BETWEEN 2 AND 4",
             name="ck_user_enrollments_tasks_per_day_2_4",
         ),
-        sa.ForeignKeyConstraint(
-            ["course_id"], ["courses.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["course_id"], ["courses.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
         op.f("ix_user_enrollments_course_id"),
-        "user_enrollments", ["course_id"], unique=False,
+        "user_enrollments",
+        ["course_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_user_enrollments_status"),
-        "user_enrollments", ["status"], unique=False,
+        "user_enrollments",
+        ["status"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_user_enrollments_user_id"),
-        "user_enrollments", ["user_id"], unique=True,
+        "user_enrollments",
+        ["user_id"],
+        unique=True,
     )
 
     # tasks
@@ -255,56 +289,54 @@ def downgrade() -> None:
         sa.Column(
             "status",
             sa.Enum(
-                "draft", "active", "archived",
+                "draft",
+                "active",
+                "archived",
                 name="task_status_enum",
             ),
             nullable=False,
         ),
-        sa.Column(
-            "content", postgresql.JSONB(astext_type=sa.Text()), nullable=False
-        ),
+        sa.Column("content", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        op.f("ix_tasks_status"), "tasks", ["status"], unique=False
-    )
-    op.create_index(
-        op.f("ix_tasks_task_type"), "tasks", ["task_type"], unique=False
-    )
+    op.create_index(op.f("ix_tasks_status"), "tasks", ["status"], unique=False)
+    op.create_index(op.f("ix_tasks_task_type"), "tasks", ["task_type"], unique=False)
 
     # task_skills
     op.create_table(
         "task_skills",
         sa.Column("task_id", sa.Integer(), nullable=False),
         sa.Column("skill_id", sa.Integer(), nullable=False),
-        sa.Column(
-            "weight", sa.Numeric(precision=3, scale=2), nullable=False
-        ),
+        sa.Column("weight", sa.Numeric(precision=3, scale=2), nullable=False),
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["skill_id"], ["skills.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["task_id"], ["tasks.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["skill_id"], ["skills.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
         op.f("ix_task_skills_skill_id"),
-        "task_skills", ["skill_id"], unique=False,
+        "task_skills",
+        ["skill_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_task_skills_task_id"),
-        "task_skills", ["task_id"], unique=False,
+        "task_skills",
+        ["task_id"],
+        unique=False,
     )
 
     # user_tasks
@@ -316,7 +348,10 @@ def downgrade() -> None:
         sa.Column(
             "status",
             sa.Enum(
-                "pending", "in_progress", "completed", "skipped",
+                "pending",
+                "in_progress",
+                "completed",
+                "skipped",
                 name="user_task_status_enum",
             ),
             nullable=False,
@@ -324,38 +359,44 @@ def downgrade() -> None:
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(
             ["enrollment_id"], ["user_enrollments.id"], ondelete="SET NULL"
         ),
-        sa.ForeignKeyConstraint(
-            ["task_id"], ["tasks.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["task_id"], ["tasks.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
         op.f("ix_user_tasks_enrollment_id"),
-        "user_tasks", ["enrollment_id"], unique=False,
+        "user_tasks",
+        ["enrollment_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_user_tasks_status"), "user_tasks", ["status"], unique=False
     )
     op.create_index(
         op.f("ix_user_tasks_task_id"),
-        "user_tasks", ["task_id"], unique=False,
+        "user_tasks",
+        ["task_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_user_tasks_user_id"),
-        "user_tasks", ["user_id"], unique=False,
+        "user_tasks",
+        ["user_id"],
+        unique=False,
     )
 
     # learning_sessions
@@ -373,48 +414,54 @@ def downgrade() -> None:
         sa.Column("user_level", sa.Integer(), nullable=False),
         sa.Column(
             "pre_generated_tasks",
-            postgresql.JSONB(astext_type=sa.Text()), nullable=False,
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
         ),
         sa.Column(
             "task_queue",
-            postgresql.JSONB(astext_type=sa.Text()), nullable=False,
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
         ),
         sa.Column("current_task_index", sa.Integer(), nullable=False),
         sa.Column(
             "messages",
-            postgresql.JSONB(astext_type=sa.Text()), nullable=False,
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
         ),
         sa.Column(
             "user_submission",
-            postgresql.JSONB(astext_type=sa.Text()), nullable=True,
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
         ),
         sa.Column(
             "evaluation",
-            postgresql.JSONB(astext_type=sa.Text()), nullable=True,
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
         ),
         sa.Column(
             "feedback",
-            postgresql.JSONB(astext_type=sa.Text()), nullable=True,
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=True,
         ),
-        sa.Column(
-            "understanding_confirmed", sa.Boolean(), nullable=False
-        ),
+        sa.Column("understanding_confirmed", sa.Boolean(), nullable=False),
         sa.Column("current_activity_order", sa.Integer(), nullable=False),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(
             ["enrollment_id"], ["user_enrollments.id"], ondelete="CASCADE"
         ),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(
             ["user_task_id"], ["user_tasks.id"], ondelete="SET NULL"
         ),
@@ -422,19 +469,27 @@ def downgrade() -> None:
     )
     op.create_index(
         op.f("ix_learning_sessions_enrollment_id"),
-        "learning_sessions", ["enrollment_id"], unique=False,
+        "learning_sessions",
+        ["enrollment_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_learning_sessions_session_id"),
-        "learning_sessions", ["session_id"], unique=True,
+        "learning_sessions",
+        ["session_id"],
+        unique=True,
     )
     op.create_index(
         op.f("ix_learning_sessions_user_id"),
-        "learning_sessions", ["user_id"], unique=False,
+        "learning_sessions",
+        ["user_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_learning_sessions_user_task_id"),
-        "learning_sessions", ["user_task_id"], unique=False,
+        "learning_sessions",
+        ["user_task_id"],
+        unique=False,
     )
 
     # user_responses
@@ -443,18 +498,23 @@ def downgrade() -> None:
         sa.Column("user_task_id", sa.Integer(), nullable=False),
         sa.Column(
             "content",
-            postgresql.JSONB(astext_type=sa.Text()), nullable=False,
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
         ),
         sa.Column("raw_text", sa.Text(), nullable=True),
         sa.Column(
             "embedding_status",
-            sa.Text(), server_default="pending", nullable=False,
+            sa.Text(),
+            server_default="pending",
+            nullable=False,
         ),
         sa.Column("pinecone_vector_id", sa.Text(), nullable=True),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(
             ["user_task_id"], ["user_tasks.id"], ondelete="CASCADE"
@@ -463,11 +523,15 @@ def downgrade() -> None:
     )
     op.create_index(
         op.f("ix_user_responses_embedding_status"),
-        "user_responses", ["embedding_status"], unique=False,
+        "user_responses",
+        ["embedding_status"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_user_responses_user_task_id"),
-        "user_responses", ["user_task_id"], unique=True,
+        "user_responses",
+        ["user_task_id"],
+        unique=True,
     )
 
     # evaluations
@@ -476,20 +540,25 @@ def downgrade() -> None:
         sa.Column("response_id", sa.Integer(), nullable=False),
         sa.Column(
             "overall_score",
-            sa.Numeric(precision=4, scale=2), nullable=False,
+            sa.Numeric(precision=4, scale=2),
+            nullable=False,
         ),
         sa.Column(
             "percentage",
-            sa.Numeric(precision=5, scale=2), nullable=False,
+            sa.Numeric(precision=5, scale=2),
+            nullable=False,
         ),
         sa.Column(
             "report",
-            postgresql.JSONB(astext_type=sa.Text()), nullable=False,
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
         ),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(
             ["response_id"], ["user_responses.id"], ondelete="CASCADE"
@@ -498,7 +567,9 @@ def downgrade() -> None:
     )
     op.create_index(
         op.f("ix_evaluations_response_id"),
-        "evaluations", ["response_id"], unique=True,
+        "evaluations",
+        ["response_id"],
+        unique=True,
     )
 
     # feedbacks — includes admin-monitoring columns (review_status,
@@ -509,12 +580,15 @@ def downgrade() -> None:
         sa.Column("evaluation_id", sa.Integer(), nullable=False),
         sa.Column(
             "body",
-            postgresql.JSONB(astext_type=sa.Text()), nullable=False,
+            postgresql.JSONB(astext_type=sa.Text()),
+            nullable=False,
         ),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column(
             "review_status",
@@ -529,7 +603,8 @@ def downgrade() -> None:
             ["evaluation_id"], ["evaluations.id"], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(
-            ["reviewed_by"], ["users.id"],
+            ["reviewed_by"],
+            ["users.id"],
             name="fk_feedbacks_reviewed_by_users",
             ondelete="SET NULL",
         ),
@@ -537,15 +612,21 @@ def downgrade() -> None:
     )
     op.create_index(
         op.f("ix_feedbacks_evaluation_id"),
-        "feedbacks", ["evaluation_id"], unique=True,
+        "feedbacks",
+        ["evaluation_id"],
+        unique=True,
     )
     op.create_index(
         op.f("ix_feedbacks_review_status"),
-        "feedbacks", ["review_status"], unique=False,
+        "feedbacks",
+        ["review_status"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_feedbacks_reviewed_by"),
-        "feedbacks", ["reviewed_by"], unique=False,
+        "feedbacks",
+        ["reviewed_by"],
+        unique=False,
     )
 
     # user_skill_scores
@@ -553,38 +634,42 @@ def downgrade() -> None:
         "user_skill_scores",
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("skill_id", sa.Integer(), nullable=False),
+        sa.Column("score", sa.Numeric(precision=3, scale=1), nullable=False),
         sa.Column(
-            "score", sa.Numeric(precision=3, scale=1), nullable=False
-        ),
-        sa.Column(
-            "is_estimated", sa.Boolean(),
-            server_default="false", nullable=False,
+            "is_estimated",
+            sa.Boolean(),
+            server_default="false",
+            nullable=False,
         ),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
-        sa.ForeignKeyConstraint(
-            ["skill_id"], ["skills.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["skill_id"], ["skills.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", "skill_id", name="uq_user_skill"),
     )
     op.create_index(
         op.f("ix_user_skill_scores_skill_id"),
-        "user_skill_scores", ["skill_id"], unique=False,
+        "user_skill_scores",
+        ["skill_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_user_skill_scores_user_id"),
-        "user_skill_scores", ["user_id"], unique=False,
+        "user_skill_scores",
+        ["user_id"],
+        unique=False,
     )
 
     # enrollment_skill_history
@@ -596,41 +681,44 @@ def downgrade() -> None:
             "last_activity_type",
             sa.Enum(
                 *_TASK_TYPE_VALUES,
-                name="task_type_enum", create_type=False,
+                name="task_type_enum",
+                create_type=False,
             ),
             nullable=True,
         ),
         sa.Column("times_practiced", sa.Integer(), nullable=False),
-        sa.Column(
-            "last_practiced_at", sa.DateTime(timezone=True), nullable=True
-        ),
+        sa.Column("last_practiced_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(
             ["enrollment_id"], ["user_enrollments.id"], ondelete="CASCADE"
         ),
-        sa.ForeignKeyConstraint(
-            ["skill_id"], ["skills.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["skill_id"], ["skills.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "enrollment_id", "skill_id", name="uq_enrollment_skill"
-        ),
+        sa.UniqueConstraint("enrollment_id", "skill_id", name="uq_enrollment_skill"),
     )
     op.create_index(
         op.f("ix_enrollment_skill_history_enrollment_id"),
-        "enrollment_skill_history", ["enrollment_id"], unique=False,
+        "enrollment_skill_history",
+        ["enrollment_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_enrollment_skill_history_skill_id"),
-        "enrollment_skill_history", ["skill_id"], unique=False,
+        "enrollment_skill_history",
+        ["skill_id"],
+        unique=False,
     )
 
     # daily_plans
@@ -648,37 +736,45 @@ def downgrade() -> None:
             ),
             nullable=False,
         ),
-        sa.Column(
-            "generated_at", sa.DateTime(timezone=True), nullable=False
-        ),
+        sa.Column("generated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(timezone=True),
-            server_default=sa.text("now()"), nullable=False,
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
         ),
-        sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
-            "user_id", "course_slug", "week", "day",
+            "user_id",
+            "course_slug",
+            "week",
+            "day",
             name="uq_daily_plan_user_day",
         ),
     )
     op.create_index(
         "ix_daily_plan_lookup",
-        "daily_plans", ["user_id", "course_slug", "week", "day"],
+        "daily_plans",
+        ["user_id", "course_slug", "week", "day"],
         unique=False,
     )
     op.create_index(
         op.f("ix_daily_plans_course_slug"),
-        "daily_plans", ["course_slug"], unique=False,
+        "daily_plans",
+        ["course_slug"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_daily_plans_user_id"),
-        "daily_plans", ["user_id"], unique=False,
+        "daily_plans",
+        ["user_id"],
+        unique=False,
     )

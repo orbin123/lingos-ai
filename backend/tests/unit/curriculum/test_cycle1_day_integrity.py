@@ -207,7 +207,9 @@ def test_cycle1_archetype_coverage() -> None:
         assert archetype_id in ARCHETYPE_CONTRACTS, archetype_id
         # KNOWN_TASK_WIDGETS holds widget keys, not archetype ids — check the
         # archetype's resolved task widget is a known widget.
-        assert get_contract(archetype_id).task_widget in KNOWN_TASK_WIDGETS, archetype_id
+        assert get_contract(archetype_id).task_widget in KNOWN_TASK_WIDGETS, (
+            archetype_id
+        )
 
 
 def _cycle1_archetypes() -> set[str]:

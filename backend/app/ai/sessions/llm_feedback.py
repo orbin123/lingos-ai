@@ -39,18 +39,20 @@ logger = logging.getLogger(__name__)
 # items were wrong. MCQ and others use different fields (correct_index) so
 # they are not included here.
 _DETERMINISTIC_WIDGET_KEYS = {"fill_in_blanks", "error_spotting"}
-_DETERMINISTIC_SCORE_ARCHETYPES = frozenset({
-    "LISTEN_MCQ",
-    "LISTEN_CLOZE",
-    "LISTEN_INFER",
-    "LISTEN_TONE",
-    "READ_CLOZE",
-    "READ_ERROR_SPOT",
-    "READ_COMP_MCQ",
-    "READ_CONTEXT_MCQ",
-    "READ_WORD_MATCH",
-    "READ_TONE_ID",
-})
+_DETERMINISTIC_SCORE_ARCHETYPES = frozenset(
+    {
+        "LISTEN_MCQ",
+        "LISTEN_CLOZE",
+        "LISTEN_INFER",
+        "LISTEN_TONE",
+        "READ_CLOZE",
+        "READ_ERROR_SPOT",
+        "READ_COMP_MCQ",
+        "READ_CONTEXT_MCQ",
+        "READ_WORD_MATCH",
+        "READ_TONE_ID",
+    }
+)
 _MCQ_INNER_WIDGET_KEYS = {"listen_and_respond"}
 _OPEN_ENDED_WIDGET_KEYS = {
     "open_text",
@@ -126,7 +128,9 @@ class LLMFeedbackGenerator:
                 task_content,
                 user_response,
             )
-        elif widget_key in _DETERMINISTIC_WIDGET_KEYS and task_content and user_response:
+        elif (
+            widget_key in _DETERMINISTIC_WIDGET_KEYS and task_content and user_response
+        ):
             confirmed_mistakes = compute_wrong_items(task_content, user_response)
         elif widget_key == "mcq" and task_content and user_response:
             confirmed_mistakes = compute_mcq_wrong_items(task_content, user_response)
@@ -138,7 +142,9 @@ class LLMFeedbackGenerator:
                     user_response,
                 )
             else:
-                confirmed_mistakes = compute_mcq_wrong_items(task_content, user_response)
+                confirmed_mistakes = compute_mcq_wrong_items(
+                    task_content, user_response
+                )
                 use_mcq_mistake_normalization = True
 
         try:
@@ -161,7 +167,8 @@ class LLMFeedbackGenerator:
         except LLMError as exc:
             logger.warning(
                 "LLM feedback failed for archetype=%s: %s",
-                archetype.archetype_id, exc,
+                archetype.archetype_id,
+                exc,
             )
             return FeedbackResult(
                 score=rounded,
@@ -256,7 +263,9 @@ def _normalize_error_spotting_mistakes(
     mistakes: list[MistakeOutSchema] = []
     for item in confirmed_mistakes:
         error_type = str(item.get("error_type") or "")
-        user_wrote = str(item.get("user_wrote") or item.get("incorrect_phrase") or "").strip()
+        user_wrote = str(
+            item.get("user_wrote") or item.get("incorrect_phrase") or ""
+        ).strip()
         correction = str(item.get("correct_answer") or "").strip()
         rule = str(item.get("rule") or item.get("explanation") or "").strip()
 
@@ -267,7 +276,8 @@ def _normalize_error_spotting_mistakes(
                     issue=f'"{token}" was not an error.',
                     user_wrote=token,
                     correction="Do not flag this word",
-                    rule=rule or "Only flag words that contain an actual grammar mistake.",
+                    rule=rule
+                    or "Only flag words that contain an actual grammar mistake.",
                 )
             )
             continue
@@ -323,15 +333,31 @@ def _is_false_positive_simple_present_feedback(mistake: MistakeOutSchema) -> boo
 
     if "missing -s" in reason or "he or she" in reason or "subject-verb" in reason:
         user_subject, user_verb = _simple_present_subject_and_verb(user_wrote)
-        correction_subject, correction_verb = _simple_present_subject_and_verb(correction)
-        if user_subject in {"he", "she"} and user_verb and _looks_third_person_singular(user_verb):
-            if correction_subject == user_subject and correction_verb and not _looks_third_person_singular(correction_verb):
+        correction_subject, correction_verb = _simple_present_subject_and_verb(
+            correction
+        )
+        if (
+            user_subject in {"he", "she"}
+            and user_verb
+            and _looks_third_person_singular(user_verb)
+        ):
+            if (
+                correction_subject == user_subject
+                and correction_verb
+                and not _looks_third_person_singular(correction_verb)
+            ):
                 return True
 
     if "base verb" in reason or "with i" in reason:
         user_subject, user_verb = _simple_present_subject_and_verb(user_wrote)
-        correction_subject, correction_verb = _simple_present_subject_and_verb(correction)
-        if user_subject == "i" and user_verb and not _looks_third_person_singular(user_verb):
+        correction_subject, correction_verb = _simple_present_subject_and_verb(
+            correction
+        )
+        if (
+            user_subject == "i"
+            and user_verb
+            and not _looks_third_person_singular(user_verb)
+        ):
             if correction_subject == "i" and correction_verb == user_verb:
                 return True
 

@@ -23,6 +23,7 @@ FILL_BLANK_PER_CORRECT_VOCAB = 0.10
 
 HARD_CAP = 4.0
 
+
 # Formula Function
 def compute_skill_scores(
     *,

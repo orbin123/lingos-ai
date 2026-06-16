@@ -57,15 +57,17 @@ def _make_user(db, tz: str = "Asia/Kolkata") -> int:
 def _fixed_utc(local_d: date, hour_utc: int = 6, tz: str = "Asia/Kolkata") -> datetime:
     """Return a UTC datetime that the streak service will map to `local_d`
     for the given IANA timezone. 06:00 UTC is 11:30 IST — safely mid-day."""
-    return datetime.combine(local_d, datetime.min.time(), tzinfo=timezone.utc) \
-        + timedelta(hours=hour_utc)
+    return datetime.combine(
+        local_d, datetime.min.time(), tzinfo=timezone.utc
+    ) + timedelta(hours=hour_utc)
 
 
 def _ist_late_night(local_d: date, hour_ist: int, minute: int = 0) -> datetime:
     """UTC instant for a given local time in Asia/Kolkata (UTC+5:30)."""
     # IST = UTC + 5:30 → UTC = local - 5:30
     local_dt = datetime.combine(local_d, datetime.min.time()) + timedelta(
-        hours=hour_ist, minutes=minute,
+        hours=hour_ist,
+        minutes=minute,
     )
     return (local_dt - timedelta(hours=5, minutes=30)).replace(tzinfo=timezone.utc)
 
@@ -75,7 +77,8 @@ class TestRecord:
         uid = _make_user(db_session)
         svc = StreakService(db_session)
         result = svc.record_in_same_tx(
-            user_id=uid, now_utc=_fixed_utc(date(2026, 5, 19)),
+            user_id=uid,
+            now_utc=_fixed_utc(date(2026, 5, 19)),
         )
         db_session.commit()
         assert result.state == "FIRST_STREAK_EARNED"
@@ -96,7 +99,8 @@ class TestRecord:
         svc.record_in_same_tx(user_id=uid, now_utc=_fixed_utc(date(2026, 5, 19)))
         db_session.commit()
         result2 = svc.record_in_same_tx(
-            user_id=uid, now_utc=_fixed_utc(date(2026, 5, 19), hour_utc=12),
+            user_id=uid,
+            now_utc=_fixed_utc(date(2026, 5, 19), hour_utc=12),
         )
         db_session.commit()
         assert result2.state == "STREAK_ALREADY_COMPLETED_TODAY"
@@ -112,7 +116,8 @@ class TestRecord:
         svc.record_in_same_tx(user_id=uid, now_utc=_fixed_utc(date(2026, 5, 19)))
         db_session.commit()
         result = svc.record_in_same_tx(
-            user_id=uid, now_utc=_fixed_utc(date(2026, 5, 20)),
+            user_id=uid,
+            now_utc=_fixed_utc(date(2026, 5, 20)),
         )
         db_session.commit()
         assert result.state == "STREAK_CONTINUED"
@@ -125,7 +130,8 @@ class TestRecord:
         svc.record_in_same_tx(user_id=uid, now_utc=_fixed_utc(date(2026, 5, 19)))
         db_session.commit()
         result = svc.record_in_same_tx(
-            user_id=uid, now_utc=_fixed_utc(date(2026, 5, 21)),
+            user_id=uid,
+            now_utc=_fixed_utc(date(2026, 5, 21)),
         )
         db_session.commit()
         assert result.state == "STREAK_RESET"
@@ -143,7 +149,8 @@ class TestRecord:
         svc.record_in_same_tx(user_id=uid, now_utc=_fixed_utc(date(2026, 5, 19)))
         db_session.commit()
         result = svc.record_in_same_tx(
-            user_id=uid, now_utc=_fixed_utc(date(2026, 5, 21)),
+            user_id=uid,
+            now_utc=_fixed_utc(date(2026, 5, 21)),
         )
         db_session.commit()
         assert result.state == "STREAK_FROZEN"
@@ -162,7 +169,8 @@ class TestRecord:
         svc.record_in_same_tx(user_id=uid, now_utc=_ist_late_night(d1, 23, 55))
         db_session.commit()
         result = svc.record_in_same_tx(
-            user_id=uid, now_utc=_ist_late_night(d2, 0, 5),
+            user_id=uid,
+            now_utc=_ist_late_night(d2, 0, 5),
         )
         db_session.commit()
         assert result.current_streak == 2
@@ -176,7 +184,8 @@ class TestGetStreakData:
         svc = StreakService(db_session)
         for h in range(5):
             svc.record_in_same_tx(
-                user_id=uid, now_utc=_fixed_utc(date(2026, 5, 19), hour_utc=6 + h),
+                user_id=uid,
+                now_utc=_fixed_utc(date(2026, 5, 19), hour_utc=6 + h),
             )
         db_session.commit()
 

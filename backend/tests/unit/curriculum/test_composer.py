@@ -84,11 +84,6 @@ def test_compose_weeks_48w_first_depth_pass_uses_depth_day() -> None:
 def test_24w_cefr_steps_six_bands() -> None:
     weeks = compose_weeks(CourseLength.WEEKS_24)
     expected = (
-        ["A1"] * 4
-        + ["A2"] * 4
-        + ["B1"] * 4
-        + ["B2"] * 4
-        + ["C1"] * 4
-        + ["C2"] * 4
+        ["A1"] * 4 + ["A2"] * 4 + ["B1"] * 4 + ["B2"] * 4 + ["C1"] * 4 + ["C2"] * 4
     )
     assert [w.cefr_level for w in weeks] == expected

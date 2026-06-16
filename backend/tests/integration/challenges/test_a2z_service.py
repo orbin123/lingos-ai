@@ -66,10 +66,12 @@ def seeded_db(db_session: Session):
 
     # Create a minimal users table row (just id). Columns must match the
     # real User model: password_hash (not hashed_password) and a non-null name.
-    db_session.execute(text(
-        "INSERT INTO users (id, email, password_hash, name, is_active, created_at, updated_at) "
-        "VALUES (1, 'test@test.com', 'hashed', 'Test User', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-    ))
+    db_session.execute(
+        text(
+            "INSERT INTO users (id, email, password_hash, name, is_active, created_at, updated_at) "
+            "VALUES (1, 'test@test.com', 'hashed', 'Test User', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        )
+    )
 
     challenge = Challenge(
         slug="a2z",
@@ -84,23 +86,40 @@ def seeded_db(db_session: Session):
     db_session.flush()
 
     levels_config = [
-        {"level_number": 1, "name": "Warm-up", "target_words": 10, "round_time_seconds": 25},
-        {"level_number": 2, "name": "Stride", "target_words": 15, "round_time_seconds": 32},
-        {"level_number": 3, "name": "Fluency", "target_words": 22, "round_time_seconds": 45},
+        {
+            "level_number": 1,
+            "name": "Warm-up",
+            "target_words": 10,
+            "round_time_seconds": 25,
+        },
+        {
+            "level_number": 2,
+            "name": "Stride",
+            "target_words": 15,
+            "round_time_seconds": 32,
+        },
+        {
+            "level_number": 3,
+            "name": "Fluency",
+            "target_words": 22,
+            "round_time_seconds": 45,
+        },
     ]
     for lc in levels_config:
-        db_session.add(ChallengeLevel(
-            challenge_id=challenge.id,
-            level_number=lc["level_number"],
-            name=lc["name"],
-            time_limit_seconds=lc["round_time_seconds"],
-            pass_threshold=1.0,
-            config={
-                "game": "a2z",
-                "target_words": lc["target_words"],
-                "round_time_seconds": lc["round_time_seconds"],
-            },
-        ))
+        db_session.add(
+            ChallengeLevel(
+                challenge_id=challenge.id,
+                level_number=lc["level_number"],
+                name=lc["name"],
+                time_limit_seconds=lc["round_time_seconds"],
+                pass_threshold=1.0,
+                config={
+                    "game": "a2z",
+                    "target_words": lc["target_words"],
+                    "round_time_seconds": lc["round_time_seconds"],
+                },
+            )
+        )
     db_session.flush()
     db_session.commit()
     return db_session
@@ -110,12 +129,14 @@ def seeded_db(db_session: Session):
 def stub_stt():
     """A mock STT service that returns canned transcription results."""
     mock = AsyncMock()
-    mock.transcribe = AsyncMock(return_value={
-        "text": "",
-        "language": "en",
-        "duration_seconds": 2.5,
-        "words": None,
-    })
+    mock.transcribe = AsyncMock(
+        return_value={
+            "text": "",
+            "language": "en",
+            "duration_seconds": 2.5,
+            "words": None,
+        }
+    )
     return mock
 
 
@@ -213,6 +234,7 @@ class TestStartRound:
         svc = make_service(seeded_db)
         # Manually clear all but one letter on level 1
         from app.modules.challenges.a2z_game.repository import A2ZProgressRepository
+
         repo = A2ZProgressRepository(seeded_db)
         challenge = svc._load_challenge()
         progress = repo.get_or_create(user_id=USER_ID, challenge_id=challenge.id)
@@ -223,6 +245,7 @@ class TestStartRound:
             "3": [],
         }
         from sqlalchemy.orm.attributes import flag_modified
+
         flag_modified(progress, "cleared_letters")
         seeded_db.flush()
         seeded_db.commit()
@@ -243,13 +266,17 @@ class TestFinishRound:
 
         # Simulate a transcript with enough words
         from app.modules.challenges.a2z_game.repository import A2ZRoundRepository
+
         round_repo = A2ZRoundRepository(seeded_db)
-        attempt = round_repo.get_for_user(round_id=round_result.round_id, user_id=USER_ID)
+        attempt = round_repo.get_for_user(
+            round_id=round_result.round_id, user_id=USER_ID
+        )
         attempt.response_payload = {
             "running_transcript": "mountain music market mirror metal magic mango maple march mask",
             "accepted_words": [],
         }
         from sqlalchemy.orm.attributes import flag_modified
+
         flag_modified(attempt, "response_payload")
         seeded_db.flush()
 
@@ -265,13 +292,17 @@ class TestFinishRound:
 
         # Simulate a transcript with too few words
         from app.modules.challenges.a2z_game.repository import A2ZRoundRepository
+
         round_repo = A2ZRoundRepository(seeded_db)
-        attempt = round_repo.get_for_user(round_id=round_result.round_id, user_id=USER_ID)
+        attempt = round_repo.get_for_user(
+            round_id=round_result.round_id, user_id=USER_ID
+        )
         attempt.response_payload = {
             "running_transcript": "ball bat",
             "accepted_words": [],
         }
         from sqlalchemy.orm.attributes import flag_modified
+
         flag_modified(attempt, "response_payload")
         seeded_db.flush()
 
@@ -284,16 +315,22 @@ class TestFinishRound:
         with pytest.raises(A2ZRoundNotFound):
             svc.finish_round(USER_ID, 99999)
 
-    def test_finish_already_completed_round_raises(self, seeded_db, stub_stt, stub_blob):
+    def test_finish_already_completed_round_raises(
+        self, seeded_db, stub_stt, stub_blob
+    ):
         svc = make_service(seeded_db, stt=stub_stt, blob=stub_blob)
         round_result = svc.start_round(USER_ID, mode="pick", letter="A")
 
         # Set up and finish once
         from app.modules.challenges.a2z_game.repository import A2ZRoundRepository
+
         round_repo = A2ZRoundRepository(seeded_db)
-        attempt = round_repo.get_for_user(round_id=round_result.round_id, user_id=USER_ID)
+        attempt = round_repo.get_for_user(
+            round_id=round_result.round_id, user_id=USER_ID
+        )
         attempt.response_payload = {"running_transcript": "apple", "accepted_words": []}
         from sqlalchemy.orm.attributes import flag_modified
+
         flag_modified(attempt, "response_payload")
         seeded_db.flush()
         svc.finish_round(USER_ID, round_result.round_id)
@@ -312,6 +349,7 @@ class TestLevelAdvancement:
 
         # Clear all 24 letters on level 1
         from app.modules.challenges.a2z_game.repository import A2ZProgressRepository
+
         repo = A2ZProgressRepository(seeded_db)
         challenge = svc._load_challenge()
         progress = repo.get_or_create(user_id=USER_ID, challenge_id=challenge.id)
@@ -321,6 +359,7 @@ class TestLevelAdvancement:
             "3": [],
         }
         from sqlalchemy.orm.attributes import flag_modified
+
         flag_modified(progress, "cleared_letters")
         seeded_db.flush()
         seeded_db.commit()
@@ -333,6 +372,7 @@ class TestLevelAdvancement:
         svc = make_service(seeded_db, stt=stub_stt, blob=stub_blob)
 
         from app.modules.challenges.a2z_game.repository import A2ZProgressRepository
+
         repo = A2ZProgressRepository(seeded_db)
         challenge = svc._load_challenge()
         progress = repo.get_or_create(user_id=USER_ID, challenge_id=challenge.id)
@@ -343,6 +383,7 @@ class TestLevelAdvancement:
         }
         progress.game_completed_at = datetime.now(timezone.utc)
         from sqlalchemy.orm.attributes import flag_modified
+
         flag_modified(progress, "cleared_letters")
         seeded_db.flush()
         seeded_db.commit()
@@ -369,6 +410,7 @@ class TestRestart:
 
         # Set up completed state
         from app.modules.challenges.a2z_game.repository import A2ZProgressRepository
+
         repo = A2ZProgressRepository(seeded_db)
         challenge = svc._load_challenge()
         progress = repo.get_or_create(user_id=USER_ID, challenge_id=challenge.id)
@@ -379,6 +421,7 @@ class TestRestart:
         }
         progress.game_completed_at = datetime.now(timezone.utc)
         from sqlalchemy.orm.attributes import flag_modified
+
         flag_modified(progress, "cleared_letters")
         seeded_db.flush()
         seeded_db.commit()

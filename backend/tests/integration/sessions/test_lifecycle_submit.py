@@ -59,7 +59,8 @@ class TestSessionLifecycle:
             user_response={"answer": "yes"},
         )
         refreshed = service.get_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         assert refreshed.attempts[0].user_response == {"answer": "yes"}
         assert refreshed.attempts[0].submitted_at is not None

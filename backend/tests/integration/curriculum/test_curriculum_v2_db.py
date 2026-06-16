@@ -85,62 +85,70 @@ class TestModels:
         db_session.add(day)
         db_session.commit()
 
-        fetched = (
-            db_session.query(CurriculumWeek)
-            .filter_by(week_id="wk_24_99")
-            .one()
-        )
+        fetched = db_session.query(CurriculumWeek).filter_by(week_id="wk_24_99").one()
         assert len(fetched.days) == 1
         assert fetched.days[0].topic == "Test topic"
         assert fetched.days[0].suggested_archetypes == {"read": ["READ_CLOZE"]}
 
     def test_unique_week_id(self, db_session):
-        db_session.add(CurriculumWeek(
-            week_id="wk_24_99",
-            course_length="24w",
-            week_number=99,
-            theme_type=ThemeType.GRAMMAR,
-            title="A",
-            cefr_level="A1",
-            sub_level_min=1, sub_level_max=2,
-            learning_goal="x",
-        ))
+        db_session.add(
+            CurriculumWeek(
+                week_id="wk_24_99",
+                course_length="24w",
+                week_number=99,
+                theme_type=ThemeType.GRAMMAR,
+                title="A",
+                cefr_level="A1",
+                sub_level_min=1,
+                sub_level_max=2,
+                learning_goal="x",
+            )
+        )
         db_session.flush()
-        db_session.add(CurriculumWeek(
-            week_id="wk_24_99",  # duplicate
-            course_length="24w",
-            week_number=100,
-            theme_type=ThemeType.GRAMMAR,
-            title="B",
-            cefr_level="A1",
-            sub_level_min=1, sub_level_max=2,
-            learning_goal="y",
-        ))
+        db_session.add(
+            CurriculumWeek(
+                week_id="wk_24_99",  # duplicate
+                course_length="24w",
+                week_number=100,
+                theme_type=ThemeType.GRAMMAR,
+                title="B",
+                cefr_level="A1",
+                sub_level_min=1,
+                sub_level_max=2,
+                learning_goal="y",
+            )
+        )
         with pytest.raises(IntegrityError):
             db_session.flush()
 
     def test_unique_course_length_week_number(self, db_session):
-        db_session.add(CurriculumWeek(
-            week_id="wk_24_99",
-            course_length="24w",
-            week_number=99,
-            theme_type=ThemeType.GRAMMAR,
-            title="A",
-            cefr_level="A1",
-            sub_level_min=1, sub_level_max=2,
-            learning_goal="x",
-        ))
+        db_session.add(
+            CurriculumWeek(
+                week_id="wk_24_99",
+                course_length="24w",
+                week_number=99,
+                theme_type=ThemeType.GRAMMAR,
+                title="A",
+                cefr_level="A1",
+                sub_level_min=1,
+                sub_level_max=2,
+                learning_goal="x",
+            )
+        )
         db_session.flush()
-        db_session.add(CurriculumWeek(
-            week_id="wk_24_100",
-            course_length="24w",
-            week_number=99,  # duplicate (course_length, week_number)
-            theme_type=ThemeType.GRAMMAR,
-            title="B",
-            cefr_level="A1",
-            sub_level_min=1, sub_level_max=2,
-            learning_goal="y",
-        ))
+        db_session.add(
+            CurriculumWeek(
+                week_id="wk_24_100",
+                course_length="24w",
+                week_number=99,  # duplicate (course_length, week_number)
+                theme_type=ThemeType.GRAMMAR,
+                title="B",
+                cefr_level="A1",
+                sub_level_min=1,
+                sub_level_max=2,
+                learning_goal="y",
+            )
+        )
         with pytest.raises(IntegrityError):
             db_session.flush()
 
@@ -152,21 +160,24 @@ class TestModels:
             theme_type=ThemeType.GRAMMAR,
             title="A",
             cefr_level="A1",
-            sub_level_min=1, sub_level_max=2,
+            sub_level_min=1,
+            sub_level_max=2,
             learning_goal="x",
         )
         db_session.add(week)
         db_session.flush()
-        db_session.add(CurriculumDay(
-            day_id="day_24_99_01",
-            week_id=week.id,
-            day_number=1,
-            topic="t",
-            explanation_brief="b",
-            default_activities=["read"],
-            mandatory_activities=["read"],
-            suggested_archetypes={"read": ["READ_CLOZE"]},
-        ))
+        db_session.add(
+            CurriculumDay(
+                day_id="day_24_99_01",
+                week_id=week.id,
+                day_number=1,
+                topic="t",
+                explanation_brief="b",
+                default_activities=["read"],
+                mandatory_activities=["read"],
+                suggested_archetypes={"read": ["READ_CLOZE"]},
+            )
+        )
         db_session.commit()
 
         db_session.delete(week)
@@ -262,20 +273,12 @@ class TestSeedCurriculum:
     def test_updates_existing_week_in_place(self, db_session):
         seed_course(db_session, CourseLength.WEEKS_24)
         db_session.commit()
-        row = (
-            db_session.query(CurriculumWeek)
-            .filter_by(week_id="wk_24_01")
-            .one()
-        )
+        row = db_session.query(CurriculumWeek).filter_by(week_id="wk_24_01").one()
         row.title = "stale title"
         db_session.commit()
         seed_course(db_session, CourseLength.WEEKS_24)
         db_session.commit()
-        refreshed = (
-            db_session.query(CurriculumWeek)
-            .filter_by(week_id="wk_24_01")
-            .one()
-        )
+        refreshed = db_session.query(CurriculumWeek).filter_by(week_id="wk_24_01").one()
         assert refreshed.title == ""
 
 
@@ -291,8 +294,10 @@ class TestSeedAll:
                 "inserted": len(ARCHETYPE_REGISTRY),
                 "updated": 0,
             },
-            "weeks_24w": 24, "days_24w": 168,
-            "weeks_48w": 48, "days_48w": 336,
+            "weeks_24w": 24,
+            "days_24w": 168,
+            "weeks_48w": 48,
+            "days_48w": 336,
         }
 
 
@@ -329,7 +334,8 @@ class TestRepositories:
         speak_rows = repo.list_by_activity("speak")
         speak_ids = {r.archetype_id for r in speak_rows}
         expected = {
-            aid for aid, spec in ARCHETYPE_REGISTRY.items()
+            aid
+            for aid, spec in ARCHETYPE_REGISTRY.items()
             if spec.core_activity == "speak"
         }
         assert speak_ids == expected

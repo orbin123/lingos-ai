@@ -39,9 +39,7 @@ def pinecone_upsert(
     """
     try:
         _pinecone_index().upsert(
-            vectors=[
-                {"id": vector_id, "values": values, "metadata": metadata}
-            ],
+            vectors=[{"id": vector_id, "values": values, "metadata": metadata}],
             namespace=namespace,
         )
     except Exception as e:  # pinecone SDK throws various subclasses
@@ -82,16 +80,18 @@ def pinecone_query(
                     else m.get("metadata", {})
                 ),
             }
-            for m in (result.get("matches", []) if isinstance(result, dict) else result.matches)
+            for m in (
+                result.get("matches", [])
+                if isinstance(result, dict)
+                else result.matches
+            )
         ]
     except Exception as e:
         logger.warning("Pinecone query error: %s", e)
         raise PineconeQueryFailed(f"Pinecone query failed: {e}") from e
 
 
-def pinecone_delete(
-    *, vector_ids: list[str], namespace: str = ""
-) -> None:
+def pinecone_delete(*, vector_ids: list[str], namespace: str = "") -> None:
     """Delete vectors by id from the configured Pinecone index.
 
     No-op when ``vector_ids`` is empty. Raises PineconeDeleteFailed on

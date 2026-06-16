@@ -45,7 +45,9 @@ class AppReview(Base, IDMixin, TimestampMixin):
     bug_report: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Context snapshot captured at submission time (for analytics / cohorting).
-    task_count_when_submitted: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    task_count_when_submitted: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     days_since_signup: Mapped[int | None] = mapped_column(Integer, nullable=True)
     app_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
 

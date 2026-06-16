@@ -5,6 +5,7 @@ Revises: 9a2b3c4d5e6f
 Create Date: 2026-05-15 09:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -74,7 +75,9 @@ def upgrade() -> None:
         "role_permissions",
         sa.Column("role_id", sa.Integer(), nullable=False),
         sa.Column("permission_id", sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(["permission_id"], ["permissions.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["permission_id"], ["permissions.id"], ondelete="CASCADE"
+        ),
         sa.ForeignKeyConstraint(["role_id"], ["roles.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("role_id", "permission_id"),
     )
@@ -202,9 +205,9 @@ def upgrade() -> None:
 
     bind = op.get_bind()
     role_rows = bind.execute(sa.text("SELECT id, name FROM roles")).mappings().all()
-    permission_rows = bind.execute(
-        sa.text("SELECT id, key FROM permissions")
-    ).mappings().all()
+    permission_rows = (
+        bind.execute(sa.text("SELECT id, key FROM permissions")).mappings().all()
+    )
     role_ids = {row["name"]: row["id"] for row in role_rows}
     permission_ids = {row["key"]: row["id"] for row in permission_rows}
 

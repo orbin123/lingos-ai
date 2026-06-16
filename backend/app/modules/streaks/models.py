@@ -44,7 +44,10 @@ class DailyActivity(Base, IDMixin, TimestampMixin):
     )
     local_date: Mapped[date] = mapped_column(Date, nullable=False)
     activity_count: Mapped[int] = mapped_column(
-        Integer, default=1, server_default="1", nullable=False,
+        Integer,
+        default=1,
+        server_default="1",
+        nullable=False,
     )
     # Diagnostic FK — last session that bumped this row. Nullable so the
     # streak logic still works if the caller doesn't pass a session id.
@@ -53,10 +56,14 @@ class DailyActivity(Base, IDMixin, TimestampMixin):
         nullable=True,
     )
     completed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
+        DateTime(timezone=True),
+        nullable=False,
     )
     streak_awarded: Mapped[bool] = mapped_column(
-        Boolean, default=True, server_default="true", nullable=False,
+        Boolean,
+        default=True,
+        server_default="true",
+        nullable=False,
     )
 
     __table_args__ = (
@@ -88,7 +95,8 @@ class StreakFreezeUsage(Base, IDMixin, CreatedAtMixin):
     )
     protected_date: Mapped[date] = mapped_column(Date, nullable=False)
     used_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False,
+        DateTime(timezone=True),
+        nullable=False,
     )
     reason: Mapped[str] = mapped_column(
         String(64),

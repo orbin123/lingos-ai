@@ -51,7 +51,9 @@ from app.modules.challenges.ielts_sprint.evaluation_schemas import (
     WritingIssue,
     WritingPromptEvaluation,
 )
-from app.modules.challenges.ielts_sprint.generator_schemas import GeneratedIELTSTaskPayload
+from app.modules.challenges.ielts_sprint.generator_schemas import (
+    GeneratedIELTSTaskPayload,
+)
 from app.modules.challenges.models import (
     Challenge,
     ChallengeAttempt,
@@ -296,7 +298,9 @@ class ChallengeReadService:
             raise ChallengeLevelNotFound(
                 f"level {level_number!r} not found for challenge {slug!r}"
             )
-        if not self._level_is_unlocked(challenge=challenge, level=level, user_id=user_id):
+        if not self._level_is_unlocked(
+            challenge=challenge, level=level, user_id=user_id
+        ):
             raise ChallengeLevelLocked(
                 f"level {level_number!r} is locked for challenge {slug!r}"
             )
@@ -476,9 +480,7 @@ class ChallengeReadService:
 
         extension = _extension_for_audio_type(normalized_type)
         digest = hashlib.sha256(audio_bytes).hexdigest()[:20]
-        storage_key = (
-            f"{digest}-attempt{attempt.id}-{prompt_id}{extension}"
-        )
+        storage_key = f"{digest}-attempt{attempt.id}-{prompt_id}{extension}"
         stored = await self._get_speaking_audio_storage().put(
             key=storage_key,
             data=audio_bytes,
@@ -618,7 +620,9 @@ class ChallengeReadService:
         storage_key = _storage_key_from_audio_url(result["audio_url"])
         listening["audio_url"] = result["audio_url"]
         listening["audio_storage_key"] = storage_key
-        listening["audio_duration_seconds"] = round(float(result["duration_seconds"]), 2)
+        listening["audio_duration_seconds"] = round(
+            float(result["duration_seconds"]), 2
+        )
         listening["audio_cache_hit"] = bool(result["cache_hit"])
         listening["instructions"] = (
             "Listen to the audio clip and choose the best answer for each question."
@@ -1100,9 +1104,7 @@ class ChallengeReadService:
                 )
             )
 
-        section_band = round_to_half_band(
-            sum(item.band for item in items) / len(items)
-        )
+        section_band = round_to_half_band(sum(item.band for item in items) / len(items))
         return SpeakingEvaluationReport(
             mode="ai_speaking_phase_6",
             items=items,
@@ -1219,9 +1221,8 @@ class ChallengeReadService:
             if previous is None:
                 continue
             previous_best = best_scores.get(previous.id)
-            if (
-                previous_best is not None
-                and previous_best >= float(previous.pass_threshold)
+            if previous_best is not None and previous_best >= float(
+                previous.pass_threshold
             ):
                 unlocked_level_numbers.add(level.level_number)
 
@@ -1271,9 +1272,8 @@ class ChallengeReadService:
             level_ids=[previous.id],
         )
         previous_best = best_scores.get(previous.id)
-        return (
-            previous_best is not None
-            and previous_best >= float(previous.pass_threshold)
+        return previous_best is not None and previous_best >= float(
+            previous.pass_threshold
         )
 
     @staticmethod
@@ -1283,11 +1283,7 @@ class ChallengeReadService:
         level_number: int,
     ) -> ChallengeLevel | None:
         return next(
-            (
-                level
-                for level in challenge.levels
-                if level.level_number == level_number
-            ),
+            (level for level in challenge.levels if level.level_number == level_number),
             None,
         )
 

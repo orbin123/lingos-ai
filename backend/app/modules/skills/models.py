@@ -20,9 +20,7 @@ class Skill(Base, IDMixin, CreatedAtMixin):
         String(50), unique=True, nullable=False, index=True
     )
     description: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    display_label: Mapped[str] = mapped_column(
-        String(60), nullable=False, default=""
-    )
+    display_label: Mapped[str] = mapped_column(String(60), nullable=False, default="")
 
     def __repr__(self) -> str:
         return f"<Skill(id={self.id}, name={self.name!r})>"

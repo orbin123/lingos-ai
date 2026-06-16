@@ -62,9 +62,7 @@ def downgrade() -> None:
         "progress_logs",
         sa.Column("user_task_id", sa.Integer(), nullable=True),
     )
-    op.create_index(
-        "ix_progress_logs_user_task_id", "progress_logs", ["user_task_id"]
-    )
+    op.create_index("ix_progress_logs_user_task_id", "progress_logs", ["user_task_id"])
     op.create_foreign_key(
         "progress_logs_user_task_id_fkey",
         "progress_logs",

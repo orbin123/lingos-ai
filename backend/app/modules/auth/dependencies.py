@@ -13,6 +13,7 @@ from app.modules.auth.repository import UserRepository
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
@@ -35,12 +36,12 @@ def get_current_user(
     token = credentials.credentials
 
     payload = decode_token(token)
-    
+
     if payload is None:
         raise credentials_error
 
     user_id_raw = payload.get("sub")
-    
+
     if user_id_raw is None:
         raise credentials_error
 

@@ -47,12 +47,16 @@ class TestLLMEvaluator:
     @pytest.mark.asyncio
     async def test_missing_rubric_keys_fall_back_to_raw_score(self):
         spec = get_archetype("WRITE_EMAIL")
-        fake = FakeLLMClient([
-            EvaluationOutput(raw_score=6.0, rubric_scores={}, evaluator_notes=""),
-        ])
+        fake = FakeLLMClient(
+            [
+                EvaluationOutput(raw_score=6.0, rubric_scores={}, evaluator_notes=""),
+            ]
+        )
         agent = LLMEvaluator(fake)
         result = await agent.evaluate(
-            archetype=spec, task_content={}, user_response={"x": "y"},
+            archetype=spec,
+            task_content={},
+            user_response={"x": "y"},
         )
         assert set(result.rubric_scores) == set(spec.rubric)
         assert all(v == 6.0 for v in result.rubric_scores.values())
@@ -64,7 +68,9 @@ class TestLLMEvaluator:
         agent = LLMEvaluator(fake)
 
         result = await agent.evaluate(
-            archetype=spec, task_content={}, user_response=None,
+            archetype=spec,
+            task_content={},
+            user_response=None,
         )
         assert result.raw_score == 0.0
         assert all(v == 0.0 for v in result.rubric_scores.values())
@@ -78,7 +84,9 @@ class TestLLMEvaluator:
         agent = LLMEvaluator(fake)
 
         result = await agent.evaluate(
-            archetype=spec, task_content={}, user_response={"x": "y"},
+            archetype=spec,
+            task_content={},
+            user_response={"x": "y"},
         )
         assert result.raw_score == 5.0
         assert all(v == 5.0 for v in result.rubric_scores.values())
@@ -94,9 +102,21 @@ class TestLLMEvaluator:
             archetype=spec,
             task_content={
                 "items": [
-                    {"item_id": "q1", "options": ["A", "B", "C", "D"], "correct_index": 1},
-                    {"item_id": "q2", "options": ["A", "B", "C", "D"], "correct_index": 2},
-                    {"item_id": "q3", "options": ["A", "B", "C", "D"], "correct_index": 0},
+                    {
+                        "item_id": "q1",
+                        "options": ["A", "B", "C", "D"],
+                        "correct_index": 1,
+                    },
+                    {
+                        "item_id": "q2",
+                        "options": ["A", "B", "C", "D"],
+                        "correct_index": 2,
+                    },
+                    {
+                        "item_id": "q3",
+                        "options": ["A", "B", "C", "D"],
+                        "correct_index": 0,
+                    },
                 ]
             },
             user_response={
@@ -328,5 +348,3 @@ class TestLLMEvaluator:
 
 
 # ── LLMFeedbackGenerator ───────────────────────────────────────────
-
-

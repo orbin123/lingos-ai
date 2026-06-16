@@ -90,7 +90,9 @@ def list_published_posts(
     category: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> list[BlogPostListItem]:
-    posts = BlogService(db).list_published(limit=limit, offset=offset, category=category)
+    posts = BlogService(db).list_published(
+        limit=limit, offset=offset, category=category
+    )
     return [BlogPostListItem.model_validate(p) for p in posts]
 
 
@@ -170,13 +172,17 @@ def admin_create_post(
     db: Session = Depends(get_db),
 ) -> BlogPostAdminRead:
     try:
-        post = BlogService(db).create(
-            payload.model_dump(), author_id=current_user.id
-        )
+        post = BlogService(db).create(payload.model_dump(), author_id=current_user.id)
     except BlogSlugConflict as exc:
         raise HTTPException(status_code=409, detail="Slug already in use.") from exc
-    _audit(db, admin=current_user, action="create", post_id=post.id,
-           request=request, new=_snapshot(post))
+    _audit(
+        db,
+        admin=current_user,
+        action="create",
+        post_id=post.id,
+        request=request,
+        new=_snapshot(post),
+    )
     return BlogPostAdminRead.model_validate(post)
 
 
@@ -196,8 +202,15 @@ def admin_update_post(
         raise HTTPException(status_code=404, detail="Post not found.") from exc
     except BlogSlugConflict as exc:
         raise HTTPException(status_code=409, detail="Slug already in use.") from exc
-    _audit(db, admin=current_user, action="update", post_id=post.id,
-           request=request, old=before, new=_snapshot(post))
+    _audit(
+        db,
+        admin=current_user,
+        action="update",
+        post_id=post.id,
+        request=request,
+        old=before,
+        new=_snapshot(post),
+    )
     return BlogPostAdminRead.model_validate(post)
 
 
@@ -228,8 +241,14 @@ def _set_status(
         post = BlogService(db).set_status(post_id, new_status)
     except BlogNotFound as exc:
         raise HTTPException(status_code=404, detail="Post not found.") from exc
-    _audit(db, admin=current_user, action=new_status, post_id=post.id,
-           request=request, new=_snapshot(post))
+    _audit(
+        db,
+        admin=current_user,
+        action=new_status,
+        post_id=post.id,
+        request=request,
+        new=_snapshot(post),
+    )
     return BlogPostAdminRead.model_validate(post)
 
 
@@ -246,8 +265,14 @@ def admin_delete_post(
         service.delete(post_id)
     except BlogNotFound as exc:
         raise HTTPException(status_code=404, detail="Post not found.") from exc
-    _audit(db, admin=current_user, action="delete", post_id=post_id,
-           request=request, old=before)
+    _audit(
+        db,
+        admin=current_user,
+        action="delete",
+        post_id=post_id,
+        request=request,
+        old=before,
+    )
 
 
 @admin_router.post("/{post_id}/cover", response_model=BlogPostAdminRead)
@@ -283,6 +308,12 @@ async def admin_upload_cover(
         raise HTTPException(status_code=500, detail="Could not save image.") from exc
 
     post = service.set_cover_image(post_id, stored["public_url"])
-    _audit(db, admin=current_user, action="cover", post_id=post.id,
-           request=request, new={"cover_image_url": post.cover_image_url})
+    _audit(
+        db,
+        admin=current_user,
+        action="cover",
+        post_id=post.id,
+        request=request,
+        new={"cover_image_url": post.cover_image_url},
+    )
     return BlogPostAdminRead.model_validate(post)

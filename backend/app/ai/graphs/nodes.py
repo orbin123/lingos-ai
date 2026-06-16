@@ -43,16 +43,26 @@ logger = logging.getLogger(__name__)
 def _agent_debug_log(message: str, data: dict[str, Any], hypothesis_id: str) -> None:
     # region agent log
     try:
-        with open("/Users/orbin/Documents/GitHub/ai-english-tutor/.cursor/debug-dfa507.log", "a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "sessionId": "dfa507",
-                "runId": "initial",
-                "hypothesisId": hypothesis_id,
-                "location": "backend/app/ai/graphs/nodes.py",
-                "message": message,
-                "data": data,
-                "timestamp": int(time.time() * 1000),
-            }, default=str) + "\n")
+        with open(
+            "/Users/orbin/Documents/GitHub/ai-english-tutor/.cursor/debug-dfa507.log",
+            "a",
+            encoding="utf-8",
+        ) as fh:
+            fh.write(
+                json.dumps(
+                    {
+                        "sessionId": "dfa507",
+                        "runId": "initial",
+                        "hypothesisId": hypothesis_id,
+                        "location": "backend/app/ai/graphs/nodes.py",
+                        "message": message,
+                        "data": data,
+                        "timestamp": int(time.time() * 1000),
+                    },
+                    default=str,
+                )
+                + "\n"
+            )
     except Exception:
         pass
     # endregion
@@ -87,9 +97,7 @@ async def plan_loader_node(
         raise LookupError(f"CurriculumDay day_id={daily.day_id!r} not found")
     week = day.week  # eager-loaded relationship
     if week is None:
-        raise LookupError(
-            f"CurriculumWeek for day_id={daily.day_id!r} not found"
-        )
+        raise LookupError(f"CurriculumWeek for day_id={daily.day_id!r} not found")
 
     attempts = ActivityAttemptRepository(db).list_for_session(daily.id)
     if not attempts:
@@ -147,9 +155,7 @@ async def teach_node(state: LearningSessionState) -> dict[str, Any]:
     conversation = list(state.get("messages", []))
     plan_length = len(scripted_plan) if scripted_plan else 0
     teacher_turns = _count_teacher_chat_turns(conversation)
-    current_step_index = (
-        min(teacher_turns + 1, plan_length) if plan_length else None
-    )
+    current_step_index = min(teacher_turns + 1, plan_length) if plan_length else None
 
     teaching = await generate_teaching_turn(
         topic=topic,
@@ -284,9 +290,7 @@ async def followup_node(state: LearningSessionState) -> dict[str, Any]:
             "Great work. Go back to the dashboard to review today's "
             "activities and advance when you're ready."
         )
-        new_messages = messages + [
-            {"role": "ai", "content": farewell, "type": "chat"}
-        ]
+        new_messages = messages + [{"role": "ai", "content": farewell, "type": "chat"}]
         return {
             "phase": "ended",
             "outgoing_events": [
@@ -334,9 +338,7 @@ async def followup_node(state: LearningSessionState) -> dict[str, Any]:
     answer = await _answer_question(state, raw_action)
     if "clarify" not in answer.lower() and "doubt" not in answer.lower():
         answer = f"{answer.rstrip()} Did that clarify your doubt?"
-    new_messages = messages + [
-        {"role": "ai", "content": answer, "type": "chat"}
-    ]
+    new_messages = messages + [{"role": "ai", "content": answer, "type": "chat"}]
     return {
         "phase": "follow_up",
         "outgoing_events": [

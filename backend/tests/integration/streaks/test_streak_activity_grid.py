@@ -50,8 +50,9 @@ def grid_db():
 
 
 def _utc(local_d: date, hour: int = 6) -> datetime:
-    return datetime.combine(local_d, datetime.min.time(), tzinfo=timezone.utc) \
-        + __import__("datetime").timedelta(hours=hour)
+    return datetime.combine(
+        local_d, datetime.min.time(), tzinfo=timezone.utc
+    ) + __import__("datetime").timedelta(hours=hour)
 
 
 def _session_with_attempts(
@@ -101,7 +102,9 @@ class TestActivityGridCounts:
         )
         assert counts[target] == 4
 
-    def test_get_streak_data_uses_attempt_counts_for_intensity(self, grid_db, monkeypatch):
+    def test_get_streak_data_uses_attempt_counts_for_intensity(
+        self, grid_db, monkeypatch
+    ):
         db, uid = grid_db
         target = date(2026, 5, 22)
         monkeypatch.setattr(
@@ -112,9 +115,7 @@ class TestActivityGridCounts:
 
         svc = StreakService(db)
         data = svc.get_streak_data(user_id=uid)
-        today_cell = next(
-            c for c in data.activity_grid if c.date == target.isoformat()
-        )
+        today_cell = next(c for c in data.activity_grid if c.date == target.isoformat())
         assert today_cell.activity_count == 4
         assert today_cell.intensity == 4
         assert today_cell.completed is False

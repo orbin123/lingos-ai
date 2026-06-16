@@ -21,11 +21,13 @@ class ProgressLog(Base, IDMixin, CreatedAtMixin):
 
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     skill_id: Mapped[int] = mapped_column(
         ForeignKey("skills.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     score: Mapped[float] = mapped_column(Numeric(3, 1), nullable=False)
 
@@ -49,15 +51,15 @@ class SkillPoints(Base, IDMixin, TimestampMixin):
 
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     skill_id: Mapped[int] = mapped_column(
         ForeignKey("skills.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
-    points: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=3000
-    )
+    points: Mapped[int] = mapped_column(Integer, nullable=False, default=3000)
     display_score: Mapped[float] = mapped_column(
         Numeric(3, 1), nullable=False, default=3.0
     )
@@ -86,18 +88,21 @@ class SkillPointsLog(Base, IDMixin, CreatedAtMixin):
 
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     skill_id: Mapped[int] = mapped_column(
         ForeignKey("skills.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     points_earned: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str] = mapped_column(String(100), nullable=False)
     # Link a points entry to its source `daily_sessions` row.
     session_id: Mapped[int | None] = mapped_column(
         ForeignKey("daily_sessions.id", ondelete="SET NULL"),
-        nullable=True, index=True,
+        nullable=True,
+        index=True,
     )
 
     def __repr__(self) -> str:

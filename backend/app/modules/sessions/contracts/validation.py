@@ -64,7 +64,9 @@ def infer_listen_inner_widget(archetype_id: str, content: dict[str, Any]) -> str
     return _LISTEN_INNER_BY_ARCHETYPE.get(archetype_id, "mcq")
 
 
-def normalize_task_content(archetype_id: str, content: dict[str, Any]) -> dict[str, Any]:
+def normalize_task_content(
+    archetype_id: str, content: dict[str, Any]
+) -> dict[str, Any]:
     """Normalize loose generated/authored content for the archetype contract."""
     spec = get_archetype(archetype_id)
     payload_cls = get_contract(archetype_id).task_payload

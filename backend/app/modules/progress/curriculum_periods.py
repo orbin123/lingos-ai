@@ -70,10 +70,7 @@ def day_of_day_id(day_id: str) -> int | None:
 
 
 def _week_day_ids(course_length: str, week: int) -> list[str]:
-    return [
-        format_day_id(course_length, week, d)
-        for d in range(1, DAYS_PER_WEEK + 1)
-    ]
+    return [format_day_id(course_length, week, d) for d in range(1, DAYS_PER_WEEK + 1)]
 
 
 def _weeks_day_ids(course_length: str, start_week: int, end_week: int) -> list[str]:
@@ -160,9 +157,7 @@ def build_period(
         start = end = current_week
         day_ids = _week_day_ids(course_length, current_week)
         comparison = (
-            _week_day_ids(course_length, current_week - 1)
-            if current_week > 1
-            else None
+            _week_day_ids(course_length, current_week - 1) if current_week > 1 else None
         )
         expected = tpd * DAYS_PER_WEEK
         labels = [f"D{d}" for d in range(1, DAYS_PER_WEEK + 1)]
@@ -190,9 +185,7 @@ def build_period(
     else:  # "all"
         start, end = 1, current_week
         day_ids = _weeks_day_ids(course_length, start, end)
-        comparison = (
-            _week_day_ids(course_length, 1) if current_week > 1 else None
-        )
+        comparison = _week_day_ids(course_length, 1) if current_week > 1 else None
         expected = tpd * DAYS_PER_WEEK * current_week
         labels, bucket_day_ids = _all_time_buckets(
             course_length, list(range(1, current_week + 1))

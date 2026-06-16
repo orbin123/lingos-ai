@@ -47,9 +47,7 @@ def db_session(db_engine):
     routinely assert on a row right after committing it). `autoflush=False`
     mirrors the app's `SessionLocal`.
     """
-    SessionLocal = sessionmaker(
-        bind=db_engine, autoflush=False, expire_on_commit=False
-    )
+    SessionLocal = sessionmaker(bind=db_engine, autoflush=False, expire_on_commit=False)
     session = SessionLocal()
     try:
         yield session

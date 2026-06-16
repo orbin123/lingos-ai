@@ -41,7 +41,7 @@ class TaskPayloadBase(StrictModel):
     activity_id: str
     sequence: int = Field(ge=1)
     archetype_id: str
-    task_widget: str            # rich frontend widget key, e.g. "read_tfng"
+    task_widget: str  # rich frontend widget key, e.g. "read_tfng"
     core_activity: CoreActivity
     section_label: str
     topic: str

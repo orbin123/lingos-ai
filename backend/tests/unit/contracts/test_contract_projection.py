@@ -79,9 +79,7 @@ def test_task_projection_uses_primary_text_when_passage_absent() -> None:
     content = _cloze_content()
     content["passage"] = ""
     content["primary_text"] = "Maria ___ up at seven."
-    payload = project_task_payload(
-        "READ_CLOZE", content, activity_id="a", sequence=1
-    )
+    payload = project_task_payload("READ_CLOZE", content, activity_id="a", sequence=1)
     assert payload["passage"] == "Maria ___ up at seven."
 
 
@@ -277,7 +275,9 @@ def test_dictation_family_fills_correct_answer_from_sample_or_target_words() -> 
         "LISTEN_DICTATION", content, activity_id="a", sequence=1
     )
     assert payload["items"][0]["correct_answer"] == "I am reading a book."
-    assert payload["items"][1]["correct_answer"] == "The students are studying together."
+    assert (
+        payload["items"][1]["correct_answer"] == "The students are studying together."
+    )
 
 
 def test_open_text_family_projects_items_and_hints() -> None:
@@ -409,7 +409,9 @@ def test_speak_pic_desc_maps_image_fields() -> None:
         "image_url": "/images/ab/scene.png",
         "speaking_duration_seconds": 45,
     }
-    payload = project_task_payload("SPEAK_PIC_DESC", content, activity_id="a", sequence=1)
+    payload = project_task_payload(
+        "SPEAK_PIC_DESC", content, activity_id="a", sequence=1
+    )
     model = SpeakingPayload.model_validate(payload)
     assert model.task_widget == "speak_pic_desc"
     assert model.image_alt == "A cat sleeping on a sofa next to an open book."
@@ -434,7 +436,9 @@ def test_speak_interview_projects_questions_and_context() -> None:
         ],
         "speaking_duration_seconds": 30,
     }
-    payload = project_task_payload("SPEAK_INTERVIEW", content, activity_id="a", sequence=1)
+    payload = project_task_payload(
+        "SPEAK_INTERVIEW", content, activity_id="a", sequence=1
+    )
     model = SpeakingPayload.model_validate(payload)
     assert model.task_widget == "speak_interview"
     assert model.interview_context == "A friendly mini interview about yourself."
@@ -478,15 +482,39 @@ from app.modules.sessions.contracts.registry import get_contract  # noqa: E402
 # The 34 unique archetypes authored across Cycle-1 (weeks 1-4). Kept explicit
 # here; ``test_cycle1_day_integrity`` guards the count/membership against source.
 CYCLE1_ARCHETYPES: tuple[str, ...] = (
-    "READ_CLOZE", "READ_COMP_MCQ", "READ_CONTEXT_MCQ", "READ_ERROR_SPOT",
-    "READ_STRUCTURE_ID", "READ_TFNG", "READ_TONE_ID", "READ_WORD_MATCH",
-    "WRITE_BULLETS_TO_PARA", "WRITE_EMAIL", "WRITE_ERROR_CORR", "WRITE_IDEA_PARA",
-    "WRITE_OPEN_SENT", "WRITE_PARA", "WRITE_PARAPHRASE", "WRITE_SENT_TRANS",
-    "WRITE_TIMED", "WRITE_WORD_UPGRADE",
-    "LISTEN_CLOZE", "LISTEN_DICTATION", "LISTEN_INFER", "LISTEN_MCQ",
-    "LISTEN_RETELL", "LISTEN_SHADOW", "LISTEN_TONE",
-    "SPEAK_DEBATE", "SPEAK_INTERVIEW", "SPEAK_OPINION", "SPEAK_PIC_DESC",
-    "SPEAK_PRESENT", "SPEAK_READ_ALOUD", "SPEAK_ROLEPLAY", "SPEAK_SMALLTALK",
+    "READ_CLOZE",
+    "READ_COMP_MCQ",
+    "READ_CONTEXT_MCQ",
+    "READ_ERROR_SPOT",
+    "READ_STRUCTURE_ID",
+    "READ_TFNG",
+    "READ_TONE_ID",
+    "READ_WORD_MATCH",
+    "WRITE_BULLETS_TO_PARA",
+    "WRITE_EMAIL",
+    "WRITE_ERROR_CORR",
+    "WRITE_IDEA_PARA",
+    "WRITE_OPEN_SENT",
+    "WRITE_PARA",
+    "WRITE_PARAPHRASE",
+    "WRITE_SENT_TRANS",
+    "WRITE_TIMED",
+    "WRITE_WORD_UPGRADE",
+    "LISTEN_CLOZE",
+    "LISTEN_DICTATION",
+    "LISTEN_INFER",
+    "LISTEN_MCQ",
+    "LISTEN_RETELL",
+    "LISTEN_SHADOW",
+    "LISTEN_TONE",
+    "SPEAK_DEBATE",
+    "SPEAK_INTERVIEW",
+    "SPEAK_OPINION",
+    "SPEAK_PIC_DESC",
+    "SPEAK_PRESENT",
+    "SPEAK_READ_ALOUD",
+    "SPEAK_ROLEPLAY",
+    "SPEAK_SMALLTALK",
     "SPEAK_TIMED",
 )
 
@@ -662,7 +690,9 @@ def _content_for(archetype_id: str) -> dict:
 def test_cycle1_fixture_factory_covers_every_family() -> None:
     """Guard: every Cycle-1 archetype maps to a family with a loose-content builder."""
     for archetype_id in CYCLE1_ARCHETYPES:
-        assert get_contract(archetype_id).task_payload in _CONTENT_BY_PAYLOAD, archetype_id
+        assert get_contract(archetype_id).task_payload in _CONTENT_BY_PAYLOAD, (
+            archetype_id
+        )
 
 
 @pytest.mark.parametrize("archetype_id", CYCLE1_ARCHETYPES)

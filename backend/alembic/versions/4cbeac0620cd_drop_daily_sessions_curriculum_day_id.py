@@ -8,6 +8,7 @@ Revision ID: 4cbeac0620cd
 Revises: a1b2c3d4e5f6
 Create Date: 2026-05-21 09:14:50.385577
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -29,9 +30,7 @@ def _has_column(table: str, column: str) -> bool:
 def _has_constraint(table: str, constraint: str) -> bool:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
-    return any(
-        fk["name"] == constraint for fk in inspector.get_foreign_keys(table)
-    )
+    return any(fk["name"] == constraint for fk in inspector.get_foreign_keys(table))
 
 
 def upgrade() -> None:

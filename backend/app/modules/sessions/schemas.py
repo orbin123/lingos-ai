@@ -58,7 +58,8 @@ class SessionStartRequest(BaseModel):
     """
 
     day_id: str | None = Field(
-        default=None, description="Curriculum day id, e.g. 'day_24_05_03'. Required in DB mode."
+        default=None,
+        description="Curriculum day id, e.g. 'day_24_05_03'. Required in DB mode.",
     )
     week_number: int | None = Field(default=None, ge=1, le=24)
     day_index: int | None = Field(default=None, ge=0, le=6)

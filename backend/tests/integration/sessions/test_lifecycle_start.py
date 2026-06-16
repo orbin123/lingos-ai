@@ -58,7 +58,8 @@ class TestStartSession:
 
     @pytest.mark.asyncio
     async def test_authored_w1d1_uses_source_file_content_in_db_mode(
-        self, db_session,
+        self,
+        db_session,
     ):
         week = CurriculumWeek(
             week_id="wk_24_01",
@@ -165,7 +166,10 @@ class TestStartSession:
             content["activity_contract"]["evaluation_widget"]
             == contract["evaluation_widget"]
         )
-        assert content["activity_contract"]["feedback_widget"] == contract["feedback_widget"]
+        assert (
+            content["activity_contract"]["feedback_widget"]
+            == contract["feedback_widget"]
+        )
 
 
 class _OverlapTrackingTaskGenerator:

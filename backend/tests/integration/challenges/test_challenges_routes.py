@@ -454,8 +454,7 @@ def test_all_challenge_read_routes_are_mounted() -> None:
         in paths
     )
     assert (
-        "/api/v1/challenge-attempts/{attempt_id}/speaking/{prompt_id}/upload"
-        in paths
+        "/api/v1/challenge-attempts/{attempt_id}/speaking/{prompt_id}/upload" in paths
     )
     assert "/api/v1/challenges/{slug}/levels/{level_number}/attempts" in paths
     assert "/api/v1/challenge-attempts/{attempt_id}/begin" in paths
@@ -547,9 +546,10 @@ def test_start_attempt_stores_generated_text_task(
         body["task_payload"]["sections"]["reading"]["passage_title"]
         == "Generated Passage on Urban Gardens"
     )
-    assert "community gardens" in body["task_payload"]["sections"]["writing"]["items"][0][
-        "prompt"
-    ]
+    assert (
+        "community gardens"
+        in body["task_payload"]["sections"]["writing"]["items"][0]["prompt"]
+    )
     listening = body["task_payload"]["sections"]["listening"]
     assert listening["audio_storage_key"] == "abcdef1234567890.mp3"
     assert listening["audio_url"] == (

@@ -53,18 +53,29 @@ logger = logging.getLogger(__name__)
 # Older models (tts-1, tts-1-hd) support a smaller subset — if you ever
 # switch model, narrow this list accordingly.
 # ---------------------------------------------------------------------------
-_VALID_VOICES_GPT4O_MINI_TTS: frozenset[str] = frozenset({
-    "alloy", "ash", "ballad", "coral", "echo", "fable",
-    "onyx", "nova", "sage", "shimmer", "verse",
-})
+_VALID_VOICES_GPT4O_MINI_TTS: frozenset[str] = frozenset(
+    {
+        "alloy",
+        "ash",
+        "ballad",
+        "coral",
+        "echo",
+        "fable",
+        "onyx",
+        "nova",
+        "sage",
+        "shimmer",
+        "verse",
+    }
+)
 
 # Pricing for gpt-4o-mini-tts. OpenAI bills TTS per *character* of input
 # (not output tokens). Source: openai.com/pricing — last checked 2026-05.
 # If the model isn't in this table we still synthesize, just don't price.
 _PRICING_PER_1M_CHARS: dict[str, float] = {
     "gpt-4o-mini-tts": 0.60,  # $0.60 per 1M input characters
-    "tts-1":           15.00,
-    "tts-1-hd":        30.00,
+    "tts-1": 15.00,
+    "tts-1-hd": 30.00,
 }
 
 # Audio format -> approximate seconds of audio per byte. Used ONLY to
@@ -76,12 +87,12 @@ _PRICING_PER_1M_CHARS: dict[str, float] = {
 # If you switch model or response_format, recalibrate by synthesizing a
 # known-duration clip and checking len(bytes) / actual_seconds.
 _BYTES_PER_SECOND_ESTIMATE: dict[str, int] = {
-    "mp3":  18_000,    # gpt-4o-mini-tts default
+    "mp3": 18_000,  # gpt-4o-mini-tts default
     "opus": 18_000,
-    "aac":  18_000,
+    "aac": 18_000,
     "flac": 80_000,
-    "wav":  48_000,    # 16-bit, 24kHz, mono
-    "pcm":  48_000,
+    "wav": 48_000,  # 16-bit, 24kHz, mono
+    "pcm": 48_000,
 }
 
 
@@ -214,18 +225,14 @@ class OpenAITTSClient:
     # ------------------------------------------------------------------
     # Internal — input validation
     # ------------------------------------------------------------------
-    def _validate_inputs(
-        self, *, text: str, voice: str, speed: float
-    ) -> None:
+    def _validate_inputs(self, *, text: str, voice: str, speed: float) -> None:
         """Cheap pre-flight checks that catch caller bugs before we burn
         an API call. All raise TTSValidationError so the caller sees ONE
         error type for "you passed something wrong"."""
         if not text or not text.strip():
             raise TTSValidationError("text must be non-empty")
         if not (0.25 <= speed <= 4.0):
-            raise TTSValidationError(
-                f"speed must be in [0.25, 4.0], got {speed}"
-            )
+            raise TTSValidationError(f"speed must be in [0.25, 4.0], got {speed}")
         if (
             self._model == "gpt-4o-mini-tts"
             and voice not in _VALID_VOICES_GPT4O_MINI_TTS
@@ -278,7 +285,10 @@ class OpenAITTSClient:
                 delay = (2 ** (attempt - 1)) * (1 + random.uniform(-0.25, 0.25))
                 logger.warning(
                     "tts_retry attempt=%d/%d delay=%.2fs err=%s",
-                    attempt, self._max_retries, delay, type(exc).__name__,
+                    attempt,
+                    self._max_retries,
+                    delay,
+                    type(exc).__name__,
                 )
                 await asyncio.sleep(delay)
             except Exception as exc:

@@ -165,13 +165,17 @@ def test_cycle6_archetype_coverage() -> None:
     for archetype_id in sorted(cycle6_archetypes):
         assert archetype_id in ARCHETYPE_REGISTRY, archetype_id
         assert archetype_id in ARCHETYPE_CONTRACTS, archetype_id
-        assert get_contract(archetype_id).task_widget in KNOWN_TASK_WIDGETS, archetype_id
+        assert get_contract(archetype_id).task_widget in KNOWN_TASK_WIDGETS, (
+            archetype_id
+        )
 
 
 @pytest.mark.parametrize("week,day_index", CYCLE6_CASES, ids=CYCLE6_IDS)
 def test_cycle6_mirrors_cycle5_archetypes(week: int, day_index: int) -> None:
     """Day-for-day archetype layout must match week W-4 (cycle 5)."""
-    expected = file_source.get_day(week - STRUCTURAL_MIRROR_OFFSET, day_index).task_archetypes_used
+    expected = file_source.get_day(
+        week - STRUCTURAL_MIRROR_OFFSET, day_index
+    ).task_archetypes_used
     actual = file_source.get_day(week, day_index).task_archetypes_used
     assert actual == expected, (
         f"day_24_{week:02d}_{day_index + 1:02d}: archetypes {actual} != mirror {expected}"

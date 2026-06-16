@@ -48,10 +48,13 @@ class FeedbackMemoryLog(Base, IDMixin, CreatedAtMixin):
         nullable=True,
     )
     memory_type: Mapped[str] = mapped_column(
-        String(30), nullable=False,
+        String(30),
+        nullable=False,
     )  # "activity_feedback" | "session_summary"
     vector_id: Mapped[str] = mapped_column(
-        String(120), unique=True, nullable=False,
+        String(120),
+        unique=True,
+        nullable=False,
     )
     document_text: Mapped[str] = mapped_column(Text, nullable=False)
     metadata_json: Mapped[dict] = mapped_column(

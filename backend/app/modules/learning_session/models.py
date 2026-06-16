@@ -33,9 +33,7 @@ class LearningSession(Base, IDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
-    phase: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="teaching"
-    )
+    phase: Mapped[str] = mapped_column(String(32), nullable=False, default="teaching")
     topic: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     skill_name: Mapped[str] = mapped_column(String(50), nullable=False, default="")
     activity_type: Mapped[str] = mapped_column(String(50), nullable=False, default="")

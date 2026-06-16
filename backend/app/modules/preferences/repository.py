@@ -19,9 +19,7 @@ class UserCoursePreferenceRepository:
 
     def get_for_user(self, user_id: int) -> UserCoursePreference | None:
         return self.db.execute(
-            select(UserCoursePreference).where(
-                UserCoursePreference.user_id == user_id
-            )
+            select(UserCoursePreference).where(UserCoursePreference.user_id == user_id)
         ).scalar_one_or_none()
 
     # ── upsert ────────────────────────────────────────────────────────
@@ -57,10 +55,7 @@ class UserCoursePreferenceRepository:
             if value is None:
                 continue
             if not hasattr(pref, key):
-                raise AttributeError(
-                    f"UserCoursePreference has no field {key!r}"
-                )
+                raise AttributeError(f"UserCoursePreference has no field {key!r}")
             setattr(pref, key, value)
         self.db.flush()
         return pref
-

@@ -266,12 +266,8 @@ class TestLLMTaskGenerator:
         spec = get_archetype("WRITE_OPEN_SENT")
         canned = TaskGenOutput(
             topic="Write simple present routine sentences",
-            instructions=(
-                "Write affirmative routine sentences with I, he, and she."
-            ),
-            grammar_rule_explained=(
-                "Use base verbs with I and add -s with he or she."
-            ),
+            instructions=("Write affirmative routine sentences with I, he, and she."),
+            grammar_rule_explained=("Use base verbs with I and add -s with he or she."),
             common_mistakes=["He walk -> He walks."],
             target_words=["always", "usually", "often"],
             items=[
@@ -373,7 +369,7 @@ class TestLLMTaskGenerator:
                     "incorrect_sentence": "We didn't walked.",
                     "sample_answer": "We didn't walk.",
                     "watch_hints": ["did + base verb"],
-                }
+                },
             ],
         )
         fake = FakeLLMClient([canned])

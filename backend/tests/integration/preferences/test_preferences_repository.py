@@ -103,5 +103,3 @@ class TestUpdateSettings:
         db_session.refresh(pref)
         assert pref.tasks_per_day == 2  # unchanged
         assert pref.allow_read is False
-
-

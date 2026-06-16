@@ -96,7 +96,9 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(["challenge_id"], ["challenges.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["challenge_id"], ["challenges.id"], ondelete="CASCADE"
+        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "challenge_id",
@@ -187,7 +189,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("ix_challenge_attempts_expires_at", table_name="challenge_attempts")
-    op.drop_index("ix_challenge_attempts_user_created_at", table_name="challenge_attempts")
+    op.drop_index(
+        "ix_challenge_attempts_user_created_at", table_name="challenge_attempts"
+    )
     op.drop_index(
         "ix_challenge_attempts_user_level_status",
         table_name="challenge_attempts",
@@ -197,7 +201,9 @@ def downgrade() -> None:
         op.f("ix_challenge_attempts_challenge_level_id"),
         table_name="challenge_attempts",
     )
-    op.drop_index(op.f("ix_challenge_attempts_user_id"), table_name="challenge_attempts")
+    op.drop_index(
+        op.f("ix_challenge_attempts_user_id"), table_name="challenge_attempts"
+    )
     op.drop_table("challenge_attempts")
 
     op.drop_index("ix_challenge_levels_challenge_id", table_name="challenge_levels")

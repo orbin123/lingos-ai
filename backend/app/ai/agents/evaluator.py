@@ -31,13 +31,13 @@ ErrorType = Literal[
     "correct",
     "missing_answer",
     "wrong_answer",
-    "too_short",          # paraphrasing: answer is shorter than min_words
-    "too_similar",        # paraphrasing: user copied the original
-    "needs_review",       # paraphrasing: passed rule checks, needs LLM later
-    "needs_ai_review",    # speaking: passed basic checks, needs LLM tense/grammar grading
-    "false_positive",     # error_spotting: user flagged a correct sentence as wrong
-    "false_negative",     # error_spotting: user marked an erroneous sentence as correct
-    "wrong_error_type",   # error_spotting: verdict correct but error category wrong
+    "too_short",  # paraphrasing: answer is shorter than min_words
+    "too_similar",  # paraphrasing: user copied the original
+    "needs_review",  # paraphrasing: passed rule checks, needs LLM later
+    "needs_ai_review",  # speaking: passed basic checks, needs LLM tense/grammar grading
+    "false_positive",  # error_spotting: user flagged a correct sentence as wrong
+    "false_negative",  # error_spotting: user marked an erroneous sentence as correct
+    "wrong_error_type",  # error_spotting: verdict correct but error category wrong
 ]
 
 
@@ -184,7 +184,7 @@ def _score_paraphrase(
 
     # Passed rule checks — needs a real grader to confirm semantic match.
     return {
-        "correct": True,         # True = "accepted", not "perfect"
+        "correct": True,  # True = "accepted", not "perfect"
         "user_answer": user_answer,
         "correct_answer": sample,
         "error_type": "needs_review",
@@ -196,8 +196,10 @@ def _score_paraphrase(
 # LLM output schemas — used ONLY by evaluate_open_text_writing
 # ---------------------------------------------------------------------------
 
+
 class _ItemWritingEval(BaseModel):
     """Per-item result from the LLM writing evaluator."""
+
     item_id: str
     mistakes: list[str] = Field(
         default_factory=list,
@@ -208,8 +210,11 @@ class _ItemWritingEval(BaseModel):
 
 class _OpenTextWritingEval(BaseModel):
     """Full LLM evaluation of a writing task."""
+
     subskill_score: int = Field(
-        ..., ge=0, le=10,
+        ...,
+        ge=0,
+        le=10,
         description="Grammar sub-skill score 0-10, calibrated to the learner's level",
     )
     items: list[_ItemWritingEval]
@@ -242,7 +247,9 @@ class _GrammarSpeakingEval(BaseModel):
     """Full LLM evaluation of a grammar speaking task."""
 
     subskill_score: int = Field(
-        ..., ge=0, le=10,
+        ...,
+        ge=0,
+        le=10,
         description="Grammar speaking score 0-10, calibrated to the learner's level",
     )
     items: list[_GrammarSpeakingItemEval]
@@ -316,8 +323,10 @@ def _build_open_text_user_message(
 ) -> str:
     """Format the writing task evaluation prompt."""
     tier = (
-        "Beginner (1-3)" if user_level <= 3
-        else "Intermediate (4-6)" if user_level <= 6
+        "Beginner (1-3)"
+        if user_level <= 3
+        else "Intermediate (4-6)"
+        if user_level <= 6
         else "Advanced (7-10)"
     )
     self_assessed = learner_profile.get("self_assessed_level", "unknown")
@@ -386,8 +395,10 @@ def _build_grammar_speaking_user_message(
 ) -> str:
     """Format the grammar speaking task evaluation prompt."""
     tier = (
-        "Beginner (1-3)" if user_level <= 3
-        else "Intermediate (4-6)" if user_level <= 6
+        "Beginner (1-3)"
+        if user_level <= 3
+        else "Intermediate (4-6)"
+        if user_level <= 6
         else "Advanced (7-10)"
     )
     recordings_by_id = _grammar_speaking_recordings_by_id(user_answers)
@@ -510,9 +521,7 @@ class EvaluationService:
         for activity in task_content.get("activities", []):
             if activity.get("activity_type") == "fill_in_the_blanks":
                 return activity["answers"]
-        raise ValueError(
-            "task_content has no fill_in_the_blanks activity"
-        )
+        raise ValueError("task_content has no fill_in_the_blanks activity")
 
     # ------------------------------------------------------------------
     # Sentence engineering — string match against the canonical answer.
@@ -551,9 +560,7 @@ class EvaluationService:
                 }
                 continue
 
-            is_correct = (
-                _normalize_sentence(user_ans) == _normalize_sentence(correct)
-            )
+            is_correct = _normalize_sentence(user_ans) == _normalize_sentence(correct)
             per_question[qid] = {
                 "correct": is_correct,
                 "user_answer": user_ans,
@@ -619,9 +626,7 @@ class EvaluationService:
         # `score` is 0.0..1.0 per question. Average → percentage.
         percentage = round((score_sum / total) * 100, 2) if total else 0.0
         # `correct_count` for paraphrasing means "passed all rule checks"
-        correct_count = sum(
-            1 for r in per_question.values() if r["score"] >= 0.7
-        )
+        correct_count = sum(1 for r in per_question.values() if r["score"] >= 0.7)
 
         return {
             "task_type": "paraphrasing",
@@ -772,9 +777,7 @@ class EvaluationService:
 
         total = len(items)
         percentage = round((score_sum / total) * 100, 2) if total else 0.0
-        correct_count = sum(
-            1 for r in per_question.values() if r["score"] >= 0.7
-        )
+        correct_count = sum(1 for r in per_question.values() if r["score"] >= 0.7)
 
         return {
             "task_type": "sentence_transformation",
@@ -849,9 +852,7 @@ class EvaluationService:
                 }
                 continue
 
-            is_correct = (
-                _normalize_sentence(user_ans) == _normalize_sentence(correct)
-            )
+            is_correct = _normalize_sentence(user_ans) == _normalize_sentence(correct)
             per_question[iid] = {
                 "correct": is_correct,
                 "user_answer": user_ans,
@@ -946,9 +947,7 @@ class EvaluationService:
                 }
                 continue
 
-            is_correct = (
-                _normalize_sentence(user_ans) == _normalize_sentence(correct)
-            )
+            is_correct = _normalize_sentence(user_ans) == _normalize_sentence(correct)
             per_question[iid] = {
                 "correct": is_correct,
                 "user_answer": user_ans,
@@ -1034,7 +1033,9 @@ class EvaluationService:
         for sent in sentences:
             sid = sent["sentence_id"]
             has_error: bool = sent.get("has_error", False)
-            correct_type: str | None = sent.get("error_type")  # None when has_error=False
+            correct_type: str | None = sent.get(
+                "error_type"
+            )  # None when has_error=False
             user_ans: str = user_answers.get(sid, "").strip()
 
             # Build the canonical "correct answer" label shown in feedback.
@@ -1061,7 +1062,7 @@ class EvaluationService:
                 }
                 continue
 
-            user_said_correct = (user_ans == "correct")
+            user_said_correct = user_ans == "correct"
 
             if not has_error:
                 # Sentence is actually correct
@@ -1111,9 +1112,7 @@ class EvaluationService:
         # Each sentence is worth 1.0 max, so percentage = (sum / total) * 100
         percentage = round((score_sum / total) * 100, 2) if total else 0.0
         # "correct" means full marks on that sentence (score == 1.0)
-        correct_count = sum(
-            1 for r in per_question.values() if r["score"] == 1.0
-        )
+        correct_count = sum(1 for r in per_question.values() if r["score"] == 1.0)
 
         return {
             "task_type": "error_spotting",
@@ -1131,8 +1130,7 @@ class EvaluationService:
     ) -> dict:
         sentences = task_content.get("passage_sentences") or []
         selected_ids = {
-            str(token_id)
-            for token_id in (user_answers.get("selected_token_ids") or [])
+            str(token_id) for token_id in (user_answers.get("selected_token_ids") or [])
         }
         correct_errors: list[dict] = []
         token_lookup: dict[str, dict] = {}
@@ -1147,10 +1145,12 @@ class EvaluationService:
                     }
             error = sentence.get("error")
             if isinstance(error, dict) and error.get("token_id"):
-                correct_errors.append({
-                    **error,
-                    "sentence_id": sentence.get("sentence_id"),
-                })
+                correct_errors.append(
+                    {
+                        **error,
+                        "sentence_id": sentence.get("sentence_id"),
+                    }
+                )
 
         correct_ids = {str(error["token_id"]) for error in correct_errors}
         found_ids = sorted(selected_ids & correct_ids)
@@ -1163,9 +1163,7 @@ class EvaluationService:
         total_errors = int(task_content.get("total_errors") or len(correct_ids) or 0)
         correct_count = len(found_ids)
         percentage = (
-            round((correct_count / total_errors) * 100, 2)
-            if total_errors
-            else 0.0
+            round((correct_count / total_errors) * 100, 2) if total_errors else 0.0
         )
         return {
             "task_type": "error_spotting",
@@ -1239,6 +1237,7 @@ class EvaluationService:
         # Filter fragments shorter than 3 chars (catch "..." or lone "?").
         if transcript:
             import re
+
             raw_fragments = re.split(r"[.!?]+", transcript)
             sentence_count = sum(
                 1 for f in raw_fragments if f.strip() and len(f.strip()) >= 3
@@ -1331,15 +1330,12 @@ class EvaluationService:
             options = item.get("options") or []
             correct_index = int(item.get("correct_index", -1))
             selected_index = selected_by_id.get(item_id)
-            selected_valid = (
-                selected_index is not None
-                and 0 <= selected_index < len(options)
+            selected_valid = selected_index is not None and 0 <= selected_index < len(
+                options
             )
             correct_valid = 0 <= correct_index < len(options)
             is_correct = (
-                selected_valid
-                and correct_valid
-                and selected_index == correct_index
+                selected_valid and correct_valid and selected_index == correct_index
             )
             if is_correct:
                 correct_count += 1
@@ -1543,17 +1539,20 @@ class EvaluationService:
         if llm_result is None:
             # Structural fallback: answered = 1.0, empty = 0.0
             answered = sum(
-                1 for it in items
-                if user_answers.get(it.get("item_id", ""), "").strip()
+                1 for it in items if user_answers.get(it.get("item_id", ""), "").strip()
             )
             total = len(items) or 1
             subskill_score = round((answered / total) * 7)  # max 7 for fallback
             per_item = {
                 it.get("item_id", f"item_{idx}"): {
-                    "correct": bool(user_answers.get(it.get("item_id", ""), "").strip()),
+                    "correct": bool(
+                        user_answers.get(it.get("item_id", ""), "").strip()
+                    ),
                     "user_answer": user_answers.get(it.get("item_id", ""), ""),
                     "mistakes": [],
-                    "score": 1.0 if user_answers.get(it.get("item_id", ""), "").strip() else 0.0,
+                    "score": 1.0
+                    if user_answers.get(it.get("item_id", ""), "").strip()
+                    else 0.0,
                     "error_type": (
                         "needs_ai_review"
                         if user_answers.get(it.get("item_id", ""), "").strip()
@@ -1734,6 +1733,4 @@ class EvaluationService:
         for activity in task_content.get("activities", []):
             if activity.get("activity_type") == activity_type:
                 return activity
-        raise ValueError(
-            f"task_content has no {activity_type!r} activity"
-        )
+        raise ValueError(f"task_content has no {activity_type!r} activity")

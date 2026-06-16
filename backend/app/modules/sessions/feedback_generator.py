@@ -25,7 +25,7 @@ class MistakeOut:
 
 @dataclass(frozen=True)
 class FeedbackResult:
-    score: int                                          # 0..10, rounded raw_score
+    score: int  # 0..10, rounded raw_score
     summary: str
     did_well: tuple[str, ...] = ()
     mistakes: tuple[MistakeOut, ...] = ()

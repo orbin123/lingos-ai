@@ -37,8 +37,13 @@ def test_normalize_listen_retell_passage_from_primary_text_when_not_audio() -> N
     }
     normalized = normalize_listen_retell_payload(content)
 
-    assert normalized["passage_to_retell"] == "The traveler described a park with a fountain."
-    assert normalized["sample_responses"] == ["The traveler described a park with a fountain."]
+    assert (
+        normalized["passage_to_retell"]
+        == "The traveler described a park with a fountain."
+    )
+    assert normalized["sample_responses"] == [
+        "The traveler described a park with a fountain."
+    ]
 
 
 def test_normalize_listen_retell_default_prompt_when_missing() -> None:
@@ -49,7 +54,9 @@ def test_normalize_listen_retell_default_prompt_when_missing() -> None:
     }
     normalized = normalize_listen_retell_payload(content)
 
-    assert normalized["speaking_prompts"] == ["Retell what you heard in your own words."]
+    assert normalized["speaking_prompts"] == [
+        "Retell what you heard in your own words."
+    ]
 
 
 def test_normalize_listen_shadow_sets_text_to_shadow() -> None:
@@ -65,17 +72,19 @@ def test_normalize_listen_shadow_sets_text_to_shadow() -> None:
 
 
 def test_project_listen_retell_carries_model_answer_fields() -> None:
-    content = normalize_listen_retell_payload({
-        "archetype_id": "LISTEN_RETELL",
-        "topic": "Prepositions",
-        "instructions": "Listen and retell.",
-        "audio_script": "At the center of town there is a park.",
-        "passage_to_retell": "In the center of town there is a park.",
-        "sample_responses": ["In the center of town there is a park."],
-        "speaking_prompts": ["Retell what you heard in your own words."],
-        "grammar_rule_to_practice": "Use prepositions of place.",
-        "target_words": ["in", "next to"],
-    })
+    content = normalize_listen_retell_payload(
+        {
+            "archetype_id": "LISTEN_RETELL",
+            "topic": "Prepositions",
+            "instructions": "Listen and retell.",
+            "audio_script": "At the center of town there is a park.",
+            "passage_to_retell": "In the center of town there is a park.",
+            "sample_responses": ["In the center of town there is a park."],
+            "speaking_prompts": ["Retell what you heard in your own words."],
+            "grammar_rule_to_practice": "Use prepositions of place.",
+            "target_words": ["in", "next to"],
+        }
+    )
     payload = project_task_payload(
         "LISTEN_RETELL", content, activity_id="act-1", sequence=2
     )
@@ -110,10 +119,12 @@ def test_adapter_field_resolution_mirror() -> None:
         == "From alias."
     )
     assert (
-        resolve({
-            "text_to_read_aloud": "Distinct summary.",
-            "audio_script": "Longer audio monologue.",
-        })
+        resolve(
+            {
+                "text_to_read_aloud": "Distinct summary.",
+                "audio_script": "Longer audio monologue.",
+            }
+        )
         == "Distinct summary."
     )
     assert resolve({"audio_script": "Only audio."}) == ""

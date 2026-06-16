@@ -130,12 +130,12 @@ class SpeakingPayload(TaskPayloadBase):
     speaking_duration_seconds: int = Field(default=45, ge=5, le=600)
 
     # Variant-specific optional fields.
-    text_to_read_aloud: str = ""          # read_aloud / shadow
-    image_url: str = ""                    # pic_desc / present
+    text_to_read_aloud: str = ""  # read_aloud / shadow
+    image_url: str = ""  # pic_desc / present
     image_alt: str = ""
-    dialogue_context: tuple[DialogueTurn, ...] = ()   # roleplay / smalltalk / debate
-    interview_context: str = ""                        # interview
-    questions: tuple[InterviewQuestion, ...] = ()      # interview
+    dialogue_context: tuple[DialogueTurn, ...] = ()  # roleplay / smalltalk / debate
+    interview_context: str = ""  # interview
+    questions: tuple[InterviewQuestion, ...] = ()  # interview
     # Present for LISTEN_RETELL / LISTEN_SHADOW (listen-then-speak).
     audio_genre: str = ""
     audio_script: str = ""

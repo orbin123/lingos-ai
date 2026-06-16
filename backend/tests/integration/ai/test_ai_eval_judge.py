@@ -44,9 +44,7 @@ def db():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(
-        engine, tables=[User.__table__, AIEvaluation.__table__]
-    )
+    Base.metadata.create_all(engine, tables=[User.__table__, AIEvaluation.__table__])
     Session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     session = Session()
     yield session, Session
@@ -134,7 +132,11 @@ class _StubJudge:
         if self.fail:
             raise RuntimeError("judge boom")
         return JudgeScores(
-            rationale="ok", accuracy=7.0, relevance=8.0, helpfulness=6.5, correctness=7.0
+            rationale="ok",
+            accuracy=7.0,
+            relevance=8.0,
+            helpfulness=6.5,
+            correctness=7.0,
         )
 
 
@@ -219,12 +221,22 @@ def test_ai_quality_means_and_worst(db):
     _eval_row(session, accuracy=8, relevance=8, helpfulness=8, correctness=8)
     _eval_row(session, accuracy=6, relevance=6, helpfulness=6, correctness=6)
     bad = _eval_row(
-        session, accuracy=7, relevance=7, helpfulness=7, correctness=3,
-        rationale="invented a mistake", trace_id="bad-trace", target_id="99",
+        session,
+        accuracy=7,
+        relevance=7,
+        helpfulness=7,
+        correctness=3,
+        rationale="invented a mistake",
+        trace_id="bad-trace",
+        target_id="99",
     )
     # A stale row outside the window must be excluded.
     _eval_row(
-        session, accuracy=1, relevance=1, helpfulness=1, correctness=1,
+        session,
+        accuracy=1,
+        relevance=1,
+        helpfulness=1,
+        correctness=1,
         created_at=NOW - timedelta(days=30),
     )
     session.commit()
@@ -412,7 +424,9 @@ class _StubMentorGen:
 
 @pytest.mark.parametrize("rate,expected_scheduled", [(0.0, False), (1.0, True)])
 @pytest.mark.asyncio
-async def test_mentor_note_eval_sampling_gate(db, monkeypatch, rate, expected_scheduled):
+async def test_mentor_note_eval_sampling_gate(
+    db, monkeypatch, rate, expected_scheduled
+):
     session, _ = db
     from app.core.config import settings
     from app.modules.sessions import service as service_mod

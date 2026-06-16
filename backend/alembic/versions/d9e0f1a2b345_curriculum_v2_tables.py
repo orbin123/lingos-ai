@@ -48,7 +48,10 @@ def upgrade() -> None:
         sa.Column(
             "theme_type",
             sa.Enum(
-                "grammar", "communication", "vocabulary", "confidence",
+                "grammar",
+                "communication",
+                "vocabulary",
+                "confidence",
                 name="theme_type_enum",
             ),
             nullable=False,
@@ -71,17 +74,19 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "course_length", "week_number", name="uq_curriculum_week"
-        ),
+        sa.UniqueConstraint("course_length", "week_number", name="uq_curriculum_week"),
     )
     op.create_index(
         op.f("ix_curriculum_weeks_week_id"),
-        "curriculum_weeks", ["week_id"], unique=True,
+        "curriculum_weeks",
+        ["week_id"],
+        unique=True,
     )
     op.create_index(
         "ix_curriculum_week_lookup",
-        "curriculum_weeks", ["course_length", "week_number"], unique=False,
+        "curriculum_weeks",
+        ["course_length", "week_number"],
+        unique=False,
     )
 
     op.create_table(
@@ -115,11 +120,15 @@ def upgrade() -> None:
     )
     op.create_index(
         op.f("ix_curriculum_days_day_id"),
-        "curriculum_days", ["day_id"], unique=True,
+        "curriculum_days",
+        ["day_id"],
+        unique=True,
     )
     op.create_index(
         op.f("ix_curriculum_days_week_id"),
-        "curriculum_days", ["week_id"], unique=False,
+        "curriculum_days",
+        ["week_id"],
+        unique=False,
     )
 
     op.create_table(
@@ -129,7 +138,10 @@ def upgrade() -> None:
         sa.Column(
             "core_activity",
             sa.Enum(
-                "read", "write", "listen", "speak",
+                "read",
+                "write",
+                "listen",
+                "speak",
                 name="core_activity_enum",
             ),
             nullable=False,
@@ -163,7 +175,9 @@ def upgrade() -> None:
     )
     op.create_index(
         "ix_task_archetype_core_activity",
-        "task_archetypes", ["core_activity"], unique=False,
+        "task_archetypes",
+        ["core_activity"],
+        unique=False,
     )
 
 

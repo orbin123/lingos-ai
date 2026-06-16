@@ -46,7 +46,9 @@ def test_48w_has_48_weeks_and_336_days():
     assert sum(len(w.days) for w in weeks) == 336
 
 
-@pytest.mark.parametrize("course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48])
+@pytest.mark.parametrize(
+    "course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48]
+)
 def test_every_week_has_exactly_seven_days(course_length):
     for week in load_weeks(course_length):
         assert len(week.days) == 7, f"{week.week_id} has {len(week.days)} days"
@@ -143,7 +145,9 @@ def test_48w_day_ids_match_pattern_and_are_unique():
 # ── Activity invariants ────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48])
+@pytest.mark.parametrize(
+    "course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48]
+)
 def test_mandatory_activities_are_subset_of_default(course_length):
     for week in load_weeks(course_length):
         for day in week.days:
@@ -152,7 +156,9 @@ def test_mandatory_activities_are_subset_of_default(course_length):
             )
 
 
-@pytest.mark.parametrize("course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48])
+@pytest.mark.parametrize(
+    "course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48]
+)
 def test_every_mandatory_activity_has_at_least_one_archetype(course_length):
     for week in load_weeks(course_length):
         for day in week.days:
@@ -164,7 +170,9 @@ def test_every_mandatory_activity_has_at_least_one_archetype(course_length):
                 )
 
 
-@pytest.mark.parametrize("course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48])
+@pytest.mark.parametrize(
+    "course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48]
+)
 def test_all_suggested_archetype_ids_exist(course_length):
     for week in load_weeks(course_length):
         for day in week.days:
@@ -175,7 +183,9 @@ def test_all_suggested_archetype_ids_exist(course_length):
                     )
 
 
-@pytest.mark.parametrize("course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48])
+@pytest.mark.parametrize(
+    "course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48]
+)
 def test_suggested_archetypes_match_their_activity(course_length):
     for week in load_weeks(course_length):
         for day in week.days:
@@ -191,7 +201,9 @@ def test_suggested_archetypes_match_their_activity(course_length):
 # ── CEFR sanity ────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48])
+@pytest.mark.parametrize(
+    "course_length", [CourseLength.WEEKS_24, CourseLength.WEEKS_48]
+)
 def test_sub_level_range_is_within_1_to_10(course_length):
     for week in load_weeks(course_length):
         assert 1 <= week.sub_level_min <= week.sub_level_max <= 10, (

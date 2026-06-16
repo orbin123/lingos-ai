@@ -58,15 +58,11 @@ def build_insights(themes: dict[str, list[str]]) -> tuple[list[str], list[str]]:
     encouraging, number-free placeholders.
     """
     strengths = [
-        s
-        for theme in themes.get("strengths", [])
-        if (s := _strength_sentence(theme))
+        s for theme in themes.get("strengths", []) if (s := _strength_sentence(theme))
     ][:3]
-    focus = [
-        f
-        for theme in themes.get("focus", [])
-        if (f := _focus_sentence(theme))
-    ][:3]
+    focus = [f for theme in themes.get("focus", []) if (f := _focus_sentence(theme))][
+        :3
+    ]
     if not strengths:
         strengths = STRENGTH_FALLBACK[:3]
     if not focus:

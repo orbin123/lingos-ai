@@ -177,11 +177,7 @@ class PaymentService:
 
     @staticmethod
     def _payment_entity(payload: dict) -> dict:
-        return (
-            payload.get("payload", {})
-            .get("payment", {})
-            .get("entity", {})
-        )
+        return payload.get("payload", {}).get("payment", {}).get("entity", {})
 
     def _handle_payment_captured(self, payload: dict) -> None:
         entity = self._payment_entity(payload)
@@ -191,9 +187,7 @@ class PaymentService:
             return
 
         payment = (
-            self.db.query(Payment)
-            .filter(Payment.provider_order_id == order_id)
-            .first()
+            self.db.query(Payment).filter(Payment.provider_order_id == order_id).first()
         )
         if payment is None:
             logger.warning("Razorpay captured event for unknown order %s", order_id)
@@ -218,9 +212,7 @@ class PaymentService:
         entity = self._payment_entity(payload)
         order_id = entity.get("order_id")
         payment = (
-            self.db.query(Payment)
-            .filter(Payment.provider_order_id == order_id)
-            .first()
+            self.db.query(Payment).filter(Payment.provider_order_id == order_id).first()
             if order_id
             else None
         )

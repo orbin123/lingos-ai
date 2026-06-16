@@ -74,11 +74,7 @@ class SkillPointsRepository:
     # Reads
     def get_all_for_user(self, user_id: int) -> list[SkillPoints]:
         """All skill-points rows for a user, or empty list if none exist."""
-        return (
-            self.db.query(SkillPoints)
-            .filter(SkillPoints.user_id == user_id)
-            .all()
-        )
+        return self.db.query(SkillPoints).filter(SkillPoints.user_id == user_id).all()
 
     def get_one(self, user_id: int, skill_id: int) -> SkillPoints | None:
         """Single (user, skill) row, or None if not yet initialised."""

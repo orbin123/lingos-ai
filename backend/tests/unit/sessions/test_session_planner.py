@@ -36,14 +36,16 @@ class TestPlanSession:
         day = _make_day(
             mandatory=["read", "write"],
             suggested={
-                "read":   ["READ_CLOZE"],
-                "write":  ["WRITE_SENT_TRANS"],
+                "read": ["READ_CLOZE"],
+                "write": ["WRITE_SENT_TRANS"],
                 "listen": ["LISTEN_MCQ"],
-                "speak":  ["SPEAK_TIMED"],
+                "speak": ["SPEAK_TIMED"],
             },
         )
         plan = plan_session(
-            day, tasks_per_day=4, allowed_activities={"read", "write", "listen", "speak"}
+            day,
+            tasks_per_day=4,
+            allowed_activities={"read", "write", "listen", "speak"},
         )
         assert [(a.sequence, a.archetype_id, a.is_mandatory) for a in plan] == [
             (1, "READ_CLOZE", True),
@@ -56,14 +58,16 @@ class TestPlanSession:
         day = _make_day(
             mandatory=["read", "write"],
             suggested={
-                "read":   ["READ_CLOZE"],
-                "write":  ["WRITE_SENT_TRANS"],
+                "read": ["READ_CLOZE"],
+                "write": ["WRITE_SENT_TRANS"],
                 "listen": ["LISTEN_MCQ"],
-                "speak":  ["SPEAK_TIMED"],
+                "speak": ["SPEAK_TIMED"],
             },
         )
         plan = plan_session(
-            day, tasks_per_day=2, allowed_activities={"read", "write", "listen", "speak"}
+            day,
+            tasks_per_day=2,
+            allowed_activities={"read", "write", "listen", "speak"},
         )
         assert len(plan) == 2
         assert all(a.is_mandatory for a in plan)
@@ -72,10 +76,10 @@ class TestPlanSession:
         day = _make_day(
             mandatory=["read", "write"],
             suggested={
-                "read":   ["READ_CLOZE"],
-                "write":  ["WRITE_SENT_TRANS"],
+                "read": ["READ_CLOZE"],
+                "write": ["WRITE_SENT_TRANS"],
                 "listen": ["LISTEN_MCQ"],
-                "speak":  ["SPEAK_TIMED"],
+                "speak": ["SPEAK_TIMED"],
             },
         )
         plan = plan_session(
@@ -91,10 +95,10 @@ class TestPlanSession:
         day = _make_day(
             mandatory=["listen", "speak"],
             suggested={
-                "read":   ["READ_CLOZE"],
-                "write":  ["WRITE_SENT_TRANS"],
+                "read": ["READ_CLOZE"],
+                "write": ["WRITE_SENT_TRANS"],
                 "listen": ["LISTEN_MCQ"],
-                "speak":  ["SPEAK_TIMED"],
+                "speak": ["SPEAK_TIMED"],
             },
         )
         plan = plan_session(
@@ -116,9 +120,7 @@ class TestPlanSession:
                 "write": ["WRITE_PARA"],
             },
         )
-        plan = plan_session(
-            day, tasks_per_day=2, allowed_activities={"read", "write"}
-        )
+        plan = plan_session(day, tasks_per_day=2, allowed_activities={"read", "write"})
         assert plan[0].archetype_id == "READ_TFNG"
 
     def test_invalid_tasks_per_day_raises(self):
@@ -148,15 +150,17 @@ class TestPlanSession:
         day = _make_day(
             mandatory=["read", "write"],
             suggested={
-                "read":   ["READ_CLOZE", "READ_COMP_MCQ"],
-                "write":  ["WRITE_SENT_TRANS"],
+                "read": ["READ_CLOZE", "READ_COMP_MCQ"],
+                "write": ["WRITE_SENT_TRANS"],
                 "listen": ["LISTEN_MCQ"],
-                "speak":  ["SPEAK_TIMED"],
+                "speak": ["SPEAK_TIMED"],
             },
         )
         runs = [
             plan_session(
-                day, tasks_per_day=3, allowed_activities={"read", "write", "listen", "speak"}
+                day,
+                tasks_per_day=3,
+                allowed_activities={"read", "write", "listen", "speak"},
             )
             for _ in range(5)
         ]

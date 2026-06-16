@@ -244,11 +244,7 @@ class TestSelectPlan:
         row = service.select_plan(user, "beginner-48w")
         assert row.plan_id == "beginner-48w"
         assert row.status == SubscriptionStatus.VERIFIED.value
-        pref = (
-            db_session.query(UserCoursePreference)
-            .filter_by(user_id=user.id)
-            .one()
-        )
+        pref = db_session.query(UserCoursePreference).filter_by(user_id=user.id).one()
         assert pref.course_length == "48w"
 
     def test_updates_existing_plan_while_verified(self, db_session):
@@ -257,11 +253,7 @@ class TestSelectPlan:
         service.select_plan(user, "beginner-48w")
         row = service.select_plan(user, "beginner-24w")
         assert row.plan_id == "beginner-24w"
-        pref = (
-            db_session.query(UserCoursePreference)
-            .filter_by(user_id=user.id)
-            .one()
-        )
+        pref = db_session.query(UserCoursePreference).filter_by(user_id=user.id).one()
         assert pref.course_length == "24w"
 
     def test_unknown_plan_raises(self, db_session):
@@ -344,9 +336,7 @@ class TestActivateAndCancel:
     def test_cancel_active_keeps_period_end(self, db_session):
         user = _user(db_session)
         service = SubscriptionService(db_session)
-        service.activate_from_payment(
-            user, plan_id="beginner-24w", provider="razorpay"
-        )
+        service.activate_from_payment(user, plan_id="beginner-24w", provider="razorpay")
         row = service.cancel(user)
         assert row.status == SubscriptionStatus.CANCELLED.value
         assert row.current_period_end is not None
@@ -406,8 +396,7 @@ class TestExpireDueTrials:
         assert service.expire_due_trials() == 1
         assert service.expire_due_trials() == 0  # idempotent
         states = {
-            row.user_id: row.status
-            for row in db_session.query(Subscription).all()
+            row.user_id: row.status for row in db_session.query(Subscription).all()
         }
         assert states[due_user.id] == SubscriptionStatus.EXPIRED.value
         assert states[running_user.id] == SubscriptionStatus.TRIAL.value

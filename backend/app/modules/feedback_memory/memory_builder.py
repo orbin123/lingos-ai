@@ -91,9 +91,7 @@ def build_session_memory(
     """
     parts: list[str] = []
 
-    parts.append(
-        f"Session: {day_id} | Activities: {len(activities_summary)}"
-    )
+    parts.append(f"Session: {day_id} | Activities: {len(activities_summary)}")
 
     # Per-activity scores
     if activities_summary:

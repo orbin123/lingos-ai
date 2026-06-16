@@ -103,9 +103,7 @@ def _sanitise(payload: StructuredPersonalisation) -> StructuredPersonalisation:
             if (cleaned := _strip_pii(item))
         ],
         priority_skills=[
-            cleaned
-            for item in payload.priority_skills
-            if (cleaned := _strip_pii(item))
+            cleaned for item in payload.priority_skills if (cleaned := _strip_pii(item))
         ],
         pain_points=[
             cleaned for item in payload.pain_points if (cleaned := _strip_pii(item))

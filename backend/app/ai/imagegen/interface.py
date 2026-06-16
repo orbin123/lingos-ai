@@ -56,6 +56,7 @@ def size_string_for_aspect_ratio(aspect_ratio: AspectRatio) -> str:
 
 class ImageResult(TypedDict):
     """High-level image-generation result returned to routes/callers."""
+
     image_url: str
     width: int
     height: int
@@ -64,6 +65,7 @@ class ImageResult(TypedDict):
 
 class GeneratedImage(TypedDict):
     """Raw provider output before storage/caching concerns are applied."""
+
     image_bytes: bytes
     width: int
     height: int

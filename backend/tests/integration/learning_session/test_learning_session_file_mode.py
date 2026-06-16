@@ -81,9 +81,7 @@ async def test_resume_auto_completes_all_evaluated_daily_session(monkeypatch) ->
     )
     _mock_no_existing_scorecard(monkeypatch)
 
-    messages = [
-        msg async for msg in service.resume_messages_stream("chat-session")
-    ]
+    messages = [msg async for msg in service.resume_messages_stream("chat-session")]
 
     v2_service.complete_session.assert_awaited_once_with(
         session_id="daily-session",
@@ -94,7 +92,9 @@ async def test_resume_auto_completes_all_evaluated_daily_session(monkeypatch) ->
 
 
 @pytest.mark.asyncio
-async def test_initial_open_auto_completes_all_evaluated_daily_session(monkeypatch) -> None:
+async def test_initial_open_auto_completes_all_evaluated_daily_session(
+    monkeypatch,
+) -> None:
     service = LearningSessionService.__new__(LearningSessionService)
     service.db = MagicMock()
     service.attempts_repo = MagicMock()
@@ -130,9 +130,7 @@ async def test_initial_open_auto_completes_all_evaluated_daily_session(monkeypat
     )
     _mock_no_existing_scorecard(monkeypatch)
 
-    messages = [
-        msg async for msg in service.initial_messages_stream("chat-session")
-    ]
+    messages = [msg async for msg in service.initial_messages_stream("chat-session")]
 
     v2_service.complete_session.assert_awaited_once_with(
         session_id="daily-session",
@@ -183,9 +181,7 @@ async def test_resume_keeps_next_activity_when_attempt_is_pending(monkeypatch) -
 
     service._resume_practice_task = _fake_resume_practice_task
 
-    messages = [
-        msg async for msg in service.resume_messages_stream("chat-session")
-    ]
+    messages = [msg async for msg in service.resume_messages_stream("chat-session")]
 
     # Resume delegated to the pending-activity delivery path.
     assert delivered in messages
@@ -295,15 +291,17 @@ def _assert_w1d1_blueprint_event(message) -> None:  # noqa: ANN001
     assert payload["payload_kind"] == "session_blueprint"
     blueprint = payload["blueprint"]
     assert blueprint["version"] == "learning_session.event.v1"
-    assert blueprint["teaching"]["teacher_style"] == day.teacher_instructions[
-        "teacher_style"
-    ]
-    assert blueprint["teaching"]["lesson_goal"] == day.teacher_instructions[
-        "lesson_goal"
-    ]
-    assert blueprint["teaching"]["readiness_prompt"] == day.teacher_instructions[
-        "readiness_prompt"
-    ]
+    assert (
+        blueprint["teaching"]["teacher_style"]
+        == day.teacher_instructions["teacher_style"]
+    )
+    assert (
+        blueprint["teaching"]["lesson_goal"] == day.teacher_instructions["lesson_goal"]
+    )
+    assert (
+        blueprint["teaching"]["readiness_prompt"]
+        == day.teacher_instructions["readiness_prompt"]
+    )
     assert len(blueprint["teaching"]["steps"]) == len(day.teacher_agent_behaviour)
     assert blueprint["activities"] == list(day.activity_contracts)
     assert blueprint["final_review"] == {
@@ -337,7 +335,9 @@ def _task_queue_for_day(day_id: str) -> list[dict]:
     return queue
 
 
-def _chat_for_day(day_id: str, *, session_id: str, phase: str = "teaching") -> MagicMock:
+def _chat_for_day(
+    day_id: str, *, session_id: str, phase: str = "teaching"
+) -> MagicMock:
     day = file_get_day_by_id(day_id)
     chat = MagicMock()
     chat.session_id = session_id
@@ -383,12 +383,13 @@ def _assert_blueprint_event(message, day_id: str) -> None:  # noqa: ANN001
     payload = message.payload
     blueprint = payload["blueprint"]
     assert blueprint["version"] == "learning_session.event.v1"
-    assert blueprint["teaching"]["teacher_style"] == day.teacher_instructions[
-        "teacher_style"
-    ]
-    assert blueprint["teaching"]["lesson_goal"] == day.teacher_instructions[
-        "lesson_goal"
-    ]
+    assert (
+        blueprint["teaching"]["teacher_style"]
+        == day.teacher_instructions["teacher_style"]
+    )
+    assert (
+        blueprint["teaching"]["lesson_goal"] == day.teacher_instructions["lesson_goal"]
+    )
     assert len(blueprint["teaching"]["steps"]) == len(day.teacher_agent_behaviour)
     assert blueprint["activities"] == list(day.activity_contracts)
 
@@ -427,9 +428,7 @@ async def test_initial_stream_emits_session_blueprint_before_teaching() -> None:
     }
     service._state_from_row.return_value = state
 
-    messages = [
-        msg async for msg in service.initial_messages_stream("chat-w1d1")
-    ]
+    messages = [msg async for msg in service.initial_messages_stream("chat-w1d1")]
 
     _assert_w1d1_blueprint_event(messages[0])
     # Transient welcome streams right after the blueprint (instant first
@@ -466,9 +465,7 @@ async def test_initial_stream_emits_session_blueprint_for_48w_depth_day() -> Non
     }
     service._state_from_row.return_value = state
 
-    messages = [
-        msg async for msg in service.initial_messages_stream("chat-48w-d2")
-    ]
+    messages = [msg async for msg in service.initial_messages_stream("chat-48w-d2")]
 
     _assert_blueprint_event(messages[0], day_id)
     # Same transient welcome contract as the 24w path.
@@ -502,9 +499,7 @@ async def test_resume_stream_emits_session_blueprint_before_replay() -> None:
         "daily_plan": {},
     }
 
-    messages = [
-        msg async for msg in service.resume_messages_stream("chat-w1d1")
-    ]
+    messages = [msg async for msg in service.resume_messages_stream("chat-w1d1")]
 
     _assert_w1d1_blueprint_event(messages[0])
     assert messages[1].type == "chat_stream_start"
@@ -528,7 +523,8 @@ async def test_create_session_file_mode_skips_planner_and_persists_script(
         raise AssertionError("PlannerAgent.generate must not be called in file mode")
 
     monkeypatch.setattr(
-        "app.modules.learning_session.service.PlannerAgent.generate", _explode,
+        "app.modules.learning_session.service.PlannerAgent.generate",
+        _explode,
     )
 
     # Build a service whose repos are all mocks so no DB is touched.
@@ -549,6 +545,7 @@ async def test_create_session_file_mode_skips_planner_and_persists_script(
     # `_resolve_daily_session` is async — replace with an async stub.
     async def _resolve(*, user_id, daily_session_id):  # noqa: ARG001
         return daily
+
     service._resolve_daily_session = _resolve  # type: ignore[method-assign]
 
     service.session_repo.get_by_daily_session_id.return_value = None
@@ -588,7 +585,8 @@ async def test_create_session_db_mode_uses_source_persona_for_authored_w1d1(
         raise AssertionError("PlannerAgent.generate must not run for sourced W1D1")
 
     monkeypatch.setattr(
-        "app.modules.learning_session.service.PlannerAgent.generate", _explode,
+        "app.modules.learning_session.service.PlannerAgent.generate",
+        _explode,
     )
 
     service = LearningSessionService.__new__(LearningSessionService)
@@ -607,6 +605,7 @@ async def test_create_session_db_mode_uses_source_persona_for_authored_w1d1(
 
     async def _resolve(*, user_id, daily_session_id):  # noqa: ARG001
         return daily
+
     service._resolve_daily_session = _resolve  # type: ignore[method-assign]
 
     service.session_repo.get_by_daily_session_id.return_value = None
@@ -633,7 +632,8 @@ async def test_create_session_file_mode_uses_source_persona_for_authored_w1d2(
         raise AssertionError("PlannerAgent.generate must not run for sourced W1D2")
 
     monkeypatch.setattr(
-        "app.modules.learning_session.service.PlannerAgent.generate", _explode,
+        "app.modules.learning_session.service.PlannerAgent.generate",
+        _explode,
     )
 
     service = LearningSessionService.__new__(LearningSessionService)
@@ -652,6 +652,7 @@ async def test_create_session_file_mode_uses_source_persona_for_authored_w1d2(
 
     async def _resolve(*, user_id, daily_session_id):  # noqa: ARG001
         return daily
+
     service._resolve_daily_session = _resolve  # type: ignore[method-assign]
 
     service.session_repo.get_by_daily_session_id.return_value = None
@@ -718,6 +719,7 @@ async def test_create_session_resume_refreshes_existing_w1d2_chat_persona() -> N
 
     async def _resolve(*, user_id, daily_session_id):  # noqa: ARG001
         return daily
+
     service._resolve_daily_session = _resolve  # type: ignore[method-assign]
     service.session_repo.get_by_daily_session_id.return_value = existing
 
@@ -878,9 +880,7 @@ async def test_read_cloze_submission_emits_validated_contract_payloads(
     feedback.sub_skill_breakdown = {"grammar": 8}
 
     v2_service = MagicMock()
-    v2_service.submit_activity = AsyncMock(
-        return_value=(attempt, evaluation, feedback)
-    )
+    v2_service.submit_activity = AsyncMock(return_value=(attempt, evaluation, feedback))
     monkeypatch.setattr(
         "app.modules.learning_session.service._make_v2_session_service",
         MagicMock(return_value=v2_service),
@@ -1022,9 +1022,7 @@ async def test_task_submission_events_expose_activity_contract(monkeypatch) -> N
     feedback.sub_skill_breakdown = {"grammar": 8}
 
     v2_service = MagicMock()
-    v2_service.submit_activity = AsyncMock(
-        return_value=(attempt, evaluation, feedback)
-    )
+    v2_service.submit_activity = AsyncMock(return_value=(attempt, evaluation, feedback))
     monkeypatch.setattr(
         "app.modules.learning_session.service._make_v2_session_service",
         MagicMock(return_value=v2_service),
@@ -1168,9 +1166,7 @@ async def test_complete_and_announce_emits_final_review_events(
         mentor_note="You are improving your subject-verb agreement.",
     )
     v2_service = MagicMock()
-    v2_service.complete_session = AsyncMock(
-        return_value=(scorecard, MagicMock())
-    )
+    v2_service.complete_session = AsyncMock(return_value=(scorecard, MagicMock()))
     monkeypatch.setattr(
         "app.modules.learning_session.service._make_v2_session_service",
         MagicMock(return_value=v2_service),
@@ -1189,14 +1185,9 @@ async def test_complete_and_announce_emits_final_review_events(
         FakeSkillRepository,
     )
 
-    messages = [
-        msg
-        async for msg in service._complete_and_announce(chat, {})
-    ]
+    messages = [msg async for msg in service._complete_and_announce(chat, {})]
 
-    final_scorecard = next(
-        msg for msg in messages if msg.widget == "final_scorecard"
-    )
+    final_scorecard = next(msg for msg in messages if msg.widget == "final_scorecard")
     rag_feedback = next(msg for msg in messages if msg.widget == "rag_feedback")
     completed = next(msg for msg in messages if msg.widget == "session_completed")
 
@@ -1222,7 +1213,10 @@ async def test_gibberish_reply_is_redirected_not_advanced(monkeypatch) -> None:
     service = LearningSessionService.__new__(LearningSessionService)
     service.db = MagicMock()
     chat = SimpleNamespace(
-        session_id="chat-1", user_id=1, messages=[], understanding_confirmed=False,
+        session_id="chat-1",
+        user_id=1,
+        messages=[],
+        understanding_confirmed=False,
     )
     service._load_session = MagicMock(return_value=chat)
     service._enrich_state_with_profile = MagicMock()
@@ -1267,7 +1261,10 @@ async def test_wrong_but_relevant_reply_falls_through_to_teaching(monkeypatch) -
     service = LearningSessionService.__new__(LearningSessionService)
     service.db = MagicMock()
     chat = SimpleNamespace(
-        session_id="chat-1", user_id=1, messages=[], understanding_confirmed=False,
+        session_id="chat-1",
+        user_id=1,
+        messages=[],
+        understanding_confirmed=False,
     )
     service._load_session = MagicMock(return_value=chat)
     service._enrich_state_with_profile = MagicMock()
@@ -1360,9 +1357,7 @@ async def test_resume_lands_on_pending_activity_without_replaying_feedback(
     service._next_pending_attempt = MagicMock(return_value=pending)
     service._prepare_attempt_for_delivery = AsyncMock(return_value=pending)
 
-    messages = [
-        msg async for msg in service.resume_messages_stream("chat-w1d1")
-    ]
+    messages = [msg async for msg in service.resume_messages_stream("chat-w1d1")]
 
     widgets = {m.widget for m in messages if m.widget}
     assert "scorecard" not in widgets
@@ -1443,7 +1438,9 @@ async def test_next_activity_is_noop_when_phase_is_practice_task() -> None:
     messages = [
         msg
         async for msg in service._stream_followup_response(
-            session, state, "Next activity",
+            session,
+            state,
+            "Next activity",
         )
     ]
 
@@ -1489,7 +1486,9 @@ async def test_next_activity_delivers_once_then_noops(monkeypatch) -> None:
     first = [
         msg
         async for msg in service._stream_followup_response(
-            session, state, "Next activity",
+            session,
+            state,
+            "Next activity",
         )
     ]
     assert first == []
@@ -1499,7 +1498,9 @@ async def test_next_activity_delivers_once_then_noops(monkeypatch) -> None:
     second = [
         msg
         async for msg in service._stream_followup_response(
-            session, state, "Next activity",
+            session,
+            state,
+            "Next activity",
         )
     ]
     assert second == []
@@ -1509,7 +1510,6 @@ async def test_next_activity_delivers_once_then_noops(monkeypatch) -> None:
 async def _empty_async_iter():
     return
     yield  # pragma: no cover — makes this an async generator
-
 
 
 @pytest.mark.asyncio
@@ -1546,9 +1546,7 @@ async def test_resume_from_feedback_phase_lands_on_next_activity(
     service._next_pending_attempt = MagicMock(return_value=pending)
     service._prepare_attempt_for_delivery = AsyncMock(return_value=pending)
 
-    messages = [
-        msg async for msg in service.resume_messages_stream("chat-w1d1")
-    ]
+    messages = [msg async for msg in service.resume_messages_stream("chat-w1d1")]
 
     widgets = {m.widget for m in messages if m.widget}
     assert "scorecard" not in widgets
@@ -1583,9 +1581,7 @@ async def test_resume_announces_completion_when_no_pending_activity(
     )
     service._next_pending_attempt = MagicMock(return_value=None)
 
-    messages = [
-        msg async for msg in service.resume_messages_stream("chat-w1d1")
-    ]
+    messages = [msg async for msg in service.resume_messages_stream("chat-w1d1")]
 
     widgets = {m.widget for m in messages if m.widget}
     assert "scorecard" not in widgets

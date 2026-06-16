@@ -221,8 +221,11 @@ def _stats(db, user: User, range_: str = "week"):
 class TestBuildPeriod:
     def test_week_goal_is_tasks_per_day_times_seven(self):
         period = build_period(
-            "week", course_length="24w", tasks_per_day=4,
-            current_week=1, current_day=4,
+            "week",
+            course_length="24w",
+            tasks_per_day=4,
+            current_week=1,
+            current_day=4,
         )
         assert period.expected_tasks == 28  # not the old constant 7
         assert period.day_ids == [f"day_24_01_{d:02d}" for d in range(1, 8)]
@@ -231,8 +234,11 @@ class TestBuildPeriod:
 
     def test_month_goal_is_tasks_per_day_times_28(self):
         period = build_period(
-            "month", course_length="24w", tasks_per_day=4,
-            current_week=6, current_day=2,
+            "month",
+            course_length="24w",
+            tasks_per_day=4,
+            current_week=6,
+            current_day=2,
         )
         assert period.expected_tasks == 112
         # Week 6 sits in the 4-week block weeks 5..8.
@@ -244,8 +250,11 @@ class TestBuildPeriod:
 
     def test_all_goal_prorates_to_weeks_reached(self):
         period = build_period(
-            "all", course_length="24w", tasks_per_day=4,
-            current_week=3, current_day=1,
+            "all",
+            course_length="24w",
+            tasks_per_day=4,
+            current_week=3,
+            current_day=1,
         )
         assert period.start_week == 1 and period.end_week == 3
         assert period.expected_tasks == 4 * 7 * 3
@@ -253,8 +262,11 @@ class TestBuildPeriod:
 
     def test_all_aggregates_into_blocks_when_long(self):
         period = build_period(
-            "all", course_length="48w", tasks_per_day=2,
-            current_week=24, current_day=7,
+            "all",
+            course_length="48w",
+            tasks_per_day=2,
+            current_week=24,
+            current_day=7,
         )
         # 24 week-buckets would be too dense → 4-week blocks.
         assert period.bucket_labels[0] == "W1-4"
@@ -266,9 +278,7 @@ class TestBuildPeriod:
 
 class TestTaskGoals:
     def test_day_four_four_per_day_is_sixteen_of_twentyeight(self, db_session):
-        user = _seed_user(
-            db_session, tasks_per_day=4, current_week=1, current_day=4
-        )
+        user = _seed_user(db_session, tasks_per_day=4, current_week=1, current_day=4)
         week = _add_week(db_session, 1)
         for d in range(1, 5):  # days 1..4 done, 4 attempts each = 16
             day = _add_day(db_session, week, d)
@@ -284,9 +294,7 @@ class TestTaskGoals:
         assert stats.weekly_snapshot.weekly_task_goal == 28
 
     def test_month_goal_is_112(self, db_session):
-        user = _seed_user(
-            db_session, tasks_per_day=4, current_week=2, current_day=1
-        )
+        user = _seed_user(db_session, tasks_per_day=4, current_week=2, current_day=1)
         _add_week(db_session, 1)
         stats = _stats(db_session, user, "month")
         assert stats.period_snapshot.tasks_goal == 112
@@ -297,9 +305,7 @@ class TestTaskGoals:
 
 class TestCurriculumFiltering:
     def test_only_current_week_days_count_for_week_range(self, db_session):
-        user = _seed_user(
-            db_session, tasks_per_day=4, current_week=2, current_day=7
-        )
+        user = _seed_user(db_session, tasks_per_day=4, current_week=2, current_day=7)
         wk1 = _add_week(db_session, 1)
         wk2 = _add_week(db_session, 2)
         # Both weeks completed *today* (same wall-clock) — only week 2 should
@@ -307,13 +313,19 @@ class TestCurriculumFiltering:
         now = datetime.now(timezone.utc)
         d1 = _add_day(db_session, wk1, 1)
         _complete_session(
-            db_session, user_id=user.id, day_id=d1.day_id,
-            n_attempts=4, started=now,
+            db_session,
+            user_id=user.id,
+            day_id=d1.day_id,
+            n_attempts=4,
+            started=now,
         )
         d2 = _add_day(db_session, wk2, 1)
         _complete_session(
-            db_session, user_id=user.id, day_id=d2.day_id,
-            n_attempts=4, started=now,
+            db_session,
+            user_id=user.id,
+            day_id=d2.day_id,
+            n_attempts=4,
+            started=now,
         )
 
         week_stats = _stats(db_session, user, "week")
@@ -328,9 +340,7 @@ class TestCurriculumFiltering:
 
 class TestRangeBehaviour:
     def test_range_changes_history_labels_and_keeps_subskills(self, db_session):
-        user = _seed_user(
-            db_session, tasks_per_day=4, current_week=2, current_day=3
-        )
+        user = _seed_user(db_session, tasks_per_day=4, current_week=2, current_day=3)
         for wn in (1, 2):
             week = _add_week(db_session, wn)
             day = _add_day(db_session, week, 1)
@@ -351,9 +361,7 @@ class TestRangeBehaviour:
         assert len(week_stats.skill_scores) == len(SUB_SKILLS)
 
     def test_overall_score_is_period_eval_average(self, db_session):
-        user = _seed_user(
-            db_session, tasks_per_day=2, current_week=2, current_day=1
-        )
+        user = _seed_user(db_session, tasks_per_day=2, current_week=2, current_day=1)
         wk1 = _add_week(db_session, 1)
         wk2 = _add_week(db_session, 2)
         d1 = _add_day(db_session, wk1, 1)
@@ -377,20 +385,26 @@ class TestRangeBehaviour:
 
 class TestTimePracticed:
     def test_sums_session_durations_in_period(self, db_session):
-        user = _seed_user(
-            db_session, tasks_per_day=4, current_week=1, current_day=2
-        )
+        user = _seed_user(db_session, tasks_per_day=4, current_week=1, current_day=2)
         week = _add_week(db_session, 1)
         start = datetime.now(timezone.utc)
         d1 = _add_day(db_session, week, 1)
         _complete_session(
-            db_session, user_id=user.id, day_id=d1.day_id, n_attempts=2,
-            started=start, completed=start + timedelta(minutes=10),
+            db_session,
+            user_id=user.id,
+            day_id=d1.day_id,
+            n_attempts=2,
+            started=start,
+            completed=start + timedelta(minutes=10),
         )
         d2 = _add_day(db_session, week, 2)
         _complete_session(
-            db_session, user_id=user.id, day_id=d2.day_id, n_attempts=2,
-            started=start, completed=start + timedelta(minutes=5),
+            db_session,
+            user_id=user.id,
+            day_id=d2.day_id,
+            n_attempts=2,
+            started=start,
+            completed=start + timedelta(minutes=5),
         )
 
         stats = _stats(db_session, user, "week")
@@ -442,9 +456,7 @@ class TestInsights:
 
 class TestMilestone:
     def test_milestone_from_preference(self, db_session):
-        user = _seed_user(
-            db_session, tasks_per_day=3, current_week=5, current_day=2
-        )
+        user = _seed_user(db_session, tasks_per_day=3, current_week=5, current_day=2)
         stats = _stats(db_session, user, "week")
         assert stats.curriculum_milestone.current_week == 5
         assert stats.curriculum_milestone.current_day == 2

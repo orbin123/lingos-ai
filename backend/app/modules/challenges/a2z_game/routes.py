@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, WebSocket, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.core.ai_rate_limit import ai_rate_limit
@@ -116,7 +126,10 @@ async def ingest_a2z_audio_chunk(
 async def stream_a2z_audio(
     round_id: int,
     websocket: WebSocket,
-    token: str = Query(..., description="JWT bearer token (passed as query param because browsers cannot set WS headers)"),
+    token: str = Query(
+        ...,
+        description="JWT bearer token (passed as query param because browsers cannot set WS headers)",
+    ),
     db: Session = Depends(get_db),
 ) -> None:
     """Stream raw audio to Deepgram and receive real-time word events.

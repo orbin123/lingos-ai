@@ -55,9 +55,14 @@ def _build_world(db):
     user = make_user(db, name="Loop Learner")
     skills = seed_skills(db)
     for skill in skills.values():
-        db.add(SkillPoints(
-            user_id=user.id, skill_id=skill.id, points=3000, display_score=3.0,
-        ))
+        db.add(
+            SkillPoints(
+                user_id=user.id,
+                skill_id=skill.id,
+                points=3000,
+                display_score=3.0,
+            )
+        )
     db.flush()
     seed_archetypes(db)
     week = CurriculumWeek(
@@ -73,21 +78,23 @@ def _build_world(db):
     )
     db.add(week)
     db.flush()
-    db.add(CurriculumDay(
-        day_id=DAY_ID,
-        week_id=week.id,
-        day_number=3,
-        topic="Past negative and questions",
-        explanation_brief="didn't + base verb",
-        default_activities=["read", "write", "listen", "speak"],
-        mandatory_activities=["read", "write"],
-        suggested_archetypes={
-            "read": ["READ_CLOZE"],
-            "write": ["WRITE_SENT_TRANS"],
-            "listen": ["LISTEN_CLOZE"],
-            "speak": ["SPEAK_TIMED"],
-        },
-    ))
+    db.add(
+        CurriculumDay(
+            day_id=DAY_ID,
+            week_id=week.id,
+            day_number=3,
+            topic="Past negative and questions",
+            explanation_brief="didn't + base verb",
+            default_activities=["read", "write", "listen", "speak"],
+            mandatory_activities=["read", "write"],
+            suggested_archetypes={
+                "read": ["READ_CLOZE"],
+                "write": ["WRITE_SENT_TRANS"],
+                "listen": ["LISTEN_CLOZE"],
+                "speak": ["SPEAK_TIMED"],
+            },
+        )
+    )
     db.commit()
     return user
 
@@ -123,7 +130,8 @@ async def _run_full_session(db, service: SessionService, user_id: int):
             user_response={"answer": "x"},
         )
     scorecard, report = await service.complete_session(
-        session_id=session.session_id, user_id=user_id,
+        session_id=session.session_id,
+        user_id=user_id,
     )
     return session, scorecard, report, len(sequences)
 
@@ -135,7 +143,9 @@ class TestCompleteLearningLoop:
         service = _service(db_session)
 
         session, scorecard, report, activity_count = await _run_full_session(
-            db_session, service, user.id,
+            db_session,
+            service,
+            user.id,
         )
         assert activity_count >= 2  # file-authored day has several activities
 
@@ -187,12 +197,14 @@ class TestCompleteLearningLoop:
         # Replay the same day → scorecard computes points but does NOT apply them.
         replay = _service(db_session)
         session2, scorecard2, report2, _ = await _run_full_session(
-            db_session, replay, user.id,
+            db_session,
+            replay,
+            user.id,
         )
 
         assert session2.is_first_attempt is False
         assert sum(scorecard2.points_earned.values()) > 0  # still computed
-        assert report2.applied is False                     # but not applied
+        assert report2.applied is False  # but not applied
         assert scorecard2.points_applied is False
 
         second_totals = {
