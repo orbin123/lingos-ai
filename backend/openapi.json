@@ -11287,7 +11287,7 @@
     },
     "/auth/google/login": {
       "get": {
-        "description": "Step 1 — Redirect the user to Google's consent screen.\n\nThe frontend calls this URL. The browser is redirected to Google.\nAfter consent, Google redirects back to /auth/google/callback.",
+        "description": "Step 1 — Redirect the user to Google's consent screen.\n\nThe frontend calls this URL. The browser is redirected to Google.\nAfter consent, Google redirects back to /auth/google/callback.\n\nWe attach a signed, short-TTL ``state`` (a JWT carrying a random nonce) so\nthe callback can reject forged/replayed callbacks (login CSRF, audit D1).",
         "operationId": "google_login_auth_google_login_get",
         "responses": {
           "200": {
@@ -12441,7 +12441,7 @@
     },
     "/health": {
       "get": {
-        "description": "Liveness probe - confirms server is up.",
+        "description": "Liveness probe — confirms the process is up. Always 200; no dependencies.\n\nUse this for the container/orchestrator liveness check: a 200 means \"the\nprocess is alive, don't kill it\". For \"is this task ready to serve traffic\"\nuse /health/ready, which checks DB + Redis.",
         "operationId": "health_check_health_get",
         "responses": {
           "200": {
@@ -12460,6 +12460,26 @@
           }
         },
         "summary": "Health Check",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "description": "Readiness probe — 200 only when DB **and** Redis are reachable.\n\nWired to the ALB/ECS target-group health check so a task with a broken\ndependency is pulled out of rotation instead of serving 500s. Returns 503\nwith a per-dependency breakdown when anything is down.",
+        "operationId": "readiness_check_health_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Readiness Check",
         "tags": [
           "system"
         ]
