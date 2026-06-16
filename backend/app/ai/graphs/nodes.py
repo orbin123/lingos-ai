@@ -98,7 +98,9 @@ async def plan_loader_node(
         raise LookupError(f"CurriculumDay day_id={daily.day_id!r} not found")
     week = day.week  # eager-loaded relationship
     if week is None:
-        raise LookupError(f"CurriculumWeek for day_id={daily.day_id!r} not found")
+        raise LookupError(
+            f"CurriculumWeek for day_id={daily.day_id!r} not found"
+        )
 
     attempts = ActivityAttemptRepository(db).list_for_session(daily.id)
     if not attempts:
