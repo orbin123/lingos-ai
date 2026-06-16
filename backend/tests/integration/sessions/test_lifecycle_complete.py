@@ -10,7 +10,11 @@ import pytest
 from app.modules.auth.models import UserProfile
 from app.modules.sessions.evaluator import StubEvaluator
 from app.modules.sessions.feedback_generator import StubFeedbackGenerator
-from app.modules.sessions.models import AttemptStatus, SessionStatus
+from app.modules.sessions.models import (
+    AttemptStatus,
+    SessionScorecard,
+    SessionStatus,
+)
 from app.modules.sessions.service import SessionService
 from app.modules.progress.models import SkillPoints
 from app.modules.streaks.models import DailyActivity
@@ -112,6 +116,84 @@ class TestSessionLifecycle:
         assert report1.applied is True
         assert report2.applied is False
         assert report2.reason == "session already completed"
+
+    @pytest.mark.asyncio
+    async def test_concurrent_completion_yields_one_scorecard(self, db_session):
+        """B4: two workers racing to complete the same session must resolve to
+        exactly one scorecard with points applied once.
+
+        A true cross-process race can't be reproduced on the shared in-memory
+        SQLite connection, so we simulate the losing worker not yet seeing the
+        winner's scorecard at its ``existing`` check — it builds and inserts a
+        duplicate, which trips the unique constraint on commit. The new
+        IntegrityError handler must roll back and return the winner's scorecard.
+        """
+        service, session = await self._start(db_session, tasks_per_day=2, score=8.0)
+        for seq in (1, 2):
+            await service.submit_activity(
+                session_id=session.session_id,
+                user_id=session.user_id,
+                sequence=seq,
+                user_response={"a": "b"},
+            )
+
+        # Worker 1 completes normally and applies points.
+        winner, report1 = await service.complete_session(
+            session_id=session.session_id,
+            user_id=session.user_id,
+        )
+        assert report1.applied is True
+        points_after_first = sum(
+            int(row.points)
+            for row in db_session.query(SkillPoints)
+            .filter_by(user_id=session.user_id)
+            .all()
+        )
+        assert points_after_first > 0
+
+        # Worker 2 races: make its first scorecard lookup (the `existing` check)
+        # return None so it takes the build-and-insert path; later lookups (the
+        # winner re-fetch after IntegrityError) behave normally.
+        service2 = SessionService(
+            db_session,
+            evaluator=StubEvaluator(default_score=8.0),
+            feedback_generator=StubFeedbackGenerator(),
+        )
+        real_get = service2.scorecards_repo.get_for_session
+        calls = {"n": 0}
+
+        def _flaky_get(session_pk: int):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return None
+            return real_get(session_pk)
+
+        service2.scorecards_repo.get_for_session = _flaky_get  # type: ignore[method-assign]
+
+        loser, report2 = await service2.complete_session(
+            session_id=session.session_id,
+            user_id=session.user_id,
+        )
+
+        # The race resolves to the single winning scorecard, not a duplicate.
+        assert loser.id == winner.id
+        assert report2.applied is False
+        assert "concurrent" in report2.reason
+
+        # Exactly one scorecard row, and points were applied exactly once.
+        scorecard_rows = (
+            db_session.query(SessionScorecard)
+            .filter_by(session_id=winner.session_id)
+            .all()
+        )
+        assert len(scorecard_rows) == 1
+        points_after_race = sum(
+            int(row.points)
+            for row in db_session.query(SkillPoints)
+            .filter_by(user_id=session.user_id)
+            .all()
+        )
+        assert points_after_race == points_after_first
 
     @pytest.mark.asyncio
     async def test_streak_on_first_submit_not_on_complete(self, db_session):
