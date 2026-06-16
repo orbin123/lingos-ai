@@ -24,7 +24,8 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
         week_number=1,
         theme_type="grammar",
         cefr_level="C1",
-        sub_level_min=8, sub_level_max=8,
+        sub_level_min=8,
+        sub_level_max=8,
         days=(
             DaySource(
                 title="Narrative Tense Control - Mixing Past Forms in One Story",
@@ -394,66 +395,90 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
                                 "passage, and 5 BlankItems exactly as provided so rule-based scoring can "
                                 "compare each typed verb phrase with correct_answer."
                             ),
-                            static_payload=
-                            {'task_intro': 'Listen, then complete the mixed-conditional notes.',
-                             'instructions': 'Play the audio once, then type the missing mixed-conditional verb '
-                                             'phrases in the paraphrased notes.',
-                             'estimated_time_minutes': 3,
-                             'inner_widget': 'fill_in_blanks',
-                             'audio_genre': 'Reflective career monologue',
-                             'audio_script': 'Looking back, if I had taken that training course, I would be much '
-                                             'more confident in meetings now. If I were better at delegating, I '
-                                             'would have finished the project on time last month. If she had '
-                                             'accepted the offer, she would still be working here today. If they '
-                                             'had invested earlier, they would not be struggling with cash flow '
-                                             'now. If I had known about the policy change, I would understand the '
-                                             'new rules today.',
-                             'passage_title': 'Mixed Time Notes',
-                             'passage': 'If I ___ that training course, I would be much more confident now. If I '
-                                        '___ better at delegating, I would have finished on time last month. If '
-                                        'she ___ the offer, she would still be working here today. If they ___ '
-                                        'earlier, they would not be struggling now.',
-                             'items': [{'item_id': 'b1',
-                                        'blank_id': 'b1',
-                                        'sentence_with_blank': 'If I ___ that training course, I would be much '
-                                                               'more confident now.',
-                                        'base_verb': 'take',
-                                        'correct_answer': 'had taken',
-                                        'distractors': ['took', 'would take'],
-                                        'options': ['had taken', 'took', 'would take'],
-                                        'grammar_rule': 'Past condition with present result: if + past perfect.',
-                                        'explanation': 'The past condition uses had taken.'},
-                                       {'item_id': 'b2',
-                                        'blank_id': 'b2',
-                                        'sentence_with_blank': 'If I ___ better at delegating, I would have '
-                                                               'finished on time last month.',
-                                        'base_verb': 'be',
-                                        'correct_answer': 'were',
-                                        'distractors': ['was', 'am'],
-                                        'options': ['were', 'was', 'am'],
-                                        'grammar_rule': 'Present hypothetical with past result: if + past simple.',
-                                        'explanation': 'The if-clause uses were for a present hypothetical.'},
-                                       {'item_id': 'b3',
-                                        'blank_id': 'b3',
-                                        'sentence_with_blank': 'If she ___ the offer, she would still be working '
-                                                               'here today.',
-                                        'base_verb': 'accept',
-                                        'correct_answer': 'had accepted',
-                                        'distractors': ['accepted', 'accepts'],
-                                        'options': ['had accepted', 'accepted', 'accepts'],
-                                        'grammar_rule': 'Past condition with present result.',
-                                        'explanation': 'The if-clause needs had accepted.'},
-                                       {'item_id': 'b4',
-                                        'blank_id': 'b4',
-                                        'sentence_with_blank': 'If they ___ earlier, they would not be struggling '
-                                                               'now.',
-                                        'base_verb': 'invest',
-                                        'correct_answer': 'had invested',
-                                        'distractors': ['invested', 'invest'],
-                                        'options': ['had invested', 'invested', 'invest'],
-                                        'grammar_rule': 'Past condition with present result.',
-                                        'explanation': 'The if-clause needs had invested.'}],
-                             'target_words_in_audio': ['had taken', 'were', 'had accepted', 'had invested']},
+                            static_payload={
+                                "task_intro": "Listen, then complete the mixed-conditional notes.",
+                                "instructions": "Play the audio once, then type the missing mixed-conditional verb "
+                                "phrases in the paraphrased notes.",
+                                "estimated_time_minutes": 3,
+                                "inner_widget": "fill_in_blanks",
+                                "audio_genre": "Reflective career monologue",
+                                "audio_script": "Looking back, if I had taken that training course, I would be much "
+                                "more confident in meetings now. If I were better at delegating, I "
+                                "would have finished the project on time last month. If she had "
+                                "accepted the offer, she would still be working here today. If they "
+                                "had invested earlier, they would not be struggling with cash flow "
+                                "now. If I had known about the policy change, I would understand the "
+                                "new rules today.",
+                                "passage_title": "Mixed Time Notes",
+                                "passage": "If I ___ that training course, I would be much more confident now. If I "
+                                "___ better at delegating, I would have finished on time last month. If "
+                                "she ___ the offer, she would still be working here today. If they ___ "
+                                "earlier, they would not be struggling now.",
+                                "items": [
+                                    {
+                                        "item_id": "b1",
+                                        "blank_id": "b1",
+                                        "sentence_with_blank": "If I ___ that training course, I would be much "
+                                        "more confident now.",
+                                        "base_verb": "take",
+                                        "correct_answer": "had taken",
+                                        "distractors": ["took", "would take"],
+                                        "options": ["had taken", "took", "would take"],
+                                        "grammar_rule": "Past condition with present result: if + past perfect.",
+                                        "explanation": "The past condition uses had taken.",
+                                    },
+                                    {
+                                        "item_id": "b2",
+                                        "blank_id": "b2",
+                                        "sentence_with_blank": "If I ___ better at delegating, I would have "
+                                        "finished on time last month.",
+                                        "base_verb": "be",
+                                        "correct_answer": "were",
+                                        "distractors": ["was", "am"],
+                                        "options": ["were", "was", "am"],
+                                        "grammar_rule": "Present hypothetical with past result: if + past simple.",
+                                        "explanation": "The if-clause uses were for a present hypothetical.",
+                                    },
+                                    {
+                                        "item_id": "b3",
+                                        "blank_id": "b3",
+                                        "sentence_with_blank": "If she ___ the offer, she would still be working "
+                                        "here today.",
+                                        "base_verb": "accept",
+                                        "correct_answer": "had accepted",
+                                        "distractors": ["accepted", "accepts"],
+                                        "options": [
+                                            "had accepted",
+                                            "accepted",
+                                            "accepts",
+                                        ],
+                                        "grammar_rule": "Past condition with present result.",
+                                        "explanation": "The if-clause needs had accepted.",
+                                    },
+                                    {
+                                        "item_id": "b4",
+                                        "blank_id": "b4",
+                                        "sentence_with_blank": "If they ___ earlier, they would not be struggling "
+                                        "now.",
+                                        "base_verb": "invest",
+                                        "correct_answer": "had invested",
+                                        "distractors": ["invested", "invest"],
+                                        "options": [
+                                            "had invested",
+                                            "invested",
+                                            "invest",
+                                        ],
+                                        "grammar_rule": "Past condition with present result.",
+                                        "explanation": "The if-clause needs had invested.",
+                                    },
+                                ],
+                                "target_words_in_audio": [
+                                    "had taken",
+                                    "were",
+                                    "had accepted",
+                                    "had invested",
+                                ],
+                            },
                         ),
                         evaluation=EvaluationBlueprint(
                             evaluator="rule_based",
@@ -579,7 +604,80 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
                                 widget_requirements=(
                                     "Set inner_widget to 'fill_in_blanks'. Use the authored audio_script, passage, and 5 BlankItems exactly as provided so rule-based scoring can compare each typed verb phrase with correct_answer."
                                 ),
-                                static_payload={'task_intro': 'Listen, then complete the mixed-conditional notes.', 'instructions': 'Play the audio once, then type the missing mixed-conditional verb phrases in the paraphrased notes.', 'estimated_time_minutes': 3, 'inner_widget': 'fill_in_blanks', 'audio_genre': 'Reflective career monologue', 'audio_script': 'Looking back, if I had taken that training course, I would be much more confident in meetings now. If I were better at delegating, I would have finished the project on time last month. If she had accepted the offer, she would still be working here today. If they had invested earlier, they would not be struggling with cash flow now. If I had known about the policy change, I would understand the new rules today.', 'passage_title': 'Mixed Time Notes', 'passage': 'If I ___ that training course, I would be much more confident now. If I ___ better at delegating, I would have finished on time last month. If she ___ the offer, she would still be working here today. If they ___ earlier, they would not be struggling now.', 'items': [{'item_id': 'b1', 'blank_id': 'b1', 'sentence_with_blank': 'If I ___ that training course, I would be much more confident now.', 'base_verb': 'take', 'correct_answer': 'had taken', 'distractors': ['took', 'would take'], 'options': ['had taken', 'took', 'would take'], 'grammar_rule': 'Past condition with present result: if + past perfect.', 'explanation': 'The past condition uses had taken.'}, {'item_id': 'b2', 'blank_id': 'b2', 'sentence_with_blank': 'If I ___ better at delegating, I would have finished on time last month.', 'base_verb': 'be', 'correct_answer': 'were', 'distractors': ['was', 'am'], 'options': ['were', 'was', 'am'], 'grammar_rule': 'Present hypothetical with past result: if + past simple.', 'explanation': 'The if-clause uses were for a present hypothetical.'}, {'item_id': 'b3', 'blank_id': 'b3', 'sentence_with_blank': 'If she ___ the offer, she would still be working here today.', 'base_verb': 'accept', 'correct_answer': 'had accepted', 'distractors': ['accepted', 'accepts'], 'options': ['had accepted', 'accepted', 'accepts'], 'grammar_rule': 'Past condition with present result.', 'explanation': 'The if-clause needs had accepted.'}, {'item_id': 'b4', 'blank_id': 'b4', 'sentence_with_blank': 'If they ___ earlier, they would not be struggling now.', 'base_verb': 'invest', 'correct_answer': 'had invested', 'distractors': ['invested', 'invest'], 'options': ['had invested', 'invested', 'invest'], 'grammar_rule': 'Past condition with present result.', 'explanation': 'The if-clause needs had invested.'}], 'target_words_in_audio': ['had taken', 'were', 'had accepted', 'had invested']},
+                                static_payload={
+                                    "task_intro": "Listen, then complete the mixed-conditional notes.",
+                                    "instructions": "Play the audio once, then type the missing mixed-conditional verb phrases in the paraphrased notes.",
+                                    "estimated_time_minutes": 3,
+                                    "inner_widget": "fill_in_blanks",
+                                    "audio_genre": "Reflective career monologue",
+                                    "audio_script": "Looking back, if I had taken that training course, I would be much more confident in meetings now. If I were better at delegating, I would have finished the project on time last month. If she had accepted the offer, she would still be working here today. If they had invested earlier, they would not be struggling with cash flow now. If I had known about the policy change, I would understand the new rules today.",
+                                    "passage_title": "Mixed Time Notes",
+                                    "passage": "If I ___ that training course, I would be much more confident now. If I ___ better at delegating, I would have finished on time last month. If she ___ the offer, she would still be working here today. If they ___ earlier, they would not be struggling now.",
+                                    "items": [
+                                        {
+                                            "item_id": "b1",
+                                            "blank_id": "b1",
+                                            "sentence_with_blank": "If I ___ that training course, I would be much more confident now.",
+                                            "base_verb": "take",
+                                            "correct_answer": "had taken",
+                                            "distractors": ["took", "would take"],
+                                            "options": [
+                                                "had taken",
+                                                "took",
+                                                "would take",
+                                            ],
+                                            "grammar_rule": "Past condition with present result: if + past perfect.",
+                                            "explanation": "The past condition uses had taken.",
+                                        },
+                                        {
+                                            "item_id": "b2",
+                                            "blank_id": "b2",
+                                            "sentence_with_blank": "If I ___ better at delegating, I would have finished on time last month.",
+                                            "base_verb": "be",
+                                            "correct_answer": "were",
+                                            "distractors": ["was", "am"],
+                                            "options": ["were", "was", "am"],
+                                            "grammar_rule": "Present hypothetical with past result: if + past simple.",
+                                            "explanation": "The if-clause uses were for a present hypothetical.",
+                                        },
+                                        {
+                                            "item_id": "b3",
+                                            "blank_id": "b3",
+                                            "sentence_with_blank": "If she ___ the offer, she would still be working here today.",
+                                            "base_verb": "accept",
+                                            "correct_answer": "had accepted",
+                                            "distractors": ["accepted", "accepts"],
+                                            "options": [
+                                                "had accepted",
+                                                "accepted",
+                                                "accepts",
+                                            ],
+                                            "grammar_rule": "Past condition with present result.",
+                                            "explanation": "The if-clause needs had accepted.",
+                                        },
+                                        {
+                                            "item_id": "b4",
+                                            "blank_id": "b4",
+                                            "sentence_with_blank": "If they ___ earlier, they would not be struggling now.",
+                                            "base_verb": "invest",
+                                            "correct_answer": "had invested",
+                                            "distractors": ["invested", "invest"],
+                                            "options": [
+                                                "had invested",
+                                                "invested",
+                                                "invest",
+                                            ],
+                                            "grammar_rule": "Past condition with present result.",
+                                            "explanation": "The if-clause needs had invested.",
+                                        },
+                                    ],
+                                    "target_words_in_audio": [
+                                        "had taken",
+                                        "were",
+                                        "had accepted",
+                                        "had invested",
+                                    ],
+                                },
                             ),
                             evaluation=EvaluationBlueprint(
                                 evaluator="rule_based",
@@ -2004,7 +2102,8 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
         week_number=2,
         theme_type="communication",
         cefr_level="C1",
-        sub_level_min=8, sub_level_max=8,
+        sub_level_min=8,
+        sub_level_max=8,
         days=(
             DaySource(
                 title="Diplomatic Mediation - Neutral Language & Workable Outcomes",
@@ -3850,7 +3949,8 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
         week_number=3,
         theme_type="vocabulary",
         cefr_level="C1",
-        sub_level_min=8, sub_level_max=8,
+        sub_level_min=8,
+        sub_level_max=8,
         days=(
             DaySource(
                 title="Innovation & Future Tech - Automation, Algorithm & Ethical AI",
@@ -5737,7 +5837,8 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
         week_number=4,
         theme_type="confidence",
         cefr_level="C1",
-        sub_level_min=8, sub_level_max=8,
+        sub_level_min=8,
+        sub_level_max=8,
         days=(
             DaySource(
                 title="High-Stakes Conversations - Stay Composed Under Pressure",
@@ -7557,13 +7658,13 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
             ),
         ),
     ),
-
     # ── Cycle 6 — Mastery (C1) ──────────────────────────────────
     WeekSource(
         week_number=5,
         theme_type="grammar",
         cefr_level="C2",
-        sub_level_min=8, sub_level_max=8,
+        sub_level_min=8,
+        sub_level_max=8,
         days=(
             DaySource(
                 title="Aspect, Register & Narrative Voice",
@@ -7941,66 +8042,98 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
                                 "passage, and 5 BlankItems exactly as provided so rule-based scoring can "
                                 "compare each typed verb phrase with correct_answer."
                             ),
-                            static_payload=
-                            {'task_intro': 'Listen, then complete the advanced hypothetical notes.',
-                             'instructions': 'Play the audio once, then type the missing formal hypothetical '
-                                             'phrases in the paraphrased notes.',
-                             'estimated_time_minutes': 3,
-                             'inner_widget': 'fill_in_blanks',
-                             'audio_genre': 'Formal reflective monologue',
-                             'audio_script': 'Were it not for your support, the project would have stalled. But '
-                                             'for the delay, we would have launched in March. Supposing we had '
-                                             'accepted their terms, the partnership might have failed sooner. Had '
-                                             'the board acted earlier, we would have avoided the crisis. If only '
-                                             'the data had been clearer, the decision would have been easier.',
-                             'passage_title': 'Formal Hypotheticals Notes',
-                             'passage': '___ your support, the project would have stalled. But for the delay, we '
-                                        '___ in March. Supposing we ___ their terms, the partnership might have '
-                                        'failed sooner. Had the board acted earlier, we ___ the crisis.',
-                             'items': [{'item_id': 'b1',
-                                        'blank_id': 'b1',
-                                        'sentence_with_blank': '___ your support, the project would have stalled.',
-                                        'base_verb': 'be',
-                                        'correct_answer': 'Were it not for',
-                                        'distractors': ['If it was not for', 'Without of'],
-                                        'options': ['Were it not for', 'If it was not for', 'Without of'],
-                                        'grammar_rule': 'Use Were it not for in formal unreal present/past '
-                                                        'hypotheticals.',
-                                        'explanation': 'Were it not for is the formal inverted hypothetical '
-                                                       'opener.'},
-                                       {'item_id': 'b2',
-                                        'blank_id': 'b2',
-                                        'sentence_with_blank': 'But for the delay, we ___ in March.',
-                                        'base_verb': 'launch',
-                                        'correct_answer': 'would have launched',
-                                        'distractors': ['will launch', 'launched'],
-                                        'options': ['would have launched', 'will launch', 'launched'],
-                                        'grammar_rule': 'But for + noun takes a would-have result clause.',
-                                        'explanation': 'The unreal past result uses would have launched.'},
-                                       {'item_id': 'b3',
-                                        'blank_id': 'b3',
-                                        'sentence_with_blank': 'Supposing we ___ their terms, the partnership '
-                                                               'might have failed sooner.',
-                                        'base_verb': 'accept',
-                                        'correct_answer': 'had accepted',
-                                        'distractors': ['accepted', 'would accept'],
-                                        'options': ['had accepted', 'accepted', 'would accept'],
-                                        'grammar_rule': 'Supposing often takes past perfect for unreal past.',
-                                        'explanation': 'Supposing we had accepted fits a formal unreal past.'},
-                                       {'item_id': 'b4',
-                                        'blank_id': 'b4',
-                                        'sentence_with_blank': 'Had the board acted earlier, we ___ the crisis.',
-                                        'base_verb': 'avoid',
-                                        'correct_answer': 'would have avoided',
-                                        'distractors': ['will avoid', 'avoided'],
-                                        'options': ['would have avoided', 'will avoid', 'avoided'],
-                                        'grammar_rule': 'Inverted Had-clause pairs with would have + past '
-                                                        'participle.',
-                                        'explanation': 'The imagined past result uses would have avoided.'}],
-                             'target_words_in_audio': ['Were it not for',
-                                                       'would have launched',
-                                                       'had accepted',
-                                                       'would have avoided']},
+                            static_payload={
+                                "task_intro": "Listen, then complete the advanced hypothetical notes.",
+                                "instructions": "Play the audio once, then type the missing formal hypothetical "
+                                "phrases in the paraphrased notes.",
+                                "estimated_time_minutes": 3,
+                                "inner_widget": "fill_in_blanks",
+                                "audio_genre": "Formal reflective monologue",
+                                "audio_script": "Were it not for your support, the project would have stalled. But "
+                                "for the delay, we would have launched in March. Supposing we had "
+                                "accepted their terms, the partnership might have failed sooner. Had "
+                                "the board acted earlier, we would have avoided the crisis. If only "
+                                "the data had been clearer, the decision would have been easier.",
+                                "passage_title": "Formal Hypotheticals Notes",
+                                "passage": "___ your support, the project would have stalled. But for the delay, we "
+                                "___ in March. Supposing we ___ their terms, the partnership might have "
+                                "failed sooner. Had the board acted earlier, we ___ the crisis.",
+                                "items": [
+                                    {
+                                        "item_id": "b1",
+                                        "blank_id": "b1",
+                                        "sentence_with_blank": "___ your support, the project would have stalled.",
+                                        "base_verb": "be",
+                                        "correct_answer": "Were it not for",
+                                        "distractors": [
+                                            "If it was not for",
+                                            "Without of",
+                                        ],
+                                        "options": [
+                                            "Were it not for",
+                                            "If it was not for",
+                                            "Without of",
+                                        ],
+                                        "grammar_rule": "Use Were it not for in formal unreal present/past "
+                                        "hypotheticals.",
+                                        "explanation": "Were it not for is the formal inverted hypothetical "
+                                        "opener.",
+                                    },
+                                    {
+                                        "item_id": "b2",
+                                        "blank_id": "b2",
+                                        "sentence_with_blank": "But for the delay, we ___ in March.",
+                                        "base_verb": "launch",
+                                        "correct_answer": "would have launched",
+                                        "distractors": ["will launch", "launched"],
+                                        "options": [
+                                            "would have launched",
+                                            "will launch",
+                                            "launched",
+                                        ],
+                                        "grammar_rule": "But for + noun takes a would-have result clause.",
+                                        "explanation": "The unreal past result uses would have launched.",
+                                    },
+                                    {
+                                        "item_id": "b3",
+                                        "blank_id": "b3",
+                                        "sentence_with_blank": "Supposing we ___ their terms, the partnership "
+                                        "might have failed sooner.",
+                                        "base_verb": "accept",
+                                        "correct_answer": "had accepted",
+                                        "distractors": ["accepted", "would accept"],
+                                        "options": [
+                                            "had accepted",
+                                            "accepted",
+                                            "would accept",
+                                        ],
+                                        "grammar_rule": "Supposing often takes past perfect for unreal past.",
+                                        "explanation": "Supposing we had accepted fits a formal unreal past.",
+                                    },
+                                    {
+                                        "item_id": "b4",
+                                        "blank_id": "b4",
+                                        "sentence_with_blank": "Had the board acted earlier, we ___ the crisis.",
+                                        "base_verb": "avoid",
+                                        "correct_answer": "would have avoided",
+                                        "distractors": ["will avoid", "avoided"],
+                                        "options": [
+                                            "would have avoided",
+                                            "will avoid",
+                                            "avoided",
+                                        ],
+                                        "grammar_rule": "Inverted Had-clause pairs with would have + past "
+                                        "participle.",
+                                        "explanation": "The imagined past result uses would have avoided.",
+                                    },
+                                ],
+                                "target_words_in_audio": [
+                                    "Were it not for",
+                                    "would have launched",
+                                    "had accepted",
+                                    "would have avoided",
+                                ],
+                            },
                         ),
                         evaluation=EvaluationBlueprint(
                             evaluator="rule_based",
@@ -8128,7 +8261,87 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
                                 widget_requirements=(
                                     "Set inner_widget to 'fill_in_blanks'. Use the authored audio_script, passage, and 5 BlankItems exactly as provided so rule-based scoring can compare each typed verb phrase with correct_answer."
                                 ),
-                                static_payload={'task_intro': 'Listen, then complete the advanced hypothetical notes.', 'instructions': 'Play the audio once, then type the missing formal hypothetical phrases in the paraphrased notes.', 'estimated_time_minutes': 3, 'inner_widget': 'fill_in_blanks', 'audio_genre': 'Formal reflective monologue', 'audio_script': 'Were it not for your support, the project would have stalled. But for the delay, we would have launched in March. Supposing we had accepted their terms, the partnership might have failed sooner. Had the board acted earlier, we would have avoided the crisis. If only the data had been clearer, the decision would have been easier.', 'passage_title': 'Formal Hypotheticals Notes', 'passage': '___ your support, the project would have stalled. But for the delay, we ___ in March. Supposing we ___ their terms, the partnership might have failed sooner. Had the board acted earlier, we ___ the crisis.', 'items': [{'item_id': 'b1', 'blank_id': 'b1', 'sentence_with_blank': '___ your support, the project would have stalled.', 'base_verb': 'be', 'correct_answer': 'Were it not for', 'distractors': ['If it was not for', 'Without of'], 'options': ['Were it not for', 'If it was not for', 'Without of'], 'grammar_rule': 'Use Were it not for in formal unreal present/past hypotheticals.', 'explanation': 'Were it not for is the formal inverted hypothetical opener.'}, {'item_id': 'b2', 'blank_id': 'b2', 'sentence_with_blank': 'But for the delay, we ___ in March.', 'base_verb': 'launch', 'correct_answer': 'would have launched', 'distractors': ['will launch', 'launched'], 'options': ['would have launched', 'will launch', 'launched'], 'grammar_rule': 'But for + noun takes a would-have result clause.', 'explanation': 'The unreal past result uses would have launched.'}, {'item_id': 'b3', 'blank_id': 'b3', 'sentence_with_blank': 'Supposing we ___ their terms, the partnership might have failed sooner.', 'base_verb': 'accept', 'correct_answer': 'had accepted', 'distractors': ['accepted', 'would accept'], 'options': ['had accepted', 'accepted', 'would accept'], 'grammar_rule': 'Supposing often takes past perfect for unreal past.', 'explanation': 'Supposing we had accepted fits a formal unreal past.'}, {'item_id': 'b4', 'blank_id': 'b4', 'sentence_with_blank': 'Had the board acted earlier, we ___ the crisis.', 'base_verb': 'avoid', 'correct_answer': 'would have avoided', 'distractors': ['will avoid', 'avoided'], 'options': ['would have avoided', 'will avoid', 'avoided'], 'grammar_rule': 'Inverted Had-clause pairs with would have + past participle.', 'explanation': 'The imagined past result uses would have avoided.'}], 'target_words_in_audio': ['Were it not for', 'would have launched', 'had accepted', 'would have avoided']},
+                                static_payload={
+                                    "task_intro": "Listen, then complete the advanced hypothetical notes.",
+                                    "instructions": "Play the audio once, then type the missing formal hypothetical phrases in the paraphrased notes.",
+                                    "estimated_time_minutes": 3,
+                                    "inner_widget": "fill_in_blanks",
+                                    "audio_genre": "Formal reflective monologue",
+                                    "audio_script": "Were it not for your support, the project would have stalled. But for the delay, we would have launched in March. Supposing we had accepted their terms, the partnership might have failed sooner. Had the board acted earlier, we would have avoided the crisis. If only the data had been clearer, the decision would have been easier.",
+                                    "passage_title": "Formal Hypotheticals Notes",
+                                    "passage": "___ your support, the project would have stalled. But for the delay, we ___ in March. Supposing we ___ their terms, the partnership might have failed sooner. Had the board acted earlier, we ___ the crisis.",
+                                    "items": [
+                                        {
+                                            "item_id": "b1",
+                                            "blank_id": "b1",
+                                            "sentence_with_blank": "___ your support, the project would have stalled.",
+                                            "base_verb": "be",
+                                            "correct_answer": "Were it not for",
+                                            "distractors": [
+                                                "If it was not for",
+                                                "Without of",
+                                            ],
+                                            "options": [
+                                                "Were it not for",
+                                                "If it was not for",
+                                                "Without of",
+                                            ],
+                                            "grammar_rule": "Use Were it not for in formal unreal present/past hypotheticals.",
+                                            "explanation": "Were it not for is the formal inverted hypothetical opener.",
+                                        },
+                                        {
+                                            "item_id": "b2",
+                                            "blank_id": "b2",
+                                            "sentence_with_blank": "But for the delay, we ___ in March.",
+                                            "base_verb": "launch",
+                                            "correct_answer": "would have launched",
+                                            "distractors": ["will launch", "launched"],
+                                            "options": [
+                                                "would have launched",
+                                                "will launch",
+                                                "launched",
+                                            ],
+                                            "grammar_rule": "But for + noun takes a would-have result clause.",
+                                            "explanation": "The unreal past result uses would have launched.",
+                                        },
+                                        {
+                                            "item_id": "b3",
+                                            "blank_id": "b3",
+                                            "sentence_with_blank": "Supposing we ___ their terms, the partnership might have failed sooner.",
+                                            "base_verb": "accept",
+                                            "correct_answer": "had accepted",
+                                            "distractors": ["accepted", "would accept"],
+                                            "options": [
+                                                "had accepted",
+                                                "accepted",
+                                                "would accept",
+                                            ],
+                                            "grammar_rule": "Supposing often takes past perfect for unreal past.",
+                                            "explanation": "Supposing we had accepted fits a formal unreal past.",
+                                        },
+                                        {
+                                            "item_id": "b4",
+                                            "blank_id": "b4",
+                                            "sentence_with_blank": "Had the board acted earlier, we ___ the crisis.",
+                                            "base_verb": "avoid",
+                                            "correct_answer": "would have avoided",
+                                            "distractors": ["will avoid", "avoided"],
+                                            "options": [
+                                                "would have avoided",
+                                                "will avoid",
+                                                "avoided",
+                                            ],
+                                            "grammar_rule": "Inverted Had-clause pairs with would have + past participle.",
+                                            "explanation": "The imagined past result uses would have avoided.",
+                                        },
+                                    ],
+                                    "target_words_in_audio": [
+                                        "Were it not for",
+                                        "would have launched",
+                                        "had accepted",
+                                        "would have avoided",
+                                    ],
+                                },
                             ),
                             evaluation=EvaluationBlueprint(
                                 evaluator="rule_based",
@@ -9592,7 +9805,8 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
         week_number=6,
         theme_type="communication",
         cefr_level="C2",
-        sub_level_min=8, sub_level_max=8,
+        sub_level_min=8,
+        sub_level_max=8,
         days=(
             DaySource(
                 title="Principled Negotiation",
@@ -11448,7 +11662,8 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
         week_number=7,
         theme_type="vocabulary",
         cefr_level="C2",
-        sub_level_min=8, sub_level_max=8,
+        sub_level_min=8,
+        sub_level_max=8,
         days=(
             DaySource(
                 title="Philosophy & Ideas (Accessible) - Paradigm, Empirical & Premise",
@@ -13332,7 +13547,8 @@ WEEKS_C1C2: tuple[WeekSource, ...] = (
         week_number=8,
         theme_type="confidence",
         cefr_level="C2",
-        sub_level_min=8, sub_level_max=8,
+        sub_level_min=8,
+        sub_level_max=8,
         days=(
             DaySource(
                 title="Thought Leadership",

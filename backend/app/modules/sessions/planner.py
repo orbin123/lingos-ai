@@ -67,12 +67,14 @@ def plan_session(
         archetype = _first_suggestion(suggested.get(activity, ()))
         if archetype is None:
             continue
-        out.append(PlannedActivity(
-            sequence=seq,
-            archetype_id=archetype,
-            is_mandatory=True,
-            activity=activity,
-        ))
+        out.append(
+            PlannedActivity(
+                sequence=seq,
+                archetype_id=archetype,
+                is_mandatory=True,
+                activity=activity,
+            )
+        )
         used_activities.add(activity)
         seq += 1
 
@@ -87,12 +89,14 @@ def plan_session(
         archetype = _first_suggestion(suggested.get(activity, ()))
         if archetype is None:
             continue
-        out.append(PlannedActivity(
-            sequence=seq,
-            archetype_id=archetype,
-            is_mandatory=False,
-            activity=activity,
-        ))
+        out.append(
+            PlannedActivity(
+                sequence=seq,
+                archetype_id=archetype,
+                is_mandatory=False,
+                activity=activity,
+            )
+        )
         used_activities.add(activity)
         seq += 1
 

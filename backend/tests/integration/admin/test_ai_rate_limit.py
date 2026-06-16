@@ -37,9 +37,7 @@ def _fresh_limiter():
 class TestInMemoryLimiter:
     def test_allows_up_to_limit_then_denies(self):
         limiter = InMemorySlidingWindowLimiter()
-        results = [
-            limiter.allow("k", limit=3, window_seconds=60) for _ in range(5)
-        ]
+        results = [limiter.allow("k", limit=3, window_seconds=60) for _ in range(5)]
         assert results == [True, True, True, False, False]
 
     def test_keys_are_independent(self):
@@ -51,9 +49,7 @@ class TestInMemoryLimiter:
     def test_window_expiry_reallows(self, monkeypatch):
         limiter = InMemorySlidingWindowLimiter()
         now = [1000.0]
-        monkeypatch.setattr(
-            ai_rate_limit_module.time, "monotonic", lambda: now[0]
-        )
+        monkeypatch.setattr(ai_rate_limit_module.time, "monotonic", lambda: now[0])
         assert limiter.allow("k", limit=1, window_seconds=60) is True
         assert limiter.allow("k", limit=1, window_seconds=60) is False
         now[0] += 61.0

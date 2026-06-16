@@ -43,7 +43,8 @@ class TestSessionLifecycle:
         # Walk through all 4 activities.
         for expected_seq in range(1, 5):
             attempt = service.next_activity(
-                session_id=session.session_id, user_id=session.user_id,
+                session_id=session.session_id,
+                user_id=session.user_id,
             )
             assert attempt.sequence == expected_seq
             attempt, evaluation, feedback = await service.submit_activity(
@@ -60,7 +61,8 @@ class TestSessionLifecycle:
 
         # Complete the session.
         scorecard, report = await service.complete_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         assert report.applied is True
         assert scorecard.points_applied is True
@@ -82,7 +84,8 @@ class TestSessionLifecycle:
 
         # Session must now be COMPLETED.
         refreshed = service.get_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         assert refreshed.status is SessionStatus.COMPLETED
         assert refreshed.completed_at is not None
@@ -98,10 +101,12 @@ class TestSessionLifecycle:
                 user_response={"a": "b"},
             )
         first, report1 = await service.complete_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         second, report2 = await service.complete_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         assert first.id == second.id
         assert report1.applied is True
@@ -169,7 +174,8 @@ class TestRestartRescoring:
 
     @pytest.mark.asyncio
     async def test_retry_speaking_rescore_does_not_double_apply_points(
-        self, db_session,
+        self,
+        db_session,
     ):
         service, session = await self._start(db_session, score=8.0)
         uid = session.user_id
@@ -183,7 +189,8 @@ class TestRestartRescoring:
                 user_response={"a": "b"},
             )
         scorecard1, report1 = await service.complete_session(
-            session_id=session.session_id, user_id=uid,
+            session_id=session.session_id,
+            user_id=uid,
         )
         assert report1.applied is True
         assert scorecard1.points_applied is True
@@ -193,13 +200,17 @@ class TestRestartRescoring:
         # Speaking is the 4th activity (SPEAK_TIMED). Retry it with a new,
         # lower score via a second service wired with a different evaluator.
         speaking = next(
-            a for a in service.get_session(
-                session_id=session.session_id, user_id=uid,
+            a
+            for a in service.get_session(
+                session_id=session.session_id,
+                user_id=uid,
             ).attempts
             if ARCHETYPE_REGISTRY[a.archetype_id].core_activity == "speak"
         )
         await service.reset_activity(
-            session_id=session.session_id, user_id=uid, sequence=speaking.sequence,
+            session_id=session.session_id,
+            user_id=uid,
+            sequence=speaking.sequence,
         )
 
         service2 = SessionService(
@@ -214,13 +225,13 @@ class TestRestartRescoring:
             user_response={"a": "redo"},
         )
         scorecard2, report2 = await service2.complete_session(
-            session_id=session.session_id, user_id=uid,
+            session_id=session.session_id,
+            user_id=uid,
         )
 
         # The rebuilt scorecard reflects the NEW speaking score.
         speaking_entry = next(
-            a for a in scorecard2.activities
-            if a["sequence"] == speaking.sequence
+            a for a in scorecard2.activities if a["sequence"] == speaking.sequence
         )
         assert speaking_entry["raw_score"] == pytest.approx(3.0)
 

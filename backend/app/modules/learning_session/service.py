@@ -136,6 +136,7 @@ def _is_gate_bypass(evaluator_notes: str | None) -> bool:
     notes = evaluator_notes.lower()
     return any(marker in notes for marker in _GATE_BYPASS_MARKERS)
 
+
 # Friendly labels for the four core activities, used in the compact
 # completed-activity summary rows the chat UI renders on resume.
 _CORE_ACTIVITY_LABELS = {
@@ -173,9 +174,7 @@ def _validate_teacher_input(**fields) -> None:
     """Guard the teacher-agent boundary. Raises under ``strict_contracts``;
     otherwise logs and proceeds. Validation is for its side effect."""
     if (
-        build_agent_input(
-            TeacherAgentInput, strict=settings.strict_contracts, **fields
-        )
+        build_agent_input(TeacherAgentInput, strict=settings.strict_contracts, **fields)
         is None
     ):
         log.warning(
@@ -185,9 +184,20 @@ def _validate_teacher_input(**fields) -> None:
 
 
 _READY_RESPONSE_PHRASES = (
-    "ready", "yes", "yeah", "yep", "sure", "ok", "okay",
-    "let's go", "lets go", "i'm ready", "im ready", "go ahead",
-    "begin", "start",
+    "ready",
+    "yes",
+    "yeah",
+    "yep",
+    "sure",
+    "ok",
+    "okay",
+    "let's go",
+    "lets go",
+    "i'm ready",
+    "im ready",
+    "go ahead",
+    "begin",
+    "start",
 )
 
 _READY_RESPONSE_PATTERNS = tuple(
@@ -200,7 +210,13 @@ _READY_RESPONSE_PATTERNS = tuple(
 # response when its edit distance to one of these words is ≤ 1, so common
 # typos like "yys", "yse", "okk", "redy" still progress the session.
 _SHORT_AFFIRMATIVES = (
-    "yes", "yeah", "yep", "ok", "okay", "sure", "ready",
+    "yes",
+    "yeah",
+    "yep",
+    "ok",
+    "okay",
+    "sure",
+    "ready",
 )
 
 
@@ -224,9 +240,7 @@ def _edit_distance_le_1(a: str, b: str) -> bool:
             # Allow a single adjacent transposition (e.g. "yes" vs "yse").
             (x1, y1), (x2, y2) = diffs
             i1 = next(i for i, (x, y) in enumerate(zip(a, b)) if x != y)
-            i2 = next(
-                i for i in range(i1 + 1, la) if a[i] != b[i]
-            )
+            i2 = next(i for i in range(i1 + 1, la) if a[i] != b[i])
             if i2 == i1 + 1 and x1 == y2 and x2 == y1:
                 return True
         return False
@@ -251,14 +265,32 @@ def _is_typo_of_short_affirmative(token: str) -> bool:
         return False
     return any(_edit_distance_le_1(token, word) for word in _SHORT_AFFIRMATIVES)
 
+
 _NON_UNDERSTANDING_PHRASES = (
-    "i don't understand", "i dont understand", "i do not understand",
-    "i didn't understand", "i didnt understand", "i did not understand",
-    "don't understand", "dont understand", "do not understand",
-    "didn't understand", "didnt understand", "did not understand",
-    "not understand", "not clear", "unclear", "confused",
-    "i don't get", "i dont get", "i didn't get", "i didnt get",
-    "not ready", "not yet", "wait", "explain again",
+    "i don't understand",
+    "i dont understand",
+    "i do not understand",
+    "i didn't understand",
+    "i didnt understand",
+    "i did not understand",
+    "don't understand",
+    "dont understand",
+    "do not understand",
+    "didn't understand",
+    "didnt understand",
+    "did not understand",
+    "not understand",
+    "not clear",
+    "unclear",
+    "confused",
+    "i don't get",
+    "i dont get",
+    "i didn't get",
+    "i didnt get",
+    "not ready",
+    "not yet",
+    "wait",
+    "explain again",
 )
 
 _NON_UNDERSTANDING_PATTERNS = tuple(
@@ -267,7 +299,9 @@ _NON_UNDERSTANDING_PATTERNS = tuple(
 )
 
 _READINESS_PROMPT_PATTERNS = (
-    re.compile(r"\b(do you|does this|is this|that|it)\s+(feel\s+)?(clear|make sense)\b"),
+    re.compile(
+        r"\b(do you|does this|is this|that|it)\s+(feel\s+)?(clear|make sense)\b"
+    ),
     re.compile(r"\b(are you|do you feel|feel)\s+ready\b"),
     re.compile(r"\bready\s+(for|to)\s+(practice|try|start|begin)\b"),
     re.compile(r"\bready to try the practice task\b"),
@@ -289,9 +323,7 @@ _READINESS_PROMPT_PATTERNS = (
     re.compile(
         r"\b(time|ready)\s+(to|for)\s+(the\s+)?practice\s+(task|exercise|activity)\b"
     ),
-    re.compile(
-        r"\bmove(\s+on)?\s+to\s+(the\s+)?practice\s+(task|exercise|activity)\b"
-    ),
+    re.compile(r"\bmove(\s+on)?\s+to\s+(the\s+)?practice\s+(task|exercise|activity)\b"),
     re.compile(r"\bbegin\s+the\s+practice\s+(task|exercise|activity)\b"),
 )
 
@@ -383,10 +415,9 @@ def _looks_like_ready_for_practice(
         return False
     if any(pattern.search(cleaned) for pattern in _NON_UNDERSTANDING_PATTERNS):
         return False
-    return (
-        _tutor_asked_readiness(previous_tutor_message)
-        and _looks_like_ready_response(cleaned)
-    )
+    return _tutor_asked_readiness(
+        previous_tutor_message
+    ) and _looks_like_ready_response(cleaned)
 
 
 def _looks_like_understanding(
@@ -396,12 +427,14 @@ def _looks_like_understanding(
 ) -> bool:
     """Backward-compatible name for the practice readiness gate."""
     return _looks_like_ready_for_practice(
-        text, previous_tutor_message=previous_tutor_message,
+        text,
+        previous_tutor_message=previous_tutor_message,
     )
 
 
 _PRACTICE_TASK_MENTION_RE = re.compile(
-    r"\bpractice\s+(task|exercise|activity)\b", re.IGNORECASE,
+    r"\bpractice\s+(task|exercise|activity)\b",
+    re.IGNORECASE,
 )
 
 # Default ceiling used when no authored scripted plan is available.
@@ -450,9 +483,17 @@ def _is_short_affirmative_or_short_reply(text: str) -> bool:
     if word_count == 0 or word_count > 3:
         return False
     soft_positive = (
-        "got it", "sounds good", "alright", "all right", "lets do it",
-        "let's do it", "lets do this", "let's do this", "i got it",
-        "understood", "cool",
+        "got it",
+        "sounds good",
+        "alright",
+        "all right",
+        "lets do it",
+        "let's do it",
+        "lets do this",
+        "let's do this",
+        "i got it",
+        "understood",
+        "cool",
     )
     return any(phrase in cleaned for phrase in soft_positive)
 
@@ -631,9 +672,7 @@ def _build_redirect_message(
     if re_ask:
         parts.append(f"Let's stay with this: {re_ask}")
     else:
-        parts.append(
-            "Try the current step again with one short sentence in English."
-        )
+        parts.append("Try the current step again with one short sentence in English.")
     return " ".join(parts)
 
 
@@ -707,16 +746,12 @@ class LearningSessionService:
 
         planner_ms: float | None = None
         if file_persona is not None:
-            topic_label, skill_name, sub_level, teacher_instructions = (
-                file_persona
-            )
+            topic_label, skill_name, sub_level, teacher_instructions = file_persona
             activity_type = self._activity_type_from_archetype(first.archetype_id)
         else:
             day = self.curriculum_day_repo.get_by_day_id(daily.day_id)
             if day is None:
-                raise LookupError(
-                    f"CurriculumDay day_id={daily.day_id!r} not found"
-                )
+                raise LookupError(f"CurriculumDay day_id={daily.day_id!r} not found")
             week = day.week
             if week is None:
                 raise LookupError(
@@ -792,7 +827,8 @@ class LearningSessionService:
         )
 
     def _persona_from_file(
-        self, day_id: str,
+        self,
+        day_id: str,
     ) -> tuple[str, str, int, dict | None]:
         """Build (topic, skill_name, sub_level, teacher_context) from source_24w.py.
 
@@ -865,9 +901,7 @@ class LearningSessionService:
         if daily_session_id is not None:
             daily = self.db.get(DailySession, int(daily_session_id))
             if daily is None:
-                raise LookupError(
-                    f"DailySession id={daily_session_id} not found"
-                )
+                raise LookupError(f"DailySession id={daily_session_id} not found")
             if daily.user_id != user_id:
                 raise PermissionError(
                     f"User {user_id} cannot start session for daily {daily_session_id}"
@@ -888,7 +922,8 @@ class LearningSessionService:
                 f"week={pref.current_week}"
             )
         day = CurriculumDayRepository(self.db).get_for_week(
-            week_pk=week.id, day_number=pref.current_day_in_week,
+            week_pk=week.id,
+            day_number=pref.current_day_in_week,
         )
         if day is None:
             raise LookupError(
@@ -897,19 +932,19 @@ class LearningSessionService:
             )
 
         allowed = {
-            a for a, on in {
+            a
+            for a, on in {
                 "read": pref.allow_read,
                 "write": pref.allow_write,
                 "listen": pref.allow_listen,
                 "speak": pref.allow_speak,
-            }.items() if on
+            }.items()
+            if on
         }
 
         # If today's session already exists, return it. A completed session
         # should route to its scorecard, not create a fresh chat attempt.
-        existing = self.daily_repo.get_in_progress(
-            user_id=user_id, day_id=day.day_id
-        )
+        existing = self.daily_repo.get_in_progress(user_id=user_id, day_id=day.day_id)
         if existing is not None:
             if not self._abandon_stale_file_session_if_unstarted(
                 existing,
@@ -991,9 +1026,7 @@ class LearningSessionService:
                     "archetype_id": a.archetype_id,
                     "is_mandatory": a.is_mandatory,
                     "status": (
-                        a.status.value
-                        if hasattr(a.status, "value")
-                        else str(a.status)
+                        a.status.value if hasattr(a.status, "value") else str(a.status)
                     ),
                     "activity_id": contract.get("activity_id"),
                     "task_widget": contract.get("task_widget"),
@@ -1035,9 +1068,7 @@ class LearningSessionService:
         """
         session = self._load_session(session_id)
         if session.user_id != user_id:
-            raise PermissionError(
-                f"User {user_id} cannot restart session {session_id}"
-            )
+            raise PermissionError(f"User {user_id} cannot restart session {session_id}")
 
         # Load the linked daily session up-front so it is always bound, even if
         # the best-effort teacher-instructions refresh below raises.
@@ -1065,7 +1096,9 @@ class LearningSessionService:
                 ):
                     task_queue = session.task_queue or []
                     archetype_id = task_queue[0]["archetype_id"] if task_queue else None
-                    archetype = self.archetype_repo.get(archetype_id) if archetype_id else None
+                    archetype = (
+                        self.archetype_repo.get(archetype_id) if archetype_id else None
+                    )
                     if archetype is not None:
                         topic_dict = v2_course_topic(day, day.week, archetype)
                         course_slug = f"{daily.course_length}-course"
@@ -1139,9 +1172,7 @@ class LearningSessionService:
             )
         daily = self.db.get(DailySession, session.daily_session_id)
         if daily is None:
-            raise LookupError(
-                f"DailySession id={session.daily_session_id} not found"
-            )
+            raise LookupError(f"DailySession id={session.daily_session_id} not found")
 
         await _make_v2_session_service(self.db).reset_activity(
             session_id=daily.session_id,
@@ -1213,10 +1244,7 @@ class LearningSessionService:
             welcome_ms = (time.perf_counter() - t0) * 1000
 
             async for msg in self._stream_teaching_turn(session, state):
-                if (
-                    teaching_first_chunk_ms is None
-                    and msg.type == "chat_stream_delta"
-                ):
+                if teaching_first_chunk_ms is None and msg.type == "chat_stream_delta":
                     teaching_first_chunk_ms = (time.perf_counter() - t0) * 1000
                 yield msg
         finally:
@@ -1327,7 +1355,8 @@ class LearningSessionService:
                 "This chat is finished. Go back to the dashboard when you're ready."
             )
             async for msg in self._stream_chat_text(
-                message, actions=["Go to dashboard"],
+                message,
+                actions=["Go to dashboard"],
             ):
                 yield msg
             return
@@ -1348,7 +1377,9 @@ class LearningSessionService:
         current = max(int(attempt.sequence) - 1, 0)
         message = f"Welcome back. Continue with activity {current + 1} of {total}."
         yield WSOutgoingMessage(
-            type="chat_message", role="assistant", content=message,
+            type="chat_message",
+            role="assistant",
+            content=message,
         )
         # Self-heal stale snapshots: a `pre_generated_tasks` cached by an older
         # code path may be missing listening fields. Pull the live attempt,
@@ -1387,13 +1418,9 @@ class LearningSessionService:
         """
         attempts = self.attempts_repo.list_for_session(session.daily_session_id)
         completed = [
-            int(a.sequence)
-            for a in attempts
-            if a.status is AttemptStatus.EVALUATED
+            int(a.sequence) for a in attempts if a.status is AttemptStatus.EVALUATED
         ]
-        pending = next(
-            (a for a in attempts if a.status is AttemptStatus.PENDING), None
-        )
+        pending = next((a for a in attempts if a.status is AttemptStatus.PENDING), None)
         teaching_completed = bool(session.understanding_confirmed)
         if not teaching_completed:
             last_phase = "teaching"
@@ -1452,9 +1479,7 @@ class LearningSessionService:
             )
         return summaries
 
-    async def get_state_snapshot(
-        self, session_id: str, user_id: int
-    ) -> dict[str, Any]:
+    async def get_state_snapshot(self, session_id: str, user_id: int) -> dict[str, Any]:
         """Build the REST hydrate payload the chat UI renders before/without WS.
 
         Returns phase, messages, task_queue, the current actionable task, the
@@ -1470,9 +1495,7 @@ class LearningSessionService:
         self.db.commit()
 
         daily = await self._auto_complete_daily_if_ready(session)
-        daily_completed = (
-            daily is not None and daily.status is SessionStatus.COMPLETED
-        )
+        daily_completed = daily is not None and daily.status is SessionStatus.COMPLETED
         checkpoint = self._resume_checkpoint(session)
 
         current_task: dict[str, Any] | None = None
@@ -1571,7 +1594,8 @@ class LearningSessionService:
 
     def _stream_completed_daily_message(self) -> AsyncIterator[WSOutgoingMessage]:
         return self._stream_chat_text(
-            _DAILY_COMPLETE_MESSAGE, actions=["Go to dashboard"],
+            _DAILY_COMPLETE_MESSAGE,
+            actions=["Go to dashboard"],
         )
 
     def _session_blueprint_message(
@@ -1680,9 +1704,7 @@ class LearningSessionService:
                     yield msg
                 return
             if message.type == "follow_up_action":
-                async for msg in self._handle_follow_up_stream(
-                    session, state, message
-                ):
+                async for msg in self._handle_follow_up_stream(session, state, message):
                     yield msg
                 return
             yield WSOutgoingMessage(
@@ -1745,7 +1767,8 @@ class LearningSessionService:
                         }
                     )
                     self._apply_update(
-                        session, {"phase": "teaching", "messages": new_messages},
+                        session,
+                        {"phase": "teaching", "messages": new_messages},
                     )
                     self.db.commit()
                     async for msg in self._stream_chat_text(redirect):
@@ -1753,7 +1776,8 @@ class LearningSessionService:
                     return
 
             ready_for_practice = _looks_like_ready_for_practice(
-                text, previous_tutor_message=previous_tutor_message,
+                text,
+                previous_tutor_message=previous_tutor_message,
             )
             # Secondary escape valve: when the teacher has finished the
             # authored plan and has already mentioned the practice task,
@@ -1947,9 +1971,7 @@ class LearningSessionService:
                             if isinstance(m, dict)
                         ),
                         next_tip=feedback.next_tip,
-                        sub_skill_breakdown=dict(
-                            feedback.sub_skill_breakdown or {}
-                        ),
+                        sub_skill_breakdown=dict(feedback.sub_skill_breakdown or {}),
                     ),
                 )
             )
@@ -2100,9 +2122,23 @@ class LearningSessionService:
         session.feedback = feedback_dict
         session.phase = "feedback"
         messages = list(session.messages or [])
-        messages.append({"role": "ai", "content": "[pronunciation result delivered]" if pronunciation_data else "[scorecard delivered]", "type": "ui_event"})
+        messages.append(
+            {
+                "role": "ai",
+                "content": "[pronunciation result delivered]"
+                if pronunciation_data
+                else "[scorecard delivered]",
+                "type": "ui_event",
+            }
+        )
         if pronunciation_data is None:
-            messages.append({"role": "ai", "content": "[feedback card delivered]", "type": "ui_event"})
+            messages.append(
+                {
+                    "role": "ai",
+                    "content": "[feedback card delivered]",
+                    "type": "ui_event",
+                }
+            )
         session.messages = messages
         # Keep the cached task_queue statuses in step with the V2 attempt we
         # just evaluated.
@@ -2125,9 +2161,7 @@ class LearningSessionService:
                 "to move on. Want to try again?"
             )
             actions = ["Retry activity", "Go to dashboard"]
-            messages.append(
-                {"role": "ai", "content": summary_text, "type": "chat"}
-            )
+            messages.append({"role": "ai", "content": summary_text, "type": "chat"})
             session.messages = messages
             state["messages"] = messages
             self.session_repo.save(session)
@@ -2178,11 +2212,19 @@ class LearningSessionService:
         action = raw_action.strip().lower()
 
         end_signals = (
-            "go to dashboard", "end session", "end", "stop", "bye", "goodbye",
+            "go to dashboard",
+            "end session",
+            "end",
+            "stop",
+            "bye",
+            "goodbye",
         )
         another_signals = (
-            "next activity", "try another task", "another task",
-            "next task", "more",
+            "next activity",
+            "try another task",
+            "another task",
+            "next task",
+            "more",
         )
         question_signals = ("ask a question", "question", "doubt", "clarif")
 
@@ -2201,10 +2243,7 @@ class LearningSessionService:
                     yield msg
                 return
             current_seq = state.get("current_sequence")
-            if (
-                current_seq is not None
-                and int(current_seq) == int(attempt.sequence)
-            ):
+            if current_seq is not None and int(current_seq) == int(attempt.sequence):
                 return
             # Claim the transition before prepare/delivery so a double-click
             # while still in feedback cannot deliver the same task twice.
@@ -2297,7 +2336,11 @@ class LearningSessionService:
             and gate_required
             and self._has_unpassed_gated_attempt(daily, gate_threshold)
         )
-        if daily is not None and daily.status is SessionStatus.IN_PROGRESS and not gate_block:
+        if (
+            daily is not None
+            and daily.status is SessionStatus.IN_PROGRESS
+            and not gate_block
+        ):
             # Only complete when all activities have been attempted (no pending remain)
             # AND at least one has been evaluated. Calling complete_session while
             # activities are still PENDING would produce a partial scorecard.
@@ -2419,7 +2462,8 @@ class LearningSessionService:
         self.db.commit()
 
         async for msg in self._stream_chat_text(
-            farewell, actions=["Go to dashboard"],
+            farewell,
+            actions=["Go to dashboard"],
         ):
             yield msg
 
@@ -2527,7 +2571,9 @@ class LearningSessionService:
         }
 
     def _enrich_state_with_profile(
-        self, state: LearningSessionState, user_id: int,
+        self,
+        state: LearningSessionState,
+        user_id: int,
     ) -> None:
         state["learner_profile"] = self._profile_context(user_id)
 
@@ -2580,7 +2626,9 @@ class LearningSessionService:
         }
 
     def _apply_update(
-        self, session: LearningSession, update: dict[str, Any],
+        self,
+        session: LearningSession,
+        update: dict[str, Any],
     ) -> None:
         if "phase" in update:
             session.phase = update["phase"]
@@ -2609,12 +2657,14 @@ class LearningSessionService:
         self.session_repo.save(session)
 
     def _next_pending_attempt(
-        self, session: LearningSession,
+        self,
+        session: LearningSession,
     ) -> ActivityAttempt | None:
         return self.attempts_repo.first_pending(session.daily_session_id)
 
     async def _prepare_attempt_for_delivery(
-        self, attempt: ActivityAttempt,
+        self,
+        attempt: ActivityAttempt,
     ) -> ActivityAttempt:
         """Self-heal `attempt.task_content` before relaying it to the UI.
 
@@ -2747,16 +2797,23 @@ class LearningSessionService:
     ) -> AsyncIterator[WSOutgoingMessage]:
         sid = stream_id or uuid.uuid4().hex
         yield WSOutgoingMessage(
-            type="chat_stream_start", role=role, stream_id=sid,
+            type="chat_stream_start",
+            role=role,
+            stream_id=sid,
         )
         for chunk in self._split_text_chunks(text):
             yield WSOutgoingMessage(
-                type="chat_stream_delta", role=role,
-                stream_id=sid, content=chunk,
+                type="chat_stream_delta",
+                role=role,
+                stream_id=sid,
+                content=chunk,
             )
         yield WSOutgoingMessage(
-            type="chat_stream_end", role=role, stream_id=sid,
-            content=text, actions=actions,
+            type="chat_stream_end",
+            role=role,
+            stream_id=sid,
+            content=text,
+            actions=actions,
         )
 
     async def _stream_outgoing_events(
@@ -2845,7 +2902,9 @@ class LearningSessionService:
 
         stream_id = uuid.uuid4().hex
         yield WSOutgoingMessage(
-            type="chat_stream_start", role="assistant", stream_id=stream_id,
+            type="chat_stream_start",
+            role="assistant",
+            stream_id=stream_id,
         )
 
         chunks: list[str] = []
@@ -2920,8 +2979,10 @@ class LearningSessionService:
                     continue
                 chunks.append(chunk)
                 yield WSOutgoingMessage(
-                    type="chat_stream_delta", role="assistant",
-                    stream_id=stream_id, content=chunk,
+                    type="chat_stream_delta",
+                    role="assistant",
+                    stream_id=stream_id,
+                    content=chunk,
                 )
         except Exception:
             log.exception("teaching_turn_streaming_failed", note="using fallback")
@@ -2935,21 +2996,26 @@ class LearningSessionService:
             )
             for chunk in self._split_text_chunks(fallback):
                 yield WSOutgoingMessage(
-                    type="chat_stream_delta", role="assistant",
-                    stream_id=stream_id, content=chunk,
+                    type="chat_stream_delta",
+                    role="assistant",
+                    stream_id=stream_id,
+                    content=chunk,
                 )
             content = fallback
 
         new_messages = list(state.get("messages", []))
         new_messages.append({"role": "ai", "content": content, "type": "chat"})
         self._apply_update(
-            session, {"phase": "teaching", "messages": new_messages},
+            session,
+            {"phase": "teaching", "messages": new_messages},
         )
         self.db.commit()
 
         yield WSOutgoingMessage(
-            type="chat_stream_end", role="assistant",
-            stream_id=stream_id, content=content,
+            type="chat_stream_end",
+            role="assistant",
+            stream_id=stream_id,
+            content=content,
         )
 
     async def _stream_followup_answer(
@@ -2960,7 +3026,9 @@ class LearningSessionService:
     ) -> AsyncIterator[WSOutgoingMessage]:
         stream_id = uuid.uuid4().hex
         yield WSOutgoingMessage(
-            type="chat_stream_start", role="assistant", stream_id=stream_id,
+            type="chat_stream_start",
+            role="assistant",
+            stream_id=stream_id,
         )
 
         chunks: list[str] = []
@@ -2974,8 +3042,10 @@ class LearningSessionService:
             if chunk:
                 chunks.append(chunk)
                 yield WSOutgoingMessage(
-                    type="chat_stream_delta", role="assistant",
-                    stream_id=stream_id, content=chunk,
+                    type="chat_stream_delta",
+                    role="assistant",
+                    stream_id=stream_id,
+                    content=chunk,
                 )
 
         content = "".join(chunks).strip()
@@ -2983,20 +3053,25 @@ class LearningSessionService:
             content = "Sure — what would you like to know?"
             for chunk in self._split_text_chunks(content):
                 yield WSOutgoingMessage(
-                    type="chat_stream_delta", role="assistant",
-                    stream_id=stream_id, content=chunk,
+                    type="chat_stream_delta",
+                    role="assistant",
+                    stream_id=stream_id,
+                    content=chunk,
                 )
 
         messages = list(state.get("messages", []))
         messages.append({"role": "ai", "content": content, "type": "chat"})
         self._apply_update(
-            session, {"phase": "follow_up", "messages": messages},
+            session,
+            {"phase": "follow_up", "messages": messages},
         )
         self.db.commit()
 
         yield WSOutgoingMessage(
-            type="chat_stream_end", role="assistant",
-            stream_id=stream_id, content=content,
+            type="chat_stream_end",
+            role="assistant",
+            stream_id=stream_id,
+            content=content,
         )
 
 

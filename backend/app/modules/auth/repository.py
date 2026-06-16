@@ -40,14 +40,12 @@ class UserRepository:
         )
 
     def list_all(self) -> list[User]:
-        return self.db.query(User).order_by(User.created_at.desc(), User.id.desc()).all()
+        return (
+            self.db.query(User).order_by(User.created_at.desc(), User.id.desc()).all()
+        )
 
     def get_by_email(self, email: str) -> User | None:
-        return (
-            self.db.query(User)
-            .filter(User.email == email.lower())
-            .first()
-        )
+        return self.db.query(User).filter(User.email == email.lower()).first()
 
     def email_exists(self, email: str) -> bool:
         return self.get_by_email(email) is not None
@@ -232,11 +230,7 @@ class UserProfileRepository:
         self.db = db
 
     def get_by_user_id(self, user_id: int) -> UserProfile | None:
-        return (
-            self.db.query(UserProfile)
-            .filter(UserProfile.user_id == user_id)
-            .first()
-        )
+        return self.db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
 
     def create_default(self, user_id: int) -> UserProfile:
         """Create a profile with default values (used right after signup)."""

@@ -42,7 +42,12 @@ from app.scoring.engine import (
     points_to_dashboard,
     tier_for_score,
 )
-from app.scoring.types import ActivityScore, ArchetypeSpec, CoreActivity, SessionAggregation
+from app.scoring.types import (
+    ActivityScore,
+    ArchetypeSpec,
+    CoreActivity,
+    SessionAggregation,
+)
 
 __all__ = [
     "ARCHETYPE_REGISTRY",

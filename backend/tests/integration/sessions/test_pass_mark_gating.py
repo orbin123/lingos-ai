@@ -92,21 +92,23 @@ def _seed(db):
     )
     db.add(week)
     db.flush()
-    db.add(CurriculumDay(
-        day_id="day_24_05_03",
-        week_id=week.id,
-        day_number=3,
-        topic="Past negative and questions",
-        explanation_brief="didn't + base verb",
-        default_activities=["read", "write", "listen", "speak"],
-        mandatory_activities=["read", "write"],
-        suggested_archetypes={
-            "read":   ["READ_CLOZE"],
-            "write":  ["WRITE_SENT_TRANS"],
-            "listen": ["LISTEN_CLOZE"],
-            "speak":  ["SPEAK_TIMED"],
-        },
-    ))
+    db.add(
+        CurriculumDay(
+            day_id="day_24_05_03",
+            week_id=week.id,
+            day_number=3,
+            topic="Past negative and questions",
+            explanation_brief="didn't + base verb",
+            default_activities=["read", "write", "listen", "speak"],
+            mandatory_activities=["read", "write"],
+            suggested_archetypes={
+                "read": ["READ_CLOZE"],
+                "write": ["WRITE_SENT_TRANS"],
+                "listen": ["LISTEN_CLOZE"],
+                "speak": ["SPEAK_TIMED"],
+            },
+        )
+    )
     db.commit()
 
 
@@ -149,11 +151,12 @@ class TestGateHelpers:
         gate = LearningSessionService(db_session)
         daily = db_session.query(DailySession).filter_by(session_id=session_id).one()
         attempt = next(
-            a for a in gate.attempts_repo.list_for_session(daily.id)
+            a
+            for a in gate.attempts_repo.list_for_session(daily.id)
             if a.status is AttemptStatus.EVALUATED
         )
         assert gate._attempt_passes_gate(attempt, 65) is False  # 50 < 65
-        assert gate._attempt_passes_gate(attempt, 40) is True   # 50 >= 40
+        assert gate._attempt_passes_gate(attempt, 40) is True  # 50 >= 40
 
     @pytest.mark.asyncio
     async def test_error_fallback_note_bypasses_gate(self, db_session):
@@ -161,7 +164,8 @@ class TestGateHelpers:
         gate = LearningSessionService(db_session)
         daily = db_session.query(DailySession).filter_by(session_id=session_id).one()
         attempt = next(
-            a for a in gate.attempts_repo.list_for_session(daily.id)
+            a
+            for a in gate.attempts_repo.list_for_session(daily.id)
             if a.status is AttemptStatus.EVALUATED
         )
         # A genuine 30% is gated...
@@ -209,7 +213,9 @@ class TestPointsOnceAfterRetry:
         # Retry: reset both, then re-submit at a passing score.
         for seq in (1, 2):
             await fail_service.reset_activity(
-                session_id=session_id, user_id=_user_id(db_session), sequence=seq,
+                session_id=session_id,
+                user_id=_user_id(db_session),
+                sequence=seq,
             )
         pass_service = SessionService(
             db_session,
@@ -218,11 +224,14 @@ class TestPointsOnceAfterRetry:
         )
         for seq in (1, 2):
             await pass_service.submit_activity(
-                session_id=session_id, user_id=_user_id(db_session), sequence=seq,
+                session_id=session_id,
+                user_id=_user_id(db_session),
+                sequence=seq,
                 user_response={"answer": "x"},
             )
         scorecard, report = await pass_service.complete_session(
-            session_id=session_id, user_id=_user_id(db_session),
+            session_id=session_id,
+            user_id=_user_id(db_session),
         )
 
         # Points applied exactly once, reflecting the passing attempt only.
@@ -237,7 +246,5 @@ class TestPointsOnceAfterRetry:
         assert sum(int(r.points_earned) for r in log_rows) == scorecard_total
 
         # Running SkillPoints totals equal exactly the single passing scorecard.
-        points_total = sum(
-            int(r.points) for r in db_session.query(SkillPoints).all()
-        )
+        points_total = sum(int(r.points) for r in db_session.query(SkillPoints).all())
         assert points_total == scorecard_total

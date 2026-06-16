@@ -38,9 +38,7 @@ class Challenge(Base, IDMixin, TimestampMixin):
     """A challenge catalog entry, such as IELTS Sprint."""
 
     __tablename__ = "challenges"
-    __table_args__ = (
-        Index("ix_challenges_active_sort", "is_active", "sort_order"),
-    )
+    __table_args__ = (Index("ix_challenges_active_sort", "is_active", "sort_order"),)
 
     slug: Mapped[str] = mapped_column(
         String(50), unique=True, index=True, nullable=False
@@ -180,4 +178,3 @@ class ChallengeAttempt(Base, IDMixin, CreatedAtMixin):
             f"<ChallengeAttempt(id={self.id}, user_id={self.user_id}, "
             f"level_id={self.challenge_level_id}, status={self.status.value})>"
         )
-

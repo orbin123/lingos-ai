@@ -117,7 +117,7 @@ def _content_type_for_key(audio_key: str) -> str:
                 "transcribe",
                 limit_setting="AI_RATE_LIMIT_TRANSCRIBE_PER_MINUTE",
             )
-        )
+        ),
     ],
 )
 async def transcribe_audio(
@@ -170,9 +170,7 @@ async def transcribe_audio(
         )
     except Exception as exc:
         logger.exception("Failed to persist learner audio key=%s", storage_key)
-        raise HTTPException(
-            status_code=500, detail="Could not save audio."
-        ) from exc
+        raise HTTPException(status_code=500, detail="Could not save audio.") from exc
 
     transcript = (result.get("text") or "").strip()
     return TranscribeResponse(transcript=transcript, audio_url=stored["public_url"])

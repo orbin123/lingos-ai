@@ -166,7 +166,9 @@ def test_subscriber_access_update_extends_window(db):
     assert result is not None
     assert result.status == "active"
     # Audit row written.
-    assert db.query(AdminAuditLog).filter_by(action="purchase.access_update").count() == 1
+    assert (
+        db.query(AdminAuditLog).filter_by(action="purchase.access_update").count() == 1
+    )
 
 
 # ── Feedback analytics (reactions) ─────────────────────────────────
@@ -310,7 +312,11 @@ def test_user_progress_reports_activities_and_score(db):
     skill = Skill(name="Grammar")
     db.add(skill)
     db.flush()
-    db.add(SkillPoints(user_id=learner.id, skill_id=skill.id, points=120, display_score=6.0))
+    db.add(
+        SkillPoints(
+            user_id=learner.id, skill_id=skill.id, points=120, display_score=6.0
+        )
+    )
     db.commit()
 
     items = {i.user_id: i for i in AdminService(db).list_user_progress()}

@@ -33,8 +33,7 @@ def test_normalize_fill_blanks_strips_pronoun_hints_and_misused_base_verbs() -> 
     assert "base_verb" not in normalized["items"][0]
     assert "base_verb" not in normalized["items"][1]
     assert normalized["passage"] == (
-        "Last weekend, ___ visited my grandparents. "
-        "They were very happy to see ___."
+        "Last weekend, ___ visited my grandparents. They were very happy to see ___."
     )
     assert normalized["items"][0]["sentence_with_blank"] == (
         "Last weekend, ___ visited my grandparents."
@@ -66,7 +65,9 @@ def test_normalize_fill_blanks_keeps_base_verb_for_inflection_blanks() -> None:
 
     assert normalized["items"][0]["base_verb"] == "wake"
     assert normalized["items"][1]["base_verb"] == "drink"
-    assert normalized["passage"] == "Maria ___ up at seven. She always ___ coffee first."
+    assert (
+        normalized["passage"] == "Maria ___ up at seven. She always ___ coffee first."
+    )
 
 
 def test_normalize_fill_blanks_masks_inline_answers_into_blanks() -> None:

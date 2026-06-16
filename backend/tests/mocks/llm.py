@@ -49,12 +49,14 @@ class FakeLLMClient:
         output_model: type[BaseModel],
         temperature: float | None = None,
     ) -> BaseModel:
-        self.calls.append({
-            "system_prompt": system_prompt,
-            "user_prompt": user_prompt,
-            "output_model": output_model,
-            "temperature": temperature,
-        })
+        self.calls.append(
+            {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "output_model": output_model,
+                "temperature": temperature,
+            }
+        )
         if not self._responses:
             raise LLMProviderError("FakeLLMClient: no more queued responses")
         resp = self._responses.pop(0)

@@ -63,7 +63,9 @@ def activity_contract_from_content(
     if widget not in (None, "", {}):
         contract.setdefault("task_widget", normalize_widget_key(str(widget)))
 
-    return {key: value for key, value in contract.items() if value not in (None, "", {})}
+    return {
+        key: value for key, value in contract.items() if value not in (None, "", {})
+    }
 
 
 def runtime_blueprint_from_attempts(
@@ -112,8 +114,10 @@ def runtime_blueprint_from_session(
 ) -> dict[str, Any]:
     """Build the full deterministic chat container from persisted session data."""
 
-    queue = task_queue if task_queue is not None else list(
-        getattr(session, "task_queue", None) or []
+    queue = (
+        task_queue
+        if task_queue is not None
+        else list(getattr(session, "task_queue", None) or [])
     )
     activities = _activities_from_task_queue(queue)
     if not activities and attempts:
@@ -332,7 +336,9 @@ class SessionEventOrchestrator:
         contract = activity_contract_from_content(payload)
         meta = dict(session_meta or payload.get("_session") or {})
         sequence = _coerce_int(contract.get("sequence") or meta.get("sequence"))
-        activity_id = _optional_str(contract.get("activity_id") or payload.get("activity_id"))
+        activity_id = _optional_str(
+            contract.get("activity_id") or payload.get("activity_id")
+        )
         archetype_id = _optional_str(
             contract.get("archetype_id") or payload.get("archetype_id")
         )
@@ -341,8 +347,7 @@ class SessionEventOrchestrator:
             payload.get("task_widget") or contract.get("task_widget")
         )
         if phase == "task" or (
-            task_widget is None
-            and phase in {"evaluation", "feedback"}
+            task_widget is None and phase in {"evaluation", "feedback"}
         ):
             task_widget = normalized_widget
         evaluation_widget = _optional_str(
@@ -431,7 +436,11 @@ def _activities_from_task_queue(
             if coerced is not None:
                 contract["sequence"] = coerced
         activities.append(
-            {key: value for key, value in contract.items() if value not in (None, "", {})}
+            {
+                key: value
+                for key, value in contract.items()
+                if value not in (None, "", {})
+            }
         )
     return sorted(activities, key=lambda item: int(item.get("sequence") or 0))
 
@@ -442,9 +451,11 @@ def _teaching_blueprint(
     topic: Any = None,
     skill_name: Any = None,
 ) -> dict[str, Any]:
-    instructions = dict(teacher_instructions or {}) if isinstance(
-        teacher_instructions, dict
-    ) else {}
+    instructions = (
+        dict(teacher_instructions or {})
+        if isinstance(teacher_instructions, dict)
+        else {}
+    )
     steps = _teacher_steps(instructions)
     teaching = {
         "teacher_style": instructions.get("teacher_style"),
@@ -458,9 +469,7 @@ def _teaching_blueprint(
         "scripted_step_count": len(steps),
     }
     return {
-        key: value
-        for key, value in teaching.items()
-        if value not in (None, "", {}, [])
+        key: value for key, value in teaching.items() if value not in (None, "", {}, [])
     }
 
 

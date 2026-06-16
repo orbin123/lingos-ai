@@ -59,5 +59,3 @@ def test_update_settings_persists(db_session):
     pref = svc.get(user_id=uid)
     assert pref.tasks_per_day == 3
     assert pref.allow_listen is False
-
-

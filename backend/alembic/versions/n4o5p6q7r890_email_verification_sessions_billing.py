@@ -51,9 +51,7 @@ def upgrade() -> None:
     )
     # Every account that exists before this migration is trusted — the OTP
     # gate applies to new signups only.
-    op.execute(
-        "UPDATE users SET email_verified = true, email_verified_at = now()"
-    )
+    op.execute("UPDATE users SET email_verified = true, email_verified_at = now()")
 
     # ── email_otp ─────────────────────────────────────────────────────
     op.create_table(

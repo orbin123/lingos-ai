@@ -23,9 +23,7 @@ down_revision: Union[str, Sequence[str], None] = "e7f8a0b1c2d3"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-_JSON = sa.JSON().with_variant(
-    postgresql.JSONB(astext_type=sa.Text()), "postgresql"
-)
+_JSON = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql")
 
 
 def _columns(table_name: str) -> set[str]:
@@ -80,8 +78,9 @@ def upgrade() -> None:
                 "curriculum_weeks",
                 sa.Column("week_id", sa.String(length=16), nullable=True),
             )
-            bind.execute(sa.text(
-                """
+            bind.execute(
+                sa.text(
+                    """
                 UPDATE curriculum_weeks
                 SET week_id = 'wk_' ||
                     CASE course_length::text
@@ -92,7 +91,8 @@ def upgrade() -> None:
                     '_' || lpad(week_number::text, 2, '0')
                 WHERE week_id IS NULL
                 """
-            ))
+                )
+            )
             op.alter_column("curriculum_weeks", "week_id", nullable=False)
         _create_index_if_missing(
             "ix_curriculum_weeks_week_id",
@@ -107,8 +107,9 @@ def upgrade() -> None:
                 "curriculum_days",
                 sa.Column("day_id", sa.String(length=24), nullable=True),
             )
-            bind.execute(sa.text(
-                """
+            bind.execute(
+                sa.text(
+                    """
                 UPDATE curriculum_days d
                 SET day_id = 'day_' ||
                     CASE w.course_length::text
@@ -122,7 +123,8 @@ def upgrade() -> None:
                 WHERE d.week_id = w.id
                   AND d.day_id IS NULL
                 """
-            ))
+                )
+            )
             op.alter_column("curriculum_days", "day_id", nullable=False)
         _create_index_if_missing(
             "ix_curriculum_days_day_id",
@@ -169,31 +171,37 @@ def upgrade() -> None:
                 existing_type=sa.Integer(),
                 nullable=True,
             )
-            bind.execute(sa.text(
-                """
+            bind.execute(
+                sa.text(
+                    """
                 UPDATE daily_sessions s
                 SET day_id = d.day_id
                 FROM curriculum_days d
                 WHERE s.curriculum_day_id = d.id
                   AND s.day_id IS NULL
                 """
-            ))
+                )
+            )
 
-        bind.execute(sa.text(
-            """
+        bind.execute(
+            sa.text(
+                """
             UPDATE daily_sessions
             SET session_id = 'legacy-' || id::text
             WHERE session_id IS NULL
             """
-        ))
+            )
+        )
 
-        if not bind.execute(sa.text(
-            "SELECT EXISTS (SELECT 1 FROM daily_sessions WHERE session_id IS NULL)"
-        )).scalar():
+        if not bind.execute(
+            sa.text(
+                "SELECT EXISTS (SELECT 1 FROM daily_sessions WHERE session_id IS NULL)"
+            )
+        ).scalar():
             op.alter_column("daily_sessions", "session_id", nullable=False)
-        if not bind.execute(sa.text(
-            "SELECT EXISTS (SELECT 1 FROM daily_sessions WHERE day_id IS NULL)"
-        )).scalar():
+        if not bind.execute(
+            sa.text("SELECT EXISTS (SELECT 1 FROM daily_sessions WHERE day_id IS NULL)")
+        ).scalar():
             op.alter_column("daily_sessions", "day_id", nullable=False)
 
         _create_index_if_missing(
@@ -262,10 +270,10 @@ def upgrade() -> None:
             "skill_points_logs",
             sa.Column("session_id", sa.Integer(), nullable=True),
         )
-        if (
-            _has_table("daily_sessions")
-            and "fk_skill_points_logs_session_id_daily_sessions"
-            not in _foreign_keys("skill_points_logs")
+        if _has_table(
+            "daily_sessions"
+        ) and "fk_skill_points_logs_session_id_daily_sessions" not in _foreign_keys(
+            "skill_points_logs"
         ):
             op.create_foreign_key(
                 "fk_skill_points_logs_session_id_daily_sessions",

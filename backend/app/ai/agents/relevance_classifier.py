@@ -99,7 +99,5 @@ async def classify_reply_relevance(
             temperature=0.0,
         )
     except Exception as exc:  # noqa: BLE001 - fail open on any error
-        logger.warning(
-            "relevance classification failed (assuming RELEVANT): %s", exc
-        )
+        logger.warning("relevance classification failed (assuming RELEVANT): %s", exc)
         return None

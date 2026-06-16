@@ -27,10 +27,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _PRICING_PER_1M: dict[str, tuple[float, float]] = {
     # model_name             (input_$, output_$)
-    "gpt-4o-mini":           (0.15, 0.60),
-    "gpt-4o":                (2.50, 10.00),
-    "gpt-4.1-mini":          (0.40, 1.60),
-    "gpt-4.1":               (2.00, 8.00),
+    "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-4.1": (2.00, 8.00),
 }
 
 
@@ -55,9 +55,7 @@ class UsageRecord:
         }
 
 
-def estimate_cost(
-    model: str, input_tokens: int, output_tokens: int
-) -> float | None:
+def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float | None:
     """Return the approximate USD cost for one call, or None if unknown."""
     pricing = _PRICING_PER_1M.get(model)
     if pricing is None:

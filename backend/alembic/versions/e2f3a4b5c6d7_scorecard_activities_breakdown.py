@@ -10,6 +10,7 @@ Revises: d1e2f3a4b5c6
 Create Date: 2026-05-22
 
 """
+
 from __future__ import annotations
 
 from typing import Sequence, Union

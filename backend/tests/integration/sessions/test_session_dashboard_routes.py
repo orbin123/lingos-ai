@@ -197,7 +197,11 @@ def test_today_plan_previews_without_creating_session(dashboard_client):
 
 def test_today_plan_uses_file_source_archetypes_when_day_is_authored(dashboard_client):
     client, db, user = dashboard_client
-    pref = db.query(UserCoursePreference).filter(UserCoursePreference.user_id == user.id).one()
+    pref = (
+        db.query(UserCoursePreference)
+        .filter(UserCoursePreference.user_id == user.id)
+        .one()
+    )
     pref.current_week = 1
     pref.current_day_in_week = 2
     week = CurriculumWeek(
@@ -259,7 +263,11 @@ def test_today_plan_uses_file_source_archetypes_when_day_is_authored(dashboard_c
 
 def test_today_plan_uses_file_source_depth_topic_for_48w_even_pass(dashboard_client):
     client, db, user = dashboard_client
-    pref = db.query(UserCoursePreference).filter(UserCoursePreference.user_id == user.id).one()
+    pref = (
+        db.query(UserCoursePreference)
+        .filter(UserCoursePreference.user_id == user.id)
+        .one()
+    )
     pref.course_length = "48w"
     pref.current_week = 1
     pref.current_day_in_week = 2
@@ -310,7 +318,11 @@ def test_today_plan_uses_file_source_depth_topic_for_48w_even_pass(dashboard_cli
 
 def test_today_plan_repairs_stale_unstarted_file_session(dashboard_client):
     client, db, user = dashboard_client
-    pref = db.query(UserCoursePreference).filter(UserCoursePreference.user_id == user.id).one()
+    pref = (
+        db.query(UserCoursePreference)
+        .filter(UserCoursePreference.user_id == user.id)
+        .one()
+    )
     pref.current_week = 1
     pref.current_day_in_week = 2
     week = CurriculumWeek(

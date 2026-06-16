@@ -47,9 +47,7 @@ class TestConsoleClient:
     def test_logs_message(self, caplog):
         client = ConsoleEmailClient()
         with caplog.at_level("INFO", logger="app.email.console_client"):
-            client.send(
-                to="a@b.com", subject="Hi", html="<p>123456</p>", text="123456"
-            )
+            client.send(to="a@b.com", subject="Hi", html="<p>123456</p>", text="123456")
         assert "a@b.com" in caplog.text
         assert "123456" in caplog.text
 

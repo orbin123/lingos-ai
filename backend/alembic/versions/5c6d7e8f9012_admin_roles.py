@@ -5,6 +5,7 @@ Revises: 17e15923f549
 Create Date: 2026-05-14 13:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -62,8 +63,12 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", "role_id", name="uq_user_roles_user_role"),
     )
-    op.create_index(op.f("ix_user_roles_role_id"), "user_roles", ["role_id"], unique=False)
-    op.create_index(op.f("ix_user_roles_user_id"), "user_roles", ["user_id"], unique=False)
+    op.create_index(
+        op.f("ix_user_roles_role_id"), "user_roles", ["role_id"], unique=False
+    )
+    op.create_index(
+        op.f("ix_user_roles_user_id"), "user_roles", ["user_id"], unique=False
+    )
 
     roles_table = sa.table(
         "roles",
@@ -77,8 +82,7 @@ def upgrade() -> None:
 
     bind.execute(
         sa.text(
-            "INSERT INTO user_roles (user_id, role_id) "
-            "SELECT id, :role_id FROM users"
+            "INSERT INTO user_roles (user_id, role_id) SELECT id, :role_id FROM users"
         ),
         {"role_id": role_ids["learner"]},
     )

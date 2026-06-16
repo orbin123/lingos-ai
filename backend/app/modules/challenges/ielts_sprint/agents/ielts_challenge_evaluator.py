@@ -7,7 +7,9 @@ from typing import Any
 
 from app.ai.agents.prompt_loader import load_prompt, render_prompt_template
 from app.ai.llm import ILLMClient, get_default_llm_client
-from app.modules.challenges.ielts_sprint.evaluation_schemas import WritingEvaluationReport
+from app.modules.challenges.ielts_sprint.evaluation_schemas import (
+    WritingEvaluationReport,
+)
 
 
 logger = logging.getLogger(__name__)

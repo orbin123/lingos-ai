@@ -101,13 +101,10 @@ def _mistakes_from_feedback(fb: ActivityFeedback | None) -> list[StatsMistake]:
     return out
 
 
-def _strength_from_feedback(
-    fb: ActivityFeedback | None, score: float
-) -> StatsMistake:
+def _strength_from_feedback(fb: ActivityFeedback | None, score: float) -> StatsMistake:
     issue = (
-        (fb.did_well[0] if fb and fb.did_well else None)
-        or f"Strong task performance at {score:.1f}."
-    )
+        fb.did_well[0] if fb and fb.did_well else None
+    ) or f"Strong task performance at {score:.1f}."
     return StatsMistake(
         label="Strength:",
         issue=str(issue),
@@ -150,8 +147,7 @@ def get_current_scores(
             skill_id=r.skill_id,
             skill_name=skills_by_id[r.skill_id].name,
             display_label=(
-                skills_by_id[r.skill_id].display_label
-                or skills_by_id[r.skill_id].name
+                skills_by_id[r.skill_id].display_label or skills_by_id[r.skill_id].name
             ),
             score=float(r.display_score),
         )
@@ -166,9 +162,7 @@ def get_current_scores(
 )
 def get_skill_history(
     skill_id: int = Query(..., gt=0, description="Skill to fetch history for"),
-    days: int = Query(
-        30, ge=1, le=365, description="Window size in days (max 365)"
-    ),
+    days: int = Query(30, ge=1, le=365, description="Window size in days (max 365)"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ProgressLogPoint]:
@@ -181,9 +175,7 @@ def get_skill_history(
     return [ProgressLogPoint.model_validate(r) for r in rows]
 
 
-def _avg_eval_score(
-    db: Session, user_id: int, day_ids: list[str]
-) -> float | None:
+def _avg_eval_score(db: Session, user_id: int, day_ids: list[str]) -> float | None:
     """Average raw evaluation score across the given curriculum days."""
     if not day_ids:
         return None
@@ -251,9 +243,7 @@ def _session_seconds(sessions: list[DailySession]) -> int:
     status_code=status.HTTP_200_OK,
 )
 def get_stats_dashboard(
-    range_: StatsRange = Query(
-        "week", alias="range", description="week | month | all"
-    ),
+    range_: StatsRange = Query("week", alias="range", description="week | month | all"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StatsDashboard:
@@ -285,8 +275,7 @@ def get_stats_dashboard(
             skill_id=r.skill_id,
             skill_name=skills_by_id[r.skill_id].name,
             display_label=(
-                skills_by_id[r.skill_id].display_label
-                or skills_by_id[r.skill_id].name
+                skills_by_id[r.skill_id].display_label or skills_by_id[r.skill_id].name
             ),
             score=float(r.display_score),
         )
@@ -347,9 +336,9 @@ def get_stats_dashboard(
         if period_points_by_skill
         else None
     )
-    best_skill = next(
-        (s for s in scores if s.skill_id == best_skill_id), None
-    ) or max(scores, key=lambda s: s.score, default=None)
+    best_skill = next((s for s in scores if s.skill_id == best_skill_id), None) or max(
+        scores, key=lambda s: s.score, default=None
+    )
 
     # ── Difficulty distribution — ALWAYS all-time ──
     cefr_counts = (
@@ -418,8 +407,7 @@ def get_stats_dashboard(
             SkillHistorySeries(
                 skill_id=sid,
                 skill_name=skills_by_id[sid].name,
-                display_label=skills_by_id[sid].display_label
-                or skills_by_id[sid].name,
+                display_label=skills_by_id[sid].display_label or skills_by_id[sid].name,
                 scores=series,
             )
         )
@@ -608,11 +596,7 @@ def get_skill_points(
     db: Session = Depends(get_db),
 ) -> list[SkillPointsRead]:
     """Return points-based progress for every skill."""
-    rows = (
-        db.query(SkillPoints)
-        .filter(SkillPoints.user_id == current_user.id)
-        .all()
-    )
+    rows = db.query(SkillPoints).filter(SkillPoints.user_id == current_user.id).all()
     return [SkillPointsRead.model_validate(r) for r in rows]
 
 

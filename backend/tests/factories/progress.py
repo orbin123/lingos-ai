@@ -50,7 +50,9 @@ def make_skill_points(
         user_id=user.id,
         skill_id=skill.id,
         points=points,
-        display_score=display_score if display_score is not None else round(points / 1000, 1),
+        display_score=display_score
+        if display_score is not None
+        else round(points / 1000, 1),
     )
     db.add(row)
     db.commit()

@@ -30,20 +30,23 @@ class DialogueTurn(TypedDict):
     Used for tasks that need 2+ voices, e.g. register_mismatch_dialogue
     where speaker A and speaker B alternate.
     """
-    speaker: str       # logical speaker id, e.g. "A", "B"
+
+    speaker: str  # logical speaker id, e.g. "A", "B"
     text: str
     emotion: str | None  # "neutral", "angry", "polite", ... provider-mapped
 
 
 class SynthesisResult(TypedDict):
     """High-level TTS service result returned to routes/callers."""
-    audio_url: str        # public URL or local path served by our app
+
+    audio_url: str  # public URL or local path served by our app
     duration_seconds: float
-    cache_hit: bool       # True if served from our hash-cache
+    cache_hit: bool  # True if served from our hash-cache
 
 
 class SynthesizedAudio(TypedDict):
     """Raw provider output before storage/caching concerns are applied."""
+
     audio_bytes: bytes
     duration_seconds: float
 

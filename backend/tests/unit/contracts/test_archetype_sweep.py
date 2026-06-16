@@ -47,18 +47,42 @@ from app.modules.sessions.feedback_generator import FeedbackResult, MistakeOut
 THE_34: frozenset[str] = frozenset(
     {
         # Reading (8)
-        "READ_COMP_MCQ", "READ_TFNG", "READ_ERROR_SPOT", "READ_CLOZE",
-        "READ_WORD_MATCH", "READ_CONTEXT_MCQ", "READ_TONE_ID", "READ_STRUCTURE_ID",
+        "READ_COMP_MCQ",
+        "READ_TFNG",
+        "READ_ERROR_SPOT",
+        "READ_CLOZE",
+        "READ_WORD_MATCH",
+        "READ_CONTEXT_MCQ",
+        "READ_TONE_ID",
+        "READ_STRUCTURE_ID",
         # Writing (10)
-        "WRITE_OPEN_SENT", "WRITE_SENT_TRANS", "WRITE_ERROR_CORR", "WRITE_PARA",
-        "WRITE_EMAIL", "WRITE_PARAPHRASE", "WRITE_BULLETS_TO_PARA",
-        "WRITE_IDEA_PARA", "WRITE_WORD_UPGRADE", "WRITE_TIMED",
+        "WRITE_OPEN_SENT",
+        "WRITE_SENT_TRANS",
+        "WRITE_ERROR_CORR",
+        "WRITE_PARA",
+        "WRITE_EMAIL",
+        "WRITE_PARAPHRASE",
+        "WRITE_BULLETS_TO_PARA",
+        "WRITE_IDEA_PARA",
+        "WRITE_WORD_UPGRADE",
+        "WRITE_TIMED",
         # Listening (7)
-        "LISTEN_MCQ", "LISTEN_CLOZE", "LISTEN_DICTATION", "LISTEN_INFER",
-        "LISTEN_RETELL", "LISTEN_SHADOW", "LISTEN_TONE",
+        "LISTEN_MCQ",
+        "LISTEN_CLOZE",
+        "LISTEN_DICTATION",
+        "LISTEN_INFER",
+        "LISTEN_RETELL",
+        "LISTEN_SHADOW",
+        "LISTEN_TONE",
         # Speaking (9)
-        "SPEAK_READ_ALOUD", "SPEAK_PIC_DESC", "SPEAK_TIMED", "SPEAK_INTERVIEW",
-        "SPEAK_ROLEPLAY", "SPEAK_OPINION", "SPEAK_SMALLTALK", "SPEAK_DEBATE",
+        "SPEAK_READ_ALOUD",
+        "SPEAK_PIC_DESC",
+        "SPEAK_TIMED",
+        "SPEAK_INTERVIEW",
+        "SPEAK_ROLEPLAY",
+        "SPEAK_OPINION",
+        "SPEAK_SMALLTALK",
+        "SPEAK_DEBATE",
         "SPEAK_PRESENT",
     }
 )
@@ -293,7 +317,9 @@ def test_every_authored_archetype_is_one_of_the_34() -> None:
     # Vice-versa, modulo unused: report (do not fail) any of the 34 never authored.
     unused = set(THE_34) - used
     if unused:
-        print(f"Archetypes in THE_34 not authored by any day (allowed): {sorted(unused)}")
+        print(
+            f"Archetypes in THE_34 not authored by any day (allowed): {sorted(unused)}"
+        )
 
 
 @pytest.mark.parametrize("week_number,day_index", DAY_CASES, ids=DAY_IDS)

@@ -73,13 +73,13 @@ class TestDisplayLabelMap:
         _seed_all(db_session)
         labels = SkillRepository(db_session).display_label_map()
         assert labels == {
-            "grammar":       "Grammar",
-            "vocabulary":    "Vocabulary",
+            "grammar": "Grammar",
+            "vocabulary": "Vocabulary",
             "pronunciation": "Pronunciation",
-            "fluency":       "Fluency",
-            "expression":    "Thought Organization",
+            "fluency": "Fluency",
+            "expression": "Thought Organization",
             "comprehension": "Listening",
-            "tone":          "Tone & Social",
+            "tone": "Tone & Social",
         }
 
     def test_falls_back_to_name_when_label_empty(self, db_session):
@@ -88,8 +88,8 @@ class TestDisplayLabelMap:
         db_session.commit()
         labels = SkillRepository(db_session).display_label_map()
         assert labels == {
-            "grammar": "grammar",                # fell back
-            "expression": "Thought Organization", # explicit
+            "grammar": "grammar",  # fell back
+            "expression": "Thought Organization",  # explicit
         }
 
     def test_uses_legacy_identifiers_not_doc_aliases(self, db_session):

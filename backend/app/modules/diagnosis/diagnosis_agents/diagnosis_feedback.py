@@ -26,6 +26,7 @@ from app.ai.llm import LLMError, LLMValidationError, get_default_llm_client
 # 1. OUTPUT SCHEMA — what the LLM must return
 # ---------------------------------------------------------------------------
 
+
 class SkillCallout(BaseModel):
     """A skill stat card: which skill, plus a one-sentence description."""
 
@@ -135,6 +136,7 @@ Return your response in the required JSON schema. Nothing else.
 # 3. HUMAN MESSAGE BUILDER
 # ---------------------------------------------------------------------------
 
+
 def _build_human_message(
     self_assessed_level: str,
     goal: str,
@@ -165,6 +167,7 @@ Generate the diagnosis feedback now.
 # ---------------------------------------------------------------------------
 # 4. PUBLIC ENTRY POINT
 # ---------------------------------------------------------------------------
+
 
 async def generate_diagnosis_feedback(
     *,

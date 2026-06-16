@@ -43,7 +43,9 @@ def upgrade() -> None:
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
         postgresql.ENUM(
-            "24w", "48w", name="course_length_enum",
+            "24w",
+            "48w",
+            name="course_length_enum",
         ).create(bind, checkfirst=True)
 
     op.create_table(
@@ -53,7 +55,10 @@ def upgrade() -> None:
         sa.Column(
             "course_length",
             postgresql.ENUM(
-                "24w", "48w", name="course_length_enum", create_type=False,
+                "24w",
+                "48w",
+                name="course_length_enum",
+                create_type=False,
             ),
             nullable=False,
             server_default="24w",
@@ -65,22 +70,40 @@ def upgrade() -> None:
             server_default="2",
         ),
         sa.Column(
-            "allow_read", sa.Boolean(), nullable=False, server_default=sa.text("true"),
+            "allow_read",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("true"),
         ),
         sa.Column(
-            "allow_write", sa.Boolean(), nullable=False, server_default=sa.text("true"),
+            "allow_write",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("true"),
         ),
         sa.Column(
-            "allow_listen", sa.Boolean(), nullable=False, server_default=sa.text("true"),
+            "allow_listen",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("true"),
         ),
         sa.Column(
-            "allow_speak", sa.Boolean(), nullable=False, server_default=sa.text("true"),
+            "allow_speak",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("true"),
         ),
         sa.Column(
-            "current_week", sa.Integer(), nullable=False, server_default="1",
+            "current_week",
+            sa.Integer(),
+            nullable=False,
+            server_default="1",
         ),
         sa.Column(
-            "current_day_in_week", sa.Integer(), nullable=False, server_default="1",
+            "current_day_in_week",
+            sa.Integer(),
+            nullable=False,
+            server_default="1",
         ),
         sa.Column(
             "current_day_started_at",
@@ -103,7 +126,9 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE",
+            ["user_id"],
+            ["users.id"],
+            ondelete="CASCADE",
         ),
         sa.UniqueConstraint("user_id", name="uq_user_course_preferences_user"),
         sa.CheckConstraint(
@@ -122,8 +147,9 @@ def upgrade() -> None:
     # and never runs migrations, so there's no enrollment data to copy.
     bind = op.get_bind()
     if bind.dialect.name == "postgresql":
-        bind.execute(sa.text(
-            """
+        bind.execute(
+            sa.text(
+                """
             INSERT INTO user_course_preferences (
                 user_id,
                 course_length,
@@ -160,7 +186,8 @@ def upgrade() -> None:
             JOIN courses c ON c.id = e.course_id
             ON CONFLICT (user_id) DO NOTHING
             """
-        ))
+            )
+        )
 
 
 def downgrade() -> None:

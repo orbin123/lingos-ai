@@ -77,10 +77,12 @@ def test_is_valid_dictation_rejects_missing_audio_and_empty_items() -> None:
     }
     assert not is_valid_dictation_payload({**base, "audio_script": ""})
     assert not is_valid_dictation_payload({**base, "items": []})
-    assert not is_valid_dictation_payload({
-        **base,
-        "items": [{"item_id": "d1", "prompt": "Type it.", "correct_answer": "Hi."}],
-    })
+    assert not is_valid_dictation_payload(
+        {
+            **base,
+            "items": [{"item_id": "d1", "prompt": "Type it.", "correct_answer": "Hi."}],
+        }
+    )
 
 
 def test_normalize_dictation_replaces_answer_leaking_prompts_with_keywords() -> None:
@@ -114,26 +116,32 @@ def test_normalize_dictation_replaces_answer_leaking_prompts_with_keywords() -> 
     normalized = normalize_dictation_payload(content)
 
     assert normalized["items"][0]["prompt"] == "Write this sentence: eat, breakfast"
-    assert normalized["items"][0]["correct_answer"] == "I am eating breakfast right now."
-    assert normalized["items"][1]["prompt"] == "Write this sentence: eat, cereal, morning"
+    assert (
+        normalized["items"][0]["correct_answer"] == "I am eating breakfast right now."
+    )
+    assert (
+        normalized["items"][1]["prompt"] == "Write this sentence: eat, cereal, morning"
+    )
     assert normalized["items"][2]["prompt"] == "Sentence 3: take, shower"
 
 
 def test_project_listen_dictation_after_normalize() -> None:
-    content = normalize_dictation_payload({
-        "topic": "Dictation practice",
-        "instructions": "Type what you hear.",
-        "audio_script": "She walks to work.",
-        "audio_duration_seconds": 8,
-        "items": [
-            {
-                "item_id": "d1",
-                "prompt": "Sentence 1",
-                "correct_answer": "She walks to work.",
-                "explanation": "Listen for -s.",
-            }
-        ],
-    })
+    content = normalize_dictation_payload(
+        {
+            "topic": "Dictation practice",
+            "instructions": "Type what you hear.",
+            "audio_script": "She walks to work.",
+            "audio_duration_seconds": 8,
+            "items": [
+                {
+                    "item_id": "d1",
+                    "prompt": "Sentence 1",
+                    "correct_answer": "She walks to work.",
+                    "explanation": "Listen for -s.",
+                }
+            ],
+        }
+    )
     payload = project_task_payload(
         "LISTEN_DICTATION", content, activity_id="act-1", sequence=2
     )

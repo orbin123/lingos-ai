@@ -66,9 +66,7 @@ def test_evaluator_and_feedback_inputs_default_dicts() -> None:
 
 
 def test_build_agent_input_returns_model_on_valid() -> None:
-    model = build_agent_input(
-        TeacherAgentInput, strict=True, topic="Past tense"
-    )
+    model = build_agent_input(TeacherAgentInput, strict=True, topic="Past tense")
     assert isinstance(model, TeacherAgentInput)
     assert model.topic == "Past tense"
 
@@ -114,8 +112,6 @@ def test_apply_task_contract_falls_back_when_not_strict(monkeypatch) -> None:
     monkeypatch.setattr(ls.settings, "strict_contracts", False)
     # Logs a warning and returns without raising; content is left unchanged.
     attempt = _malformed_attempt()
-    result = ls.LearningSessionService._apply_task_contract(
-        SimpleNamespace(), attempt
-    )
+    result = ls.LearningSessionService._apply_task_contract(SimpleNamespace(), attempt)
     assert result is None
     assert attempt.task_content == {"items": []}

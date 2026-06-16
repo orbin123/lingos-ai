@@ -108,10 +108,10 @@ def _seed_world(db):
         default_activities=["read", "write", "listen", "speak"],
         mandatory_activities=["read", "write"],
         suggested_archetypes={
-            "read":   ["READ_CLOZE", "READ_COMP_MCQ"],
-            "write":  ["WRITE_SENT_TRANS", "WRITE_ERROR_CORR"],
+            "read": ["READ_CLOZE", "READ_COMP_MCQ"],
+            "write": ["WRITE_SENT_TRANS", "WRITE_ERROR_CORR"],
             "listen": ["LISTEN_CLOZE"],
-            "speak":  ["SPEAK_TIMED"],
+            "speak": ["SPEAK_TIMED"],
         },
     )
     db.add(day)

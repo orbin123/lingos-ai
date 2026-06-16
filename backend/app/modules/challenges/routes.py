@@ -45,8 +45,12 @@ def _attempt_read(attempt: ChallengeAttempt) -> ChallengeAttemptRead:
         {
             **ChallengeAttemptRead.model_validate(attempt).model_dump(),
             "level_number": level.level_number if level is not None else None,
-            "pass_threshold": float(level.pass_threshold) if level is not None else None,
-            "time_limit_seconds": level.time_limit_seconds if level is not None else None,
+            "pass_threshold": float(level.pass_threshold)
+            if level is not None
+            else None,
+            "time_limit_seconds": level.time_limit_seconds
+            if level is not None
+            else None,
         }
     )
 

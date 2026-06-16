@@ -28,15 +28,23 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # ── Extend app_reviews ────────────────────────────────────────────────
-    op.add_column("app_reviews", sa.Column("positive_feedback", sa.Text(), nullable=True))
-    op.add_column("app_reviews", sa.Column("improvement_feedback", sa.Text(), nullable=True))
+    op.add_column(
+        "app_reviews", sa.Column("positive_feedback", sa.Text(), nullable=True)
+    )
+    op.add_column(
+        "app_reviews", sa.Column("improvement_feedback", sa.Text(), nullable=True)
+    )
     op.add_column("app_reviews", sa.Column("bug_report", sa.Text(), nullable=True))
     op.add_column(
         "app_reviews",
         sa.Column("task_count_when_submitted", sa.Integer(), nullable=True),
     )
-    op.add_column("app_reviews", sa.Column("days_since_signup", sa.Integer(), nullable=True))
-    op.add_column("app_reviews", sa.Column("app_version", sa.String(length=40), nullable=True))
+    op.add_column(
+        "app_reviews", sa.Column("days_since_signup", sa.Integer(), nullable=True)
+    )
+    op.add_column(
+        "app_reviews", sa.Column("app_version", sa.String(length=40), nullable=True)
+    )
 
     # ── feedback_prompt_logs ──────────────────────────────────────────────
     op.create_table(
@@ -49,12 +57,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("prompted_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column(
-            "dismissed", sa.Boolean(), nullable=False, server_default="false"
-        ),
-        sa.Column(
-            "submitted", sa.Boolean(), nullable=False, server_default="false"
-        ),
+        sa.Column("dismissed", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("submitted", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("trigger_type", sa.String(length=40), nullable=False),
         sa.Column(
             "created_at",
@@ -76,9 +80,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_feedback_prompt_user_created", table_name="feedback_prompt_logs"
-    )
+    op.drop_index("ix_feedback_prompt_user_created", table_name="feedback_prompt_logs")
     op.drop_index(
         op.f("ix_feedback_prompt_logs_user_id"), table_name="feedback_prompt_logs"
     )

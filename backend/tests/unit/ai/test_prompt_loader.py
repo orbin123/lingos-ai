@@ -16,15 +16,15 @@ from app.ai.agents.prompt_loader import load_prompt, render_prompt_template
 
 class TestRenderPromptTemplate:
     def test_fills_simple_placeholder(self):
-        assert render_prompt_template("Hello {{name}}!", {"name": "Sam"}) == "Hello Sam!"
+        assert (
+            render_prompt_template("Hello {{name}}!", {"name": "Sam"}) == "Hello Sam!"
+        )
 
     def test_tolerates_whitespace_in_placeholder(self):
         assert render_prompt_template("Hi {{ name }}.", {"name": "Sam"}) == "Hi Sam."
 
     def test_repeated_and_multiple_placeholders(self):
-        out = render_prompt_template(
-            "{{a}} and {{b}} and {{a}}", {"a": "x", "b": "y"}
-        )
+        out = render_prompt_template("{{a}} and {{b}} and {{a}}", {"a": "x", "b": "y"})
         assert out == "x and y and x"
 
     def test_missing_variable_raises(self):

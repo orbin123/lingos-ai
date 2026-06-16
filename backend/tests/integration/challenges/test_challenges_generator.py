@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.ai.llm import LLMProviderError
 from app.core.database import Base
 from app.modules.auth.models import User
-from app.modules.challenges.ielts_sprint.generator_schemas import GeneratedIELTSTaskPayload
+from app.modules.challenges.ielts_sprint.generator_schemas import (
+    GeneratedIELTSTaskPayload,
+)
 from app.modules.challenges.models import (
     Challenge,
     ChallengeAttempt,
@@ -275,9 +277,10 @@ async def test_start_attempt_uses_generator_and_user_history(
     assert attempt.task_payload["sections"]["listening"]["audio_storage_key"] == (
         "abcdef1234567890.mp3"
     )
-    assert generator.contexts[0]["level_config"]["sections"]["reading"][
-        "num_questions"
-    ] == 4
+    assert (
+        generator.contexts[0]["level_config"]["sections"]["reading"]["num_questions"]
+        == 4
+    )
     assert "Floating Farms" in generator.contexts[0]["user_history_summary"]
 
 

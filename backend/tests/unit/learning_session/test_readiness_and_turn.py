@@ -42,7 +42,8 @@ def test_looks_like_ready_for_practice_typo() -> None:
 
     for typo in ("yys", "yse", "yeas", "yse!", "okk", "okey", "redy", "sury"):
         assert _looks_like_ready_for_practice(
-            typo, previous_tutor_message=previous,
+            typo,
+            previous_tutor_message=previous,
         ), f"expected typo {typo!r} to be treated as an affirmative"
 
     # Longer non-affirmative sentences must still be rejected even though they
@@ -75,12 +76,8 @@ def test_readiness_prompt_soft_transitions() -> None:
         )
 
     # Should not trigger on unrelated tutor messages.
-    assert not _tutor_asked_readiness(
-        "Now tell me one daily routine sentence."
-    )
-    assert not _tutor_asked_readiness(
-        "Use 'usually' in a sentence about a habit."
-    )
+    assert not _tutor_asked_readiness("Now tell me one daily routine sentence.")
+    assert not _tutor_asked_readiness("Use 'usually' in a sentence about a habit.")
 
 
 def test_turn_ceiling_force_transition_after_authored_plan() -> None:
@@ -99,13 +96,21 @@ def test_turn_ceiling_force_transition_after_authored_plan() -> None:
         },
     }
     messages = [
-        {"role": "ai", "content": "Hi! Today we learn the simple present.", "type": "chat"},
+        {
+            "role": "ai",
+            "content": "Hi! Today we learn the simple present.",
+            "type": "chat",
+        },
         {"role": "user", "content": "I analyze data every day.", "type": "chat"},
         {"role": "ai", "content": "Good. Now use 'he' or 'she'.", "type": "chat"},
         {"role": "user", "content": "He analyzes data every day.", "type": "chat"},
         {"role": "ai", "content": "Nice. Add a frequency adverb.", "type": "chat"},
         {"role": "user", "content": "She usually analyzes data.", "type": "chat"},
-        {"role": "ai", "content": "Are you ready to try the practice task?", "type": "chat"},
+        {
+            "role": "ai",
+            "content": "Are you ready to try the practice task?",
+            "type": "chat",
+        },
         {"role": "user", "content": "yys", "type": "chat"},
         # Recovery message that the strict gate does not match.
         {

@@ -288,8 +288,8 @@ async def stream_round(
 
                 transcript = (
                     evt.get("channel", {})
-                       .get("alternatives", [{}])[0]
-                       .get("transcript", "")
+                    .get("alternatives", [{}])[0]
+                    .get("transcript", "")
                 ).strip()
 
                 if not transcript:

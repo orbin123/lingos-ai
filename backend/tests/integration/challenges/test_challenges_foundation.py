@@ -219,4 +219,3 @@ def test_timed_out_passing_score_unlocks_next_level(db_session: Session) -> None
 
     assert detail.levels[0].best_score == 6.5
     assert detail.levels[1].unlocked is True
-

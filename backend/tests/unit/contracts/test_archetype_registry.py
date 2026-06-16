@@ -89,7 +89,9 @@ def test_weights_reference_known_sub_skills(spec):
 )
 def test_no_doc_aliased_names_leak_into_weight_map(spec):
     # We must not store doc names ("thought_org" etc.) in weight maps.
-    leaks = {k for k in spec.weight_map if k in {"thought_org", "listening", "tone_social"}}
+    leaks = {
+        k for k in spec.weight_map if k in {"thought_org", "listening", "tone_social"}
+    }
     assert not leaks, f"{spec.archetype_id} uses doc alias {leaks} — should be legacy"
 
 

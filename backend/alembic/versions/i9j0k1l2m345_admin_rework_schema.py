@@ -114,9 +114,7 @@ def upgrade() -> None:
             ["scorecard_id"], ["session_scorecards.id"], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.UniqueConstraint(
-            "scorecard_id", "user_id", name="uq_feedback_rating_user"
-        ),
+        sa.UniqueConstraint("scorecard_id", "user_id", name="uq_feedback_rating_user"),
     )
     op.create_index(
         op.f("ix_feedback_ratings_scorecard_id"),
@@ -157,12 +155,8 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
     )
-    op.create_index(
-        op.f("ix_app_reviews_user_id"), "app_reviews", ["user_id"]
-    )
-    op.create_index(
-        op.f("ix_app_reviews_status"), "app_reviews", ["status"]
-    )
+    op.create_index(op.f("ix_app_reviews_user_id"), "app_reviews", ["user_id"])
+    op.create_index(op.f("ix_app_reviews_status"), "app_reviews", ["status"])
 
     # ── prune retired task_templates.* permissions ───────────────────
     # Task Templates were removed in this rework; drop the now-orphaned
@@ -181,9 +175,7 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_app_reviews_user_id"), table_name="app_reviews")
     op.drop_table("app_reviews")
 
-    op.drop_index(
-        op.f("ix_feedback_ratings_user_id"), table_name="feedback_ratings"
-    )
+    op.drop_index(op.f("ix_feedback_ratings_user_id"), table_name="feedback_ratings")
     op.drop_index(
         op.f("ix_feedback_ratings_scorecard_id"), table_name="feedback_ratings"
     )
@@ -200,7 +192,5 @@ def downgrade() -> None:
     )
     op.drop_table("feedback_reviews")
 
-    op.drop_index(
-        op.f("ix_purchases_access_expires_at"), table_name="purchases"
-    )
+    op.drop_index(op.f("ix_purchases_access_expires_at"), table_name="purchases")
     op.drop_column("purchases", "access_expires_at")

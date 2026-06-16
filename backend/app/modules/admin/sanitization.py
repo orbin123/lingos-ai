@@ -48,7 +48,9 @@ def sanitize_for_admin(value: Any) -> Any:
         clean: dict[str, Any] = {}
         for key, item in value.items():
             key_str = str(key)
-            clean[key_str] = MASK if is_sensitive_key(key_str) else sanitize_for_admin(item)
+            clean[key_str] = (
+                MASK if is_sensitive_key(key_str) else sanitize_for_admin(item)
+            )
         return clean
     if isinstance(value, list):
         return [sanitize_for_admin(item) for item in value]

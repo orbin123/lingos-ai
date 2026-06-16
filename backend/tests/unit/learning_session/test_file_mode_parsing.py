@@ -69,7 +69,9 @@ def test_persona_from_file_returns_w1d2_and_stashes_scripted_plan() -> None:
     assert "Simple Past Tense" in topic
 
 
-def test_persona_from_file_returns_day_48_01_02_depth_and_stashes_scripted_plan() -> None:
+def test_persona_from_file_returns_day_48_01_02_depth_and_stashes_scripted_plan() -> (
+    None
+):
     """48w even-pass parity with W1D1: the depth day persona must carry the
     distinct depth title, the A2 sub-level, and the depth teacher script."""
     persona = LearningSessionService._persona_from_file

@@ -43,15 +43,38 @@ from app.scoring.types import ArchetypeSpec
 # Rich task widgets — must match TaskWidgetKind in tasks/source.ts.
 KNOWN_TASK_WIDGETS: frozenset[str] = frozenset(
     {
-        "read_comp_mcq", "read_tfng", "error_spotting", "fill_blanks",
-        "read_word_match", "read_context_mcq", "read_tone_id", "read_structure",
-        "open_text", "sentence_transform", "error_correction", "write_paragraph",
-        "write_email", "write_word_upgrade", "write_paraphrase", "write_timed",
+        "read_comp_mcq",
+        "read_tfng",
+        "error_spotting",
+        "fill_blanks",
+        "read_word_match",
+        "read_context_mcq",
+        "read_tone_id",
+        "read_structure",
+        "open_text",
+        "sentence_transform",
+        "error_correction",
+        "write_paragraph",
+        "write_email",
+        "write_word_upgrade",
+        "write_paraphrase",
+        "write_timed",
         "write_bullets_to_para",
-        "listen_mcq", "listen_cloze", "listen_dictation", "listen_infer",
-        "listen_retell", "listen_shadow", "listen_tone",
-        "read_aloud", "speak_pic_desc", "speak_timed", "speak_interview",
-        "speak_roleplay", "speak_smalltalk", "speak_debate", "speak_present",
+        "listen_mcq",
+        "listen_cloze",
+        "listen_dictation",
+        "listen_infer",
+        "listen_retell",
+        "listen_shadow",
+        "listen_tone",
+        "read_aloud",
+        "speak_pic_desc",
+        "speak_timed",
+        "speak_interview",
+        "speak_roleplay",
+        "speak_smalltalk",
+        "speak_debate",
+        "speak_present",
         "speak_record",
     }
 )
@@ -110,17 +133,23 @@ _TASK_SPEC: dict[str, tuple[str, type[BaseModel]]] = {
 # Archetypes scored deterministically (no LLM judgement needed).
 _OBJECTIVE: frozenset[str] = frozenset(
     {
-        "READ_COMP_MCQ", "READ_TFNG", "READ_ERROR_SPOT", "READ_CLOZE",
-        "READ_WORD_MATCH", "READ_CONTEXT_MCQ", "READ_TONE_ID",
-        "LISTEN_MCQ", "LISTEN_CLOZE", "LISTEN_DICTATION", "LISTEN_INFER",
+        "READ_COMP_MCQ",
+        "READ_TFNG",
+        "READ_ERROR_SPOT",
+        "READ_CLOZE",
+        "READ_WORD_MATCH",
+        "READ_CONTEXT_MCQ",
+        "READ_TONE_ID",
+        "LISTEN_MCQ",
+        "LISTEN_CLOZE",
+        "LISTEN_DICTATION",
+        "LISTEN_INFER",
         "LISTEN_TONE",
     }
 )
 
 # Archetypes that produce a pronunciation assessment (Azure Speech).
-_PRONUNCIATION: frozenset[str] = frozenset(
-    {"SPEAK_READ_ALOUD", "LISTEN_SHADOW"}
-)
+_PRONUNCIATION: frozenset[str] = frozenset({"SPEAK_READ_ALOUD", "LISTEN_SHADOW"})
 
 
 @dataclass(frozen=True)
@@ -214,9 +243,7 @@ def _assemble() -> dict[str, ArchetypeContract]:
         )
     extra = sorted(set(_TASK_SPEC) - set(ARCHETYPE_REGISTRY))
     if extra:
-        raise ValueError(
-            f"_TASK_SPEC references unknown archetypes: {extra}"
-        )
+        raise ValueError(f"_TASK_SPEC references unknown archetypes: {extra}")
     return {aid: _build_contract(spec) for aid, spec in ARCHETYPE_REGISTRY.items()}
 
 

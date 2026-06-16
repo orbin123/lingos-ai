@@ -164,7 +164,9 @@ def test_cycle4_archetype_coverage() -> None:
     for archetype_id in sorted(cycle4_archetypes):
         assert archetype_id in ARCHETYPE_REGISTRY, archetype_id
         assert archetype_id in ARCHETYPE_CONTRACTS, archetype_id
-        assert get_contract(archetype_id).task_widget in KNOWN_TASK_WIDGETS, archetype_id
+        assert get_contract(archetype_id).task_widget in KNOWN_TASK_WIDGETS, (
+            archetype_id
+        )
 
 
 @pytest.mark.parametrize("week,day_index", CYCLE4_CASES, ids=CYCLE4_IDS)

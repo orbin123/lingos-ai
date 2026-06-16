@@ -76,7 +76,12 @@ def _task_payload() -> dict:
                     {
                         "item_id": "r1",
                         "prompt": "What can help learners?",
-                        "options": ["Daily routines", "Long delays", "Noise", "Guessing"],
+                        "options": [
+                            "Daily routines",
+                            "Long delays",
+                            "Noise",
+                            "Guessing",
+                        ],
                         "correct_index": 0,
                         "explanation": "The passage supports routines.",
                     }
@@ -549,6 +554,9 @@ async def test_stt_failure_preserves_metadata_and_scores_zero(
     assert submitted.status == ChallengeAttemptStatus.COMPLETED
     assert submitted.section_scores["speaking"] == 0.0
     assert submitted.evaluation_report["speaking"]["pronunciation_available"] is False
-    assert submitted.evaluation_report["speaking"]["items"][0]["criteria"][
-        "pronunciation"
-    ]["available"] is False
+    assert (
+        submitted.evaluation_report["speaking"]["items"][0]["criteria"][
+            "pronunciation"
+        ]["available"]
+        is False
+    )

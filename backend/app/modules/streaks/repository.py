@@ -26,17 +26,23 @@ class DailyActivityRepository:
         return self.get_for_date(user_id=user_id, local_date=local_date) is not None
 
     def list_in_range(
-        self, *, user_id: int, start: date, end: date,
+        self,
+        *,
+        user_id: int,
+        start: date,
+        end: date,
     ) -> list[DailyActivity]:
-        return list(self.db.execute(
-            select(DailyActivity)
-            .where(
-                DailyActivity.user_id == user_id,
-                DailyActivity.local_date >= start,
-                DailyActivity.local_date <= end,
-            )
-            .order_by(DailyActivity.local_date.asc())
-        ).scalars())
+        return list(
+            self.db.execute(
+                select(DailyActivity)
+                .where(
+                    DailyActivity.user_id == user_id,
+                    DailyActivity.local_date >= start,
+                    DailyActivity.local_date <= end,
+                )
+                .order_by(DailyActivity.local_date.asc())
+            ).scalars()
+        )
 
     def add(self, row: DailyActivity) -> DailyActivity:
         self.db.add(row)
@@ -54,14 +60,20 @@ class StreakFreezeUsageRepository:
         return row
 
     def list_in_range(
-        self, *, user_id: int, start: date, end: date,
+        self,
+        *,
+        user_id: int,
+        start: date,
+        end: date,
     ) -> list[StreakFreezeUsage]:
-        return list(self.db.execute(
-            select(StreakFreezeUsage)
-            .where(
-                StreakFreezeUsage.user_id == user_id,
-                StreakFreezeUsage.protected_date >= start,
-                StreakFreezeUsage.protected_date <= end,
-            )
-            .order_by(StreakFreezeUsage.protected_date.asc())
-        ).scalars())
+        return list(
+            self.db.execute(
+                select(StreakFreezeUsage)
+                .where(
+                    StreakFreezeUsage.user_id == user_id,
+                    StreakFreezeUsage.protected_date >= start,
+                    StreakFreezeUsage.protected_date <= end,
+                )
+                .order_by(StreakFreezeUsage.protected_date.asc())
+            ).scalars()
+        )

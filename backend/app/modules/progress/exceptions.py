@@ -4,6 +4,7 @@
 
 class EvaluationNotFound(Exception):
     """Raised when the referenced Evaluation does not exist."""
+
     pass
 
 
@@ -13,9 +14,11 @@ class TaskHasNoTargetSkills(Exception):
     This is a data integrity bug (every task should target at least one skill).
     We surface it loudly instead of silently doing nothing.
     """
+
     pass
 
 
 class EnrollmentNotFound(Exception):
     """Raised when the user has no active enrollment — cannot determine course length."""
+
     pass

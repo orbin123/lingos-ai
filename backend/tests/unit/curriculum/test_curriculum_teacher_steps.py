@@ -87,7 +87,9 @@ def _all_teacher_steps() -> list[tuple[str, str, TeacherStep]]:
             for base_day in week.days:
                 for day in _iter_days(base_day):
                     for step in day.teacher.steps:
-                        loc = f"{band} w{week.week_number} '{day.title}' step[{step.id}]"
+                        loc = (
+                            f"{band} w{week.week_number} '{day.title}' step[{step.id}]"
+                        )
                         steps.append((band, loc, step))
     return steps
 

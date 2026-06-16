@@ -102,8 +102,11 @@ def db_session():
 
 
 def _persist_user_with_roles(db_session, *role_names: str) -> User:
-    user = User(email=f"{'-'.join(role_names) or 'norole'}@example.com",
-                password_hash="x", name="R")
+    user = User(
+        email=f"{'-'.join(role_names) or 'norole'}@example.com",
+        password_hash="x",
+        name="R",
+    )
     for name in role_names:
         user.role_links.append(UserRole(role=Role(name=name)))
     db_session.add(user)

@@ -38,13 +38,19 @@ def upgrade() -> None:
     op.add_column(
         "user_profiles",
         sa.Column(
-            "current_streak", sa.Integer(), nullable=False, server_default="0",
+            "current_streak",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
         ),
     )
     op.add_column(
         "user_profiles",
         sa.Column(
-            "longest_streak", sa.Integer(), nullable=False, server_default="0",
+            "longest_streak",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
         ),
     )
     op.add_column(
@@ -54,7 +60,10 @@ def upgrade() -> None:
     op.add_column(
         "user_profiles",
         sa.Column(
-            "streak_freezes", sa.Integer(), nullable=False, server_default="0",
+            "streak_freezes",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
         ),
     )
     op.add_column(
@@ -73,7 +82,10 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("local_date", sa.Date(), nullable=False),
         sa.Column(
-            "activity_count", sa.Integer(), nullable=False, server_default="1",
+            "activity_count",
+            sa.Integer(),
+            nullable=False,
+            server_default="1",
         ),
         sa.Column("last_session_id", sa.Integer(), nullable=True),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=False),
@@ -90,14 +102,20 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE",
+            ["user_id"],
+            ["users.id"],
+            ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["last_session_id"], ["daily_sessions.id"], ondelete="SET NULL",
+            ["last_session_id"],
+            ["daily_sessions.id"],
+            ondelete="SET NULL",
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
-            "user_id", "local_date", name="uq_daily_activities_user_date",
+            "user_id",
+            "local_date",
+            name="uq_daily_activities_user_date",
         ),
     )
     op.create_index(
@@ -131,7 +149,9 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"], ondelete="CASCADE",
+            ["user_id"],
+            ["users.id"],
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -148,7 +168,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_streak_freeze_usages_user_date", table_name="streak_freeze_usages")
+    op.drop_index(
+        "ix_streak_freeze_usages_user_date", table_name="streak_freeze_usages"
+    )
     op.drop_index("ix_streak_freeze_usages_user_id", table_name="streak_freeze_usages")
     op.drop_table("streak_freeze_usages")
 

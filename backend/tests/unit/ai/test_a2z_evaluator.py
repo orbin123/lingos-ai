@@ -1,6 +1,5 @@
 """Unit tests for the A2Z evaluator — pure function tests, no DB needed."""
 
-
 from app.modules.challenges.a2z_game.evaluator import (
     extract_valid_words,
     grade,
@@ -161,8 +160,19 @@ class TestGrade:
         assert result["valid_word_count"] == 2
 
     def test_pass_above_threshold(self):
-        words = ["mountain", "music", "market", "mirror", "metal",
-                 "magic", "mango", "maple", "march", "mask", "matter"]
+        words = [
+            "mountain",
+            "music",
+            "market",
+            "mirror",
+            "metal",
+            "magic",
+            "mango",
+            "maple",
+            "march",
+            "mask",
+            "matter",
+        ]
         transcript = " ".join(words)
         result = grade(transcript, "M", target_words=10)
         assert result["passed"] is True

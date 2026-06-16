@@ -85,7 +85,9 @@ class EmbeddingService:
         )
         logger.info(
             "Queried namespace=%s top_k=%d returned=%d",
-            namespace, top_k, len(matches),
+            namespace,
+            top_k,
+            len(matches),
         )
         return matches
 
@@ -111,5 +113,7 @@ class EmbeddingService:
             timeout=settings.PINECONE_OPERATION_TIMEOUT_S,
         )
         logger.info(
-            "Deleted %d vector(s) namespace=%s", len(vector_ids), namespace,
+            "Deleted %d vector(s) namespace=%s",
+            len(vector_ids),
+            namespace,
         )

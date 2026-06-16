@@ -51,12 +51,19 @@ def upgrade() -> None:
         sa.Column(
             "status",
             sa.Enum(
-                "in_progress", "completed", "abandoned",
+                "in_progress",
+                "completed",
+                "abandoned",
                 name="session_status_enum",
             ),
             nullable=False,
         ),
-        sa.Column("is_first_attempt", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column(
+            "is_first_attempt",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("true"),
+        ),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
@@ -79,19 +86,27 @@ def upgrade() -> None:
     )
     op.create_index(
         op.f("ix_daily_sessions_session_id"),
-        "daily_sessions", ["session_id"], unique=True,
+        "daily_sessions",
+        ["session_id"],
+        unique=True,
     )
     op.create_index(
         op.f("ix_daily_sessions_user_id"),
-        "daily_sessions", ["user_id"], unique=False,
+        "daily_sessions",
+        ["user_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_daily_sessions_day_id"),
-        "daily_sessions", ["day_id"], unique=False,
+        "daily_sessions",
+        ["day_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_daily_sessions_status"),
-        "daily_sessions", ["status"], unique=False,
+        "daily_sessions",
+        ["status"],
+        unique=False,
     )
 
     # activity_attempts
@@ -101,11 +116,15 @@ def upgrade() -> None:
         sa.Column("session_id", sa.Integer(), nullable=False),
         sa.Column("archetype_id", sa.String(length=40), nullable=False),
         sa.Column("sequence", sa.Integer(), nullable=False),
-        sa.Column("is_mandatory", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+        sa.Column(
+            "is_mandatory", sa.Boolean(), nullable=False, server_default=sa.text("true")
+        ),
         sa.Column(
             "status",
             sa.Enum(
-                "pending", "submitted", "evaluated",
+                "pending",
+                "submitted",
+                "evaluated",
                 name="attempt_status_enum",
             ),
             nullable=False,
@@ -132,15 +151,21 @@ def upgrade() -> None:
             ["archetype_id"], ["task_archetypes.archetype_id"], ondelete="RESTRICT"
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("session_id", "sequence", name="uq_activity_attempt_sequence"),
+        sa.UniqueConstraint(
+            "session_id", "sequence", name="uq_activity_attempt_sequence"
+        ),
     )
     op.create_index(
         op.f("ix_activity_attempts_session_id"),
-        "activity_attempts", ["session_id"], unique=False,
+        "activity_attempts",
+        ["session_id"],
+        unique=False,
     )
     op.create_index(
         op.f("ix_activity_attempts_archetype_id"),
-        "activity_attempts", ["archetype_id"], unique=False,
+        "activity_attempts",
+        ["archetype_id"],
+        unique=False,
     )
 
     # activity_evaluations
@@ -173,7 +198,9 @@ def upgrade() -> None:
     )
     op.create_index(
         op.f("ix_activity_evaluations_attempt_id"),
-        "activity_evaluations", ["attempt_id"], unique=True,
+        "activity_evaluations",
+        ["attempt_id"],
+        unique=True,
     )
 
     # activity_feedback
@@ -207,7 +234,9 @@ def upgrade() -> None:
     )
     op.create_index(
         op.f("ix_activity_feedback_attempt_id"),
-        "activity_feedback", ["attempt_id"], unique=True,
+        "activity_feedback",
+        ["attempt_id"],
+        unique=True,
     )
 
     # session_scorecards
@@ -239,7 +268,9 @@ def upgrade() -> None:
     )
     op.create_index(
         op.f("ix_session_scorecards_session_id"),
-        "session_scorecards", ["session_id"], unique=True,
+        "session_scorecards",
+        ["session_id"],
+        unique=True,
     )
 
     # skill_points_logs: nullable session_id FK linking to daily_sessions.
@@ -249,21 +280,28 @@ def upgrade() -> None:
     )
     op.create_foreign_key(
         "fk_skill_points_logs_session_id_daily_sessions",
-        "skill_points_logs", "daily_sessions",
-        ["session_id"], ["id"],
+        "skill_points_logs",
+        "daily_sessions",
+        ["session_id"],
+        ["id"],
         ondelete="SET NULL",
     )
     op.create_index(
         op.f("ix_skill_points_logs_session_id"),
-        "skill_points_logs", ["session_id"], unique=False,
+        "skill_points_logs",
+        ["session_id"],
+        unique=False,
     )
 
 
 def downgrade() -> None:
-    op.drop_index(op.f("ix_skill_points_logs_session_id"), table_name="skill_points_logs")
+    op.drop_index(
+        op.f("ix_skill_points_logs_session_id"), table_name="skill_points_logs"
+    )
     op.drop_constraint(
         "fk_skill_points_logs_session_id_daily_sessions",
-        "skill_points_logs", type_="foreignkey",
+        "skill_points_logs",
+        type_="foreignkey",
     )
     op.drop_column("skill_points_logs", "session_id")
 
@@ -273,14 +311,22 @@ def downgrade() -> None:
     )
     op.drop_table("session_scorecards")
 
-    op.drop_index(op.f("ix_activity_feedback_attempt_id"), table_name="activity_feedback")
+    op.drop_index(
+        op.f("ix_activity_feedback_attempt_id"), table_name="activity_feedback"
+    )
     op.drop_table("activity_feedback")
 
-    op.drop_index(op.f("ix_activity_evaluations_attempt_id"), table_name="activity_evaluations")
+    op.drop_index(
+        op.f("ix_activity_evaluations_attempt_id"), table_name="activity_evaluations"
+    )
     op.drop_table("activity_evaluations")
 
-    op.drop_index(op.f("ix_activity_attempts_archetype_id"), table_name="activity_attempts")
-    op.drop_index(op.f("ix_activity_attempts_session_id"), table_name="activity_attempts")
+    op.drop_index(
+        op.f("ix_activity_attempts_archetype_id"), table_name="activity_attempts"
+    )
+    op.drop_index(
+        op.f("ix_activity_attempts_session_id"), table_name="activity_attempts"
+    )
     op.drop_table("activity_attempts")
 
     op.drop_index(op.f("ix_daily_sessions_status"), table_name="daily_sessions")

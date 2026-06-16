@@ -75,14 +75,24 @@ def _generated_payload() -> dict:
                     {
                         "item_id": "r1",
                         "prompt": "What is the passage mainly about?",
-                        "options": ["Public parks", "Online exams", "Airports", "Museums"],
+                        "options": [
+                            "Public parks",
+                            "Online exams",
+                            "Airports",
+                            "Museums",
+                        ],
                         "correct_index": 0,
                         "explanation": "The passage focuses on public parks.",
                     },
                     {
                         "item_id": "r2",
                         "prompt": "Which benefit is mentioned?",
-                        "options": ["Long flights", "Community trust", "Lower taxes", "Faster trains"],
+                        "options": [
+                            "Long flights",
+                            "Community trust",
+                            "Lower taxes",
+                            "Faster trains",
+                        ],
                         "correct_index": 1,
                         "explanation": "The passage mentions community trust.",
                     },
@@ -331,7 +341,9 @@ async def test_submit_persists_phase4_scores_and_feedback(db_session: Session) -
         user_id=user.id,
         response_payload={
             "reading": {"r1": "A", "r2": "C"},
-            "writing": {"w1": "Cities should invest in parks because they help health."},
+            "writing": {
+                "w1": "Cities should invest in parks because they help health."
+            },
             "listening": {"l1": "A"},
             "speaking": {},
         },
@@ -418,9 +430,10 @@ async def test_feedback_failure_stores_local_fallback(db_session: Session) -> No
     )
 
     assert "temporarily unavailable" in submitted.feedback_report["overall_summary"]
-    assert "1 of 1 listening" in submitted.feedback_report["sections"]["listening"][
-        "went_well"
-    ][0]
+    assert (
+        "1 of 1 listening"
+        in submitted.feedback_report["sections"]["listening"]["went_well"][0]
+    )
     assert submitted.feedback_report["sections"]["writing"]["next_tip"]
 
 

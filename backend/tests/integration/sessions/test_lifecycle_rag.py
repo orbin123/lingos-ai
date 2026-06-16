@@ -155,7 +155,8 @@ class TestRagResilience:
         assert rag.retrieve_context_for_feedback.await_count == 0
         assert mentor.generate.await_count == 0
         refreshed = service.get_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         assert refreshed.status is SessionStatus.COMPLETED
 
@@ -168,7 +169,8 @@ class TestRagResilience:
         service, session = await self._start(db_session, tasks_per_day=2)
         await self._submit_all(service, session, 2)
         scorecard, _report = await service.complete_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         assert scorecard.mentor_note is None
 
@@ -178,7 +180,8 @@ class TestRagResilience:
         service._mentor_generator = mentor
 
         note = await service.ensure_mentor_note(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
 
         assert note == "Watch your tenses next time."
@@ -193,7 +196,8 @@ class TestRagResilience:
         service, session = await self._start(db_session, tasks_per_day=2)
         await self._submit_all(service, session, 2)
         await service.complete_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
 
         order: list[str] = []
@@ -202,10 +206,12 @@ class TestRagResilience:
         service._mentor_generator = mentor
 
         first = await service.ensure_mentor_note(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         second = await service.ensure_mentor_note(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
 
         assert first == second == "Watch your tenses next time."
@@ -219,7 +225,8 @@ class TestRagResilience:
         service, session = await self._start(db_session, tasks_per_day=2)
         await self._submit_all(service, session, 2)
         await service.complete_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
 
         rag = MagicMock()
@@ -231,7 +238,8 @@ class TestRagResilience:
         service._mentor_generator = mentor
 
         note = await service.ensure_mentor_note(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
 
         assert note == "Keep practising your tenses."
@@ -244,7 +252,8 @@ class TestRagResilience:
         service, session = await self._start(db_session, tasks_per_day=2)
         await self._submit_all(service, session, 2)
         scorecard, _report = await service.complete_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         assert scorecard.mentor_note is None
 
@@ -254,7 +263,8 @@ class TestRagResilience:
         service._mentor_generator = mentor
 
         await service.run_post_completion_rag(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
 
         assert order == ["activity", "activity"]
@@ -264,16 +274,15 @@ class TestRagResilience:
         assert scorecard.mentor_note is None
 
     @pytest.mark.asyncio
-    async def test_reset_activity_returns_without_awaiting_rag_delete(
-        self, db_session
-    ):
+    async def test_reset_activity_returns_without_awaiting_rag_delete(self, db_session):
         """Per-activity retry commits the V2 reset immediately and only
         *schedules* the (potentially slow) vector cleanup — it never awaits
         Pinecone, so a hanging delete cannot stall the retry."""
         service, session = await self._start(db_session, tasks_per_day=2)
         await self._submit_all(service, session, 2)
         await service.complete_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
 
         async def hang(*_a, **_kw):
@@ -303,24 +312,28 @@ class TestRagResilience:
         assert scheduled[0]["attempt_ids"] == [attempt.id]
         # The day was reopened and its now-stale scorecard dropped.
         refreshed = service.get_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         assert refreshed.status is SessionStatus.IN_PROGRESS
-        assert service.get_scorecard(
-            session_id=session.session_id, user_id=session.user_id,
-        ) is None
+        assert (
+            service.get_scorecard(
+                session_id=session.session_id,
+                user_id=session.user_id,
+            )
+            is None
+        )
 
     @pytest.mark.asyncio
-    async def test_reset_session_full_resets_all_and_schedules_delete(
-        self, db_session
-    ):
+    async def test_reset_session_full_resets_all_and_schedules_delete(self, db_session):
         """Full restart resets every attempt to PENDING, drops the scorecard,
         reopens the day, commits immediately, and schedules background vector
         cleanup — without awaiting Pinecone."""
         service, session = await self._start(db_session, tasks_per_day=2)
         await self._submit_all(service, session, 2)
         await service.complete_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
 
         async def hang(*_a, **_kw):
@@ -335,7 +348,8 @@ class TestRagResilience:
 
         reopened = await asyncio.wait_for(
             service.reset_session_full(
-                session_id=session.session_id, user_id=session.user_id,
+                session_id=session.session_id,
+                user_id=session.user_id,
             ),
             timeout=2.0,
         )
@@ -345,9 +359,13 @@ class TestRagResilience:
         attempts = service.attempts_repo.list_for_session(reopened.id)
         assert attempts
         assert all(a.status is AttemptStatus.PENDING for a in attempts)
-        assert service.get_scorecard(
-            session_id=session.session_id, user_id=session.user_id,
-        ) is None
+        assert (
+            service.get_scorecard(
+                session_id=session.session_id,
+                user_id=session.user_id,
+            )
+            is None
+        )
         # Background cleanup scheduled for all attempts incl. session summary;
         # the hanging delete was never awaited on the request path.
         assert rag.delete_for_attempt.await_count == 0

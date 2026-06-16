@@ -24,9 +24,7 @@ from app.modules.auth.models import User
 
 logger = structlog.get_logger(__name__)
 
-RATE_LIMIT_MESSAGE = (
-    "You're going a little fast — please wait a moment and try again."
-)
+RATE_LIMIT_MESSAGE = "You're going a little fast — please wait a moment and try again."
 
 
 class SlidingWindowLimiter(Protocol):
@@ -95,9 +93,7 @@ class ResilientLimiter:
                     key, limit=limit, window_seconds=window_seconds
                 )
             except Exception:
-                logger.warning(
-                    "ai_rate_limit_redis_error_falling_back", exc_info=True
-                )
+                logger.warning("ai_rate_limit_redis_error_falling_back", exc_info=True)
                 self._primary = None
         return self._fallback.allow(key, limit=limit, window_seconds=window_seconds)
 

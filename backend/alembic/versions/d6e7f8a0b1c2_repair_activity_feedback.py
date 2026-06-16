@@ -36,9 +36,7 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-_JSON = sa.JSON().with_variant(
-    postgresql.JSONB(astext_type=sa.Text()), "postgresql"
-)
+_JSON = sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql")
 
 
 def upgrade() -> None:

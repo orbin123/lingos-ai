@@ -67,9 +67,7 @@ class TestResetActivity:
             == 0
         )
         assert (
-            db_session.query(ActivityFeedback)
-            .filter_by(attempt_id=attempt.id)
-            .count()
+            db_session.query(ActivityFeedback).filter_by(attempt_id=attempt.id).count()
             == 0
         )
 
@@ -111,11 +109,13 @@ class TestResetActivity:
                 user_response={"a": "b"},
             )
         scorecard, _ = await service.complete_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         assert scorecard is not None
         completed = service.get_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         assert completed.status is SessionStatus.COMPLETED
 
@@ -126,15 +126,14 @@ class TestResetActivity:
         )
 
         reopened = service.get_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
         assert reopened.status is SessionStatus.IN_PROGRESS
         assert reopened.completed_at is None
         # The stale scorecard is gone (rebuilt on the next complete).
         assert (
-            db_session.query(SessionScorecard)
-            .filter_by(session_id=reopened.id)
-            .count()
+            db_session.query(SessionScorecard).filter_by(session_id=reopened.id).count()
             == 0
         )
         assert reopened.attempts[0].status is AttemptStatus.PENDING
@@ -142,7 +141,8 @@ class TestResetActivity:
 
     @pytest.mark.asyncio
     async def test_get_scorecard_returns_none_after_reset_reopens_day(
-        self, db_session,
+        self,
+        db_session,
     ):
         """After a reset reopens a completed day, the scorecard is gone, so
         the day-level read returns None until the day is completed again."""
@@ -155,11 +155,16 @@ class TestResetActivity:
                 user_response={"a": "b"},
             )
         await service.complete_session(
-            session_id=session.session_id, user_id=session.user_id,
+            session_id=session.session_id,
+            user_id=session.user_id,
         )
-        assert service.get_scorecard(
-            session_id=session.session_id, user_id=session.user_id,
-        ) is not None
+        assert (
+            service.get_scorecard(
+                session_id=session.session_id,
+                user_id=session.user_id,
+            )
+            is not None
+        )
 
         await service.reset_activity(
             session_id=session.session_id,
@@ -167,6 +172,10 @@ class TestResetActivity:
             sequence=1,
         )
 
-        assert service.get_scorecard(
-            session_id=session.session_id, user_id=session.user_id,
-        ) is None
+        assert (
+            service.get_scorecard(
+                session_id=session.session_id,
+                user_id=session.user_id,
+            )
+            is None
+        )

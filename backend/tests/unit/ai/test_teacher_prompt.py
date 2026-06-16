@@ -15,6 +15,7 @@ from app.ai.agents.teacher import (
     stream_teaching_turn,
     validate_teaching_message,
 )
+
 # Canonical fake (Phase 3 — moved out of this file into tests/mocks/).
 from tests.mocks.llm import FakeTextLLM
 

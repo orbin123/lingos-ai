@@ -139,8 +139,8 @@ class TestAggregateSession:
         ]
         result = aggregate_session(activities, CourseLength.WEEKS_24)
         assert result == {
-            "grammar": 28,       # 27.5 → 28
-            "vocabulary": 28,    # 27.5 → 28
+            "grammar": 28,  # 27.5 → 28
+            "vocabulary": 28,  # 27.5 → 28
             "fluency": 12,
             "tone": 12,
         }
@@ -180,17 +180,17 @@ class TestPointsToDashboard:
         "points,expected",
         [
             (0, 0.0),
-            (50, 0.1),        # 0.05 → rounds half-up to 0.1
+            (50, 0.1),  # 0.05 → rounds half-up to 0.1
             (949, 0.9),
-            (950, 1.0),       # 0.95 → rounds half-up to 1.0
+            (950, 1.0),  # 0.95 → rounds half-up to 1.0
             (999, 1.0),
             (1000, 1.0),
-            (1049, 1.0),      # 1.049 → 1.0
-            (1050, 1.1),      # 1.05 → rounds half-up to 1.1
+            (1049, 1.0),  # 1.049 → 1.0
+            (1050, 1.1),  # 1.05 → rounds half-up to 1.1
             (1499, 1.5),
-            (1500, 1.5),      # 1.50 → 1.5
+            (1500, 1.5),  # 1.50 → 1.5
             (3814, 3.8),
-            (4155, 4.2),      # 4.155 → 4.2 (deterministic via integer math)
+            (4155, 4.2),  # 4.155 → 4.2 (deterministic via integer math)
             (10000, 10.0),
         ],
     )
@@ -227,7 +227,7 @@ class TestBuildSessionAggregation:
         )
         assert agg.points_earned == {"grammar": 55}
         assert agg.subskill_totals_after == {"grammar": 3855}
-        assert agg.dashboard_after == {"grammar": 3.9}    # 3.855 → half-up → 3.9
+        assert agg.dashboard_after == {"grammar": 3.9}  # 3.855 → half-up → 3.9
 
     def test_cap_does_not_block_earned_log(self):
         # Even at the cap, the user still sees "+N pts" — totals just stop moving.

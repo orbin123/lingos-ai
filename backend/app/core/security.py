@@ -11,6 +11,7 @@ from app.core.config import settings
 # Configure bcrypt as the password hashing scheme.
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
 def hash_password(plain_password: str) -> str:
     """
     Hash a plain password using bcrypt.
@@ -18,6 +19,7 @@ def hash_password(plain_password: str) -> str:
     Used during user registration before storing in DB.
     """
     return pwd_context.hash(plain_password)
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
@@ -27,6 +29,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Never raises an exception for wrong passwords - just returns False
     """
     return pwd_context.verify(plain_password, hashed_password)
+
 
 def create_access_token(
     data: dict[str, Any],
@@ -56,6 +59,7 @@ def create_access_token(
         algorithm=settings.jwt_algorithm,
     )
 
+
 def decode_token(token: str) -> dict[str, Any] | None:
     """
     Decode and verify a JWT token.
@@ -64,7 +68,7 @@ def decode_token(token: str) -> dict[str, Any] | None:
         The token's payload (claims dict) if valid.
         None if the token is invalid, expired, or tampered with.
     """
-    try: 
+    try:
         payload = jwt.decode(
             token,
             settings.jwt_secret,

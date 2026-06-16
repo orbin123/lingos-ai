@@ -58,7 +58,9 @@ def get_summary(
     return AdminService(db).summary()
 
 
-@router.get("/users", response_model=list[AdminUserListItem], status_code=status.HTTP_200_OK)
+@router.get(
+    "/users", response_model=list[AdminUserListItem], status_code=status.HTTP_200_OK
+)
 def list_users(
     _current_user: User = Depends(require_permission("users.read")),
     db: Session = Depends(get_db),
@@ -79,7 +81,9 @@ def get_user(
 ) -> AdminUserDetail:
     detail = AdminService(db).get_user_detail(user_id)
     if detail is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
     return detail
 
 
@@ -119,11 +123,15 @@ def update_user_status(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
     return user
 
 
-@router.get("/roles", response_model=list[AdminRoleRead], status_code=status.HTTP_200_OK)
+@router.get(
+    "/roles", response_model=list[AdminRoleRead], status_code=status.HTTP_200_OK
+)
 def list_roles(
     _current_user: User = Depends(require_permission("roles.manage")),
     _super_admin: User = Depends(require_super_admin),
@@ -168,7 +176,9 @@ def update_user_roles(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
     return user
 
 
@@ -195,7 +205,9 @@ def update_role_permissions(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if role is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Role not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Role not found"
+        )
     return role
 
 
@@ -260,7 +272,9 @@ def get_ai_log(
 ) -> AIRequestLogRead:
     log = AdminService(db).get_ai_log(log_id, actor=current_user)
     if log is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI log not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="AI log not found"
+        )
     return log
 
 
@@ -321,7 +335,9 @@ def get_user_billing(
 ) -> UserBillingRead:
     billing = AdminService(db).get_user_billing(user_id)
     if billing is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
     return billing
 
 

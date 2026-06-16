@@ -99,9 +99,7 @@ class AppReviewRepository:
             stmt = stmt.where(AppReview.created_at >= since)
         return [tuple(row) for row in self.db.execute(stmt).all()]
 
-    def trend_rows(
-        self, since: datetime | None = None
-    ) -> list[tuple[datetime, int]]:
+    def trend_rows(self, since: datetime | None = None) -> list[tuple[datetime, int]]:
         """(created_at, rating) rows for building the day-bucketed trend."""
         stmt = select(AppReview.created_at, AppReview.rating)
         if since is not None:

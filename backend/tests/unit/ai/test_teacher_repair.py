@@ -11,8 +11,10 @@ from app.ai.agents.teacher import (
     generate_teaching_turn,
     stream_teaching_turn,
 )
+
 # Canonical fake (Phase 3 — moved out of this file into tests/mocks/).
 from tests.mocks.llm import FakeTextLLM
+
 
 @pytest.mark.asyncio
 async def test_repair_collapses_extra_questions(monkeypatch) -> None:
@@ -142,7 +144,7 @@ async def test_streaming_repairs_multi_question_turn(monkeypatch) -> None:
             "Great! ",
             "Can you say it with he? ",
             "And what about she?",
-        ]
+        ],
     )
     monkeypatch.setattr(teacher, "get_default_llm_client", lambda: fake)
 

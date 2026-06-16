@@ -19,9 +19,10 @@ from typing_extensions import TypedDict
 
 class StoredBlob(TypedDict):
     """A blob that has been persisted and is now servable."""
-    public_url: str        # URL the frontend / browser can hit
-    storage_key: str       # provider-side key (S3 path, local path, etc.)
-    content_type: str      # e.g. "audio/mpeg", "image/png"
+
+    public_url: str  # URL the frontend / browser can hit
+    storage_key: str  # provider-side key (S3 path, local path, etc.)
+    content_type: str  # e.g. "audio/mpeg", "image/png"
     size_bytes: int
 
 

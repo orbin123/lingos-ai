@@ -72,7 +72,9 @@ def test_transcribe_audio_rejects_unsupported_upload_before_stt(response_client)
     assert fake_stt.calls == []
 
 
-def test_transcribe_audio_rejects_oversized_upload_before_stt(response_client, monkeypatch):
+def test_transcribe_audio_rejects_oversized_upload_before_stt(
+    response_client, monkeypatch
+):
     client, fake_stt = response_client
     monkeypatch.setattr(response_routes, "_MAX_AUDIO_UPLOAD_BYTES", 10)
 

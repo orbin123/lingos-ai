@@ -67,9 +67,20 @@ _WHISPER_COST_PER_MINUTE_USD = 0.006
 # Audio formats whisper-1 accepts. We don't enforce these in this layer
 # (the SDK will reject unsupported formats at the API boundary), but
 # we keep the list as documentation + for future pre-flight validation.
-_SUPPORTED_AUDIO_FORMATS: frozenset[str] = frozenset({
-    "flac", "m4a", "mp3", "mp4", "mpeg", "mpga", "oga", "ogg", "wav", "webm",
-})
+_SUPPORTED_AUDIO_FORMATS: frozenset[str] = frozenset(
+    {
+        "flac",
+        "m4a",
+        "mp3",
+        "mp4",
+        "mpeg",
+        "mpga",
+        "oga",
+        "ogg",
+        "wav",
+        "webm",
+    }
+)
 
 
 class OpenAISTTClient:
@@ -82,7 +93,7 @@ class OpenAISTTClient:
         self,
         *,
         model: str | None = None,
-        timeout: float = 120.0,   # transcription can take a while for long audio
+        timeout: float = 120.0,  # transcription can take a while for long audio
         max_retries: int = 3,
     ) -> None:
         self._model = model or settings.OPENAI_STT_MODEL
@@ -202,7 +213,10 @@ class OpenAISTTClient:
                 delay = (2 ** (attempt - 1)) * (1 + random.uniform(-0.25, 0.25))
                 logger.warning(
                     "stt_retry attempt=%d/%d delay=%.2fs err=%s",
-                    attempt, self._max_retries, delay, type(exc).__name__,
+                    attempt,
+                    self._max_retries,
+                    delay,
+                    type(exc).__name__,
                 )
                 await asyncio.sleep(delay)
             except Exception as exc:
@@ -300,9 +314,7 @@ class OpenAISTTClient:
         Whisper bills by minute of audio. Cost is rough because we may
         be using estimated duration on plain-JSON calls.
         """
-        cost_usd = round(
-            (duration_seconds / 60.0) * _WHISPER_COST_PER_MINUTE_USD, 6
-        )
+        cost_usd = round((duration_seconds / 60.0) * _WHISPER_COST_PER_MINUTE_USD, 6)
         logger.info(
             "stt_usage %s",
             {

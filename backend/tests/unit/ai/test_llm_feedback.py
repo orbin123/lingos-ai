@@ -9,7 +9,11 @@ from __future__ import annotations
 import pytest
 
 from app.ai.llm.exceptions import LLMError
-from app.ai.sessions.llm_feedback import FeedbackOutput, LLMFeedbackGenerator, MistakeOutSchema
+from app.ai.sessions.llm_feedback import (
+    FeedbackOutput,
+    LLMFeedbackGenerator,
+    MistakeOutSchema,
+)
 from app.scoring import get_archetype
 
 # Canonical fakes (Phase 3 — moved out of this file into tests/mocks/).
@@ -20,6 +24,7 @@ from tests.unit.ai._llm_agent_support import _error_spotting_content
 class TestLLMFeedbackGenerator:
     def _eval(self):
         from app.modules.sessions.evaluator import EvaluationResult
+
         return EvaluationResult(
             raw_score=7.0,
             rubric_scores={"grammatical_accuracy": 7.0},
@@ -80,7 +85,9 @@ class TestLLMFeedbackGenerator:
         agent = LLMFeedbackGenerator(fake)
 
         fb = await agent.generate(
-            archetype=spec, evaluation=self._eval(), user_response={"x": "y"},
+            archetype=spec,
+            evaluation=self._eval(),
+            user_response={"x": "y"},
         )
         assert len(fb.mistakes) == 3
 
@@ -189,7 +196,9 @@ class TestLLMFeedbackGenerator:
         agent = LLMFeedbackGenerator(fake)
 
         fb = await agent.generate(
-            archetype=spec, evaluation=self._eval(), user_response=None,
+            archetype=spec,
+            evaluation=self._eval(),
+            user_response=None,
         )
         assert fb.score == 0
         assert "No response submitted" in fb.summary
@@ -202,7 +211,9 @@ class TestLLMFeedbackGenerator:
         agent = LLMFeedbackGenerator(fake)
 
         fb = await agent.generate(
-            archetype=spec, evaluation=self._eval(), user_response={"x": "y"},
+            archetype=spec,
+            evaluation=self._eval(),
+            user_response={"x": "y"},
         )
         # The fallback still uses the evaluation's rounded score.
         assert fb.score == 7
@@ -211,5 +222,3 @@ class TestLLMFeedbackGenerator:
 
 
 # ── LLMTaskGenerator ───────────────────────────────────────────────
-
-

@@ -29,7 +29,9 @@ def count_evaluated_activities_by_local_date(
         timezone.utc
     )
     window_end_utc = datetime.combine(
-        end + timedelta(days=1), time.min, tzinfo=zone,
+        end + timedelta(days=1),
+        time.min,
+        tzinfo=zone,
     ).astimezone(timezone.utc)
 
     submitted_times = db.execute(

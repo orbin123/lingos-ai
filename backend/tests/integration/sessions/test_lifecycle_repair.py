@@ -44,10 +44,12 @@ class TestAttemptDeliveryRepair:
             user_interests=None,
             task_spec=None,
         ):
-            self.calls.append({
-                "archetype_id": archetype.archetype_id,
-                "task_spec": dict(task_spec or {}),
-            })
+            self.calls.append(
+                {
+                    "archetype_id": archetype.archetype_id,
+                    "task_spec": dict(task_spec or {}),
+                }
+            )
             content = {
                 "phase": "test",
                 "archetype_id": archetype.archetype_id,
@@ -63,57 +65,62 @@ class TestAttemptDeliveryRepair:
                 "sub_level": sub_level,
             }
             if archetype.archetype_id == "SPEAK_TIMED":
-                content.update({
-                    "task_intro": "Record your routine sentences.",
-                    "speaking_duration_seconds": 45,
-                    "speaking_prompts": [
-                        "Say one routine sentence with I and a frequency adverb.",
-                        "Say one routine sentence with he and a frequency adverb.",
-                        "Say one routine sentence with she and a frequency adverb.",
-                    ],
-                    "sample_responses": [
-                        "I usually drink water in the morning.",
-                        "He often walks to school.",
-                        "She always eats breakfast at seven.",
-                    ],
-                })
+                content.update(
+                    {
+                        "task_intro": "Record your routine sentences.",
+                        "speaking_duration_seconds": 45,
+                        "speaking_prompts": [
+                            "Say one routine sentence with I and a frequency adverb.",
+                            "Say one routine sentence with he and a frequency adverb.",
+                            "Say one routine sentence with she and a frequency adverb.",
+                        ],
+                        "sample_responses": [
+                            "I usually drink water in the morning.",
+                            "He often walks to school.",
+                            "She always eats breakfast at seven.",
+                        ],
+                    }
+                )
             elif archetype.core_activity == "listen":
-                content.update({
-                    "audio_script": "Maria wakes up at seven every morning.",
-                    "audio_duration_seconds": 8,
-                    "inner_widget": (
-                        "fill_in_blanks"
-                        if archetype.archetype_id == "LISTEN_CLOZE"
-                        else "open_text"
-                        if archetype.archetype_id == "LISTEN_DICTATION"
-                        else "mcq"
-                    ),
-                    "items": (
-                        [
-                            {
-                                "item_id": "d1",
-                                "prompt": "Type sentence 1.",
-                                "correct_answer": "Maria wakes up at seven every morning.",
-                                "explanation": "Listen for the full sentence.",
-                            }
-                        ]
-                        if archetype.archetype_id == "LISTEN_DICTATION"
-                        else [
-                            {
-                                "item_id": "q1",
-                                "prompt": "What time does Maria wake up?",
-                                "options": ["Six", "Seven", "Eight"],
-                                "correct_index": 1,
-                                "explanation": "She wakes at seven.",
-                            }
-                        ]
-                    ),
-                })
+                content.update(
+                    {
+                        "audio_script": "Maria wakes up at seven every morning.",
+                        "audio_duration_seconds": 8,
+                        "inner_widget": (
+                            "fill_in_blanks"
+                            if archetype.archetype_id == "LISTEN_CLOZE"
+                            else "open_text"
+                            if archetype.archetype_id == "LISTEN_DICTATION"
+                            else "mcq"
+                        ),
+                        "items": (
+                            [
+                                {
+                                    "item_id": "d1",
+                                    "prompt": "Type sentence 1.",
+                                    "correct_answer": "Maria wakes up at seven every morning.",
+                                    "explanation": "Listen for the full sentence.",
+                                }
+                            ]
+                            if archetype.archetype_id == "LISTEN_DICTATION"
+                            else [
+                                {
+                                    "item_id": "q1",
+                                    "prompt": "What time does Maria wake up?",
+                                    "options": ["Six", "Seven", "Eight"],
+                                    "correct_index": 1,
+                                    "explanation": "She wakes at seven.",
+                                }
+                            ]
+                        ),
+                    }
+                )
             return GeneratedTask(content=content)
 
     @pytest.mark.asyncio
     async def test_listening_attempt_with_empty_audio_is_repaired(
-        self, db_session,
+        self,
+        db_session,
     ):
         service = SessionService(
             db_session,
@@ -129,7 +136,8 @@ class TestAttemptDeliveryRepair:
         )
 
         listening = next(
-            a for a in session.attempts
+            a
+            for a in session.attempts
             if ARCHETYPE_REGISTRY[a.archetype_id].core_activity == "listen"
         )
         # Simulate a stale row written by an older code path.
@@ -169,7 +177,8 @@ class TestAttemptDeliveryRepair:
             allowed_activities={"read", "write", "listen", "speak"},
         )
         listening = next(
-            a for a in session.attempts
+            a
+            for a in session.attempts
             if ARCHETYPE_REGISTRY[a.archetype_id].core_activity == "listen"
         )
         original = dict(listening.task_content)
@@ -178,7 +187,8 @@ class TestAttemptDeliveryRepair:
 
     @pytest.mark.asyncio
     async def test_speaking_attempt_without_prompt_is_repaired_from_source_spec(
-        self, db_session,
+        self,
+        db_session,
     ):
         week = CurriculumWeek(
             week_id="wk_24_01",
@@ -244,5 +254,7 @@ class TestAttemptDeliveryRepair:
 
         repair_call = task_generator.calls[-1]
         assert repair_call["archetype_id"] == "SPEAK_TIMED"
-        assert repair_call["task_spec"]["topic_override"] == "Say simple present routines"
+        assert (
+            repair_call["task_spec"]["topic_override"] == "Say simple present routines"
+        )
         assert "3 speaking prompts" in repair_call["task_spec"]["widget_requirements"]

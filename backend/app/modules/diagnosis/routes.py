@@ -65,8 +65,12 @@ def start_diagnosis(
     dependencies=[Depends(ai_rate_limit("diagnosis"))],
 )
 async def score_read_aloud(
-    audio: UploadFile = File(..., description="WAV recording of the read-aloud passage"),
-    passage_id: str = Form(..., description="Canonical passage id, e.g. diag_passage_v1"),
+    audio: UploadFile = File(
+        ..., description="WAV recording of the read-aloud passage"
+    ),
+    passage_id: str = Form(
+        ..., description="Canonical passage id, e.g. diag_passage_v1"
+    ),
     language: str = Form(default="en-US"),
     current_user: User = Depends(get_current_user),
 ) -> PronunciationResult:
@@ -132,7 +136,9 @@ async def submit_diagnosis(
     Auth: Bearer token required.
     """
     try:
-        skill_scores, ai_feedback, read_aloud_analysis = await DiagnosisService(db).run_diagnosis(
+        skill_scores, ai_feedback, read_aloud_analysis = await DiagnosisService(
+            db
+        ).run_diagnosis(
             user_id=current_user.id,
             payload=payload,
         )

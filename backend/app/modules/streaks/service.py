@@ -99,7 +99,8 @@ class StreakService:
             # tracking can't find a profile row (or the table isn't mapped
             # in a minimal test env). Log and no-op.
             logger.warning(
-                "streak: skipping record — no UserProfile for user_id=%s", user_id,
+                "streak: skipping record — no UserProfile for user_id=%s",
+                user_id,
             )
             return StreakEventResult(
                 state="NO_STREAK_YET",
@@ -127,14 +128,16 @@ class StreakService:
             )
 
         try:
-            self.activities.add(DailyActivity(
-                user_id=user_id,
-                local_date=today,
-                activity_count=1,
-                streak_awarded=True,
-                last_session_id=session_id,
-                completed_at=now_utc,
-            ))
+            self.activities.add(
+                DailyActivity(
+                    user_id=user_id,
+                    local_date=today,
+                    activity_count=1,
+                    streak_awarded=True,
+                    last_session_id=session_id,
+                    completed_at=now_utc,
+                )
+            )
         except IntegrityError:
             # Concurrent double-fire: another call inserted the row
             # between our get/insert. Roll back the failed insert and
@@ -159,7 +162,9 @@ class StreakService:
             )
 
         state, animation = self._advance_streak_counters(
-            profile=profile, today=today, now_utc=now_utc,
+            profile=profile,
+            today=today,
+            now_utc=now_utc,
         )
         profile.last_animation_type = animation
         self.db.flush()
@@ -193,7 +198,10 @@ class StreakService:
             # idempotent.
             logger.warning(
                 "streak: non-positive gap=%s last=%s today=%s user_id=%s",
-                gap, last, today, profile.user_id,
+                gap,
+                last,
+                today,
+                profile.user_id,
             )
             return "STREAK_ALREADY_COMPLETED_TODAY", "on_fire"
 
@@ -212,12 +220,14 @@ class StreakService:
         ):
             for offset in range(1, gap):
                 missed_date = last + timedelta(days=offset)
-                self.freezes.add(StreakFreezeUsage(
-                    user_id=profile.user_id,
-                    protected_date=missed_date,
-                    used_at=now_utc,
-                    reason="auto_missed_day_protection",
-                ))
+                self.freezes.add(
+                    StreakFreezeUsage(
+                        user_id=profile.user_id,
+                        protected_date=missed_date,
+                        used_at=now_utc,
+                        reason="auto_missed_day_protection",
+                    )
+                )
             profile.streak_freezes -= missed_days
             profile.current_streak += 1
             profile.last_activity_date = today
@@ -239,10 +249,14 @@ class StreakService:
         start = window[0]
 
         activities = self.activities.list_in_range(
-            user_id=user_id, start=start, end=today,
+            user_id=user_id,
+            start=start,
+            end=today,
         )
         freezes = self.freezes.list_in_range(
-            user_id=user_id, start=start, end=today,
+            user_id=user_id,
+            start=start,
+            end=today,
         )
 
         by_date_session = {a.local_date for a in activities}
@@ -268,9 +282,7 @@ class StreakService:
 
         today_row = self.activities.get_for_date(user_id=user_id, local_date=today)
         today_complete = today in by_date_session
-        today_streak_awarded = (
-            today_row is not None and today_row.streak_awarded
-        )
+        today_streak_awarded = today_row is not None and today_row.streak_awarded
         streak_status = self._derive_streak_status(
             profile=profile,
             today=today,
@@ -284,7 +296,8 @@ class StreakService:
         )
         animation_type: AnimationType | None = (
             _coerce_animation(profile.last_animation_type)
-            if should_show_animation else None
+            if should_show_animation
+            else None
         )
 
         last_date = profile.last_activity_date
@@ -345,9 +358,11 @@ class StreakService:
         return "INACTIVE_TODAY"
 
     def _load_profile_or_raise(self, user_id: int) -> UserProfile:
-        profile = self.db.query(UserProfile).filter(
-            UserProfile.user_id == user_id
-        ).one_or_none()
+        profile = (
+            self.db.query(UserProfile)
+            .filter(UserProfile.user_id == user_id)
+            .one_or_none()
+        )
         if profile is None:
             raise RuntimeError(f"UserProfile missing for user_id={user_id}")
         return profile
@@ -361,9 +376,11 @@ class StreakService:
         """
         try:
             with self.db.begin_nested():
-                return self.db.query(UserProfile).filter(
-                    UserProfile.user_id == user_id
-                ).one_or_none()
+                return (
+                    self.db.query(UserProfile)
+                    .filter(UserProfile.user_id == user_id)
+                    .one_or_none()
+                )
         except Exception:  # noqa: BLE001
             logger.warning(
                 "streak: failed to load UserProfile for user_id=%s — skipping",

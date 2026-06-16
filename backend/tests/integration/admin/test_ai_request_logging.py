@@ -179,7 +179,9 @@ async def test_generate_structured_forwards_usage_to_sink(monkeypatch):
         "parsed": out,
         "parsing_error": None,
     }
-    monkeypatch.setattr(client, "_maybe_rebind_temperature", lambda _t: _FakeChat(result))
+    monkeypatch.setattr(
+        client, "_maybe_rebind_temperature", lambda _t: _FakeChat(result)
+    )
 
     parsed = await client.generate_structured(
         system_prompt="s", user_prompt="u", output_model=_Out, temperature=0.0
@@ -195,7 +197,9 @@ async def test_generate_structured_forwards_usage_to_sink(monkeypatch):
 async def test_generate_structured_raises_on_parsing_error(monkeypatch):
     client = OpenAILLMClient()
     result = {"raw": _FakeRaw({}), "parsed": None, "parsing_error": ValueError("bad")}
-    monkeypatch.setattr(client, "_maybe_rebind_temperature", lambda _t: _FakeChat(result))
+    monkeypatch.setattr(
+        client, "_maybe_rebind_temperature", lambda _t: _FakeChat(result)
+    )
 
     with pytest.raises(LLMValidationError):
         await client.generate_structured(

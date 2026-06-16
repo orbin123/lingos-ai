@@ -105,8 +105,8 @@ def points_to_dashboard(total_points: int) -> float:
     arithmetic — avoids Python's banker's rounding plus float-repr quirks
     (e.g. `round(4.155, 1)` can yield 4.1 or 4.2 depending on float repr).
     """
-    half_step = POINTS_PER_DASHBOARD_UNIT // 20   # 50 when PPU=1000
-    step = POINTS_PER_DASHBOARD_UNIT // 10        # 100 when PPU=1000
+    half_step = POINTS_PER_DASHBOARD_UNIT // 20  # 50 when PPU=1000
+    step = POINTS_PER_DASHBOARD_UNIT // 10  # 100 when PPU=1000
     tenths = (total_points + half_step) // step
     return tenths / 10
 

@@ -95,9 +95,7 @@ def _login(client, *, remember: bool = False):
 
 
 def _sessions(db) -> list[AuthSession]:
-    return list(
-        db.execute(select(AuthSession).order_by(AuthSession.id)).scalars()
-    )
+    return list(db.execute(select(AuthSession).order_by(AuthSession.id)).scalars())
 
 
 class TestLoginIssuesPair:
@@ -114,7 +112,9 @@ class TestLoginIssuesPair:
         res = _login(client)
         payload = decode_token(res.json()["access_token"])
         assert payload["ver"] is True
-        ttl_minutes = (payload["exp"] - payload["iat"]) / 60 if "iat" in payload else None
+        ttl_minutes = (
+            (payload["exp"] - payload["iat"]) / 60 if "iat" in payload else None
+        )
         if ttl_minutes is None:
             # No iat claim — bound the exp against the configured TTL.
             import time

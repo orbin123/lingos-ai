@@ -72,7 +72,9 @@ class BlogRepository:
         """Admin view — every post regardless of status, newest first."""
         return list(
             self.db.execute(
-                select(BlogPost).order_by(BlogPost.created_at.desc(), BlogPost.id.desc())
+                select(BlogPost).order_by(
+                    BlogPost.created_at.desc(), BlogPost.id.desc()
+                )
             )
             .scalars()
             .all()

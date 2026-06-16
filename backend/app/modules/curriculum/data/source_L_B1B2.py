@@ -24,7 +24,8 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
         week_number=1,
         theme_type="grammar",
         cefr_level="B1",
-        sub_level_min=4, sub_level_max=5,
+        sub_level_min=4,
+        sub_level_max=5,
         days=(
             DaySource(
                 title="Past Perfect - Actions Before Another Past Event",
@@ -315,7 +316,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Second Conditional - Imagining Unreal Situations",
@@ -487,7 +487,11 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                         "base_verb": "travel",
                                         "correct_answer": "would travel",
                                         "distractors": ["will travel", "travelled"],
-                                        "options": ["would travel", "will travel", "travelled"],
+                                        "options": [
+                                            "would travel",
+                                            "will travel",
+                                            "travelled",
+                                        ],
                                         "grammar_rule": "Use would + base verb in the result clause of the second conditional.",
                                         "explanation": "The result of an unreal condition uses would travel.",
                                     },
@@ -511,14 +515,21 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                         "base_verb": "worry",
                                         "correct_answer": "would worry",
                                         "distractors": ["will worry", "worried"],
-                                        "options": ["would worry", "will worry", "worried"],
+                                        "options": [
+                                            "would worry",
+                                            "will worry",
+                                            "worried",
+                                        ],
                                         "grammar_rule": "Use would + base verb in the result clause of the second conditional.",
                                         "explanation": "The imagined result uses would worry.",
                                     },
                                 ],
                                 "target_words_in_audio": [
-                                    "had", "would swim", "would travel",
-                                    "spoke", "would worry",
+                                    "had",
+                                    "would swim",
+                                    "would travel",
+                                    "spoke",
+                                    "would worry",
                                 ],
                             },
                         ),
@@ -678,8 +689,86 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                     "passage": (
                                         "If I ___ more free time, I would learn the piano. If I lived by the sea, I ___ every morning. If money were not a problem, I ___ around the world. If I ___ five languages, I would work as a guide. If I knew then what I know now, I ___ much less."
                                     ),
-                                    "items": [{'item_id': 'b1', 'blank_id': 'b1', 'sentence_with_blank': 'If I ___ more free time, I would learn the piano.', 'base_verb': 'have', 'correct_answer': 'had', 'distractors': ['have', 'would have'], 'options': ['had', 'have', 'would have'], 'grammar_rule': 'Use the past simple in the if-clause of the second conditional.', 'explanation': 'The if-clause needs the past simple, so we use had.'}, {'item_id': 'b2', 'blank_id': 'b2', 'sentence_with_blank': 'If I lived by the sea, I ___ every morning.', 'base_verb': 'swim', 'correct_answer': 'would swim', 'distractors': ['will swim', 'swam'], 'options': ['would swim', 'will swim', 'swam'], 'grammar_rule': 'Use would + base verb in the result clause of the second conditional.', 'explanation': 'The result clause needs would + base verb, so we use would swim.'}, {'item_id': 'b3', 'blank_id': 'b3', 'sentence_with_blank': 'If money were not a problem, I ___ around the world.', 'base_verb': 'travel', 'correct_answer': 'would travel', 'distractors': ['will travel', 'travelled'], 'options': ['would travel', 'will travel', 'travelled'], 'grammar_rule': 'Use would + base verb in the result clause of the second conditional.', 'explanation': 'The result of an unreal condition uses would travel.'}, {'item_id': 'b4', 'blank_id': 'b4', 'sentence_with_blank': 'If I ___ five languages, I would work as a guide.', 'base_verb': 'speak', 'correct_answer': 'spoke', 'distractors': ['speak', 'would speak'], 'options': ['spoke', 'speak', 'would speak'], 'grammar_rule': 'Use the past simple in the if-clause of the second conditional.', 'explanation': 'The if-clause needs the past simple, so we use spoke.'}, {'item_id': 'b5', 'blank_id': 'b5', 'sentence_with_blank': 'If I knew then what I know now, I ___ much less.', 'base_verb': 'worry', 'correct_answer': 'would worry', 'distractors': ['will worry', 'worried'], 'options': ['would worry', 'will worry', 'worried'], 'grammar_rule': 'Use would + base verb in the result clause of the second conditional.', 'explanation': 'The imagined result uses would worry.'}],
-                                    "target_words_in_audio": ['had', 'would swim', 'would travel', 'spoke', 'would worry'],
+                                    "items": [
+                                        {
+                                            "item_id": "b1",
+                                            "blank_id": "b1",
+                                            "sentence_with_blank": "If I ___ more free time, I would learn the piano.",
+                                            "base_verb": "have",
+                                            "correct_answer": "had",
+                                            "distractors": ["have", "would have"],
+                                            "options": ["had", "have", "would have"],
+                                            "grammar_rule": "Use the past simple in the if-clause of the second conditional.",
+                                            "explanation": "The if-clause needs the past simple, so we use had.",
+                                        },
+                                        {
+                                            "item_id": "b2",
+                                            "blank_id": "b2",
+                                            "sentence_with_blank": "If I lived by the sea, I ___ every morning.",
+                                            "base_verb": "swim",
+                                            "correct_answer": "would swim",
+                                            "distractors": ["will swim", "swam"],
+                                            "options": [
+                                                "would swim",
+                                                "will swim",
+                                                "swam",
+                                            ],
+                                            "grammar_rule": "Use would + base verb in the result clause of the second conditional.",
+                                            "explanation": "The result clause needs would + base verb, so we use would swim.",
+                                        },
+                                        {
+                                            "item_id": "b3",
+                                            "blank_id": "b3",
+                                            "sentence_with_blank": "If money were not a problem, I ___ around the world.",
+                                            "base_verb": "travel",
+                                            "correct_answer": "would travel",
+                                            "distractors": ["will travel", "travelled"],
+                                            "options": [
+                                                "would travel",
+                                                "will travel",
+                                                "travelled",
+                                            ],
+                                            "grammar_rule": "Use would + base verb in the result clause of the second conditional.",
+                                            "explanation": "The result of an unreal condition uses would travel.",
+                                        },
+                                        {
+                                            "item_id": "b4",
+                                            "blank_id": "b4",
+                                            "sentence_with_blank": "If I ___ five languages, I would work as a guide.",
+                                            "base_verb": "speak",
+                                            "correct_answer": "spoke",
+                                            "distractors": ["speak", "would speak"],
+                                            "options": [
+                                                "spoke",
+                                                "speak",
+                                                "would speak",
+                                            ],
+                                            "grammar_rule": "Use the past simple in the if-clause of the second conditional.",
+                                            "explanation": "The if-clause needs the past simple, so we use spoke.",
+                                        },
+                                        {
+                                            "item_id": "b5",
+                                            "blank_id": "b5",
+                                            "sentence_with_blank": "If I knew then what I know now, I ___ much less.",
+                                            "base_verb": "worry",
+                                            "correct_answer": "would worry",
+                                            "distractors": ["will worry", "worried"],
+                                            "options": [
+                                                "would worry",
+                                                "will worry",
+                                                "worried",
+                                            ],
+                                            "grammar_rule": "Use would + base verb in the result clause of the second conditional.",
+                                            "explanation": "The imagined result uses would worry.",
+                                        },
+                                    ],
+                                    "target_words_in_audio": [
+                                        "had",
+                                        "would swim",
+                                        "would travel",
+                                        "spoke",
+                                        "would worry",
+                                    ],
                                 },
                             ),
                             evaluation=EvaluationBlueprint(
@@ -735,7 +824,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="The Passive Voice - Focus on the Action",
@@ -1042,7 +1130,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Relative Clauses - Adding Detail with Who, Which & That",
@@ -1327,7 +1414,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Reported Speech - Telling What Others Said",
@@ -1622,7 +1708,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Used To & Would - Talking About Past Habits",
@@ -1910,7 +1995,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Concession & Contrast - Despite, In Spite Of, Whereas & However",
@@ -2212,7 +2296,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
         ),
     ),
@@ -2220,7 +2303,8 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
         week_number=2,
         theme_type="communication",
         cefr_level="B1",
-        sub_level_min=4, sub_level_max=5,
+        sub_level_min=4,
+        sub_level_max=5,
         days=(
             DaySource(
                 title="Negotiating & Reaching Agreement",
@@ -2508,7 +2592,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Telling News & Reacting",
@@ -2796,7 +2879,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Explaining a Problem & Solution",
@@ -3097,7 +3179,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Workplace Communication - Updates & Tasks",
@@ -3385,7 +3466,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Persuading & Making Your Case",
@@ -3676,7 +3756,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Adjusting Your Tone - Professional vs Casual Register",
@@ -3961,7 +4040,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Guided Discussion - Stay on Topic & Build on Others",
@@ -4250,7 +4328,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
         ),
     ),
@@ -4258,7 +4335,8 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
         week_number=3,
         theme_type="vocabulary",
         cefr_level="B1",
-        sub_level_min=4, sub_level_max=5,
+        sub_level_min=4,
+        sub_level_max=5,
         days=(
             DaySource(
                 title="Environment & Climate - Pollution, Energy & Sustainability",
@@ -4543,7 +4621,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Education & Learning - Courses, Study & Qualifications",
@@ -4827,7 +4904,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Culture & Society - Traditions, Community & Diversity",
@@ -5108,7 +5184,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Work & Careers - Jobs, Teamwork & Progress",
@@ -5391,7 +5466,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="News & Current Issues - Headlines, Policy & Debate",
@@ -5671,7 +5745,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Abstract Qualities & Values - Integrity, Resilience & Perspective",
@@ -5959,7 +6032,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Review & Word Building - Consolidate the week's vocab",
@@ -6244,7 +6316,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
         ),
     ),
@@ -6252,7 +6323,8 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
         week_number=4,
         theme_type="confidence",
         cefr_level="B1",
-        sub_level_min=4, sub_level_max=5,
+        sub_level_min=4,
+        sub_level_max=5,
         days=(
             DaySource(
                 title="Leading Part of a Discussion - Invite Others & Summarise",
@@ -6537,7 +6609,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Building a Clear Argument - Claim, Reason & Example",
@@ -6824,7 +6895,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Goals, Ambitions & Trade-offs - Talk About Your Future Honestly",
@@ -7113,7 +7183,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Handling Disagreement or Criticism - Stay Calm and Respond",
@@ -7401,7 +7470,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Pitching an Idea Briefly - Problem, Idea & Benefit",
@@ -7685,7 +7753,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Longer Structured Talk - Intro, Two Points & Conclusion",
@@ -7975,7 +8042,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Full Confidence Showcase (B1)",
@@ -8263,17 +8329,16 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
         ),
     ),
-
     # ── Cycle 4 — Expanding (B1+) ───────────────────────────────
     WeekSource(
         week_number=5,
         theme_type="grammar",
         cefr_level="B2",
-        sub_level_min=6, sub_level_max=7,
+        sub_level_min=6,
+        sub_level_max=7,
         days=(
             DaySource(
                 title="Past Perfect Continuous - Duration Before a Past Moment",
@@ -8559,7 +8624,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Third Conditional - Regrets About the Past",
@@ -8667,77 +8731,112 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                 "passage, and 5 BlankItems exactly as provided so rule-based scoring can "
                                 "compare each typed verb phrase with correct_answer."
                             ),
-                            static_payload=
-                            {'task_intro': 'Listen, then complete the third-conditional notes.',
-                             'instructions': 'Play the audio once, then type the missing third-conditional verbs '
-                                             'in the paraphrased notes.',
-                             'estimated_time_minutes': 3,
-                             'inner_widget': 'fill_in_blanks',
-                             'audio_genre': 'Reflective regrets monologue',
-                             'audio_script': 'Sometimes I think about different choices. If I had studied harder, '
-                                             'I would have passed the exam. If we had left earlier, we would have '
-                                             'caught the train. If she had known the truth, she would have called '
-                                             'me. If they had invited us, we would have come to the party. '
-                                             'Honestly, if I had listened to your advice, I would have saved a lot '
-                                             'of time.',
-                             'passage_title': 'Different Choices Notes',
-                             'passage': 'If I ___ harder, I would have passed the exam. If we had left earlier, we '
-                                        '___ the train. If she had known the truth, she ___ me. If they ___ us, we '
-                                        'would have come. If I had listened to your advice, I ___ a lot of time.',
-                             'items': [{'item_id': 'b1',
-                                        'blank_id': 'b1',
-                                        'sentence_with_blank': 'If I ___ harder, I would have passed the exam.',
-                                        'base_verb': 'study',
-                                        'correct_answer': 'had studied',
-                                        'distractors': ['studied', 'would study'],
-                                        'options': ['had studied', 'studied', 'would study'],
-                                        'grammar_rule': 'Use the past perfect in the if-clause of the third '
-                                                        'conditional.',
-                                        'explanation': 'The if-clause needs had + past participle, so we use had '
-                                                       'studied.'},
-                                       {'item_id': 'b2',
-                                        'blank_id': 'b2',
-                                        'sentence_with_blank': 'If we had left earlier, we ___ the train.',
-                                        'base_verb': 'catch',
-                                        'correct_answer': 'would have caught',
-                                        'distractors': ['will catch', 'caught'],
-                                        'options': ['would have caught', 'will catch', 'caught'],
-                                        'grammar_rule': 'Use would have + past participle in the result clause.',
-                                        'explanation': 'The unreal past result uses would have caught.'},
-                                       {'item_id': 'b3',
-                                        'blank_id': 'b3',
-                                        'sentence_with_blank': 'If she had known the truth, she ___ me.',
-                                        'base_verb': 'call',
-                                        'correct_answer': 'would have called',
-                                        'distractors': ['will call', 'called'],
-                                        'options': ['would have called', 'will call', 'called'],
-                                        'grammar_rule': 'Use would have + past participle in the result clause.',
-                                        'explanation': 'The imagined past result uses would have called.'},
-                                       {'item_id': 'b4',
-                                        'blank_id': 'b4',
-                                        'sentence_with_blank': 'If they ___ us, we would have come.',
-                                        'base_verb': 'invite',
-                                        'correct_answer': 'had invited',
-                                        'distractors': ['invited', 'would invite'],
-                                        'options': ['had invited', 'invited', 'would invite'],
-                                        'grammar_rule': 'Use the past perfect in the if-clause of the third '
-                                                        'conditional.',
-                                        'explanation': 'The if-clause needs had invited.'},
-                                       {'item_id': 'b5',
-                                        'blank_id': 'b5',
-                                        'sentence_with_blank': 'If I had listened to your advice, I ___ a lot of '
-                                                               'time.',
-                                        'base_verb': 'save',
-                                        'correct_answer': 'would have saved',
-                                        'distractors': ['will save', 'saved'],
-                                        'options': ['would have saved', 'will save', 'saved'],
-                                        'grammar_rule': 'Use would have + past participle in the result clause.',
-                                        'explanation': 'The imagined past result uses would have saved.'}],
-                             'target_words_in_audio': ['had studied',
-                                                       'would have caught',
-                                                       'would have called',
-                                                       'had invited',
-                                                       'would have saved']},
+                            static_payload={
+                                "task_intro": "Listen, then complete the third-conditional notes.",
+                                "instructions": "Play the audio once, then type the missing third-conditional verbs "
+                                "in the paraphrased notes.",
+                                "estimated_time_minutes": 3,
+                                "inner_widget": "fill_in_blanks",
+                                "audio_genre": "Reflective regrets monologue",
+                                "audio_script": "Sometimes I think about different choices. If I had studied harder, "
+                                "I would have passed the exam. If we had left earlier, we would have "
+                                "caught the train. If she had known the truth, she would have called "
+                                "me. If they had invited us, we would have come to the party. "
+                                "Honestly, if I had listened to your advice, I would have saved a lot "
+                                "of time.",
+                                "passage_title": "Different Choices Notes",
+                                "passage": "If I ___ harder, I would have passed the exam. If we had left earlier, we "
+                                "___ the train. If she had known the truth, she ___ me. If they ___ us, we "
+                                "would have come. If I had listened to your advice, I ___ a lot of time.",
+                                "items": [
+                                    {
+                                        "item_id": "b1",
+                                        "blank_id": "b1",
+                                        "sentence_with_blank": "If I ___ harder, I would have passed the exam.",
+                                        "base_verb": "study",
+                                        "correct_answer": "had studied",
+                                        "distractors": ["studied", "would study"],
+                                        "options": [
+                                            "had studied",
+                                            "studied",
+                                            "would study",
+                                        ],
+                                        "grammar_rule": "Use the past perfect in the if-clause of the third "
+                                        "conditional.",
+                                        "explanation": "The if-clause needs had + past participle, so we use had "
+                                        "studied.",
+                                    },
+                                    {
+                                        "item_id": "b2",
+                                        "blank_id": "b2",
+                                        "sentence_with_blank": "If we had left earlier, we ___ the train.",
+                                        "base_verb": "catch",
+                                        "correct_answer": "would have caught",
+                                        "distractors": ["will catch", "caught"],
+                                        "options": [
+                                            "would have caught",
+                                            "will catch",
+                                            "caught",
+                                        ],
+                                        "grammar_rule": "Use would have + past participle in the result clause.",
+                                        "explanation": "The unreal past result uses would have caught.",
+                                    },
+                                    {
+                                        "item_id": "b3",
+                                        "blank_id": "b3",
+                                        "sentence_with_blank": "If she had known the truth, she ___ me.",
+                                        "base_verb": "call",
+                                        "correct_answer": "would have called",
+                                        "distractors": ["will call", "called"],
+                                        "options": [
+                                            "would have called",
+                                            "will call",
+                                            "called",
+                                        ],
+                                        "grammar_rule": "Use would have + past participle in the result clause.",
+                                        "explanation": "The imagined past result uses would have called.",
+                                    },
+                                    {
+                                        "item_id": "b4",
+                                        "blank_id": "b4",
+                                        "sentence_with_blank": "If they ___ us, we would have come.",
+                                        "base_verb": "invite",
+                                        "correct_answer": "had invited",
+                                        "distractors": ["invited", "would invite"],
+                                        "options": [
+                                            "had invited",
+                                            "invited",
+                                            "would invite",
+                                        ],
+                                        "grammar_rule": "Use the past perfect in the if-clause of the third "
+                                        "conditional.",
+                                        "explanation": "The if-clause needs had invited.",
+                                    },
+                                    {
+                                        "item_id": "b5",
+                                        "blank_id": "b5",
+                                        "sentence_with_blank": "If I had listened to your advice, I ___ a lot of "
+                                        "time.",
+                                        "base_verb": "save",
+                                        "correct_answer": "would have saved",
+                                        "distractors": ["will save", "saved"],
+                                        "options": [
+                                            "would have saved",
+                                            "will save",
+                                            "saved",
+                                        ],
+                                        "grammar_rule": "Use would have + past participle in the result clause.",
+                                        "explanation": "The imagined past result uses would have saved.",
+                                    },
+                                ],
+                                "target_words_in_audio": [
+                                    "had studied",
+                                    "would have caught",
+                                    "would have called",
+                                    "had invited",
+                                    "would have saved",
+                                ],
+                            },
                         ),
                         evaluation=EvaluationBlueprint(
                             evaluator="rule_based",
@@ -8891,8 +8990,90 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                                     "passage": (
                                         "If I ___ harder, I would have passed the exam. If we had left earlier, we ___ the train. If she had known the truth, she ___ me. If they ___ us, we would have come. If I had listened to your advice, I ___ a lot of time."
                                     ),
-                                    "items": [{'item_id': 'b1', 'blank_id': 'b1', 'sentence_with_blank': 'If I ___ harder, I would have passed the exam.', 'base_verb': 'study', 'correct_answer': 'had studied', 'distractors': ['studied', 'would study'], 'options': ['had studied', 'studied', 'would study'], 'grammar_rule': 'Use the past perfect in the if-clause of the third conditional.', 'explanation': 'The if-clause needs had + past participle, so we use had studied.'}, {'item_id': 'b2', 'blank_id': 'b2', 'sentence_with_blank': 'If we had left earlier, we ___ the train.', 'base_verb': 'catch', 'correct_answer': 'would have caught', 'distractors': ['will catch', 'caught'], 'options': ['would have caught', 'will catch', 'caught'], 'grammar_rule': 'Use would have + past participle in the result clause.', 'explanation': 'The unreal past result uses would have caught.'}, {'item_id': 'b3', 'blank_id': 'b3', 'sentence_with_blank': 'If she had known the truth, she ___ me.', 'base_verb': 'call', 'correct_answer': 'would have called', 'distractors': ['will call', 'called'], 'options': ['would have called', 'will call', 'called'], 'grammar_rule': 'Use would have + past participle in the result clause.', 'explanation': 'The imagined past result uses would have called.'}, {'item_id': 'b4', 'blank_id': 'b4', 'sentence_with_blank': 'If they ___ us, we would have come.', 'base_verb': 'invite', 'correct_answer': 'had invited', 'distractors': ['invited', 'would invite'], 'options': ['had invited', 'invited', 'would invite'], 'grammar_rule': 'Use the past perfect in the if-clause of the third conditional.', 'explanation': 'The if-clause needs had invited.'}, {'item_id': 'b5', 'blank_id': 'b5', 'sentence_with_blank': 'If I had listened to your advice, I ___ a lot of time.', 'base_verb': 'save', 'correct_answer': 'would have saved', 'distractors': ['will save', 'saved'], 'options': ['would have saved', 'will save', 'saved'], 'grammar_rule': 'Use would have + past participle in the result clause.', 'explanation': 'The imagined past result uses would have saved.'}],
-                                    "target_words_in_audio": ['had studied', 'would have caught', 'would have called', 'had invited', 'would have saved'],
+                                    "items": [
+                                        {
+                                            "item_id": "b1",
+                                            "blank_id": "b1",
+                                            "sentence_with_blank": "If I ___ harder, I would have passed the exam.",
+                                            "base_verb": "study",
+                                            "correct_answer": "had studied",
+                                            "distractors": ["studied", "would study"],
+                                            "options": [
+                                                "had studied",
+                                                "studied",
+                                                "would study",
+                                            ],
+                                            "grammar_rule": "Use the past perfect in the if-clause of the third conditional.",
+                                            "explanation": "The if-clause needs had + past participle, so we use had studied.",
+                                        },
+                                        {
+                                            "item_id": "b2",
+                                            "blank_id": "b2",
+                                            "sentence_with_blank": "If we had left earlier, we ___ the train.",
+                                            "base_verb": "catch",
+                                            "correct_answer": "would have caught",
+                                            "distractors": ["will catch", "caught"],
+                                            "options": [
+                                                "would have caught",
+                                                "will catch",
+                                                "caught",
+                                            ],
+                                            "grammar_rule": "Use would have + past participle in the result clause.",
+                                            "explanation": "The unreal past result uses would have caught.",
+                                        },
+                                        {
+                                            "item_id": "b3",
+                                            "blank_id": "b3",
+                                            "sentence_with_blank": "If she had known the truth, she ___ me.",
+                                            "base_verb": "call",
+                                            "correct_answer": "would have called",
+                                            "distractors": ["will call", "called"],
+                                            "options": [
+                                                "would have called",
+                                                "will call",
+                                                "called",
+                                            ],
+                                            "grammar_rule": "Use would have + past participle in the result clause.",
+                                            "explanation": "The imagined past result uses would have called.",
+                                        },
+                                        {
+                                            "item_id": "b4",
+                                            "blank_id": "b4",
+                                            "sentence_with_blank": "If they ___ us, we would have come.",
+                                            "base_verb": "invite",
+                                            "correct_answer": "had invited",
+                                            "distractors": ["invited", "would invite"],
+                                            "options": [
+                                                "had invited",
+                                                "invited",
+                                                "would invite",
+                                            ],
+                                            "grammar_rule": "Use the past perfect in the if-clause of the third conditional.",
+                                            "explanation": "The if-clause needs had invited.",
+                                        },
+                                        {
+                                            "item_id": "b5",
+                                            "blank_id": "b5",
+                                            "sentence_with_blank": "If I had listened to your advice, I ___ a lot of time.",
+                                            "base_verb": "save",
+                                            "correct_answer": "would have saved",
+                                            "distractors": ["will save", "saved"],
+                                            "options": [
+                                                "would have saved",
+                                                "will save",
+                                                "saved",
+                                            ],
+                                            "grammar_rule": "Use would have + past participle in the result clause.",
+                                            "explanation": "The imagined past result uses would have saved.",
+                                        },
+                                    ],
+                                    "target_words_in_audio": [
+                                        "had studied",
+                                        "would have caught",
+                                        "would have called",
+                                        "had invited",
+                                        "would have saved",
+                                    ],
                                 },
                             ),
                             evaluation=EvaluationBlueprint(
@@ -8948,7 +9129,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Causative Have & Get - Arranging for Others to Do Things",
@@ -9247,7 +9427,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Reduced & Non-Defining Relative Clauses",
@@ -9528,7 +9707,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Reporting Verbs & Patterns - Admit, Deny, Suggest & More",
@@ -9815,7 +9993,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Wish & Regret - I Wish, If Only & Should Have",
@@ -10095,7 +10272,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Formal Linkers & Nuance - Moreover, Nevertheless & In Addition",
@@ -10383,7 +10559,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
         ),
     ),
@@ -10391,7 +10566,8 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
         week_number=6,
         theme_type="communication",
         cefr_level="B2",
-        sub_level_min=6, sub_level_max=7,
+        sub_level_min=6,
+        sub_level_max=7,
         days=(
             DaySource(
                 title="Conflict Resolution & Middle Ground",
@@ -10667,7 +10843,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Giving Constructive Feedback",
@@ -10945,7 +11120,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Pros, Cons & Recommending an Option",
@@ -11238,7 +11412,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Leading a Short Meeting",
@@ -11513,7 +11686,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Handling Objections",
@@ -11788,7 +11960,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Stakeholder Communication",
@@ -12065,7 +12236,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Facilitating Discussion",
@@ -12341,7 +12511,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
         ),
     ),
@@ -12349,7 +12518,8 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
         week_number=7,
         theme_type="vocabulary",
         cefr_level="B2",
-        sub_level_min=6, sub_level_max=7,
+        sub_level_min=6,
+        sub_level_max=7,
         days=(
             DaySource(
                 title="Science & Research - Hypothesis, Data & Experiment",
@@ -12626,7 +12796,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Arts & Creativity - Exhibition, Medium & Inspiration",
@@ -12903,7 +13072,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Ethics & Global Issues - Justice, Rights & Responsibility",
@@ -13182,7 +13350,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Business & Economics - Revenue, Market & Investment",
@@ -13460,7 +13627,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Media Literacy - Source, Bias & Fact-check",
@@ -13731,7 +13897,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Leadership & Influence - Vision, Delegate & Motivate",
@@ -14010,7 +14175,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Review & Word Building - Consolidate the week's vocab",
@@ -14290,7 +14454,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
         ),
     ),
@@ -14298,7 +14461,8 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
         week_number=8,
         theme_type="confidence",
         cefr_level="B2",
-        sub_level_min=6, sub_level_max=7,
+        sub_level_min=6,
+        sub_level_max=7,
         days=(
             DaySource(
                 title="Facilitating Difficult Conversations",
@@ -14573,7 +14737,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Counterarguments & Rebuttals",
@@ -14848,7 +15011,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Vision & Long-Term Narrative",
@@ -15123,7 +15285,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Giving & Receiving Critical Feedback",
@@ -15397,7 +15558,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Strong Close & Call to Action",
@@ -15667,7 +15827,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Presentation with Brief Q&A",
@@ -15943,7 +16102,6 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
             DaySource(
                 title="Full Confidence Showcase (B1+)",
@@ -16219,9 +16377,7 @@ WEEKS_B1B2: tuple[WeekSource, ...] = (
                         ),
                     ),
                 ),
-
             ),
         ),
     ),
-
 )

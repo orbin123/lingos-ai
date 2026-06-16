@@ -397,9 +397,7 @@ def _current_step_index(
     return min(_count_teacher_chat_turns(conversation) + 1, len(scripted_plan))
 
 
-def _step_instruction(
-    scripted_plan: list[str] | None, step_index: int | None
-) -> str:
+def _step_instruction(scripted_plan: list[str] | None, step_index: int | None) -> str:
     if not scripted_plan or step_index is None:
         return ""
     idx = step_index - 1
@@ -993,9 +991,7 @@ async def stream_teaching_turn(
     if violations:
         logger.warning("teacher repair triggered (stream): %s", violations)
         retry_prompt = (
-            user_prompt
-            + "\n\n"
-            + _retry_instruction(violations, previous_assistant)
+            user_prompt + "\n\n" + _retry_instruction(violations, previous_assistant)
         )
         try:
             retry_raw = await _call_llm(system_prompt, retry_prompt)

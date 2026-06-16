@@ -309,13 +309,11 @@ class TestWebhook:
     def test_duplicate_event_id_noop(self, client, db_session):
         order_id = self._create_order(client)
         assert (
-            _webhook(client, _captured_event(order_id), event_id="evt_dup")
-            .status_code
+            _webhook(client, _captured_event(order_id), event_id="evt_dup").status_code
             == 200
         )
         assert (
-            _webhook(client, _captured_event(order_id), event_id="evt_dup")
-            .status_code
+            _webhook(client, _captured_event(order_id), event_id="evt_dup").status_code
             == 200
         )
         assert db_session.query(PaymentEvent).count() == 1

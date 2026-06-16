@@ -38,14 +38,16 @@ def _compute_cache_key(
     output_format: str,
 ) -> str:
     """Build a stable cache key from all inputs that affect the image."""
-    parts = "|".join([
-        model,
-        quality,
-        output_format,
-        aspect_ratio,
-        style or "",
-        prompt,
-    ])
+    parts = "|".join(
+        [
+            model,
+            quality,
+            output_format,
+            aspect_ratio,
+            style or "",
+            prompt,
+        ]
+    )
     digest = hashlib.sha256(parts.encode("utf-8")).hexdigest()[:16]
     return f"{digest}.{output_format}"
 

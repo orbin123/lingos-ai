@@ -17,7 +17,9 @@ def recordings_by_id(user_response: dict) -> dict[str, dict]:
     for idx, recording in enumerate(recordings, 1):
         if not isinstance(recording, dict):
             continue
-        key = str(recording.get("item_id") or recording.get("turn_id") or prompt_id(idx))
+        key = str(
+            recording.get("item_id") or recording.get("turn_id") or prompt_id(idx)
+        )
         by_id[key] = recording
     return by_id
 
@@ -49,15 +51,21 @@ def build_speaking_eval_items(
                 {
                     "item_id": item_id,
                     "prompt": prompt,
-                    "sample_response": samples[idx - 1] if idx - 1 < len(samples) else "",
-                    "learner_transcript": str(recording.get("transcript") or "").strip(),
+                    "sample_response": samples[idx - 1]
+                    if idx - 1 < len(samples)
+                    else "",
+                    "learner_transcript": str(
+                        recording.get("transcript") or ""
+                    ).strip(),
                     "duration_seconds": recording.get("duration_seconds"),
                 }
             )
         return items
 
     if turns:
-        user_turns = [t for t in turns if isinstance(t, dict) and t.get("speaker") == "user"]
+        user_turns = [
+            t for t in turns if isinstance(t, dict) and t.get("speaker") == "user"
+        ]
         sample_user = task_content.get("sample_user_responses") or []
         items = []
         for idx, turn in enumerate(user_turns, 1):
@@ -67,8 +75,12 @@ def build_speaking_eval_items(
                 {
                     "turn_id": turn_id,
                     "prompt": turn.get("ai_line") or "Your reply",
-                    "sample_response": sample_user[idx - 1] if idx - 1 < len(sample_user) else "",
-                    "learner_transcript": str(recording.get("transcript") or "").strip(),
+                    "sample_response": sample_user[idx - 1]
+                    if idx - 1 < len(sample_user)
+                    else "",
+                    "learner_transcript": str(
+                        recording.get("transcript") or ""
+                    ).strip(),
                     "duration_seconds": recording.get("duration_seconds"),
                 }
             )
@@ -91,7 +103,9 @@ def build_speaking_eval_items(
                     "item_id": key,
                     "prompt": single_prompt,
                     "sample_response": sample,
-                    "learner_transcript": str(recording.get("transcript") or "").strip(),
+                    "learner_transcript": str(
+                        recording.get("transcript") or ""
+                    ).strip(),
                     "duration_seconds": recording.get("duration_seconds"),
                 }
             ]
@@ -99,7 +113,9 @@ def build_speaking_eval_items(
     # Fallback: preserve raw recordings in prompt order.
     return [
         {
-            "item_id": str(recording.get("item_id") or recording.get("turn_id") or prompt_id(idx)),
+            "item_id": str(
+                recording.get("item_id") or recording.get("turn_id") or prompt_id(idx)
+            ),
             "prompt": single_prompt,
             "sample_response": sample,
             "learner_transcript": str(recording.get("transcript") or "").strip(),

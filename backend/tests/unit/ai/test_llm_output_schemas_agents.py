@@ -84,7 +84,9 @@ class TestErrorSpottingSchema:
         sentence["tokens"][1]["is_error"] = True
 
         normalized = normalize_error_spotting_payload(payload)
-        strict_payload = {key: value for key, value in normalized.items() if key != "widget"}
+        strict_payload = {
+            key: value for key, value in normalized.items() if key != "widget"
+        }
         task = ErrorSpottingTask.model_validate(strict_payload)
 
         error_tokens = [
@@ -93,5 +95,3 @@ class TestErrorSpottingSchema:
             if token.is_error
         ]
         assert error_tokens == ["s3_t4"]
-
-

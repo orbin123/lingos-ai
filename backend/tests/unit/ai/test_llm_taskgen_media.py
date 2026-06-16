@@ -29,9 +29,7 @@ class TestLLMTaskGenerator:
         spec = get_archetype("SPEAK_TIMED")
         canned = TaskGenOutput(
             topic="Say simple present routines",
-            instructions=(
-                "Tap the mic and say one short routine sentence per prompt."
-            ),
+            instructions=("Tap the mic and say one short routine sentence per prompt."),
             task_intro="Record your routine sentences.",
             speaking_duration_seconds=45,
             speaking_prompts=[
@@ -250,7 +248,9 @@ class TestLLMTaskGenerator:
         assert content["inner_widget"] == "mcq"
         assert content["audio_url"] == "/audio/fake-listening.mp3"
         assert content["audio_duration_seconds"] == 12
-        assert fake_tts.calls[0]["text"] == "Mina usually studies English after breakfast."
+        assert (
+            fake_tts.calls[0]["text"] == "Mina usually studies English after breakfast."
+        )
 
     @pytest.mark.asyncio
     async def test_malformed_listen_mcq_retries_then_raises(self):
@@ -286,23 +286,30 @@ class TestLLMTaskGenerator:
             "get_default_tts_service",
             lambda: FakeTTSService(fail=True),
         )
-        fake = FakeLLMClient([
-            TaskGenOutput(
-                topic="Listening for routines",
-                instructions="Listen and answer.",
-                audio_script="Mina usually studies English after breakfast.",
-                inner_widget="mcq",
-                items=[
-                    {
-                        "item_id": "q1",
-                        "prompt": "When does Mina study English?",
-                        "options": ["Before bed", "After breakfast", "At lunch", "Never"],
-                        "correct_index": 1,
-                        "explanation": "The script says after breakfast.",
-                    }
-                ],
-            )
-        ])
+        fake = FakeLLMClient(
+            [
+                TaskGenOutput(
+                    topic="Listening for routines",
+                    instructions="Listen and answer.",
+                    audio_script="Mina usually studies English after breakfast.",
+                    inner_widget="mcq",
+                    items=[
+                        {
+                            "item_id": "q1",
+                            "prompt": "When does Mina study English?",
+                            "options": [
+                                "Before bed",
+                                "After breakfast",
+                                "At lunch",
+                                "Never",
+                            ],
+                            "correct_index": 1,
+                            "explanation": "The script says after breakfast.",
+                        }
+                    ],
+                )
+            ]
+        )
         agent = LLMTaskGenerator(fake)
 
         generated = await agent.generate(
@@ -316,43 +323,50 @@ class TestLLMTaskGenerator:
         content = generated.content
         assert content["audio_url"] is None
         assert content["browser_tts_fallback"] is True
-        assert content["tts_error"] == "Could not synthesize listening audio for LISTEN_MCQ"
+        assert (
+            content["tts_error"]
+            == "Could not synthesize listening audio for LISTEN_MCQ"
+        )
         assert content["audio_duration_seconds"] > 0
 
     @pytest.mark.asyncio
-    async def test_listen_cloze_synthesizes_audio_and_keeps_blank_items(self, monkeypatch):
+    async def test_listen_cloze_synthesizes_audio_and_keeps_blank_items(
+        self, monkeypatch
+    ):
         from app.ai import tts as tts_module
 
         spec = get_archetype("LISTEN_CLOZE")
         fake_tts = FakeTTSService()
         monkeypatch.setattr(tts_module, "get_default_tts_service", lambda: fake_tts)
-        fake = FakeLLMClient([
-            TaskGenOutput(
-                topic="Listen and fill past verb forms",
-                instructions="Listen and complete the notes.",
-                audio_script="Priya got up early and had an interview.",
-                inner_widget="fill_in_blanks",
-                passage="Priya ___ up early and ___ an interview.",
-                items=[
-                    {
-                        "item_id": "b1",
-                        "sentence_with_blank": "Priya ___ up early.",
-                        "base_verb": "get",
-                        "correct_answer": "got",
-                        "grammar_rule": "Use got as the past form of get.",
-                        "explanation": "Get becomes got in the past.",
-                    },
-                    {
-                        "item_id": "b2",
-                        "sentence_with_blank": "She ___ an interview.",
-                        "base_verb": "have",
-                        "correct_answer": "had",
-                        "grammar_rule": "Use had as the past form of have.",
-                        "explanation": "Have becomes had in the past.",
-                    },
-                ],
-            )
-        ])
+        fake = FakeLLMClient(
+            [
+                TaskGenOutput(
+                    topic="Listen and fill past verb forms",
+                    instructions="Listen and complete the notes.",
+                    audio_script="Priya got up early and had an interview.",
+                    inner_widget="fill_in_blanks",
+                    passage="Priya ___ up early and ___ an interview.",
+                    items=[
+                        {
+                            "item_id": "b1",
+                            "sentence_with_blank": "Priya ___ up early.",
+                            "base_verb": "get",
+                            "correct_answer": "got",
+                            "grammar_rule": "Use got as the past form of get.",
+                            "explanation": "Get becomes got in the past.",
+                        },
+                        {
+                            "item_id": "b2",
+                            "sentence_with_blank": "She ___ an interview.",
+                            "base_verb": "have",
+                            "correct_answer": "had",
+                            "grammar_rule": "Use had as the past form of have.",
+                            "explanation": "Have becomes had in the past.",
+                        },
+                    ],
+                )
+            ]
+        )
         agent = LLMTaskGenerator(fake)
 
         generated = await agent.generate(
@@ -371,7 +385,9 @@ class TestLLMTaskGenerator:
         assert fake_tts.calls[0]["text"] == "Priya got up early and had an interview."
 
     @pytest.mark.asyncio
-    async def test_authored_listen_cloze_payload_bypasses_llm_and_synthesizes(self, monkeypatch):
+    async def test_authored_listen_cloze_payload_bypasses_llm_and_synthesizes(
+        self, monkeypatch
+    ):
         from app.ai import tts as tts_module
 
         spec = get_archetype("LISTEN_CLOZE")
@@ -451,5 +467,3 @@ class TestLLMTaskGenerator:
 
 
 # ── compute_wrong_items + confirmed_mistakes pipeline ─────────────
-
-

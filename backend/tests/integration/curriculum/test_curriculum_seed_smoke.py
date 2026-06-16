@@ -73,12 +73,8 @@ def test_seed_course_populates_both_calendars(db_session):
     assert (w24, d24) == (24, 168)
     assert (w48, d48) == (48, 336)
 
-    assert (
-        db_session.query(CurriculumWeek).filter_by(course_length="24w").count() == 24
-    )
-    assert (
-        db_session.query(CurriculumWeek).filter_by(course_length="48w").count() == 48
-    )
+    assert db_session.query(CurriculumWeek).filter_by(course_length="24w").count() == 24
+    assert db_session.query(CurriculumWeek).filter_by(course_length="48w").count() == 48
     assert (
         db_session.query(CurriculumDay)
         .join(CurriculumWeek)

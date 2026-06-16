@@ -151,7 +151,11 @@ class TestMentorNoteGenerator:
         result = await generator.generate(
             today_activities=[{"archetype_label": "Read", "raw_score": 6}],
             today_mistakes=[
-                {"issue": "Wrong homophone", "user_wrote": "their", "correction": "there"}
+                {
+                    "issue": "Wrong homophone",
+                    "user_wrote": "their",
+                    "correction": "there",
+                }
             ],
             rag_context={
                 "similar_past_mistakes": [
@@ -225,7 +229,10 @@ class TestMentorNoteGenerator:
         # Verify the prompt mentions first session
         call_args = mock_llm.generate_structured.call_args
         user_prompt = call_args.kwargs["user_prompt"]
-        assert "first session" in user_prompt.lower() or "no history" in user_prompt.lower()
+        assert (
+            "first session" in user_prompt.lower()
+            or "no history" in user_prompt.lower()
+        )
 
 
 # ── User isolation test ──────────────────────────────────────────
@@ -325,7 +332,9 @@ def _rag_service(embedder=None, store=None):
         embedder.embed = AsyncMock(return_value=[0.1] * 1024)
     store = store or AsyncMock()
     service = FeedbackRAGService(
-        MagicMock(), embedding_generator=embedder, embedding_service=store,
+        MagicMock(),
+        embedding_generator=embedder,
+        embedding_service=store,
     )
     service._repo = MagicMock()
     return service, embedder, store
@@ -394,8 +403,8 @@ class TestDeleteSync:
     @pytest.mark.asyncio
     async def test_delete_session_summary(self):
         service, _embedder, store = _rag_service()
-        service._repo.get_session_summary_for_session.return_value = (
-            SimpleNamespace(vector_id="sess_7_3")
+        service._repo.get_session_summary_for_session.return_value = SimpleNamespace(
+            vector_id="sess_7_3"
         )
 
         await service.delete_session_summary(3)
@@ -409,19 +418,30 @@ class TestDeleteSync:
 class TestRecurrence:
     def test_recurring_pattern_detected_one_off_excluded(self):
         service, _embedder, _store = _rag_service()
-        recurring = {"issue": "third-person -s", "rule": "sv-agreement", "correction": "eats"}
+        recurring = {
+            "issue": "third-person -s",
+            "rule": "sv-agreement",
+            "correction": "eats",
+        }
         one_off = {"issue": "spelling", "rule": "", "correction": "definitely"}
         service._repo.list_for_user.return_value = [
-            SimpleNamespace(memory_type="activity_feedback", metadata_json={"mistakes": [recurring]}),
-            SimpleNamespace(memory_type="activity_feedback", metadata_json={"mistakes": [dict(recurring)]}),
-            SimpleNamespace(memory_type="activity_feedback", metadata_json={"mistakes": [one_off]}),
+            SimpleNamespace(
+                memory_type="activity_feedback", metadata_json={"mistakes": [recurring]}
+            ),
+            SimpleNamespace(
+                memory_type="activity_feedback",
+                metadata_json={"mistakes": [dict(recurring)]},
+            ),
+            SimpleNamespace(
+                memory_type="activity_feedback", metadata_json={"mistakes": [one_off]}
+            ),
         ]
 
         patterns = service._compute_recurring_patterns(1)
 
         issues = {p["issue"] for p in patterns}
-        assert "third-person -s" in issues       # count 2 >= threshold
-        assert "spelling" not in issues          # one-off excluded
+        assert "third-person -s" in issues  # count 2 >= threshold
+        assert "spelling" not in issues  # one-off excluded
         recurring_pattern = next(p for p in patterns if p["issue"] == "third-person -s")
         assert recurring_pattern["count"] == 2
 
@@ -429,7 +449,10 @@ class TestRecurrence:
         service, _embedder, _store = _rag_service()
         m = {"issue": "tense", "rule": "past", "correction": "went"}
         service._repo.list_for_user.return_value = [
-            SimpleNamespace(memory_type="activity_feedback", metadata_json={"mistakes": [m, dict(m)]}),
+            SimpleNamespace(
+                memory_type="activity_feedback",
+                metadata_json={"mistakes": [m, dict(m)]},
+            ),
         ]
 
         patterns = service._compute_recurring_patterns(1, min_count=2)
@@ -450,7 +473,9 @@ class TestPerActivityRetrieval:
         service, _embedder, _store = _rag_service(store=store)
 
         hist = await service.retrieve_context_for_activity(
-            user_id=1, archetype_id="READ_FIB", query_text="tense errors",
+            user_id=1,
+            archetype_id="READ_FIB",
+            query_text="tense errors",
         )
 
         assert hist is not None
@@ -461,7 +486,9 @@ class TestPerActivityRetrieval:
         service, _embedder, _store = _rag_service()
 
         hist = await service.retrieve_context_for_activity(
-            user_id=1, archetype_id="X", query_text="   ",
+            user_id=1,
+            archetype_id="X",
+            query_text="   ",
         )
 
         assert hist is None
@@ -509,7 +536,11 @@ class TestNoScoringMutation:
             ActivityScore(
                 archetype_id="READ_FIB",
                 raw_score=7.5,
-                weight_map={"grammar": 0.4, "vocabulary": 0.3, "reading_comprehension": 0.3},
+                weight_map={
+                    "grammar": 0.4,
+                    "vocabulary": 0.3,
+                    "reading_comprehension": 0.3,
+                },
             ),
             ActivityScore(
                 archetype_id="WRITE_OPEN_SENT",
