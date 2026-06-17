@@ -5,10 +5,11 @@
 > **Goal:** ship LingosAI as a reliable production SaaS at `https://www.lingosai.com`
 > **Scale target:** 0–5,000 users · single region · maximum reliability, minimum moving parts
 > **Status of the code:** application is feature-complete, CI/CD + test foundation are done,
-> P0 audit items mostly closed. **✅ Phase 1 (Production Hardening) is COMPLETE** — shipped on
-> branch `feature/phase1-production-hardening` (2026-06-16); see the Phase 1 status banner below.
-> Remaining work: containerization → AWS infra → domain/DNS/SSL → operations.
-> **▶ Next session starts at [Phase 2 — CI/CD, Docker & Artifact Strategy](#phase-2--cicd-docker--artifact-strategy).**
+> P0 audit items mostly closed. **✅ Phase 1 (Production Hardening) is COMPLETE** (branch
+> `feature/phase1-production-hardening`, 2026-06-16) and **✅ Phase 2 (CI/CD, Docker & Artifacts)
+> is COMPLETE** (branch `feature/phase2-cicd-docker`, 2026-06-17); see the per-phase status banners
+> below. Remaining work: AWS infra → domain/DNS/SSL → operations.
+> **▶ Next session starts at [Phase 3 — AWS Infrastructure](#phase-3--aws-infrastructure).**
 > This document is the master plan that ties it all together.
 >
 > **Companion docs (already in `docs/`):** [`PRE_PRODUCTION_PLAN.md`](./PRE_PRODUCTION_PLAN.md) ·
@@ -50,8 +51,8 @@ before moving on:
 | Phase | Theme | End state | Est. effort (solo) |
 |---|---|---|---|
 | **1 ✅ DONE** | Production hardening | App is production-*safe* (security, multi-worker, secrets, backups) | ~1 week |
-| **2 ◀ NEXT** | CI/CD + Docker + artifacts | Every merge to `main` is automatically deployable | ~1 week |
-| **3** | AWS infrastructure | Prod + staging infra exists and is production-ready | ~1.5 weeks |
+| **2 ✅ DONE** | CI/CD + Docker + artifacts | Backend image + compose smoke + docker CI gate + governance shipped (AWS CD deferred to Phase 3) | ~1 week |
+| **3 ◀ NEXT** | AWS infrastructure | Prod + staging infra exists and is production-ready | ~1.5 weeks |
 | **4** | Domain, DNS, SSL, integration | `www.lingosai.com` + `api.lingosai.com` fully operational | ~2–3 days |
 | **5** | Operations & scaling | LingosAI can be operated reliably after launch | ongoing |
 
@@ -269,6 +270,45 @@ we wrap it in containers and ship it.
 
 # Phase 2 — CI/CD, Docker & Artifact Strategy
 
+> ## ✅ STATUS: COMPLETE — shipped 2026-06-17
+> Branch `feature/phase2-cicd-docker` (**not pushed** — solo founder opens the PR). In-repo
+> deliverables shipped; the AWS-dependent CD half (`deploy.yml` → ECR/ECS) was deliberately deferred
+> to Phase 3 per §2.9 and is fully specified as a handoff in **`docs/DEPLOY.md`**.
+>
+> **What was done (task → result):**
+> - **2.1 / 2.2 Backend image** — `backend/Dockerfile` (multi-stage, `uv`-based, **non-root**
+>   `appuser` uid 10001, base images pinned by **index digest** for cross-arch reproducibility,
+>   gunicorn + `UvicornWorker` entrypoint mirroring `scripts/start-prod.sh`; **migrations are NOT in
+>   the entrypoint** per 1.13) + `backend/.dockerignore`. Verified locally: **117 MB** image, runs as
+>   non-root, all deps import.
+> - **2.3 Prod-parity compose** — `compose.prod.yml`: a one-off `migrate` service
+>   (`alembic upgrade head`, models the Phase-3 migration task) gates the `backend` service, alongside
+>   `postgres` + `redis` with healthchecks. `docker compose -f compose.prod.yml up` →
+>   `/health/ready` 200 (verified after the fresh-DB migration fix below).
+> - **2.4 / 2.7 CI** — `.github/workflows/docker.yml` job `docker-build` builds the image on PRs
+>   (non-pushing) and runs a **Trivy** HIGH/CRITICAL gate (`ignore-unfixed`, `.trivyignore` allowlist).
+> - **2.5 Dependabot** — `.github/dependabot.yml` (weekly `uv` + `npm` + `github-actions`).
+> - **2.8 Artifact + 2.10 workflow + 2.6 Vercel** — documented in **`docs/DEPLOY.md`** (force-added):
+>   three-tag scheme (`git-<sha>` / `latest` / `vYYYY.MM.DD`, deploy-by-sha), ECS rollback command,
+>   branch/PR/squash workflow, the Vercel deployment model (root `frontend/`, prod = `main`, preview
+>   per PR), the branch-protection `gh` command, and the Phase-3 `deploy.yml` contract.
+> - **2.11 Governance** — `.github/CODEOWNERS` + `.github/pull_request_template.md`.
+>
+> **Migration-chain fix (surfaced by the 2.3 compose smoke, fixed 2026-06-17):** `alembic upgrade
+> head` did not replay on a **fresh** DB — branch-B migrations re-added objects the sibling repair
+> branch had already created (`DuplicateColumn` on `activity_evaluations.updated_at`). Fixed with
+> **idempotent inspector guards** (no history rewrite) in `d1e2f3a4b5c6` (all three ops) and
+> `e2f3a4b5c6d7` (`session_scorecards.activities`); safe on fresh **and** already-migrated DBs. A new
+> **`migrations` job in `.github/workflows/backend.yml`** runs `alembic upgrade head` against an empty
+> Postgres so this never regresses (the unit/integration suites use SQLite `create_all` and never
+> exercise the migration graph). **This de-risks the Phase 3 fresh-RDS migration task.**
+>
+> **Deferred to Phase 3 (intentional):** `deploy.yml` (OIDC → ECR push → migration one-off task →
+> ECS rolling deploy → smoke), the ECR repo, the GitHub OIDC role, and the ECS cluster/service/task
+> definitions. **Founder dashboard actions (post-push):** connect Vercel (root `frontend/`) and enable
+> branch protection on `main` (exact `gh` command in `docs/DEPLOY.md`, contexts:
+> `lint·types·unit·integration·coverage·ci·openapi-drift·docker-build`).
+
 ### Objective
 Turn the green-on-a-laptop repo into a **build-and-ship pipeline**: a small, secure, reproducible
 backend container image; a clean Vercel deployment model for the frontend; and GitHub Actions that
@@ -410,12 +450,14 @@ main (protected, always deployable)
 | Trivy noise blocks shipping | Med | Low | Allowlist with documented justification; only HIGH/CRITICAL gate. |
 
 ### Validation checklist
-- [ ] `docker build` produces a runnable backend image < ~300 MB, runs as non-root.
-- [ ] `docker compose -f compose.prod.yml up` boots app + Postgres + Redis; `/health/ready` is 200.
-- [ ] Trivy reports no un-allowlisted HIGH/CRITICAL CVEs.
-- [ ] A PR shows all required checks + a Vercel preview URL.
-- [ ] A merge to `main` produces an ECR image tagged with the git sha.
+- [x] `docker build` produces a runnable backend image < ~300 MB, runs as non-root. _(117 MB, `appuser`.)_
+- [x] `docker compose -f compose.prod.yml up` boots app + Postgres + Redis; `/health/ready` is 200.
+      _(Verified after the fresh-DB migration fix; a new `migrations` CI job guards regression.)_
+- [x] Trivy reports no un-allowlisted HIGH/CRITICAL CVEs. _(Gate wired in `docker.yml`; runs per PR.)_
+- [ ] A PR shows all required checks + a Vercel preview URL. _(After push + Vercel connect — founder.)_
+- [ ] A merge to `main` produces an ECR image tagged with the git sha. _(Phase 3 — `deploy.yml`.)_
 - [ ] Rollback command (revert to prior task-def revision) is documented and tested on staging.
+      _(Documented in `docs/DEPLOY.md`; the staging *test* is a Phase 3 step.)_
 
 ### Exit criteria
 Every merge to `main` produces an **immutable, scanned, sha-tagged image** in ECR and (once Phase 3
@@ -426,6 +468,19 @@ reaching `main`. **Every merge to `main` is automatically deployable.**
 ---
 
 # Phase 3 — AWS Infrastructure
+
+> ## ▶ START HERE — inherited from Phases 1–2
+> - **Container is ready:** `backend/Dockerfile` (non-root, gunicorn, no migrations in entrypoint) +
+>   `compose.prod.yml` already model the runtime. Phase 3 pushes this same image to **ECR** and runs
+>   it on **Fargate** — no new image work.
+> - **CD is the gap:** create `deploy.yml` (OIDC → ECR push → migration one-off task → ECS rolling →
+>   smoke). Its exact contract is in **`docs/DEPLOY.md` §6** — Phase 3 only fills in resource names.
+> - **Migrations replay cleanly on a fresh DB** (fixed in Phase 2 + guarded by the `migrations` CI
+>   job), so the **migration one-off task (3.4)** against fresh staging/prod RDS is now low-risk.
+> - **Two real code/launch items remain:** `S3BlobStorage` (3.5 — the hard launch blocker; local-disk
+>   media can't survive Fargate) and the SES provider decision (3.7 / AD-4).
+> - **Founder dashboard prerequisites** (do before/with Phase 3): connect Vercel and enable `main`
+>   branch protection — both detailed in `docs/DEPLOY.md`.
 
 ### Objective
 Stand up the complete, production-ready AWS environment — networking, compute, data, media, secrets,
