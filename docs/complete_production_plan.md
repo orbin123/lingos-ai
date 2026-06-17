@@ -8,9 +8,12 @@
 > P0 audit items mostly closed. **✅ Phase 1 (Production Hardening) is COMPLETE** (branch
 > `feature/phase1-production-hardening`, 2026-06-16) and **✅ Phase 2 (CI/CD, Docker & Artifacts)
 > is COMPLETE** (branch `feature/phase2-cicd-docker`, 2026-06-17); see the per-phase status banners
-> below. **🟢 Phase 3 (AWS Infrastructure): production backend LIVE & HEALTHY on Fargate** (2026-06-17,
-> Milestones 1–5 done). Remaining work: domain/DNS/SSL (Phase 4) → operations.
-> **▶ Next session starts at [Phase 4 — Domain, DNS, SSL & Deployment Integration](#phase-4--domain-dns-ssl--deployment-integration).**
+> below. **✅ Phase 3 (AWS Infrastructure): production backend LIVE & HEALTHY on Fargate** (2026-06-17,
+> Milestones 1–5 done). **✅ Phase 4 (Domain, DNS, SSL): `https://www.lingosai.com` and
+> `https://api.lingosai.com` fully operational** (2026-06-17, branch `feature/phase4-domain-dns-ssl`,
+> PR #90). Remaining work: SES production access (pending AWS ~24h), Google OAuth URI registration,
+> and end-to-end login verification → then Phase 5 (Operations).
+> **▶ Next session starts at [Phase 5 — Production Operations & Scaling](#phase-5--production-operations--scaling).**
 > This document is the master plan that ties it all together.
 >
 > **Companion docs (already in `docs/`):** [`PRE_PRODUCTION_PLAN.md`](./PRE_PRODUCTION_PLAN.md) ·
@@ -53,8 +56,8 @@ before moving on:
 |---|---|---|---|
 | **1 ✅ DONE** | Production hardening | App is production-*safe* (security, multi-worker, secrets, backups) | ~1 week |
 | **2 ✅ DONE** | CI/CD + Docker + artifacts | Backend image + compose smoke + docker CI gate + governance shipped (AWS CD deferred to Phase 3) | ~1 week |
-| **3 🟢 BACKEND LIVE** | AWS infrastructure | Production backend healthy on Fargate (M1–5); staging not yet applied | ~1.5 weeks |
-| **4 ◀ NEXT** | Domain, DNS, SSL, integration | `www.lingosai.com` + `api.lingosai.com` fully operational | ~2–3 days |
+| **3 ✅ DONE** | AWS infrastructure | Production backend healthy on Fargate; CD pipeline live | ~1.5 weeks |
+| **4 ✅ DONE** | Domain, DNS, SSL, integration | `www.lingosai.com` + `api.lingosai.com` fully operational | ~2–3 days |
 | **5** | Operations & scaling | LingosAI can be operated reliably after launch | ongoing |
 
 **Final target topology (the one decision that drives everything else):**
@@ -688,6 +691,56 @@ plan. The infrastructure is production-ready and waiting for a domain.
 
 # Phase 4 — Domain, DNS, SSL & Deployment Integration
 
+> ## ✅ STATUS: COMPLETE — 2026-06-17
+> Branch `feature/phase4-domain-dns-ssl` → **[PR #90](https://github.com/orbin123/lingos-ai/pull/90)**
+> (merge when SES + OAuth verified). All infrastructure live.
+>
+> **What was done:**
+> - **Terraform `modules/tls`** — new module requests a DNS-validated ACM certificate for
+>   `api.lingosai.com`. `certificate_arn` flows from the validation resource so the ALB only
+>   attaches an ISSUED cert. `modules/alb` now keys HTTPS on/off off a **static `enable_https`
+>   flag** (not `cert_arn != ""`), fixing the Terraform plan-time count error.
+> - **`envs/production`** — `create_api_certificate = true`, `api_domain = api.lingosai.com`.
+>   Targeted apply created the cert; full apply issued it and created the HTTPS:443 listener +
+>   HTTP:80 → 301 → 443 redirect on the ALB.
+> - **All DNS published at Namecheap (Advanced DNS):**
+>   - ACM validation CNAME → `*.jkddzztszm.acm-validations.aws` ✅ propagated
+>   - `api` CNAME → ALB DNS name ✅
+>   - `_amazonses` TXT (SES domain verification) ✅
+>   - 3× DKIM CNAMEs (`*._domainkey`) ✅
+>   - `mail` MX priority 10 → `feedback-smtp.us-east-1.amazonses.com` ✅
+>   - `mail` TXT SPF `v=spf1 include:amazonses.com ~all` ✅
+>   - `_dmarc` TXT ✅
+>   - `www` CNAME → `cname.vercel-dns.com`; `@` A → Vercel anycast IP ✅
+> - **Vercel:** repo connected, root `frontend/`, `NEXT_PUBLIC_API_URL=https://api.lingosai.com`
+>   set, redeployed — `www.lingosai.com` serves the app over valid TLS.
+> - **SES:** domain identity **Verified**; DKIM + MAIL-FROM pending AWS polling (normal, hours).
+>   Production-access request submitted with detailed justification — **awaiting AWS approval
+>   (~24h)**; not a blocker for the rest of the app.
+>
+> **Verified live state (2026-06-17):**
+> - `https://api.lingosai.com/health` → `{"status":"ok"}`, cert `CN=api.lingosai.com`,
+>   issuer Amazon RSA 2048 M01 ✅
+> - `http://api.lingosai.com` → **301 → HTTPS** ✅
+> - `https://api.lingosai.com/health/ready` → `{"database":"ok","redis":"ok"}` ✅
+> - `https://www.lingosai.com` → 200, title "AI English Tutor", `api.lingosai.com` in JS bundle ✅
+> - `lingosai.com` → 307 → `www.lingosai.com` ✅
+> - CORS preflight from `www` → `api`: `access-control-allow-origin: https://www.lingosai.com`,
+>   `allow-credentials: true` ✅; random origin → 400 ✅
+>
+> **Remaining (not blocking the rest of the app):**
+> - [ ] Register `https://api.lingosai.com/auth/google/callback` in Google Cloud Console
+>       (Credentials → OAuth Client → Authorized redirect URIs). **Blocks Google login only.**
+> - [ ] SES production access granted by AWS (submitted, ~24h). Until then SES only delivers to
+>       verified addresses — OTP/password-reset email works for verified test accounts.
+> - [ ] End-to-end login loop: sign up on `www`, Google OAuth, confirm `Secure`/`SameSite=Lax`
+>       cookie set on `api.lingosai.com`, survive page refresh.
+> - [ ] Merge PR #90 once the above are ticked.
+>
+> **Always pass `TF_VAR_db_password` + `TF_VAR_alert_email` on every future apply** — omitting
+> `alert_email` destroys the CloudWatch alert SNS subscription. Recover `db_password` from
+> `lingosai/production/DATABASE_URL` in Secrets Manager if needed.
+
 ### Objective
 Wire the purchased domain so that `https://www.lingosai.com` serves the Vercel frontend and
 `https://api.lingosai.com` serves the ECS backend, with valid TLS everywhere, a clear canonical-host
@@ -779,12 +832,14 @@ or CORS origin silently breaks auth.
 | OAuth redirect URI mismatch → Google login 400 | Med | Med | Register the exact prod URI; test the OAuth flow on staging. |
 
 ### Validation checklist
-- [ ] `https://www.lingosai.com` loads the app with a valid cert; `http://` and apex 301 to it.
-- [ ] `https://api.lingosai.com/health` returns 200 over a valid ACM cert.
+- [x] `https://www.lingosai.com` loads the app with a valid cert; apex 307 → www; http → https.
+- [x] `https://api.lingosai.com/health` returns 200 over a valid ACM cert (Amazon RSA 2048 M01).
 - [ ] A login on `www` sets a `Secure`, `SameSite=Lax`, `.lingosai.com` cookie and survives a refresh.
-- [ ] CORS preflight from `www.lingosai.com` to `api.lingosai.com` succeeds; a random origin is rejected.
+      _(blocked on Google OAuth redirect URI registration)_
+- [x] CORS preflight from `www.lingosai.com` to `api.lingosai.com` succeeds; a random origin is rejected.
 - [ ] Google OAuth completes end-to-end on production hostnames.
-- [ ] `curl -I http://api.lingosai.com` shows a redirect to HTTPS.
+      _(pending: register `https://api.lingosai.com/auth/google/callback` in Google Cloud Console)_
+- [x] `curl -I http://api.lingosai.com` shows 301 redirect to HTTPS.
 
 ### Exit criteria
 The domain is fully operational: both hosts serve over valid TLS, the canonical redirect is in place,
