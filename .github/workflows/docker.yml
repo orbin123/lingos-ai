@@ -1,0 +1,61 @@
+name: docker
+
+# Proves the backend image builds reproducibly and is free of HIGH/CRITICAL
+# CVEs on every PR that touches the backend or this workflow. Non-pushing:
+# pushing the image to ECR is wired in Phase 3 (deploy.yml).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/docker.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/docker.yml"
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Job name is the required-status-check context used in branch protection.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          load: true
+          tags: lingosai-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Install Trivy directly rather than via aquasecurity/trivy-action: older
+      # trivy-action releases pin a now-deleted setup-trivy tag and fail to
+      # resolve. setup-trivy is a single-purpose action with valid tags.
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.6
+
+      - name: Trivy scan (HIGH/CRITICAL gate)
+        # Trivy auto-reads a repo-root .trivyignore (allowlist w/ justification)
+        # if one exists. exit-code 1 fails the job on any fixable HIGH/CRITICAL.
+        run: |
+          trivy image \
+            --format table \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            lingosai-backend:ci

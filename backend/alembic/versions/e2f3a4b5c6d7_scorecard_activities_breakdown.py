@@ -26,11 +26,19 @@ depends_on: Union[str, Sequence[str], None] = None
 _JSON = sa.JSON().with_variant(sa.dialects.postgresql.JSONB(), "postgresql")
 
 
+def _columns(table_name: str) -> set[str]:
+    bind = op.get_bind()
+    return {column["name"] for column in sa.inspect(bind).get_columns(table_name)}
+
+
 def upgrade() -> None:
-    op.add_column(
-        "session_scorecards",
-        sa.Column("activities", _JSON, nullable=True),
-    )
+    # The sibling repair branch (f3a4b5c6d7e8) also adds this column with a
+    # guard; on a fresh linear replay that branch runs first, so guard here too.
+    if "activities" not in _columns("session_scorecards"):
+        op.add_column(
+            "session_scorecards",
+            sa.Column("activities", _JSON, nullable=True),
+        )
 
 
 def downgrade() -> None:

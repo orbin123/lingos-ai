@@ -73,6 +73,47 @@ jobs:
       - name: Integration tests
         run: uv run pytest tests/integration -q
 
+  migrations:
+    # Replays the FULL Alembic chain against a truly empty Postgres — the exact
+    # Phase-3 launch path (one-off `alembic upgrade head` against a fresh RDS).
+    # The unit/integration suites use SQLite `create_all`, so they never exercise
+    # the migration graph; this job is the only thing that catches drift between
+    # the branched/merged revisions and a clean linear replay. Never delete it.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: migrate_check
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # database_url points at the empty service; the rest are required-but-unused
+      # dummies so app.core.config.settings loads (alembic/env.py imports it).
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/migrate_check
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET: ci-dummy
+      OPENAI_API_KEY: ci-dummy
+      LANGCHAIN_API_KEY: ci-dummy
+      PINECONE_API_KEY: ci-dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - name: Alembic upgrade head on empty Postgres
+        run: uv run alembic upgrade head
+      - name: Verify DB is at a single head
+        run: uv run alembic current | grep -q '(head)'
+
   coverage:
     # Coverage floor is a whole-suite measure, so the gate runs the full suite
     # in one process via bare `pytest` (testpaths=["tests"]). The suite is order-
