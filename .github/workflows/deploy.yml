@@ -59,6 +59,11 @@ jobs:
           echo "image=$IMAGE"       >> "$GITHUB_OUTPUT"
           echo "image_sha=$IMAGE:$SHA_TAG" >> "$GITHUB_OUTPUT"
 
+      # The gha cache backend (cache-to/from below) requires the docker-container
+      # buildx driver — the default `docker` driver cannot export gha cache.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build & push image (3 tags)
         uses: docker/build-push-action@v7
         with:
