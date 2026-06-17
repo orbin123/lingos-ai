@@ -65,6 +65,23 @@ COPY --from=builder --chown=appuser:appgroup /app/alembic /app/alembic
 COPY --from=builder --chown=appuser:appgroup /app/alembic.ini /app/alembic.ini
 COPY --from=builder --chown=appuser:appgroup /app/scripts /app/scripts
 
+# Strip the build toolchain the base image seeds into the SYSTEM site-packages
+# (pip/setuptools/wheel + setuptools' vendored jaraco.context). The app runs
+# entirely from /app/.venv (first on PATH) and never installs packages at
+# runtime, so these are unused — but Trivy flags their CVEs (CVE-2026-24049
+# wheel, CVE-2026-23949 jaraco.context). Removing them realizes this image's
+# "no build toolchain" goal and keeps the HIGH/CRITICAL gate green. Verified:
+# the full app + AI stack, passlib bcrypt, cryptography and python-jose all
+# import without pkg_resources.
+RUN rm -rf \
+    /usr/local/lib/python3.11/site-packages/setuptools* \
+    /usr/local/lib/python3.11/site-packages/pkg_resources \
+    /usr/local/lib/python3.11/site-packages/_distutils_hack \
+    /usr/local/lib/python3.11/site-packages/distutils-precedence.pth \
+    /usr/local/lib/python3.11/site-packages/wheel* \
+    /usr/local/lib/python3.11/site-packages/pip* \
+    /usr/local/bin/pip*
+
 USER appuser
 
 EXPOSE 8000
