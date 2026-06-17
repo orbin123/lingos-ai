@@ -64,16 +64,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build & push image (3 tags)
+      # ECR repo uses IMMUTABLE tags, so we push only the unique git-<sha> tag
+      # (deploy-by-sha, per DEPLOY.md). A moving :latest / daily date tag cannot
+      # be overwritten on an immutable repo and would fail every redeploy.
+      - name: Build & push image (immutable sha tag)
         uses: docker/build-push-action@v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: |
-            ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.sha_tag }}
-            ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.date_tag }}
-            ${{ steps.tags.outputs.image }}:latest
+          tags: ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.sha_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
