@@ -8,6 +8,7 @@ dependencies = [
     "alembic>=1.18.4",
     "azure-cognitiveservices-speech>=1.48.0",
     "bcrypt==4.0.1",
+    "boto3>=1.35.0",
     "fastapi>=0.136.1",
     "gunicorn>=23.0.0",
     "httpx>=0.28.1",
@@ -51,6 +52,8 @@ module = [
     "jose.*",
     "passlib.*",
     "azure.*",
+    "boto3.*",
+    "botocore.*",
 ]
 ignore_missing_imports = true
 

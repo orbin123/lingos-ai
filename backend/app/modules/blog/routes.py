@@ -10,7 +10,6 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
-from pathlib import Path
 
 from fastapi import (
     APIRouter,
@@ -24,7 +23,7 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
-from app.ai.storage import LocalBlobStorage, StorageError
+from app.ai.storage import IBlobStorage, StorageError, build_blob_storage
 from app.core.config import settings
 from app.core.database import get_db
 from app.modules.admin.audit_service import AdminAuditService, client_ip_from_request
@@ -55,14 +54,14 @@ _IMAGE_EXTENSIONS = {
     "image/gif": ".gif",
 }
 _MAX_COVER_BYTES = 5 * 1024 * 1024
-_cover_storage: LocalBlobStorage | None = None
+_cover_storage: IBlobStorage | None = None
 
 
-def get_cover_storage() -> LocalBlobStorage:
+def get_cover_storage() -> IBlobStorage:
     global _cover_storage
     if _cover_storage is None:
-        _cover_storage = LocalBlobStorage(
-            root_dir=Path(settings.BLOG_MEDIA_CACHE_DIR),
+        _cover_storage = build_blob_storage(
+            cache_dir=settings.BLOG_MEDIA_CACHE_DIR,
             public_url_prefix=settings.BLOG_MEDIA_PUBLIC_URL_PREFIX,
         )
     return _cover_storage

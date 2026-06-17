@@ -18,7 +18,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
-from app.ai.storage import LocalBlobStorage, StorageError
+from app.ai.storage import IBlobStorage, StorageError, build_blob_storage
 from app.ai.stt import get_default_stt_service
 from app.ai.stt.exceptions import (
     STTError,
@@ -57,16 +57,22 @@ _AUDIO_EXTENSIONS = {
 }
 _MAX_AUDIO_UPLOAD_BYTES = 25 * 1024 * 1024
 _LEARNER_AUDIO_URL_PREFIX = "/responses/audio"
-_learner_audio_storage: LocalBlobStorage | None = None
+_learner_audio_storage: IBlobStorage | None = None
 
 
-def get_learner_audio_storage() -> LocalBlobStorage:
-    """Return the private learner-audio storage client."""
+def get_learner_audio_storage() -> IBlobStorage:
+    """Return the private learner-audio storage client.
+
+    `private=True`: in S3 mode the clip never gets a public CloudFront URL —
+    `url_for` returns the owner-checked `/responses/audio/...` route below,
+    which streams the bytes back through `storage.get`.
+    """
     global _learner_audio_storage
     if _learner_audio_storage is None:
-        _learner_audio_storage = LocalBlobStorage(
-            root_dir=Path(settings.LEARNER_AUDIO_DIR),
+        _learner_audio_storage = build_blob_storage(
+            cache_dir=settings.LEARNER_AUDIO_DIR,
             public_url_prefix=_LEARNER_AUDIO_URL_PREFIX,
+            private=True,
         )
     return _learner_audio_storage
 
