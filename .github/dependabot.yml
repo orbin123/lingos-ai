@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Backend Python deps (uv-managed; Dependabot reads uv.lock).
+  - package-ecosystem: "uv"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      backend-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Frontend Node deps (package-lock.json).
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      frontend-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # GitHub Actions used across all workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      actions-all:
+        patterns: ["*"]

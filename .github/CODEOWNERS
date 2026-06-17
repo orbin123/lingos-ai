@@ -1,0 +1,4 @@
+# Default owner for everything in the repo. Required for branch-protection
+# "require review from Code Owners" enforcement. Add scoped owners below as the
+# team grows.
+* @orbin123

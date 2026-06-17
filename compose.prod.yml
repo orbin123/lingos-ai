@@ -1,0 +1,82 @@
+# Production-parity smoke test: run the actual backend container image against
+# Postgres + Redis, exactly as it will run on Fargate (gunicorn + UvicornWorker,
+# migrations as a separate one-off step, env injected — not baked in).
+#
+#   docker compose -f compose.prod.yml up --build
+#   curl -fsS localhost:8000/health        # liveness
+#   curl -fsS localhost:8000/health/ready  # DB + Redis readiness (200 = good)
+#   docker compose -f compose.prod.yml down
+#
+# Reads the repo-root .env for secrets (OPENAI_API_KEY, JWT_SECRET, …) and the
+# Postgres credentials. DATABASE_URL / REDIS_URL are overridden here to point at
+# the compose service names instead of localhost.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-off migration step — models the Phase-3 dedicated ECS migration task.
+  # Runs `alembic upgrade head` once, to completion, before the backend starts,
+  # so the app container never races migrations on boot.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      WEB_CONCURRENCY: "1"
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data_prod:
+  redis_data_prod:

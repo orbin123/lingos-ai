@@ -1,0 +1,40 @@
+# Keep the build context small and prevent secrets/caches/local state from
+# leaking into image layers. Anything the image needs is COPY'd explicitly in
+# the Dockerfile, so default-excluding here is safe.
+
+# Virtualenvs / Python caches
+.venv
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets and local config — never bake these into an image
+.env
+.env.*
+!.env.production.example
+
+# Local DB dumps and the SQLite scratch file
+*.sql
+*.sqlite
+*.sqlite3
+app.db
+
+# Tests are not part of the runtime image
+tests/
+
+# Generated media caches (can be large; regenerated at runtime / served from S3)
+app/ai/**/_cache/
+
+# Generated API snapshot (CI artifact, not needed at runtime)
+openapi.json
+
+# VCS / editor / docs
+.git
+.gitignore
+.github/
+README.md
+*.md
