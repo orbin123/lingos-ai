@@ -217,10 +217,15 @@ class Settings(BaseSettings):
     # there may be >1 task). Selected by `build_blob_storage()` in
     # app/ai/storage/__init__.py — callers never change.
     STORAGE_BACKEND: str = "local"
-    # S3 bucket + region for generated media (required when STORAGE_BACKEND=s3).
-    # Credentials come from the ambient AWS env (ECS task role in prod).
+    # S3 bucket + region for PUBLIC generated media (required when
+    # STORAGE_BACKEND=s3). Credentials come from the ambient AWS env (ECS task
+    # role in prod).
     MEDIA_S3_BUCKET: str = ""
     MEDIA_S3_REGION: str = "us-east-1"
+    # Separate PRIVATE bucket for learner audio — never fronted by CloudFront,
+    # only reachable through the owner-checked /responses/audio route. Falls
+    # back to MEDIA_S3_BUCKET when empty (single-bucket setups).
+    MEDIA_PRIVATE_S3_BUCKET: str = ""
     # CloudFront base URL for PUBLIC media (TTS audio, images, blog covers),
     # e.g. "https://media.lingosai.com". Private learner audio never uses this.
     MEDIA_CDN_URL: str = ""

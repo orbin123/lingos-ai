@@ -48,8 +48,10 @@ def build_blob_storage(
     if settings.STORAGE_BACKEND == "s3":
         key_prefix = public_url_prefix.strip("/")
         if private:
+            # Private media lives in its own bucket (no CloudFront); fall back
+            # to the public bucket only if a separate one isn't configured.
             return S3BlobStorage(
-                bucket=settings.MEDIA_S3_BUCKET,
+                bucket=settings.MEDIA_PRIVATE_S3_BUCKET or settings.MEDIA_S3_BUCKET,
                 key_prefix=key_prefix,
                 region=settings.MEDIA_S3_REGION,
                 internal_url_prefix=public_url_prefix,
