@@ -43,13 +43,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Install Trivy directly rather than via aquasecurity/trivy-action: older
+      # trivy-action releases pin a now-deleted setup-trivy tag and fail to
+      # resolve. setup-trivy is a single-purpose action with valid tags.
+      - name: Install Trivy
+        uses: aquasecurity/setup-trivy@v0.2.6
+
       - name: Trivy scan (HIGH/CRITICAL gate)
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          image-ref: lingosai-backend:ci
-          format: table
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "1"
-          # Honors .trivyignore (allowlist with justification) if it exists.
-          trivyignores: .trivyignore
+        # Trivy auto-reads a repo-root .trivyignore (allowlist w/ justification)
+        # if one exists. exit-code 1 fails the job on any fixable HIGH/CRITICAL.
+        run: |
+          trivy image \
+            --format table \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            lingosai-backend:ci
