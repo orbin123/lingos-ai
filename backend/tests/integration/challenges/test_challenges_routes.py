@@ -335,8 +335,8 @@ def client(
     class FakeSpeakingAudioStorage:
         store: dict[str, bytes] = {}
 
-        def __init__(self, *, root_dir, public_url_prefix) -> None:
-            self.root_dir = root_dir
+        def __init__(self, *, cache_dir, public_url_prefix) -> None:
+            self.cache_dir = cache_dir
             self.public_url_prefix = public_url_prefix
 
         async def put(self, *, key: str, data: bytes, content_type: str) -> dict:
@@ -392,7 +392,7 @@ def client(
     )
     monkeypatch.setattr(
         challenges_service,
-        "LocalBlobStorage",
+        "build_blob_storage",
         FakeSpeakingAudioStorage,
     )
 

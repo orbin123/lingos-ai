@@ -1,0 +1,151 @@
+name: deploy
+
+# Backend CD (Phase 3). Implements the DEPLOY.md §6 contract:
+#   OIDC -> ECR push (3 tags) -> migration one-off task -> ECS rolling deploy
+#   -> wait stable -> smoke /health/ready.
+#
+# Starts as workflow_dispatch (manual / trusted) per §2.9 — flip to automatic
+# `push: main` once you trust it. Frontend deploys on Vercel separately (AD-1).
+#
+# Per-environment config lives in GitHub Environments (Settings -> Environments
+# -> staging | production), each with these VARIABLES (from `terraform output`):
+#   AWS_REGION, AWS_DEPLOY_ROLE_ARN, ECR_REPOSITORY (full repo URL),
+#   ECS_CLUSTER, ECS_SERVICE, ECS_TASK_FAMILY, ECS_MIGRATE_FAMILY,
+#   ECS_SUBNETS (comma-separated), ECS_SECURITY_GROUP, HEALTHCHECK_URL.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        default: staging
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment }}
+  cancel-in-progress: false # never interrupt an in-flight deploy
+
+permissions:
+  id-token: write # OIDC
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          set -euo pipefail
+          SHA_TAG="git-${GITHUB_SHA::7}"
+          DATE_TAG="v$(date -u +%Y.%m.%d)"
+          IMAGE="${{ vars.ECR_REPOSITORY }}"
+          echo "sha_tag=$SHA_TAG"   >> "$GITHUB_OUTPUT"
+          echo "date_tag=$DATE_TAG" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE"       >> "$GITHUB_OUTPUT"
+          echo "image_sha=$IMAGE:$SHA_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push image (3 tags)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.sha_tag }}
+            ${{ steps.tags.outputs.image }}:${{ steps.tags.outputs.date_tag }}
+            ${{ steps.tags.outputs.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Register a migration task-def revision pointing at the NEW image, run it
+      # as a one-off, and WAIT for exit 0 before touching the service. On
+      # failure the step errors and the deploy aborts — old tasks keep serving.
+      - name: Run migrations (alembic upgrade head)
+        env:
+          IMAGE_SHA: ${{ steps.tags.outputs.image_sha }}
+        run: |
+          set -euo pipefail
+          NEW_TD=$(aws ecs describe-task-definition \
+            --task-definition "${{ vars.ECS_MIGRATE_FAMILY }}" \
+            --query taskDefinition | \
+            jq --arg IMG "$IMAGE_SHA" '
+              .containerDefinitions[0].image = $IMG
+              | {family, taskRoleArn, executionRoleArn, networkMode, containerDefinitions,
+                 requiresCompatibilities, cpu, memory}')
+          MIGRATE_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TD" \
+            --query taskDefinition.taskDefinitionArn --output text)
+          echo "Registered migrate task def: $MIGRATE_ARN"
+
+          SUBNETS="${{ vars.ECS_SUBNETS }}"
+          NETCFG="awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[${{ vars.ECS_SECURITY_GROUP }}],assignPublicIp=DISABLED}"
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --task-definition "$MIGRATE_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "$NETCFG" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Migration task: $TASK_ARN"
+
+          aws ecs wait tasks-stopped --cluster "${{ vars.ECS_CLUSTER }}" --tasks "$TASK_ARN"
+          EXIT=$(aws ecs describe-tasks --cluster "${{ vars.ECS_CLUSTER }}" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          echo "Migration exit code: $EXIT"
+          if [ "$EXIT" != "0" ]; then
+            echo "::error::Migration failed (exit $EXIT) — aborting deploy."
+            exit 1
+          fi
+
+      - name: Deploy backend (rolling update)
+        env:
+          IMAGE_SHA: ${{ steps.tags.outputs.image_sha }}
+        run: |
+          set -euo pipefail
+          NEW_TD=$(aws ecs describe-task-definition \
+            --task-definition "${{ vars.ECS_TASK_FAMILY }}" \
+            --query taskDefinition | \
+            jq --arg IMG "$IMAGE_SHA" '
+              .containerDefinitions[0].image = $IMG
+              | {family, taskRoleArn, executionRoleArn, networkMode, containerDefinitions,
+                 requiresCompatibilities, cpu, memory}')
+          NEW_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TD" \
+            --query taskDefinition.taskDefinitionArn --output text)
+          echo "Registered backend task def: $NEW_ARN"
+
+          aws ecs update-service \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --service "${{ vars.ECS_SERVICE }}" \
+            --task-definition "$NEW_ARN" >/dev/null
+          echo "Waiting for service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --services "${{ vars.ECS_SERVICE }}"
+
+      - name: Smoke test (/health/ready)
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 10); do
+            CODE=$(curl -fsS -o /dev/null -w '%{http_code}' "${{ vars.HEALTHCHECK_URL }}" || true)
+            if [ "$CODE" = "200" ]; then
+              echo "Smoke OK ($CODE)"; exit 0
+            fi
+            echo "Attempt $i: got $CODE, retrying..."; sleep 6
+          done
+          echo "::error::Smoke check failed — roll back to the previous task-def revision (DEPLOY.md §2)."
+          exit 1

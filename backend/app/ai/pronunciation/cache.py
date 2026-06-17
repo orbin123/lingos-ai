@@ -17,7 +17,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from pathlib import Path
 from typing import cast
 
 from app.ai.pronunciation.azure_client import get_default_pronunciation_client
@@ -25,9 +24,9 @@ from app.ai.pronunciation.exceptions import PronunciationValidationError
 from app.ai.pronunciation.interface import IPronunciationClient, PronunciationResult
 from app.ai.storage import (
     IBlobStorage,
-    LocalBlobStorage,
     StorageError,
     StorageReadError,
+    build_blob_storage,
 )
 
 logger = logging.getLogger(__name__)
@@ -155,8 +154,8 @@ def get_default_pronunciation_service() -> CachedPronunciationService:
     if _default_service is None:
         from app.core.config import settings
 
-        storage = LocalBlobStorage(
-            root_dir=Path(settings.PRONUNCIATION_CACHE_DIR),
+        storage = build_blob_storage(
+            cache_dir=settings.PRONUNCIATION_CACHE_DIR,
             public_url_prefix="/internal/pronunciation",
         )
         _default_service = CachedPronunciationService(

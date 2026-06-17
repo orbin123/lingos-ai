@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from pathlib import Path
 
 from app.ai.imagegen.exceptions import ImageGenValidationError
 from app.ai.imagegen.interface import (
@@ -23,7 +22,7 @@ from app.ai.imagegen.interface import (
     dimensions_for_aspect_ratio,
 )
 from app.ai.imagegen.openai_client import get_default_imagegen_client
-from app.ai.storage import IBlobStorage, LocalBlobStorage
+from app.ai.storage import IBlobStorage, build_blob_storage
 
 logger = logging.getLogger(__name__)
 
@@ -150,8 +149,8 @@ def get_default_imagegen_service() -> CachedImageGenService:
     if _default_service is None:
         from app.core.config import settings
 
-        storage = LocalBlobStorage(
-            root_dir=Path(settings.IMAGEGEN_CACHE_DIR),
+        storage = build_blob_storage(
+            cache_dir=settings.IMAGEGEN_CACHE_DIR,
             public_url_prefix=settings.IMAGEGEN_PUBLIC_URL_PREFIX,
         )
         _default_service = CachedImageGenService(

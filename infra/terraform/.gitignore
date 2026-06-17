@@ -1,0 +1,16 @@
+# Terraform local/working files — never commit state or provider binaries.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+# tfvars may hold secrets (db_password, etc.) — pass via TF_VAR_* instead.
+*.tfvars
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc

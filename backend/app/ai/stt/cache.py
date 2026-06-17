@@ -25,14 +25,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from pathlib import Path
 from typing import cast
 
 from app.ai.storage import (
     IBlobStorage,
-    LocalBlobStorage,
     StorageError,
     StorageReadError,
+    build_blob_storage,
 )
 from app.ai.stt.exceptions import STTValidationError
 from app.ai.stt.interface import TranscriptionResult
@@ -225,8 +224,8 @@ def get_default_stt_service() -> CachedSTTService:
         # Transcripts are JSON sidecars; we never serve them via StaticFiles
         # (they're read by the service layer, not the browser), so the
         # url_prefix is purely cosmetic for the StoredBlob's `public_url`.
-        storage = LocalBlobStorage(
-            root_dir=Path(settings.STT_CACHE_DIR),
+        storage = build_blob_storage(
+            cache_dir=settings.STT_CACHE_DIR,
             public_url_prefix="/internal/stt",  # not actually mounted
         )
         _default_service = CachedSTTService(

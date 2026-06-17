@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     # email via the Resend API. Missing RESEND_API_KEY falls back to console.
     EMAIL_PROVIDER: str = "console"
     RESEND_API_KEY: str = ""
+    # AWS SES region for the "ses" provider. Auth is via the ambient AWS env
+    # (ECS task role granted ses:SendEmail) — no API key in env.
+    SES_REGION: str = "us-east-1"
     # Resend sandbox (no verified domain) requires the resend.dev sender and
     # only delivers to the Resend account owner's address.
     EMAIL_FROM: str = "LingosAI <onboarding@resend.dev>"
@@ -208,6 +211,25 @@ class Settings(BaseSettings):
     BLOG_MEDIA_CACHE_DIR: str = "app/modules/blog/_media"
     BLOG_MEDIA_PUBLIC_URL_PREFIX: str = "/blog-media"
 
+    # Blob storage backend — "local" writes generated media to disk and serves
+    # it via StaticFiles (dev/MVP); "s3" stores it in S3 and serves public
+    # media via CloudFront (prod, where the Fargate filesystem is ephemeral and
+    # there may be >1 task). Selected by `build_blob_storage()` in
+    # app/ai/storage/__init__.py — callers never change.
+    STORAGE_BACKEND: str = "local"
+    # S3 bucket + region for PUBLIC generated media (required when
+    # STORAGE_BACKEND=s3). Credentials come from the ambient AWS env (ECS task
+    # role in prod).
+    MEDIA_S3_BUCKET: str = ""
+    MEDIA_S3_REGION: str = "us-east-1"
+    # Separate PRIVATE bucket for learner audio — never fronted by CloudFront,
+    # only reachable through the owner-checked /responses/audio route. Falls
+    # back to MEDIA_S3_BUCKET when empty (single-bucket setups).
+    MEDIA_PRIVATE_S3_BUCKET: str = ""
+    # CloudFront base URL for PUBLIC media (TTS audio, images, blog covers),
+    # e.g. "https://media.lingosai.com". Private learner audio never uses this.
+    MEDIA_CDN_URL: str = ""
+
     # Vector DB (Pinecone)
     PINECONE_API_KEY: str
     PINECONE_INDEX_NAME: str = "lingosai-responses"
@@ -286,6 +308,11 @@ class Settings(BaseSettings):
             )
         if not self.cors_origins_list:
             violations.append("CORS_ORIGINS must be set")
+        if self.STORAGE_BACKEND == "s3":
+            if not self.MEDIA_S3_BUCKET:
+                violations.append("MEDIA_S3_BUCKET must be set when STORAGE_BACKEND=s3")
+            if not self.MEDIA_CDN_URL:
+                violations.append("MEDIA_CDN_URL must be set when STORAGE_BACKEND=s3")
 
         if violations:
             raise ValueError(

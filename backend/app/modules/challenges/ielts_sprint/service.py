@@ -27,8 +27,8 @@ from app.modules.challenges.ielts_sprint.agents.ielts_challenge_speaking_evaluat
 from app.ai.llm import LLMError
 from app.ai.storage import (
     IBlobStorage,
-    LocalBlobStorage,
     StorageError,
+    build_blob_storage,
     get_default_blob_storage,
 )
 from app.ai.stt import STTError, TranscriptionResult, get_default_stt_service
@@ -668,8 +668,8 @@ class ChallengeReadService:
 
         from app.core.config import settings
 
-        self._speaking_audio_storage = LocalBlobStorage(
-            root_dir=Path(settings.STT_CACHE_DIR) / "speaking_audio",
+        self._speaking_audio_storage = build_blob_storage(
+            cache_dir=Path(settings.STT_CACHE_DIR) / "speaking_audio",
             public_url_prefix="/internal/challenge-speaking",
         )
         return self._speaking_audio_storage

@@ -21,6 +21,7 @@ from app.email.console_client import ConsoleEmailClient
 from app.email.exceptions import EmailAuthError, EmailError, EmailSendError
 from app.email.interface import IEmailClient
 from app.email.resend_client import ResendEmailClient
+from app.email.ses_client import SESEmailClient
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,12 @@ def get_default_email_client() -> IEmailClient:
     global _default_client
     if _default_client is None:
         provider = settings.EMAIL_PROVIDER.lower()
-        if provider == "resend" and settings.RESEND_API_KEY:
+        if provider == "ses":
+            # SES authenticates via the ambient AWS env (ECS task role), so
+            # there is no key to check here — it fails at send time if the
+            # role/identity is misconfigured.
+            _default_client = SESEmailClient()
+        elif provider == "resend" and settings.RESEND_API_KEY:
             _default_client = ResendEmailClient()
         else:
             if provider == "resend":
@@ -54,6 +60,7 @@ __all__ = [
     "IEmailClient",
     "ConsoleEmailClient",
     "ResendEmailClient",
+    "SESEmailClient",
     "get_default_email_client",
     "_reset_default_email_client",
     "EmailError",

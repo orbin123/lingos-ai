@@ -469,6 +469,37 @@ reaching `main`. **Every merge to `main` is automatically deployable.**
 
 # Phase 3 — AWS Infrastructure
 
+> ## 🟡 STATUS: CODE + IaC SHIPPED — applies pending (founder) — 2026-06-17
+> Branch `feature/phase3-aws-infra`. The two real **code items** and all **IaC + CD** are written,
+> reviewed, and green (backend `ruff`/`mypy`/`pytest` all pass; `deploy.yml` is valid YAML). What
+> remains is **account-side** work only the founder can run — captured step-by-step in
+> **[`docs/AWS_SETUP.md`](./AWS_SETUP.md)**.
+>
+> **What was done (task → result):**
+> - **3.5 `S3BlobStorage` (the hard launch blocker)** — implemented against the existing
+>   `IBlobStorage` Protocol with a `build_blob_storage()` factory selected by `STORAGE_BACKEND`
+>   (`local`|`s3`); public media → CloudFront, private learner audio → a **separate** bucket served
+>   through the owner-checked `/responses/audio` route (never CDN). All ~6 call-sites migrated; local
+>   mode unchanged. New config: `STORAGE_BACKEND`/`MEDIA_S3_BUCKET`/`MEDIA_PRIVATE_S3_BUCKET`/
+>   `MEDIA_S3_REGION`/`MEDIA_CDN_URL`; prod guard requires bucket+CDN in s3 mode. `boto3` added.
+> - **3.7 SES provider (AD-4, SES chosen)** — `SESEmailClient` behind `EMAIL_PROVIDER=ses`,
+>   authenticating via the ECS task role (no key in env). Unit tests use injected fakes (no live AWS).
+> - **3.1–3.4, 3.6, 3.8 Terraform** — `infra/terraform/`: a reusable `stack` module composes network
+>   (VPC/2-AZ/1-NAT/4 SGs), data (RDS Multi-AZ + Redis, private), media (public S3+CloudFront OAC +
+>   private S3), secrets (TF-owned URLs + empty app secrets), email (SES identity), ALB
+>   (`/health/ready`, HTTPS in Phase 4), compute (per-env ECR, ECS service + migration task def,
+>   scoped IAM roles), observability (SNS + high-signal alarms), and cicd (GitHub OIDC + scoped deploy
+>   role). `staging` + `production` roots; production owns the account-global OIDC provider + SES
+>   identity, so it applies first. Bootstrap root for remote state.
+> - **2.9 `deploy.yml` (CD)** — OIDC → ECR push (3 tags) → migration one-off task (gated on exit 0) →
+>   ECS rolling deploy → wait stable → smoke `/health/ready`; per-env config via GitHub Environments.
+>
+> **Founder actions (account-side, runbook'd in `docs/AWS_SETUP.md`):** grant Terraform IAM, bootstrap
+> remote state, `terraform apply` production then staging, populate Secrets Manager, request SES
+> production access + (Phase 4) publish DNS, set the GitHub Environment variables, run the first
+> deploy, and walk the validation drills. **ACM/HTTPS + custom domains are deferred to Phase 4** (the
+> ALB serves HTTP until the cert ARN is supplied).
+
 > ## ▶ START HERE — inherited from Phases 1–2
 > - **Container is ready:** `backend/Dockerfile` (non-root, gunicorn, no migrations in entrypoint) +
 >   `compose.prod.yml` already model the runtime. Phase 3 pushes this same image to **ECR** and runs
