@@ -46,14 +46,19 @@ module "stack" {
 
   db_password = var.db_password
 
-  # Real production hostnames (DNS wired in Phase 4; values just satisfy the
-  # config guard + app config now).
+  # Real production hostnames.
   cors_origins        = "https://www.lingosai.com"
   frontend_url        = "https://www.lingosai.com"
   google_redirect_uri = "https://api.lingosai.com/auth/google/callback"
   email_domain        = "lingosai.com"
   email_from          = "LingosAI <noreply@lingosai.com>"
   contact_email       = "support@lingosai.com"
+
+  # Phase 4: request + DNS-validate the ACM cert for api.lingosai.com. Once the
+  # validation CNAME is published at Namecheap and the cert ISSUES, the ALB flips
+  # to HTTPS:443 with an HTTP->443 redirect.
+  create_api_certificate = true
+  api_domain             = "api.lingosai.com"
 
   alert_email = var.alert_email
 

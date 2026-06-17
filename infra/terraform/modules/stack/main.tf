@@ -41,6 +41,12 @@ locals {
     LANGCHAIN_TRACING_V2  = "false" # data-residency: off until decided (plan §1.12)
     AI_RATE_LIMIT_ENABLED = "true"
   }
+
+  # The ALB serves HTTPS from either the TF-managed cert (create_api_certificate)
+  # or a supplied ARN. `api_https_enabled` is a *static* bool (not derived from a
+  # known-after-apply ARN) so the listener count is determinable at plan time.
+  api_certificate_arn = var.create_api_certificate ? module.tls.certificate_arn : var.api_acm_certificate_arn
+  api_https_enabled   = var.create_api_certificate || var.api_acm_certificate_arn != ""
 }
 
 module "network" {
@@ -91,6 +97,12 @@ module "email" {
   create = var.create_ses_identity
 }
 
+module "tls" {
+  source     = "../tls"
+  create     = var.create_api_certificate
+  api_domain = var.api_domain
+}
+
 module "alb" {
   source                     = "../alb"
   environment                = var.environment
@@ -98,7 +110,8 @@ module "alb" {
   public_subnet_ids          = module.network.public_subnet_ids
   alb_sg_id                  = module.network.alb_sg_id
   app_port                   = var.app_port
-  certificate_arn            = var.api_acm_certificate_arn
+  certificate_arn            = local.api_certificate_arn
+  enable_https               = local.api_https_enabled
   enable_deletion_protection = var.deletion_protection
 }
 

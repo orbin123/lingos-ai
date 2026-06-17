@@ -64,6 +64,17 @@ output "ecs_security_group_id" {
   value       = module.network.ecs_sg_id
 }
 
+# --- api TLS (Phase 4) ------------------------------------------------------
+output "api_certificate_validation_records" {
+  description = "CNAMEs to publish at the registrar to validate the api ACM cert."
+  value       = module.tls.validation_records
+}
+
+output "api_certificate_arn" {
+  description = "ISSUED api cert ARN (empty until DNS validation completes)."
+  value       = module.tls.certificate_arn
+}
+
 # --- SES DNS records (publish in Phase 4) ----------------------------------
 output "ses_verification_token" {
   value = module.email.verification_token
