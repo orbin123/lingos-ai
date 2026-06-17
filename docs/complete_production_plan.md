@@ -8,8 +8,9 @@
 > P0 audit items mostly closed. **✅ Phase 1 (Production Hardening) is COMPLETE** (branch
 > `feature/phase1-production-hardening`, 2026-06-16) and **✅ Phase 2 (CI/CD, Docker & Artifacts)
 > is COMPLETE** (branch `feature/phase2-cicd-docker`, 2026-06-17); see the per-phase status banners
-> below. Remaining work: AWS infra → domain/DNS/SSL → operations.
-> **▶ Next session starts at [Phase 3 — AWS Infrastructure](#phase-3--aws-infrastructure).**
+> below. **🟢 Phase 3 (AWS Infrastructure): production backend LIVE & HEALTHY on Fargate** (2026-06-17,
+> Milestones 1–5 done). Remaining work: domain/DNS/SSL (Phase 4) → operations.
+> **▶ Next session starts at [Phase 4 — Domain, DNS, SSL & Deployment Integration](#phase-4--domain-dns-ssl--deployment-integration).**
 > This document is the master plan that ties it all together.
 >
 > **Companion docs (already in `docs/`):** [`PRE_PRODUCTION_PLAN.md`](./PRE_PRODUCTION_PLAN.md) ·
@@ -52,8 +53,8 @@ before moving on:
 |---|---|---|---|
 | **1 ✅ DONE** | Production hardening | App is production-*safe* (security, multi-worker, secrets, backups) | ~1 week |
 | **2 ✅ DONE** | CI/CD + Docker + artifacts | Backend image + compose smoke + docker CI gate + governance shipped (AWS CD deferred to Phase 3) | ~1 week |
-| **3 ◀ NEXT** | AWS infrastructure | Prod + staging infra exists and is production-ready | ~1.5 weeks |
-| **4** | Domain, DNS, SSL, integration | `www.lingosai.com` + `api.lingosai.com` fully operational | ~2–3 days |
+| **3 🟢 BACKEND LIVE** | AWS infrastructure | Production backend healthy on Fargate (M1–5); staging not yet applied | ~1.5 weeks |
+| **4 ◀ NEXT** | Domain, DNS, SSL, integration | `www.lingosai.com` + `api.lingosai.com` fully operational | ~2–3 days |
 | **5** | Operations & scaling | LingosAI can be operated reliably after launch | ongoing |
 
 **Final target topology (the one decision that drives everything else):**
@@ -469,11 +470,16 @@ reaching `main`. **Every merge to `main` is automatically deployable.**
 
 # Phase 3 — AWS Infrastructure
 
-> ## 🟡 STATUS: CODE + IaC SHIPPED — applies pending (founder) — 2026-06-17
-> Branch `feature/phase3-aws-infra`. The two real **code items** and all **IaC + CD** are written,
-> reviewed, and green (backend `ruff`/`mypy`/`pytest` all pass; `deploy.yml` is valid YAML). What
-> remains is **account-side** work only the founder can run — captured step-by-step in
-> **[`docs/AWS_SETUP.md`](./AWS_SETUP.md)**.
+> ## 🟢 STATUS: PRODUCTION BACKEND LIVE & HEALTHY — 2026-06-17
+> Branch `feature/phase3-aws-infra` merged to `main`. Terraform applied (production, us-east-1) and
+> the backend is **deployed and healthy on Fargate** via the CD pipeline. **Milestones 1–5 of the
+> go-live runbook are complete:** healthy backend, DB connectivity + migrations applied, Redis,
+> ALB routing, and secrets readable by ECS. Remaining work is **Phase 4** (domain/DNS/SSL —
+> Milestones 6–8). Verified live state:
+> - ECS service `lingosai-production-backend`: **1/1 running**, rollout `COMPLETED`.
+> - ALB target: `healthy`. `GET /health` → `{"status":"ok"}`;
+>   `GET /health/ready` → `{"status":"ready","checks":{"database":"ok","redis":"ok"}}`.
+> - Migration one-off task ran `alembic upgrade head` to exit 0 before the rollout.
 >
 > **What was done (task → result):**
 > - **3.5 `S3BlobStorage` (the hard launch blocker)** — implemented against the existing
@@ -491,14 +497,31 @@ reaching `main`. **Every merge to `main` is automatically deployable.**
 >   scoped IAM roles), observability (SNS + high-signal alarms), and cicd (GitHub OIDC + scoped deploy
 >   role). `staging` + `production` roots; production owns the account-global OIDC provider + SES
 >   identity, so it applies first. Bootstrap root for remote state.
-> - **2.9 `deploy.yml` (CD)** — OIDC → ECR push (3 tags) → migration one-off task (gated on exit 0) →
+> - **2.9 `deploy.yml` (CD)** — OIDC → ECR push → migration one-off task (gated on exit 0) →
 >   ECS rolling deploy → wait stable → smoke `/health/ready`; per-env config via GitHub Environments.
 >
-> **Founder actions (account-side, runbook'd in `docs/AWS_SETUP.md`):** grant Terraform IAM, bootstrap
-> remote state, `terraform apply` production then staging, populate Secrets Manager, request SES
-> production access + (Phase 4) publish DNS, set the GitHub Environment variables, run the first
-> deploy, and walk the validation drills. **ACM/HTTPS + custom domains are deferred to Phase 4** (the
-> ALB serves HTTP until the cert ARN is supplied).
+> **Account-side execution (done 2026-06-17):** Terraform applied for production (92 resources,
+> us-east-1); Secrets Manager populated (`JWT_SECRET`/`OTP_HASHING_SECRET` freshly generated, provider
+> keys seeded from the dev `.env` — **rotate to prod-dedicated keys before public launch**); the
+> GitHub `production` Environment created with all 10 deploy variables from `terraform output`;
+> `deploy.yml` dispatched for production and the rollout verified healthy (Milestones 1–5 above).
+>
+> **Three `deploy.yml` fixes made during the first live deploys (all on `main`):**
+> 1. **amd64 build** — the original blocker was a hand-built **arm64-only** image (Mac) that Fargate
+>    (amd64) could not pull. Building through the CD pipeline on amd64 runners is the fix; **do not
+>    hand-build/push images.**
+> 2. **buildx driver** — added `docker/setup-buildx-action` so the `type=gha` build cache works (the
+>    default `docker` driver cannot export gha cache).
+> 3. **immutable ECR tags** — the repo uses immutable tags, so the build now pushes **only** the unique
+>    `git-<sha>` tag (the old 3-tag scheme with a moving `:latest`/daily-date tag fails on redeploy).
+>
+> **Local-CLI gotcha:** the `lingos-ai-cli` user defaults to region `ap-south-1`, but all resources are
+> in **us-east-1** — always pass `--region us-east-1`.
+>
+> **Remaining for Phase 4:** request SES production access + publish DNS, request the ACM cert for
+> `api.lingosai.com`, point DNS at the ALB/Vercel, and re-apply with the cert ARN to flip the ALB to
+> **HTTPS:443** (it serves HTTP until then). Optional follow-ups: scope down the temporary
+> `AdministratorAccess` on `lingos-ai-cli`, and delete the orphaned arm64 `:latest` image from ECR.
 
 > ## ▶ START HERE — inherited from Phases 1–2
 > - **Container is ready:** `backend/Dockerfile` (non-root, gunicorn, no migrations in entrypoint) +
@@ -643,10 +666,13 @@ behind `EMAIL_PROVIDER` (AD-4) or keep Resend and skip SES IAM.
 | NAT single-AZ outage | Low | Med | Accepted at launch; documented; promote to per-AZ NAT at Stage 2. |
 
 ### Validation checklist
-- [ ] `terraform plan` is clean and reviewed for both `staging` and `production`.
-- [ ] Backend task starts, passes `/health/ready`, and the ALB shows the target healthy.
+- [~] `terraform plan` is clean and reviewed for both `staging` and `production`.
+      _(production applied — 92 resources; staging not yet applied.)_
+- [x] Backend task starts, passes `/health/ready`, and the ALB shows the target healthy.
+      _(production: ECS 1/1 running, ALB target healthy, `/health/ready` → database+redis ok.)_
 - [ ] RDS is **not** reachable from the public internet (verify from outside the VPC).
-- [ ] The migration one-off task runs `alembic upgrade head` successfully against staging RDS.
+- [x] The migration one-off task runs `alembic upgrade head` successfully against (production) RDS.
+      _(ran to exit 0 in the deploy pipeline before the rollout.)_
 - [ ] A TTS/image generation in prod writes to **S3** and serves via CloudFront (not local disk).
 - [ ] A test email sends via SES (production access granted) to an arbitrary address.
 - [ ] A secret rotated in Secrets Manager is picked up after a redeploy.
