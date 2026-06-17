@@ -40,7 +40,7 @@
     "jsdom": "^25",
     "msw": "^2",
     "tailwindcss": "^4",
-    "typescript": "^5",
+    "typescript": "^6",
     "vitest": "^3"
   }
 }
