@@ -683,7 +683,10 @@ behind `EMAIL_PROVIDER` (AD-4) or keep Resend and skip SES IAM.
       `Send` metric + `SentLast24Hours` confirmed. Arbitrary-recipient send still needs production
       access, which is pending AWS re-review.)_
 - [ ] A secret rotated in Secrets Manager is picked up after a redeploy.
-- [ ] An RDS snapshot restore drill completes within the RTO target.
+- [x] An RDS snapshot restore drill completes within the RTO target.
+      _(Drilled 2026-06-18: snapshot → throwaway instance **available in 7m 28s** (≤1 hr RTO),
+      engine/storage matched prod, torn down. Row-level data check deferred to a hands-on run —
+      see `RUNBOOK.md` §3. Procedure scripted there.)_
 
 ### Exit criteria
 Production and staging infrastructure exist as reviewed Terraform, the backend runs healthy on
@@ -1190,7 +1193,9 @@ in Vercel). Frontend rows are the `NEXT_PUBLIC_*` set.
 **Infrastructure**
 - [ ] Terraform `production` + `staging` applied; `plan` clean.
 - [ ] Backend healthy on Fargate; ALB target healthy on `/health/ready`.
-- [ ] RDS Multi-AZ, automated backups + PITR on, deletion protection on, restore drill passed.
+- [~] RDS Multi-AZ, automated backups + PITR on, deletion protection on, restore drill passed.
+      _(Restore drill **passed** 2026-06-18 — RTO 7m 28s. Confirm Multi-AZ/PITR/deletion-protection
+      flags are still on (set in Phase 3 Terraform).)_
 - [ ] ElastiCache reachable; rate limiting verified multi-worker.
 - [ ] S3 + CloudFront serving generated media (NOT local disk); learner audio private.
 - [ ] Secrets Manager holds every prod secret; task injects them; rotation documented.

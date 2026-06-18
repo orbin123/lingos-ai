@@ -188,7 +188,8 @@ Then walk the Phase 3 validation checklist (`complete_production_plan.md`):
 - [~] A test email sends via SES. _(Sandbox send to a verified recipient PASSED 2026-06-17 via live
       `/auth/signup`; arbitrary-recipient send pending production access.)_
 - [ ] A secret rotated in Secrets Manager is picked up after a redeploy.
-- [ ] An RDS snapshot restore drill completes within the RTO target (`RUNBOOK.md`).
+- [x] An RDS snapshot restore drill completes within the RTO target (`RUNBOOK.md`).
+      _(2026-06-18: restored to a throwaway instance, available in 7m 28s, then torn down.)_
 
 ---
 

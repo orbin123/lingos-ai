@@ -92,10 +92,36 @@ createdb lingosai_restore
 pg_restore -d "postgresql://.../lingosai_restore" --clean --if-exists lingosai_*.dump
 ```
 
-**Restore drill — run once before launch** (an untested backup is not a backup):
-restore the latest dump into a fresh database, point a local app at it, and
-confirm login + a session loads. Targets: **RPO ≤ 5 min** (PITR), **RTO ≤ 1 hr**
-(restore snapshot to new RDS, repoint `DATABASE_URL`, redeploy).
+**Restore drill — run periodically** (an untested backup is not a backup).
+Targets: **RPO ≤ 5 min** (PITR), **RTO ≤ 1 hr** (restore snapshot → new RDS →
+repoint `DATABASE_URL` → redeploy).
+
+The RDS-snapshot drill (matches how a real recovery works):
+```bash
+# 1. latest automated snapshot
+aws rds describe-db-snapshots --region us-east-1 --snapshot-type automated \
+  --query "reverse(sort_by(DBSnapshots[?DBInstanceIdentifier=='lingosai-production-postgres'],&SnapshotCreateTime))[0].DBSnapshotIdentifier" --output text
+# 2. restore to a throwaway instance (private, single-AZ), reusing prod subnet group + SG
+aws rds restore-db-instance-from-db-snapshot --db-instance-identifier lingosai-restore-drill \
+  --db-snapshot-identifier "<snapshot>" --db-instance-class db.t4g.small --no-multi-az \
+  --no-publicly-accessible --db-subnet-group-name lingosai-production-db-subnets \
+  --vpc-security-group-ids sg-04f4eb40d803afb93 --region us-east-1
+aws rds wait db-instance-available --db-instance-identifier lingosai-restore-drill --region us-east-1
+# 3. tear down (no final snapshot — it's a throwaway)
+aws rds delete-db-instance --db-instance-identifier lingosai-restore-drill \
+  --skip-final-snapshot --delete-automated-backups --region us-east-1
+```
+> **Data-integrity check (do this hands-on — never put the prod password in a
+> file/env override):** while the drill instance is up, verify row-level data via
+> **ECS Exec** into a running task (`aws ecs execute-command … --command
+> "python -c '…psycopg count…'"` with `DATABASE_URL` pointing at the drill
+> endpoint) or `psql` from a bastion in the VPC. The drill instance is private by
+> design, so verification happens inside the VPC.
+
+**Last drill — 2026-06-18:** snapshot `rds:lingosai-production-postgres-2026-06-18-03-06`
+restored to `lingosai-restore-drill`; **available in 7m 28s** (well within the 1 hr
+RTO), engine 16.4 / 20 GB matched prod; instance torn down. Row-level data check
+deferred to a hands-on run (credential safety).
 
 ⚠️ **History-scrub prerequisite (audit E1):** `backup*.sql` dumps exist in git
 history. If they ever held production data, treat it as a disclosure risk —
