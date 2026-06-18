@@ -5,6 +5,85 @@ Most-recent session first.
 
 ---
 
+## Session 3 — Gap G3: Post-deploy live smoke (api + www)
+
+**Status:** code implemented; PR open, **not merged**. The smoke step only *executes* on a real
+deploy (`push: main`), so live-pipeline proof is the next merge — but the assertion logic is proven
+green against live prod here (see Verification).
+**Branch:** `feat/g3-postdeploy-smoke`
+**Date:** 2026-06-18
+
+### Why this gap
+Completes the Phase A CI/CD-lockstep trio (G1 auto-deploy + G2 branch protection + **G3 smoke**).
+Appendix C requires the post-deploy smoke to cover **both** api + www; today `deploy.yml` only
+smoke-tests api `/health/ready`.
+
+### Completed work (code)
+- **Extended `deploy.yml`** with a final `Post-deploy smoke (frontend www)` step: curls
+  `https://www.lingosai.com` (overridable via `vars.FRONTEND_SMOKE_URL`), retries 10×/6s, and **fails
+  the run** if it never returns 200.
+- **Backend rollback semantics preserved:** the existing `/health/ready` smoke remains the *only*
+  step that triggers ECS rollback. The new www step does **NOT** roll back the backend — the frontend
+  is an independent Vercel deploy (AD-1), so a down www is not a backend regression. This matches the
+  plan's "fail the run if either host is down" without rolling back a healthy backend.
+- Updated the workflow header comment to document the two-stage smoke.
+- Removed the stray empty `frontend/e2e/` directory.
+
+### Findings (phantom-E2E cleanup — mostly already done in the repo)
+The plan's G3 also says "delete every reference to the non-existent Playwright suite / `e2e-up.sh` /
+`e2e.yml`." Investigation shows the **active repo already carries none of these**:
+- No `e2e.yml`, no `scripts/e2e-up.sh`/`e2e-down.sh`, no `playwright.config.*`.
+- `frontend/e2e/` was an **untracked empty dir** (git ignores empty dirs → nothing was ever in
+  version control); removed locally for tidiness.
+- The only remaining `playwright` token is a **transitive peer/optional-dep declaration in
+  `frontend/package-lock.json`** (`@playwright/test` under another package), **not** an installed
+  suite. Left untouched — editing the lockfile by hand is risky and out of G3 scope.
+- The narrative phantom-E2E claims live only in the historical build-log docs
+  (`PRODUCTION_COMPLETION_PLAN.md`, `complete_production_plan.md`), which POLISHED explicitly keeps as
+  history. No active artifact remains to strip.
+
+### Files changed
+- `.github/workflows/deploy.yml` — add frontend www smoke step + header comment.
+- `frontend/e2e/` — removed (was empty/untracked).
+- `docs/AGENT_PROGRESS.md` — this log.
+
+### Verification performed
+- **YAML valid:** `ruby -ryaml -e "YAML.load_file('.github/workflows/deploy.yml')"` → OK.
+- **Assertion logic proven against LIVE prod** (the exact curl the step runs):
+  `curl -fsSL .../www.lingosai.com` → **200**; `curl -fsS .../api/health/ready` → **200**.
+- **Live-pipeline proof is intentionally NOT here** — `deploy.yml` runs only on `push: main`, not on
+  a PR branch, so the smoke step first *executes in the pipeline* on the next deploy (founder observes
+  it on the merge run, same pattern as G1).
+
+### Decisions
+- www smoke **does not** trigger backend rollback (independent Vercel system).
+- Did **not** add an authenticated critical-path GET — that needs a CI test-user secret and belongs to
+  the post-launch Playwright critical-path (§6). The api `/health/ready` smoke already exercises a real
+  app path (DB + Redis), satisfying "a cheap app GET."
+- Did **not** edit `package-lock.json` (transitive reference only).
+
+### Risks
+- The www smoke runs **after** a successful backend deploy + rollback gate. If www is down, the job
+  goes red but the (healthy) backend stays deployed — intended, but means a red deploy run can
+  coexist with a healthy api. Documented in the step's error message.
+- `FRONTEND_SMOKE_URL` is unset in the GitHub Environments, so the hardcoded default
+  `https://www.lingosai.com` is used. Fine for production; a staging dispatch would smoke the prod
+  www unless the var is set (noted for whoever wires staging).
+
+### Founder actions required
+1. **Review + merge** PR `feat/g3-postdeploy-smoke`.
+2. On the next deploy (the merge run, or a `workflow_dispatch`), **observe** the new
+   `Post-deploy smoke (frontend www)` step run green after the api smoke.
+
+### Next recommended gap
+Phase A (G1+G2+G3) is now code-complete. Next is **Phase B — prove feature parity in prod (G4)**:
+walk the G4 matrix end-to-end on `www.lingosai.com` and resolve the email provider (G5). Most of G4
+is founder-driven live verification (browser OAuth loop, real TTS→S3 write, Razorpay test purchase),
+so the agent's role there is mainly fixing anything that only worked locally + scripting CLI proofs
+(e.g. confirming an S3 object lands in `MEDIA_S3_BUCKET`).
+
+---
+
 ## Session 2 — Gap G2: Branch protection on `main`
 
 **Status:** code (path-filter fix) implemented; PR open, **not merged**. Branch protection
