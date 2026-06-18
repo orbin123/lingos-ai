@@ -6,10 +6,10 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/backend.yml"
+  # No paths filter on PRs: these jobs are REQUIRED status checks under branch
+  # protection (strict). A path-filtered required check never reports on an
+  # unrelated PR, which wedges the merge forever (see POLISHED plan, Appendix B).
   pull_request:
-    paths:
-      - "backend/**"
-      - ".github/workflows/backend.yml"
 
 concurrency:
   group: backend-${{ github.ref }}
