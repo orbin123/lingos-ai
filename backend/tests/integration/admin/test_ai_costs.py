@@ -31,9 +31,7 @@ def db():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(
-        engine, tables=[User.__table__, AIRequestLog.__table__]
-    )
+    Base.metadata.create_all(engine, tables=[User.__table__, AIRequestLog.__table__])
     Session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     session = Session()
     yield session
@@ -90,10 +88,24 @@ def test_ai_costs_aggregates_cost_per_model_and_capability(db):
 
 
 def test_ai_costs_daily_rolls_up_per_day(db):
-    _log(db, agent="teacher", model="gpt-4o-mini", in_tok=1_000_000, out_tok=0, hours_ago=1)
+    _log(
+        db,
+        agent="teacher",
+        model="gpt-4o-mini",
+        in_tok=1_000_000,
+        out_tok=0,
+        hours_ago=1,
+    )
     _log(db, agent="teacher", model="gpt-4o", in_tok=1_000_000, out_tok=0, hours_ago=2)
     # Two days back — its own bucket.
-    _log(db, agent="teacher", model="gpt-4o-mini", in_tok=1_000_000, out_tok=0, hours_ago=49)
+    _log(
+        db,
+        agent="teacher",
+        model="gpt-4o-mini",
+        in_tok=1_000_000,
+        out_tok=0,
+        hours_ago=49,
+    )
 
     report = AdminService(db).ai_costs(days=30)
 
@@ -107,8 +119,22 @@ def test_ai_costs_daily_rolls_up_per_day(db):
 
 
 def test_ai_costs_window_excludes_old_rows(db):
-    _log(db, agent="teacher", model="gpt-4o-mini", in_tok=1_000_000, out_tok=0, hours_ago=1)
-    _log(db, agent="teacher", model="gpt-4o-mini", in_tok=1_000_000, out_tok=0, hours_ago=24 * 40)
+    _log(
+        db,
+        agent="teacher",
+        model="gpt-4o-mini",
+        in_tok=1_000_000,
+        out_tok=0,
+        hours_ago=1,
+    )
+    _log(
+        db,
+        agent="teacher",
+        model="gpt-4o-mini",
+        in_tok=1_000_000,
+        out_tok=0,
+        hours_ago=24 * 40,
+    )
 
     report = AdminService(db).ai_costs(days=30)
 
