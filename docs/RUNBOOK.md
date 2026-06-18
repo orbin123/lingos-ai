@@ -170,10 +170,12 @@ alarm `lingosai-production-uptime-health` pages via SNS if it fails. Uses
 (`tracesSampleRate=0.1`, no-op when DSN empty). Set **`NEXT_PUBLIC_SENTRY_DSN`**
 in Vercel (Production + Preview); optionally `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` /
 `SENTRY_PROJECT` for source-map upload at build. **AI metrics:** `ai_request_logs`
-(latency/tokens/status). **LangSmith:** off (data-residency, plan 1.12).
+(latency/tokens/status) + the **AI-cost dashboard** at `/admin/ai-costs`
+(`ai_costs.read`): spend by capability/model + daily trend, derived from the LLM
+pricing table. **LangSmith:** off (data-residency, plan 1.12).
 
 **Known gaps (TODO):** NAT-gateway error alarm (network module doesn't export the
-NAT id yet); AI-cost dashboard.
+NAT id yet).
 
 ---
 

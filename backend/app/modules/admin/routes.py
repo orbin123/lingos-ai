@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.admin.audit_service import client_ip_from_request
 from app.modules.admin.schemas import (
+    AICostReport,
     AIQualityReport,
     AIRequestLogRead,
     AdminAuditLogRead,
@@ -289,6 +290,19 @@ def get_ai_quality(
     db: Session = Depends(get_db),
 ) -> AIQualityReport:
     return AdminService(db).ai_quality(days=days)
+
+
+@router.get(
+    "/ai-costs",
+    response_model=AICostReport,
+    status_code=status.HTTP_200_OK,
+)
+def get_ai_costs(
+    days: int = Query(30, ge=1, le=180),
+    _current_user: User = Depends(require_permission("ai_costs.read")),
+    db: Session = Depends(get_db),
+) -> AICostReport:
+    return AdminService(db).ai_costs(days=days)
 
 
 @router.get(

@@ -978,7 +978,9 @@ calmly and cheaply.
 - [ ] A forced 500 surfaces in Sentry with the trace id; the same request is findable in CloudWatch.
 - [ ] Killing the RDS connection makes `/health/ready` go 503 and the ALB marks the target unhealthy.
 - [ ] An alarm (e.g. ALB 5xx) actually delivers to your phone/email.
-- [ ] The AI-cost dashboard shows non-zero spend attributable per capability.
+- [~] The AI-cost dashboard shows non-zero spend attributable per capability.
+      _(Dashboard built + tested at `/admin/ai-costs` (`ai_costs.read`): spend by capability/model +
+      daily trend from `ai_request_logs`. Will show non-zero spend once production AI traffic flows.)_
 - [ ] A rollback to the previous task-def revision restores service in < 5 min (drilled on staging).
 - [ ] The weekly + monthly checklists exist in `RUNBOOK.md` and you've done week 1 once.
 
@@ -1215,9 +1217,9 @@ in Vercel). Frontend rows are the `NEXT_PUBLIC_*` set.
 - [~] CloudWatch alarms → SNS → your phone; one synthetic uptime check live.
       _(11 CloudWatch alarms live → SNS → founder email; Route53 synthetic `/health` check live +
       passing from all regions, 2026-06-17. Remaining: confirm an alarm actually delivers to you.)_
-- [~] AI-cost dashboard + AWS budget alarm live. _(AWS Budget alarm **live** 2026-06-17:
+- [x] AI-cost dashboard + AWS budget alarm live. _(AWS Budget alarm **live** 2026-06-17:
       `lingosai-production-monthly-cost`, $150/mo, 80% actual + 100% forecasted → founder email.
-      AI-cost dashboard still TODO.)_
+      AI-cost dashboard **live** at `/admin/ai-costs` — spend by capability/model + daily trend.)_
 - [x] `RUNBOOK.md` / `DEPLOY.md` exist: deploy, rollback, incident, migration, weekly/monthly.
       _(RUNBOOK §§6–11 added 2026-06-17: monitoring/alerting, incident response + severity matrix,
       deploy & rollback, secret rotation, weekly/monthly checklists, scaling triggers — with real
