@@ -23,6 +23,7 @@ describe("ADMIN_NAV_ITEMS", () => {
       "Subscribers",
       "AI Logs",
       "AI Quality",
+      "AI Costs",
       "Feedback Analytics",
       "User Reviews",
       "Blog",

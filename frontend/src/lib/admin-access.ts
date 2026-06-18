@@ -8,6 +8,7 @@ export const ADMIN_NAV_ITEMS = [
   { href: "/admin/subscribers", label: "Subscribers" },
   { href: "/admin/ai-logs", label: "AI Logs" },
   { href: "/admin/ai-quality", label: "AI Quality" },
+  { href: "/admin/ai-costs", label: "AI Costs" },
   { href: "/admin/feedback-analytics", label: "Feedback Analytics" },
   { href: "/admin/user-reviews", label: "User Reviews" },
   { href: "/admin/blog", label: "Blog" },

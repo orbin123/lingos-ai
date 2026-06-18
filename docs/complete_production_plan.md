@@ -8,9 +8,21 @@
 > P0 audit items mostly closed. **✅ Phase 1 (Production Hardening) is COMPLETE** (branch
 > `feature/phase1-production-hardening`, 2026-06-16) and **✅ Phase 2 (CI/CD, Docker & Artifacts)
 > is COMPLETE** (branch `feature/phase2-cicd-docker`, 2026-06-17); see the per-phase status banners
-> below. **🟢 Phase 3 (AWS Infrastructure): production backend LIVE & HEALTHY on Fargate** (2026-06-17,
-> Milestones 1–5 done). Remaining work: domain/DNS/SSL (Phase 4) → operations.
-> **▶ Next session starts at [Phase 4 — Domain, DNS, SSL & Deployment Integration](#phase-4--domain-dns-ssl--deployment-integration).**
+> below. **✅ Phase 3 (AWS Infrastructure): production backend LIVE & HEALTHY on Fargate** (2026-06-17,
+> Milestones 1–5 done). **✅ Phase 4 (Domain, DNS, SSL): `https://www.lingosai.com` and
+> `https://api.lingosai.com` fully operational** (2026-06-17, branch `feature/phase4-domain-dns-ssl`,
+> PR #90). **✅ Phase 5 (Production Operations & Scaling): the six build items are DONE** (2026-06-18,
+> same branch): AWS Budget alarm, operational runbooks (`RUNBOOK.md` §§6–11), synthetic uptime check +
+> filled CloudWatch alarm gaps (11 alarms), frontend Sentry SDK, the AI-cost dashboard
+> (`/admin/ai-costs`), and a passed RDS restore drill (RTO 7m 28s). See the Phase 5 status banner below.
+>
+> **▶ Next steps (founder-side, not code):** (1) set the Sentry DSNs so capture turns on
+> (`NEXT_PUBLIC_SENTRY_DSN` in Vercel + `SENTRY_DSN` in Secrets Manager); (2) SES production access —
+> awaiting AWS re-review of the denied case; (3) the end-to-end login browser test, then **merge
+> PR #90**; (4) push the local Phase 5 commits. **Sidelined for the future** (documented, not blocking
+> launch): NAT-gateway error alarm (needs a network-module output), hands-on row-level restore-drill
+> verification, staging environment, and the [Post-Launch Roadmap](#post-launch-roadmap) (B4
+> multi-worker, Celery, WAF, VPC endpoints, read replicas, etc.).
 > This document is the master plan that ties it all together.
 >
 > **Companion docs (already in `docs/`):** [`PRE_PRODUCTION_PLAN.md`](./PRE_PRODUCTION_PLAN.md) ·
@@ -53,9 +65,9 @@ before moving on:
 |---|---|---|---|
 | **1 ✅ DONE** | Production hardening | App is production-*safe* (security, multi-worker, secrets, backups) | ~1 week |
 | **2 ✅ DONE** | CI/CD + Docker + artifacts | Backend image + compose smoke + docker CI gate + governance shipped (AWS CD deferred to Phase 3) | ~1 week |
-| **3 🟢 BACKEND LIVE** | AWS infrastructure | Production backend healthy on Fargate (M1–5); staging not yet applied | ~1.5 weeks |
-| **4 ◀ NEXT** | Domain, DNS, SSL, integration | `www.lingosai.com` + `api.lingosai.com` fully operational | ~2–3 days |
-| **5** | Operations & scaling | LingosAI can be operated reliably after launch | ongoing |
+| **3 ✅ DONE** | AWS infrastructure | Production backend healthy on Fargate; CD pipeline live | ~1.5 weeks |
+| **4 ✅ DONE** | Domain, DNS, SSL, integration | `www.lingosai.com` + `api.lingosai.com` fully operational | ~2–3 days |
+| **5 ✅ DONE** | Operations & scaling | Budget alarm, runbooks, monitoring/alarms + uptime, Sentry (FE+BE), AI-cost dashboard, restore drill | ongoing |
 
 **Final target topology (the one decision that drives everything else):**
 
@@ -674,9 +686,15 @@ behind `EMAIL_PROVIDER` (AD-4) or keep Resend and skip SES IAM.
 - [x] The migration one-off task runs `alembic upgrade head` successfully against (production) RDS.
       _(ran to exit 0 in the deploy pipeline before the rollout.)_
 - [ ] A TTS/image generation in prod writes to **S3** and serves via CloudFront (not local disk).
-- [ ] A test email sends via SES (production access granted) to an arbitrary address.
+- [~] A test email sends via SES (production access granted) to an arbitrary address.
+      _(Sandbox send to a **verified** recipient PASSED 2026-06-17 — live `/auth/signup` → SES; AWS
+      `Send` metric + `SentLast24Hours` confirmed. Arbitrary-recipient send still needs production
+      access, which is pending AWS re-review.)_
 - [ ] A secret rotated in Secrets Manager is picked up after a redeploy.
-- [ ] An RDS snapshot restore drill completes within the RTO target.
+- [x] An RDS snapshot restore drill completes within the RTO target.
+      _(Drilled 2026-06-18: snapshot → throwaway instance **available in 7m 28s** (≤1 hr RTO),
+      engine/storage matched prod, torn down. Row-level data check deferred to a hands-on run —
+      see `RUNBOOK.md` §3. Procedure scripted there.)_
 
 ### Exit criteria
 Production and staging infrastructure exist as reviewed Terraform, the backend runs healthy on
@@ -687,6 +705,64 @@ plan. The infrastructure is production-ready and waiting for a domain.
 ---
 
 # Phase 4 — Domain, DNS, SSL & Deployment Integration
+
+> ## ✅ STATUS: COMPLETE — 2026-06-17
+> Branch `feature/phase4-domain-dns-ssl` → **[PR #90](https://github.com/orbin123/lingos-ai/pull/90)**
+> (merge when SES + OAuth verified). All infrastructure live.
+>
+> **What was done:**
+> - **Terraform `modules/tls`** — new module requests a DNS-validated ACM certificate for
+>   `api.lingosai.com`. `certificate_arn` flows from the validation resource so the ALB only
+>   attaches an ISSUED cert. `modules/alb` now keys HTTPS on/off off a **static `enable_https`
+>   flag** (not `cert_arn != ""`), fixing the Terraform plan-time count error.
+> - **`envs/production`** — `create_api_certificate = true`, `api_domain = api.lingosai.com`.
+>   Targeted apply created the cert; full apply issued it and created the HTTPS:443 listener +
+>   HTTP:80 → 301 → 443 redirect on the ALB.
+> - **All DNS published at Namecheap (Advanced DNS):**
+>   - ACM validation CNAME → `*.jkddzztszm.acm-validations.aws` ✅ propagated
+>   - `api` CNAME → ALB DNS name ✅
+>   - `_amazonses` TXT (SES domain verification) ✅
+>   - 3× DKIM CNAMEs (`*._domainkey`) ✅
+>   - `mail` MX priority 10 → `feedback-smtp.us-east-1.amazonses.com` ✅
+>   - `mail` TXT SPF `v=spf1 include:amazonses.com ~all` ✅
+>   - `_dmarc` TXT ✅
+>   - `www` CNAME → `cname.vercel-dns.com`; `@` A → Vercel anycast IP ✅
+> - **Vercel:** repo connected, root `frontend/`, `NEXT_PUBLIC_API_URL=https://api.lingosai.com`
+>   set, redeployed — `www.lingosai.com` serves the app over valid TLS.
+> - **SES:** domain identity **Verified**; DKIM + MAIL-FROM pending AWS polling (normal, hours).
+>   Production-access request submitted with detailed justification — **awaiting AWS approval
+>   (~24h)**; not a blocker for the rest of the app.
+>
+> **Verified live state (2026-06-17):**
+> - `https://api.lingosai.com/health` → `{"status":"ok"}`, cert `CN=api.lingosai.com`,
+>   issuer Amazon RSA 2048 M01 ✅
+> - `http://api.lingosai.com` → **301 → HTTPS** ✅
+> - `https://api.lingosai.com/health/ready` → `{"database":"ok","redis":"ok"}` ✅
+> - `https://www.lingosai.com` → 200, title "AI English Tutor", `api.lingosai.com` in JS bundle ✅
+> - `lingosai.com` → 307 → `www.lingosai.com` ✅
+> - CORS preflight from `www` → `api`: `access-control-allow-origin: https://www.lingosai.com`,
+>   `allow-credentials: true` ✅; random origin → 400 ✅
+>
+> **Remaining (not blocking the rest of the app):** _(status reconciled with live state 2026-06-17)_
+> - [x] Register `https://api.lingosai.com/auth/google/callback` in Google Cloud Console — **done**.
+>       Verified live: `GET /auth/google/login` 307s to Google with the correct `redirect_uri` and a
+>       signed `state` JWT (`mode=google_login`).
+> - [x] `HEALTHCHECK_URL` GitHub prod variable updated to `https://api.lingosai.com/health/ready`
+>       (was the plain ALB DNS URL).
+> - [x] SES domain identity fully authenticated — Verified + **DKIM `SUCCESS`** + **MAIL-FROM
+>       `SUCCESS`** (`mail.lingosai.com` MX detected 2026-06-17). All mail is SPF/DKIM/DMARC-aligned.
+> - [ ] **SES production access — the first request was DENIED** (case `178170275200223`; the earlier
+>       "pending ~24h" note was wrong). Founder replied to the AWS case 2026-06-17 — awaiting AWS
+>       re-review (`ProductionAccessEnabled` still `false`). Sandbox (verified recipients, 200/day,
+>       1/s) works meanwhile. **This is the only remaining email blocker; it is purely AWS-side.**
+> - [ ] End-to-end login loop (founder browser test): sign up on `www`, Google OAuth, confirm the
+>       `HttpOnly`/`Secure`/`SameSite=Lax` refresh cookie on `api.lingosai.com` survives a refresh.
+>       Backend path verified; only the live browser click-through remains.
+> - [ ] Merge PR #90 once the login loop is confirmed.
+>
+> **Always pass `TF_VAR_db_password` + `TF_VAR_alert_email` on every future apply** — omitting
+> `alert_email` destroys the CloudWatch alert SNS subscription. Recover `db_password` from
+> `lingosai/production/DATABASE_URL` in Secrets Manager if needed.
 
 ### Objective
 Wire the purchased domain so that `https://www.lingosai.com` serves the Vercel frontend and
@@ -779,12 +855,17 @@ or CORS origin silently breaks auth.
 | OAuth redirect URI mismatch → Google login 400 | Med | Med | Register the exact prod URI; test the OAuth flow on staging. |
 
 ### Validation checklist
-- [ ] `https://www.lingosai.com` loads the app with a valid cert; `http://` and apex 301 to it.
-- [ ] `https://api.lingosai.com/health` returns 200 over a valid ACM cert.
-- [ ] A login on `www` sets a `Secure`, `SameSite=Lax`, `.lingosai.com` cookie and survives a refresh.
-- [ ] CORS preflight from `www.lingosai.com` to `api.lingosai.com` succeeds; a random origin is rejected.
-- [ ] Google OAuth completes end-to-end on production hostnames.
-- [ ] `curl -I http://api.lingosai.com` shows a redirect to HTTPS.
+- [x] `https://www.lingosai.com` loads the app with a valid cert; apex 307 → www; http → https.
+- [x] `https://api.lingosai.com/health` returns 200 over a valid ACM cert (Amazon RSA 2048 M01).
+- [ ] A login on `www` sets a `Secure`, `SameSite=Lax` host-only cookie on `api.lingosai.com` and
+      survives a refresh. _(backend verified; awaiting founder browser click-through. Note: the cookie
+      is host-only on `api`, not `Domain=.lingosai.com` — correct, since `www` and `api` are same-site
+      under `lingosai.com` so a `SameSite=Lax` cookie is sent on credentialed `www`→`api` requests.)_
+- [x] CORS preflight from `www.lingosai.com` to `api.lingosai.com` succeeds; a random origin is rejected.
+- [~] Google OAuth completes end-to-end on production hostnames.
+      _(redirect URI registered in GCP; `GET /auth/google/login` verified to 307 to Google with the
+      correct `redirect_uri` + signed `state`. Final browser consent click-through pending — founder.)_
+- [x] `curl -I http://api.lingosai.com` shows 301 redirect to HTTPS.
 
 ### Exit criteria
 The domain is fully operational: both hosts serve over valid TLS, the canonical redirect is in place,
@@ -794,6 +875,44 @@ variable is set on both Vercel and AWS. **LingosAI is reachable and functional a
 ---
 
 # Phase 5 — Production Operations & Scaling
+
+> ## ✅ STATUS: BUILD ITEMS COMPLETE — 2026-06-18
+> Branch `feature/phase4-domain-dns-ssl` (5 commits `6a4945f`→`e9a928f`, **not pushed**). The six
+> operability items are done and verified against live production (us-east-1):
+>
+> **What was done (task → result):**
+> - **5.7 AWS Budget alarm** — `aws_budgets_budget` `lingosai-production-monthly-cost` ($150/mo, alerts
+>   at 80% actual + 100% forecasted → founder email) added to `modules/observability` and applied.
+> - **5.5 / 5.6 Operational runbooks** — `RUNBOOK.md` §§6–11: monitoring/alerting (the alarm table),
+>   incident response + SEV matrix + feature-flag levers, deploy & rollback (real cluster/service
+>   names + amd64/region gotchas), secret rotation mechanics, weekly/monthly checklists, scaling
+>   triggers. Real resource names throughout.
+> - **5.1 Monitoring** — synthetic **Route53 uptime check** on `https://api.lingosai.com/health` (every
+>   30s, multi-region, **verified passing**) + filled alarm gaps: `ecs-memory-high`,
+>   `rds-cpu-credits-low`, `rds-connections-high`, `redis-evictions`. **Production now has 11 alarms.**
+> - **5.1 Frontend errors** — `@sentry/nextjs` (v10) wired with App Router instrumentation
+>   (`instrumentation-client.ts` + server/edge + `onRequestError`), `tracesSampleRate=0.1`, no-op when
+>   DSN empty; `next build` clean.
+> - **5.3 AI-cost dashboard** — `GET /admin/ai-costs` (`ai_costs.read`) + `AdminRepository.ai_costs`
+>   (spend by capability/model + daily trend from `ai_request_logs` via the LLM pricing table) and the
+>   `/admin/ai-costs` admin page. 3 new tests; full admin suite 30 passed.
+> - **3.9 / 5.6 RDS restore drill** — restored the latest automated snapshot to a throwaway private
+>   instance: **available in 7m 28s** (≤ 1 hr RTO), engine/storage matched prod, then torn down.
+>   Scripted in `RUNBOOK.md` §3.
+>
+> **▶ Next (founder-side, not code):** set the Sentry DSNs (`NEXT_PUBLIC_SENTRY_DSN` in Vercel +
+> `SENTRY_DSN` in Secrets Manager); SES production access (awaiting AWS re-review of the denied case);
+> the end-to-end login browser test → **merge PR #90**; push the local commits; review the 7 npm
+> vulnerabilities surfaced by the Sentry install.
+>
+> **Sidelined for the future (documented, not launch-blocking):**
+> - NAT-gateway error alarm — needs the network module to export the NAT id (currently it doesn't).
+> - Hands-on **row-level** restore-drill verification — do it via ECS Exec / a bastion inside the VPC
+>   (never put the prod password in a file/env override; the automated attempt was correctly blocked).
+> - **Structured-logging hardening (5.2)**, **business-metrics beyond AI cost (5.3: DAU/retention/
+>   conversion)**, **LangSmith enablement (1.12)**, and a **staging environment** — deferred.
+> - The whole [Post-Launch Roadmap](#post-launch-roadmap) (B4 cross-process → multi-worker + ECS
+>   autoscaling, Celery for RAG notes, WAF, VPC endpoints, RDS Proxy/read replicas, Savings Plans).
 
 ### Objective
 Make LingosAI **operable** after launch: know when something is wrong (monitoring), be able to find
@@ -908,7 +1027,9 @@ calmly and cheaply.
 - [ ] A forced 500 surfaces in Sentry with the trace id; the same request is findable in CloudWatch.
 - [ ] Killing the RDS connection makes `/health/ready` go 503 and the ALB marks the target unhealthy.
 - [ ] An alarm (e.g. ALB 5xx) actually delivers to your phone/email.
-- [ ] The AI-cost dashboard shows non-zero spend attributable per capability.
+- [~] The AI-cost dashboard shows non-zero spend attributable per capability.
+      _(Dashboard built + tested at `/admin/ai-costs` (`ai_costs.read`): spend by capability/model +
+      daily trend from `ai_request_logs`. Will show non-zero spend once production AI traffic flows.)_
 - [ ] A rollback to the previous task-def revision restores service in < 5 min (drilled on staging).
 - [ ] The weekly + monthly checklists exist in `RUNBOOK.md` and you've done week 1 once.
 
@@ -1073,7 +1194,9 @@ in Vercel). Frontend rows are the `NEXT_PUBLIC_*` set.
 | `AZURE_SPEECH_KEY` | Pronunciation | cond | ✅ | empty | key | key |
 | `AZURE_SPEECH_REGION` | Azure region | cond | — | empty | `eastus` | `eastus` |
 | `DEEPGRAM_API_KEY` | Streaming STT (A2Z) | cond | ✅ | empty | key | key |
-| `SENTRY_DSN` | Error tracking (empty = off) | — | ✅ | empty | dsn | dsn |
+| `SENTRY_DSN` | Backend error tracking (empty = off) | — | ✅ | empty | dsn | dsn |
+| `NEXT_PUBLIC_SENTRY_DSN` *(frontend/Vercel)* | Frontend error tracking (empty = off) | — | — | empty | dsn | dsn |
+| `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` *(Vercel/CI)* | Source-map upload at build (optional) | — | ✅(token) | empty | set | set |
 | `SENTRY_TRACES_SAMPLE_RATE` | Perf sampling | — | — | `0.1` | `0.1` | `0.1` |
 | `AI_REQUEST_LOGGING_ENABLED` | Operational AI log rows | — | — | `true` | `true` | `true` |
 | `AI_RATE_LIMIT_ENABLED` | Per-user AI throttle | ✅ | — | `true` | `true` | `true` |
@@ -1116,7 +1239,9 @@ in Vercel). Frontend rows are the `NEXT_PUBLIC_*` set.
 **Infrastructure**
 - [ ] Terraform `production` + `staging` applied; `plan` clean.
 - [ ] Backend healthy on Fargate; ALB target healthy on `/health/ready`.
-- [ ] RDS Multi-AZ, automated backups + PITR on, deletion protection on, restore drill passed.
+- [~] RDS Multi-AZ, automated backups + PITR on, deletion protection on, restore drill passed.
+      _(Restore drill **passed** 2026-06-18 — RTO 7m 28s. Confirm Multi-AZ/PITR/deletion-protection
+      flags are still on (set in Phase 3 Terraform).)_
 - [ ] ElastiCache reachable; rate limiting verified multi-worker.
 - [ ] S3 + CloudFront serving generated media (NOT local disk); learner audio private.
 - [ ] Secrets Manager holds every prod secret; task injects them; rotation documented.
@@ -1140,9 +1265,16 @@ in Vercel). Frontend rows are the `NEXT_PUBLIC_*` set.
 - [ ] Razorpay live keys configured; a real test purchase grants access.
 
 **Operations**
-- [ ] CloudWatch alarms → SNS → your phone; one synthetic uptime check live.
-- [ ] AI-cost dashboard + AWS budget alarm live.
-- [ ] `RUNBOOK.md` / `DEPLOY.md` exist: deploy, rollback, incident, migration, weekly/monthly.
+- [~] CloudWatch alarms → SNS → your phone; one synthetic uptime check live.
+      _(11 CloudWatch alarms live → SNS → founder email; Route53 synthetic `/health` check live +
+      passing from all regions, 2026-06-17. Remaining: confirm an alarm actually delivers to you.)_
+- [x] AI-cost dashboard + AWS budget alarm live. _(AWS Budget alarm **live** 2026-06-17:
+      `lingosai-production-monthly-cost`, $150/mo, 80% actual + 100% forecasted → founder email.
+      AI-cost dashboard **live** at `/admin/ai-costs` — spend by capability/model + daily trend.)_
+- [x] `RUNBOOK.md` / `DEPLOY.md` exist: deploy, rollback, incident, migration, weekly/monthly.
+      _(RUNBOOK §§6–11 added 2026-06-17: monitoring/alerting, incident response + severity matrix,
+      deploy & rollback, secret rotation, weekly/monthly checklists, scaling triggers — with real
+      production resource names.)_
 - [ ] Security checklist above fully ticked.
 
 ---

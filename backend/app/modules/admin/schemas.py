@@ -221,6 +221,55 @@ class AIQualityReport(BaseModel):
     series: list[AIQualityTimeSeriesPoint] = []
 
 
+class AICostByModel(BaseModel):
+    """Spend + token totals for one model over the window."""
+
+    model: str
+    requests: int
+    input_tokens: int
+    output_tokens: int
+    # None when the model isn't in the pricing table (tokens logged, cost unknown).
+    cost_usd: float | None = None
+
+
+class AICostByCapability(BaseModel):
+    """Spend grouped by agent (capability), summed across the models it used."""
+
+    agent_name: str
+    requests: int
+    errors: int
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+
+
+class AICostDailyPoint(BaseModel):
+    """Total priced spend + request count for one UTC day."""
+
+    date: str  # YYYY-MM-DD (UTC)
+    cost_usd: float
+    requests: int
+
+
+class AICostReport(BaseModel):
+    """AI spend over a rolling window, derived from ai_request_logs (plan 5.3).
+
+    Cost isn't stored per row — it's derived from (model, tokens) via the LLM
+    pricing table at read time. Non-LLM spend (TTS/STT/embeddings) and any model
+    missing from the pricing table is surfaced via ``unpriced_requests``.
+    """
+
+    days: int
+    total_cost_usd: float
+    total_requests: int
+    total_input_tokens: int
+    total_output_tokens: int
+    unpriced_requests: int
+    by_model: list[AICostByModel]
+    by_capability: list[AICostByCapability]
+    daily: list[AICostDailyPoint]
+
+
 class FeedbackAnalyticsItem(BaseModel):
     """One piece of AI feedback plus the learner's reaction to it.
 
