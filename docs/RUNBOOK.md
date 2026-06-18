@@ -152,7 +152,16 @@ everything else lives on dashboards to avoid alert fatigue:
 | `lingosai-production-ecs-cpu-high` | CPU >85% for 3 min | scale task count (§11) |
 | `lingosai-production-rds-cpu-high` | RDS CPU >85% for 3 min | slow queries; watch t-class CPU credits |
 | `lingosai-production-rds-free-storage-low` | free storage <2 GiB | autoscaling should cover; investigate growth |
+| `lingosai-production-rds-cpu-credits-low` | t-class CPU credit balance <50 | sustained CPU will throttle; consider larger class |
+| `lingosai-production-rds-connections-high` | avg connections >100 for 3 min | possible leak; consider pooling (RDS Proxy/PgBouncer) |
+| `lingosai-production-ecs-memory-high` | memory >85% for 3 min | OOM-kill risk; bump task memory or scale out |
 | `lingosai-production-redis-memory-high` | memory >85% for 3 min | rate-limit/lock keys may evict; bump node size |
+| `lingosai-production-redis-evictions` | any evictions over 10 min | memory pressure dropping keys; bump node size |
+
+**Synthetic uptime:** Route53 health check `lingosai-production-uptime-health`
+hits `https://api.lingosai.com/health` every 30s from multiple AWS regions →
+alarm `lingosai-production-uptime-health` pages via SNS if it fails. Uses
+`/health` (liveness), not `/health/ready`.
 
 **Cost:** AWS Budget `lingosai-production-monthly-cost` (**$150/mo**) emails at
 80% actual + 100% forecasted spend.
@@ -160,9 +169,8 @@ everything else lives on dashboards to avoid alert fatigue:
 **Errors:** Sentry (backend wired; frontend SDK = TODO). **AI metrics:**
 `ai_request_logs` (latency/tokens/status). **LangSmith:** off (data-residency, plan 1.12).
 
-**Known gaps (TODO):** synthetic uptime check on `/health` every minute;
-RDS connection-count + Redis-evictions + ECS-memory alarms; frontend Sentry SDK;
-AI-cost dashboard.
+**Known gaps (TODO):** NAT-gateway error alarm (network module doesn't export the
+NAT id yet); frontend Sentry SDK; AI-cost dashboard.
 
 ---
 

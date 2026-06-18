@@ -1210,7 +1210,9 @@ in Vercel). Frontend rows are the `NEXT_PUBLIC_*` set.
 - [ ] Razorpay live keys configured; a real test purchase grants access.
 
 **Operations**
-- [ ] CloudWatch alarms → SNS → your phone; one synthetic uptime check live.
+- [~] CloudWatch alarms → SNS → your phone; one synthetic uptime check live.
+      _(11 CloudWatch alarms live → SNS → founder email; Route53 synthetic `/health` check live +
+      passing from all regions, 2026-06-17. Remaining: confirm an alarm actually delivers to you.)_
 - [~] AI-cost dashboard + AWS budget alarm live. _(AWS Budget alarm **live** 2026-06-17:
       `lingosai-production-monthly-cost`, $150/mo, 80% actual + 100% forecasted → founder email.
       AI-cost dashboard still TODO.)_

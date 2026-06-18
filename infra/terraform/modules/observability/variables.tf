@@ -14,6 +14,18 @@ variable "monthly_budget_usd" {
   default     = 200
 }
 
+variable "uptime_check_fqdn" {
+  description = "FQDN for the Route53 synthetic /health check. Empty = no uptime check."
+  type        = string
+  default     = ""
+}
+
+variable "rds_connections_alarm_threshold" {
+  description = "Alarm when average RDS connections exceed this (tune to instance class max_connections)."
+  type        = number
+  default     = 100
+}
+
 variable "alb_arn_suffix" {
   type = string
 }

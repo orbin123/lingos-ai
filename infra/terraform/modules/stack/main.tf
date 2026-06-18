@@ -141,6 +141,7 @@ module "observability" {
   environment                = var.environment
   alert_email                = var.alert_email
   monthly_budget_usd         = var.monthly_budget_usd
+  uptime_check_fqdn          = var.api_domain
   alb_arn_suffix             = module.alb.alb_arn_suffix
   target_group_arn_suffix    = module.alb.target_group_arn_suffix
   cluster_name               = module.compute.cluster_name
