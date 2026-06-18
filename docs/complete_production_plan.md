@@ -1143,7 +1143,9 @@ in Vercel). Frontend rows are the `NEXT_PUBLIC_*` set.
 | `AZURE_SPEECH_KEY` | Pronunciation | cond | ✅ | empty | key | key |
 | `AZURE_SPEECH_REGION` | Azure region | cond | — | empty | `eastus` | `eastus` |
 | `DEEPGRAM_API_KEY` | Streaming STT (A2Z) | cond | ✅ | empty | key | key |
-| `SENTRY_DSN` | Error tracking (empty = off) | — | ✅ | empty | dsn | dsn |
+| `SENTRY_DSN` | Backend error tracking (empty = off) | — | ✅ | empty | dsn | dsn |
+| `NEXT_PUBLIC_SENTRY_DSN` *(frontend/Vercel)* | Frontend error tracking (empty = off) | — | — | empty | dsn | dsn |
+| `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` / `SENTRY_PROJECT` *(Vercel/CI)* | Source-map upload at build (optional) | — | ✅(token) | empty | set | set |
 | `SENTRY_TRACES_SAMPLE_RATE` | Perf sampling | — | — | `0.1` | `0.1` | `0.1` |
 | `AI_REQUEST_LOGGING_ENABLED` | Operational AI log rows | — | — | `true` | `true` | `true` |
 | `AI_RATE_LIMIT_ENABLED` | Per-user AI throttle | ✅ | — | `true` | `true` | `true` |

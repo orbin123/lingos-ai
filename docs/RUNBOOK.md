@@ -166,11 +166,14 @@ alarm `lingosai-production-uptime-health` pages via SNS if it fails. Uses
 **Cost:** AWS Budget `lingosai-production-monthly-cost` (**$150/mo**) emails at
 80% actual + 100% forecasted spend.
 
-**Errors:** Sentry (backend wired; frontend SDK = TODO). **AI metrics:**
-`ai_request_logs` (latency/tokens/status). **LangSmith:** off (data-residency, plan 1.12).
+**Errors:** Sentry — **backend + frontend** (`@sentry/nextjs`) both wired
+(`tracesSampleRate=0.1`, no-op when DSN empty). Set **`NEXT_PUBLIC_SENTRY_DSN`**
+in Vercel (Production + Preview); optionally `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` /
+`SENTRY_PROJECT` for source-map upload at build. **AI metrics:** `ai_request_logs`
+(latency/tokens/status). **LangSmith:** off (data-residency, plan 1.12).
 
 **Known gaps (TODO):** NAT-gateway error alarm (network module doesn't export the
-NAT id yet); frontend Sentry SDK; AI-cost dashboard.
+NAT id yet); AI-cost dashboard.
 
 ---
 
