@@ -36,21 +36,23 @@ The frontend has **no image** — it deploys to Vercel (AD-1).
 
 ## 2. Image tagging, versioning & rollback
 
-> The push itself lands in Phase 3 (`deploy.yml`). This is the scheme that workflow implements.
+> Implemented in `deploy.yml` (Phase 3). This section matches what that workflow actually does.
 
-**Registry:** Amazon ECR, repo `lingosai-backend` (one repo; frontend has none).
+**Registry:** Amazon ECR, repo `lingosai-backend` (one repo; frontend has none). The repo is
+configured for **immutable tags**.
 
-**Every `main` build pushes three tags:**
+**Every build pushes exactly one tag** — the immutable `git-<short-sha>`:
 
 | Tag | Example | Purpose |
 |---|---|---|
-| `git-<short-sha>` | `git-9add7b5` | **Immutable identity** — the only thing you ever deploy. |
-| `latest` | `latest` | Human convenience pointer. **Never deploy by `latest`.** |
-| `vYYYY.MM.DD` | `v2026.06.17` | Human-readable release marker. |
+| `git-<short-sha>` | `git-9add7b5` | **Immutable identity** — the only tag pushed, and the only thing you ever deploy. |
 
-**Deploy by digest/sha, never `latest`** — a deploy is then exactly reproducible.
+A moving `:latest` or daily `vYYYY.MM.DD` tag was considered but **not** used: an immutable repo
+rejects overwriting a tag, so a moving tag would fail every redeploy. Deploy-by-sha is exact and
+reproducible by construction.
 
-**Rollback** (Phase 3 fills in the concrete cluster/service names):
+**Rollback** is automatic on smoke failure: `deploy.yml` snapshots the running task-def before the
+rolling update and re-points the service at it if `/health/ready` fails. To roll back manually:
 
 ```bash
 # Backend — re-point the ECS service at the previous task-definition revision
@@ -64,6 +66,7 @@ aws ecs update-service \
 ```
 
 ECS keeps prior task-definition revisions, so rollback is a pointer change, not a rebuild.
+**Migrations are forward-only** — a service rollback does not revert an applied migration.
 
 ---
 
@@ -99,7 +102,9 @@ main (protected, always deployable)
 ## 4. Frontend deployment model (Vercel — AD-1)
 
 - Connect the GitHub repo to Vercel; **Root Directory = `frontend/`**.
-- **Production branch = `main`** → `https://www.lingosai.com` (domain in Phase 4).
+- **Production branch = `main`** → `https://www.lingosai.com` (domain in Phase 4). A merge to `main`
+  triggers a Vercel production deploy **and** the backend `deploy.yml` (push trigger) on the same
+  commit — the FE/BE lockstep (G1.5). No coupling between them beyond the shared commit.
 - **Preview deploys** on every PR (ephemeral URLs) — the manual QA surface.
 - Build command `next build`; Vercel owns CDN, TLS, image optimization. **No Dockerfile.**
 - Env vars in Vercel, scoped Production / Preview / Development:
@@ -132,20 +137,20 @@ Contexts must match job names exactly (they do).
 
 ---
 
-## 6. Phase-3 handoff — what `deploy.yml` must do
+## 6. What `deploy.yml` does (as implemented)
 
-Specified now so Phase 3 only fills in resource names:
-
-1. **Trigger:** push to `main`, after required checks pass (start as `workflow_dispatch` / manual
-   approval; make automatic once trusted).
+1. **Trigger:** automatic on **push to `main`** (auto-deploys production); `workflow_dispatch` also
+   supports a manual run targeting `staging` or `production` for replays/staging.
 2. **AWS auth:** assume a role via **GitHub OIDC** — no long-lived AWS keys in GitHub secrets. Scope
    the role to ECR push + ECS update + `iam:PassRole` for the task roles only.
-3. **Build & push:** build `backend/Dockerfile`, push to ECR with the three tags from §2.
+3. **Build & push:** build `backend/Dockerfile`, push to ECR with the single immutable `git-<sha>`
+   tag from §2.
 4. **Migrate:** run the one-off migration task (same image, `alembic upgrade head`) and **wait for
    success** before touching the service. On failure, abort — old tasks keep serving.
-5. **Deploy:** register a new task-definition revision (new image sha) → `aws ecs update-service`
-   (rolling, `minimumHealthyPercent`/`maximumPercent` tuned for zero downtime) → wait for stable.
-6. **Smoke:** hit `/health/ready` on the new tasks; on failure, roll back per §2.
+5. **Deploy:** snapshot the running task-def (rollback target), register a new task-definition
+   revision (new image sha) → `aws ecs update-service` (rolling, zero downtime) → wait for stable.
+6. **Smoke + auto-rollback:** hit `/health/ready`; on failure, automatically re-point the service at
+   the snapshotted task-def, wait stable, and fail the job (per §2).
 
 Also created in Phase 3: the ECR repo, the OIDC role, and the ECS cluster/service/task definitions
 (Terraform). `S3BlobStorage` (replacing local-disk media so the container is stateless) is the one

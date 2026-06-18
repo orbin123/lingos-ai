@@ -1,11 +1,15 @@
 name: deploy
 
 # Backend CD (Phase 3). Implements the DEPLOY.md §6 contract:
-#   OIDC -> ECR push (3 tags) -> migration one-off task -> ECS rolling deploy
-#   -> wait stable -> smoke /health/ready.
+#   OIDC -> ECR push (git-<sha>) -> migration one-off task -> ECS rolling deploy
+#   -> wait stable -> smoke /health/ready -> auto-rollback on smoke failure.
 #
-# Starts as workflow_dispatch (manual / trusted) per §2.9 — flip to automatic
-# `push: main` once you trust it. Frontend deploys on Vercel separately (AD-1).
+# Triggers:
+#   * push to `main` -> auto-deploys PRODUCTION (the CI/CD lockstep, G1).
+#   * workflow_dispatch -> manual run; pick `staging` or `production` (replays,
+#     staging deploys). `github.event.inputs.environment` is null on a push, so
+#     every reference resolves it with `|| 'production'`.
+# Frontend deploys on Vercel separately (AD-1) on the same `main` commit.
 #
 # Per-environment config lives in GitHub Environments (Settings -> Environments
 # -> staging | production), each with these VARIABLES (from `terraform output`):
@@ -14,6 +18,8 @@ name: deploy
 #   ECS_SUBNETS (comma-separated), ECS_SECURITY_GROUP, HEALTHCHECK_URL.
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -23,7 +29,8 @@ on:
         default: staging
 
 concurrency:
-  group: deploy-${{ github.event.inputs.environment }}
+  # inputs.environment is null on a push -> default to production.
+  group: deploy-${{ github.event.inputs.environment || 'production' }}
   cancel-in-progress: false # never interrupt an in-flight deploy
 
 permissions:
@@ -33,7 +40,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
+    environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
       - uses: actions/checkout@v6
 
@@ -51,11 +58,11 @@ jobs:
         id: tags
         run: |
           set -euo pipefail
+          # ECR repo is immutable: the unique git-<sha> tag is the only tag we
+          # push and the only thing we ever deploy (deploy-by-sha, DEPLOY.md §2).
           SHA_TAG="git-${GITHUB_SHA::7}"
-          DATE_TAG="v$(date -u +%Y.%m.%d)"
           IMAGE="${{ vars.ECR_REPOSITORY }}"
           echo "sha_tag=$SHA_TAG"   >> "$GITHUB_OUTPUT"
-          echo "date_tag=$DATE_TAG" >> "$GITHUB_OUTPUT"
           echo "image=$IMAGE"       >> "$GITHUB_OUTPUT"
           echo "image_sha=$IMAGE:$SHA_TAG" >> "$GITHUB_OUTPUT"
 
@@ -116,6 +123,18 @@ jobs:
             exit 1
           fi
 
+      # Snapshot the task-def the service is running RIGHT NOW, before we point
+      # it at the new revision. This is the rollback target if the smoke fails.
+      - name: Capture current task-def (rollback target)
+        run: |
+          set -euo pipefail
+          PREV_TD=$(aws ecs describe-services \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --services "${{ vars.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          echo "Previous task-def: $PREV_TD"
+          echo "PREV_TD=$PREV_TD" >> "$GITHUB_ENV"
+
       - name: Deploy backend (rolling update)
         env:
           IMAGE_SHA: ${{ steps.tags.outputs.image_sha }}
@@ -142,7 +161,11 @@ jobs:
             --cluster "${{ vars.ECS_CLUSTER }}" \
             --services "${{ vars.ECS_SERVICE }}"
 
-      - name: Smoke test (/health/ready)
+      # On smoke failure, re-point the service at the previously-running task-def
+      # (image is immutable by sha, so rollback is a pointer change) and wait for
+      # it to stabilize before failing the job. NOTE: this rolls back the SERVICE
+      # only — migrations are forward-only (DEPLOY.md), they are not reverted.
+      - name: Smoke test (/health/ready) + auto-rollback
         run: |
           set -euo pipefail
           for i in $(seq 1 10); do
@@ -152,5 +175,13 @@ jobs:
             fi
             echo "Attempt $i: got $CODE, retrying..."; sleep 6
           done
-          echo "::error::Smoke check failed — roll back to the previous task-def revision (DEPLOY.md §2)."
+          echo "::error::Smoke check failed — rolling back service to $PREV_TD"
+          aws ecs update-service \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --service "${{ vars.ECS_SERVICE }}" \
+            --task-definition "$PREV_TD" >/dev/null
+          aws ecs wait services-stable \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --services "${{ vars.ECS_SERVICE }}"
+          echo "::error::Rolled back to $PREV_TD (migrations were NOT reverted — forward-only)."
           exit 1
