@@ -148,6 +148,7 @@ module "observability" {
   service_name               = module.compute.service_name
   db_instance_id             = module.data.db_instance_id
   redis_replication_group_id = module.data.redis_replication_group_id
+  nat_gateway_id             = module.network.nat_gateway_id
 }
 
 module "cicd" {

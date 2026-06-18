@@ -218,6 +218,27 @@ resource "aws_cloudwatch_metric_alarm" "redis_evictions" {
   alarm_actions       = [aws_sns_topic.alerts.arn]
 }
 
+# --- NAT gateway: egress health (single-NAT SPOF, plan §3.2 / §5.1) --------
+# One NAT gateway at launch is a deliberate cost trade-off; this alarm catches
+# SNAT port exhaustion (ErrorPortAllocation > 0), which silently drops egress
+# to OpenAI/Pinecone/SES. count-guarded so it no-ops until the id is wired.
+
+resource "aws_cloudwatch_metric_alarm" "nat_port_errors" {
+  count               = var.nat_gateway_id == "" ? 0 : 1
+  alarm_name          = "${local.name_prefix}-nat-port-allocation-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ErrorPortAllocation"
+  namespace           = "AWS/NATGateway"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "NAT gateway failed to allocate SNAT ports — egress to OpenAI/Pinecone/SES is dropping."
+  treat_missing_data  = "notBreaching"
+  dimensions          = { NatGatewayId = var.nat_gateway_id }
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+}
+
 # --- Synthetic uptime check (plan 5.1) -------------------------------------
 # Route53 global health check hits the endpoint from multiple AWS regions every
 # 30s; the alarm pages via SNS before users notice. HealthCheckStatus metrics
