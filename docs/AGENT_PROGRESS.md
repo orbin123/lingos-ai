@@ -86,9 +86,9 @@ so the agent's role there is mainly fixing anything that only worked locally + s
 
 ## Session 2 — Gap G2: Branch protection on `main`
 
-**Status:** code (path-filter fix) implemented; PR open, **not merged**. Branch protection
-**enablement is deferred to post-merge** (must run *after* the PR merges, or open PRs wedge).
-**Branch:** `feat/g2-branch-protection`
+**Status:** ✅ **COMPLETE.** Path-filter fix merged ([#102](https://github.com/orbin123/lingos-ai/pull/102),
+merge `360aee4`); branch protection enabled post-merge via `gh api` and verified live.
+**Branch:** `feat/g2-branch-protection` (fix) + `docs/g2-protection-enabled` (this completion note).
 **Date:** 2026-06-18
 
 ### Why this gap, why now
@@ -114,10 +114,13 @@ PR runs every required gate.
 - **Left `backend-curriculum.yml` untouched** — `curriculum-seed-smoke` stays optional per the plan
   (Appendix B lists it "optional to require"), so its path filter can stay.
 
-### Branch-protection enablement (deferred to post-merge — founder-gated decisions captured)
-Decisions captured this session: `required_approving_review_count: 0` (solo-founder self-merge),
+### Branch-protection enablement — ✅ DONE post-merge (verified live)
+Decisions captured + applied: `required_approving_review_count: 0` (solo-founder self-merge),
 `strict: true`, `enforce_admins: true`, 9 required contexts (curriculum-seed-smoke NOT required).
-The agent will run this **after** the PR merges:
+After #102 merged, the agent ran the PUT below (via JSON `--input` for a clean `restrictions: null`).
+**Read-back proof** (`gh api .../branches/main/protection`):
+`{strict:true, contexts:[lint,types,unit,integration,migrations,coverage,ci,openapi-drift,docker-build],
+enforce_admins:true, required_reviews:0, restrictions:null}`.
 ```bash
 gh api -X PUT repos/orbin123/lingos-ai/branches/main/protection \
   -F 'required_status_checks.strict=true' \
@@ -151,7 +154,9 @@ gh api -X PUT repos/orbin123/lingos-ai/branches/main/protection \
   all 9 match the plan's required list exactly.
 - **This PR self-proves the gates:** it edits all four `.github/workflows/*.yml` files, which match
   each workflow's own `.github/workflows/*.yml` path filter, so every required check runs on this PR.
-- **Live branch-protection proof is intentionally NOT done here** — enablement is post-merge.
+- **All 9 required contexts passed green on #102 itself** (live self-proof the de-filtered triggers
+  fire), plus DCO + Vercel. Merge `360aee4`.
+- **Branch protection verified live** post-merge — read-back matches the intended rule (above).
 
 ### Decisions
 - Drop `paths:` only on the **PR** trigger (Appendix B "Recommended" option), not the push trigger.
@@ -169,10 +174,11 @@ gh api -X PUT repos/orbin123/lingos-ai/branches/main/protection \
   contract suite. Acceptable at this repo size (the plan's stated trade-off).
 
 ### Founder actions required
-1. **Review + merge** PR `feat/g2-branch-protection`.
-2. After merge, **tell the agent** so it runs the `gh api` enablement command and verifies the rule.
-3. (Optional) Confirm the guard rail by opening a throwaway PR with a deliberately failing check and
-   verifying it cannot be merged.
+- None outstanding for G2. (#102 merged; protection enabled + verified by the agent.)
+- ⚠️ **New reality:** `main` is now protected with `enforce_admins: true` — *all* changes (incl.
+  docs) must go through a PR; direct pushes to `main` are rejected for everyone.
+- (Optional) Confirm the guard rail yourself by opening a throwaway PR with a deliberately failing
+  check and verifying it cannot be merged.
 
 ### Next recommended gap
 **G3 — post-deploy live smoke** (extend the `deploy.yml` `/health/ready` smoke to also assert
