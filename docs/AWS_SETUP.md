@@ -1,12 +1,15 @@
-# AWS_SETUP.md — Phases 3 & 4 founder runbook
+# AWS_SETUP.md — Phases 3–5 founder runbook
 
 > Companion to [`complete_production_plan.md`](./complete_production_plan.md) §§Phase 3–4,
 > [`DEPLOY.md`](./DEPLOY.md), and the Terraform in [`infra/terraform/`](../infra/terraform).
 > This is the **account-side** sequence — the things the coding agent could not do for you because
 > they touch the live AWS account. Region: **us-east-1**. Do the steps in order.
 >
-> **Current status (2026-06-17):** Phases 3 and 4 are **complete**. Production is live:
-> `https://api.lingosai.com` (Fargate + ALB + ACM TLS) and `https://www.lingosai.com` (Vercel).
+> **Current status (2026-06-18):** Phases 3, 4, and the **Phase 5 build items** are complete.
+> Production is live: `https://api.lingosai.com` (Fargate + ALB + ACM TLS) and
+> `https://www.lingosai.com` (Vercel). Phase 5 added the AWS Budget alarm, a Route53 uptime check +
+> a fuller alarm set (11 total), frontend Sentry, the `/admin/ai-costs` dashboard, and a passed RDS
+> restore drill (RTO 7m 28s) — see **§9 (Phase 5 — Operations)** below.
 > The steps below are the authoritative how-to for anyone who needs to re-apply, add staging,
 > or recover from a disaster.
 
@@ -279,3 +282,44 @@ export TF_VAR_alert_email="orbinsunny9495@gmail.com"
 terraform -chdir=infra/terraform/envs/production plan    # review first
 terraform -chdir=infra/terraform/envs/production apply
 ```
+
+---
+
+## 9. Phase 5 — Operations (✅ build items complete 2026-06-18)
+
+All Terraform/code below is applied/merged-ready on branch `feature/phase4-domain-dns-ssl`
+(commits `6a4945f`→`e9a928f`, **not pushed**). Account-side state in us-east-1:
+
+### What's live
+
+| Area | Resource / location | Notes |
+|---|---|---|
+| **Cost guardrail** | AWS Budget `lingosai-production-monthly-cost` | $150/mo; emails at 80% actual + 100% forecasted. Tune via `TF_VAR_monthly_budget_usd` (default 150 in `envs/production`). |
+| **Alarms (11)** | `modules/observability` → SNS `lingosai-production-alerts` | ALB 5xx / unhealthy, ECS CPU + **memory**, RDS CPU + storage + **credits** + **connections**, Redis memory + **evictions**. |
+| **Uptime** | Route53 health check `lingosai-production-uptime-health` | Hits `https://api.lingosai.com/health` every 30s, multi-region; alarm → SNS. Verified passing. |
+| **Errors** | Sentry — backend (`SENTRY_DSN`) + frontend (`@sentry/nextjs`) | **Founder TODO:** set `NEXT_PUBLIC_SENTRY_DSN` in Vercel (Prod+Preview) + `SENTRY_DSN` in Secrets Manager; optionally `SENTRY_AUTH_TOKEN`/`ORG`/`PROJECT` for source maps. |
+| **AI cost** | `/admin/ai-costs` (`ai_costs.read`) | Spend by capability/model + daily trend from `ai_request_logs`. |
+| **Backup/DR** | RDS automated daily snapshots + PITR | Restore drill **passed 2026-06-18, RTO 7m 28s**. Drill scripted in `RUNBOOK.md` §3. |
+
+> ⚠️ Every Phase 5 `terraform apply` still needs `TF_VAR_db_password` + `TF_VAR_alert_email`
+> (see §8 "How to re-run") — omitting `alert_email` destroys the SNS subscription.
+
+### Account-side next steps (founder)
+
+- [ ] **Sentry DSNs** — set `NEXT_PUBLIC_SENTRY_DSN` (Vercel) + `SENTRY_DSN` (Secrets Manager), then
+      redeploy so capture turns on. Until set, both SDKs no-op.
+- [ ] **SES production access** — awaiting AWS re-review of the denied case `178170275200223`. Until
+      granted, email only reaches verified recipients (sandbox).
+- [ ] **Review the 7 npm vulnerabilities** introduced by the Sentry install (`npm audit` in `frontend/`).
+- [ ] End-to-end login browser test → **merge PR #90** → push the Phase 5 commits.
+
+### Sidelined for the future (documented, not launch-blocking)
+
+- **NAT-gateway error alarm** — needs `modules/network` to output the NAT gateway id (it doesn't yet),
+  then a `NATGateway ErrorPortAllocation` alarm in `modules/observability`.
+- **Row-level restore verification** — query the restored DB hands-on via **ECS Exec** or a bastion
+  inside the VPC (the drill instance is private). Never embed the prod password in a file/env override.
+- **Staging environment** (§7) — not yet applied.
+- **Structured-logging hardening, business metrics (DAU/retention/conversion), LangSmith** — deferred.
+- **Post-launch scaling** (B4 multi-worker + ECS autoscaling, Celery, WAF, VPC endpoints, RDS Proxy /
+  read replicas, Savings Plans) — see the Post-Launch Roadmap in `complete_production_plan.md`.
