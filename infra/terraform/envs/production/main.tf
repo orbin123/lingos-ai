@@ -60,7 +60,8 @@ module "stack" {
   create_api_certificate = true
   api_domain             = "api.lingosai.com"
 
-  alert_email = var.alert_email
+  alert_email        = var.alert_email
+  monthly_budget_usd = var.monthly_budget_usd
 
   github_repo          = "orbin123/lingos-ai"
   create_oidc_provider = true # production owns the account-global OIDC provider
@@ -70,4 +71,10 @@ module "stack" {
 variable "alert_email" {
   type    = string
   default = ""
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly AWS cost budget (USD). Override with TF_VAR_monthly_budget_usd."
+  type        = number
+  default     = 150
 }

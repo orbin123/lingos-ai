@@ -157,6 +157,12 @@ variable "alert_email" {
   default = ""
 }
 
+variable "monthly_budget_usd" {
+  description = "Monthly AWS cost budget (USD) for the cost alarm."
+  type        = number
+  default     = 200
+}
+
 variable "github_repo" {
   description = "owner/repo for the OIDC deploy role."
   type        = string

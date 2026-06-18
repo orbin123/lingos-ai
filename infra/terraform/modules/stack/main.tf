@@ -140,6 +140,7 @@ module "observability" {
   source                     = "../observability"
   environment                = var.environment
   alert_email                = var.alert_email
+  monthly_budget_usd         = var.monthly_budget_usd
   alb_arn_suffix             = module.alb.alb_arn_suffix
   target_group_arn_suffix    = module.alb.target_group_arn_suffix
   cluster_name               = module.compute.cluster_name

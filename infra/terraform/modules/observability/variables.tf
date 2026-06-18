@@ -8,6 +8,12 @@ variable "alert_email" {
   default     = ""
 }
 
+variable "monthly_budget_usd" {
+  description = "Monthly AWS cost budget (USD). Alerts at 80% actual + 100% forecasted to alert_email."
+  type        = number
+  default     = 200
+}
+
 variable "alb_arn_suffix" {
   type = string
 }

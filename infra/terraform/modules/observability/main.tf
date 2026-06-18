@@ -29,11 +29,11 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
   period              = 60
   statistic           = "Sum"
   threshold           = 10
-  alarm_description    = "Backend is returning 5xx — likely an app or dependency failure."
-  treat_missing_data   = "notBreaching"
-  dimensions           = { LoadBalancer = var.alb_arn_suffix }
-  alarm_actions        = [aws_sns_topic.alerts.arn]
-  ok_actions           = [aws_sns_topic.alerts.arn]
+  alarm_description   = "Backend is returning 5xx — likely an app or dependency failure."
+  treat_missing_data  = "notBreaching"
+  dimensions          = { LoadBalancer = var.alb_arn_suffix }
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
 }
 
 resource "aws_cloudwatch_metric_alarm" "alb_unhealthy" {
@@ -104,6 +104,38 @@ resource "aws_cloudwatch_metric_alarm" "rds_storage" {
   treat_missing_data  = "notBreaching"
   dimensions          = { DBInstanceIdentifier = var.db_instance_id }
   alarm_actions       = [aws_sns_topic.alerts.arn]
+}
+
+# --- Cost: AWS Budgets (plan §5.7) -----------------------------------------
+# Spend guardrail so cost never surprises the founder. Notifies alert_email
+# directly (Budgets emails its own subscribers — no SNS topic policy needed).
+# Tracks total AWS spend; OpenAI/other non-AWS cost is watched on the AI-cost
+# dashboard, not here.
+
+locals {
+  budget_notifications = var.alert_email == "" ? [] : [
+    { type = "ACTUAL", threshold = 80 },      # 80% of budget already spent
+    { type = "FORECASTED", threshold = 100 }, # on track to exceed 100%
+  ]
+}
+
+resource "aws_budgets_budget" "monthly_cost" {
+  name         = "${local.name_prefix}-monthly-cost"
+  budget_type  = "COST"
+  limit_amount = format("%d", var.monthly_budget_usd)
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  dynamic "notification" {
+    for_each = local.budget_notifications
+    content {
+      comparison_operator        = "GREATER_THAN"
+      threshold                  = notification.value.threshold
+      threshold_type             = "PERCENTAGE"
+      notification_type          = notification.value.type
+      subscriber_email_addresses = [var.alert_email]
+    }
+  }
 }
 
 # --- Redis ------------------------------------------------------------------

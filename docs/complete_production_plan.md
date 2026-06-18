@@ -11,8 +11,9 @@
 > below. **✅ Phase 3 (AWS Infrastructure): production backend LIVE & HEALTHY on Fargate** (2026-06-17,
 > Milestones 1–5 done). **✅ Phase 4 (Domain, DNS, SSL): `https://www.lingosai.com` and
 > `https://api.lingosai.com` fully operational** (2026-06-17, branch `feature/phase4-domain-dns-ssl`,
-> PR #90). Remaining work: SES production access (pending AWS ~24h), Google OAuth URI registration,
-> and end-to-end login verification → then Phase 5 (Operations).
+> PR #90). Remaining work: SES production access (**first request DENIED**, re-requested 2026-06-17),
+> and the founder browser test of the end-to-end login loop (Google OAuth URI is registered + the
+> backend redirect is verified) → then Phase 5 (Operations).
 > **▶ Next session starts at [Phase 5 — Production Operations & Scaling](#phase-5--production-operations--scaling).**
 > This document is the master plan that ties it all together.
 >
@@ -677,7 +678,10 @@ behind `EMAIL_PROVIDER` (AD-4) or keep Resend and skip SES IAM.
 - [x] The migration one-off task runs `alembic upgrade head` successfully against (production) RDS.
       _(ran to exit 0 in the deploy pipeline before the rollout.)_
 - [ ] A TTS/image generation in prod writes to **S3** and serves via CloudFront (not local disk).
-- [ ] A test email sends via SES (production access granted) to an arbitrary address.
+- [~] A test email sends via SES (production access granted) to an arbitrary address.
+      _(Sandbox send to a **verified** recipient PASSED 2026-06-17 — live `/auth/signup` → SES; AWS
+      `Send` metric + `SentLast24Hours` confirmed. Arbitrary-recipient send still needs production
+      access, which is pending AWS re-review.)_
 - [ ] A secret rotated in Secrets Manager is picked up after a redeploy.
 - [ ] An RDS snapshot restore drill completes within the RTO target.
 
@@ -728,14 +732,22 @@ plan. The infrastructure is production-ready and waiting for a domain.
 > - CORS preflight from `www` → `api`: `access-control-allow-origin: https://www.lingosai.com`,
 >   `allow-credentials: true` ✅; random origin → 400 ✅
 >
-> **Remaining (not blocking the rest of the app):**
-> - [ ] Register `https://api.lingosai.com/auth/google/callback` in Google Cloud Console
->       (Credentials → OAuth Client → Authorized redirect URIs). **Blocks Google login only.**
-> - [ ] SES production access granted by AWS (submitted, ~24h). Until then SES only delivers to
->       verified addresses — OTP/password-reset email works for verified test accounts.
-> - [ ] End-to-end login loop: sign up on `www`, Google OAuth, confirm `Secure`/`SameSite=Lax`
->       cookie set on `api.lingosai.com`, survive page refresh.
-> - [ ] Merge PR #90 once the above are ticked.
+> **Remaining (not blocking the rest of the app):** _(status reconciled with live state 2026-06-17)_
+> - [x] Register `https://api.lingosai.com/auth/google/callback` in Google Cloud Console — **done**.
+>       Verified live: `GET /auth/google/login` 307s to Google with the correct `redirect_uri` and a
+>       signed `state` JWT (`mode=google_login`).
+> - [x] `HEALTHCHECK_URL` GitHub prod variable updated to `https://api.lingosai.com/health/ready`
+>       (was the plain ALB DNS URL).
+> - [x] SES domain identity fully authenticated — Verified + **DKIM `SUCCESS`** + **MAIL-FROM
+>       `SUCCESS`** (`mail.lingosai.com` MX detected 2026-06-17). All mail is SPF/DKIM/DMARC-aligned.
+> - [ ] **SES production access — the first request was DENIED** (case `178170275200223`; the earlier
+>       "pending ~24h" note was wrong). Founder replied to the AWS case 2026-06-17 — awaiting AWS
+>       re-review (`ProductionAccessEnabled` still `false`). Sandbox (verified recipients, 200/day,
+>       1/s) works meanwhile. **This is the only remaining email blocker; it is purely AWS-side.**
+> - [ ] End-to-end login loop (founder browser test): sign up on `www`, Google OAuth, confirm the
+>       `HttpOnly`/`Secure`/`SameSite=Lax` refresh cookie on `api.lingosai.com` survives a refresh.
+>       Backend path verified; only the live browser click-through remains.
+> - [ ] Merge PR #90 once the login loop is confirmed.
 >
 > **Always pass `TF_VAR_db_password` + `TF_VAR_alert_email` on every future apply** — omitting
 > `alert_email` destroys the CloudWatch alert SNS subscription. Recover `db_password` from
@@ -834,11 +846,14 @@ or CORS origin silently breaks auth.
 ### Validation checklist
 - [x] `https://www.lingosai.com` loads the app with a valid cert; apex 307 → www; http → https.
 - [x] `https://api.lingosai.com/health` returns 200 over a valid ACM cert (Amazon RSA 2048 M01).
-- [ ] A login on `www` sets a `Secure`, `SameSite=Lax`, `.lingosai.com` cookie and survives a refresh.
-      _(blocked on Google OAuth redirect URI registration)_
+- [ ] A login on `www` sets a `Secure`, `SameSite=Lax` host-only cookie on `api.lingosai.com` and
+      survives a refresh. _(backend verified; awaiting founder browser click-through. Note: the cookie
+      is host-only on `api`, not `Domain=.lingosai.com` — correct, since `www` and `api` are same-site
+      under `lingosai.com` so a `SameSite=Lax` cookie is sent on credentialed `www`→`api` requests.)_
 - [x] CORS preflight from `www.lingosai.com` to `api.lingosai.com` succeeds; a random origin is rejected.
-- [ ] Google OAuth completes end-to-end on production hostnames.
-      _(pending: register `https://api.lingosai.com/auth/google/callback` in Google Cloud Console)_
+- [~] Google OAuth completes end-to-end on production hostnames.
+      _(redirect URI registered in GCP; `GET /auth/google/login` verified to 307 to Google with the
+      correct `redirect_uri` + signed `state`. Final browser consent click-through pending — founder.)_
 - [x] `curl -I http://api.lingosai.com` shows 301 redirect to HTTPS.
 
 ### Exit criteria
@@ -1196,8 +1211,13 @@ in Vercel). Frontend rows are the `NEXT_PUBLIC_*` set.
 
 **Operations**
 - [ ] CloudWatch alarms → SNS → your phone; one synthetic uptime check live.
-- [ ] AI-cost dashboard + AWS budget alarm live.
-- [ ] `RUNBOOK.md` / `DEPLOY.md` exist: deploy, rollback, incident, migration, weekly/monthly.
+- [~] AI-cost dashboard + AWS budget alarm live. _(AWS Budget alarm **live** 2026-06-17:
+      `lingosai-production-monthly-cost`, $150/mo, 80% actual + 100% forecasted → founder email.
+      AI-cost dashboard still TODO.)_
+- [x] `RUNBOOK.md` / `DEPLOY.md` exist: deploy, rollback, incident, migration, weekly/monthly.
+      _(RUNBOOK §§6–11 added 2026-06-17: monitoring/alerting, incident response + severity matrix,
+      deploy & rollback, secret rotation, weekly/monthly checklists, scaling triggers — with real
+      production resource names.)_
 - [ ] Security checklist above fully ticked.
 
 ---

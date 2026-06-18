@@ -185,7 +185,8 @@ Then walk the Phase 3 validation checklist (`complete_production_plan.md`):
 - [ ] Migration one-off task ran `alembic upgrade head` successfully (CloudWatch `/ecs/...-backend`,
       stream prefix `migrate`).
 - [ ] A real TTS/image generation writes to **S3** and serves via CloudFront (not local disk).
-- [ ] A test email sends via SES (after sandbox exit) to an external address.
+- [~] A test email sends via SES. _(Sandbox send to a verified recipient PASSED 2026-06-17 via live
+      `/auth/signup`; arbitrary-recipient send pending production access.)_
 - [ ] A secret rotated in Secrets Manager is picked up after a redeploy.
 - [ ] An RDS snapshot restore drill completes within the RTO target (`RUNBOOK.md`).
 
@@ -254,15 +255,18 @@ curl -sI https://www.lingosai.com                 # 200, "AI English Tutor"
 curl -sI https://lingosai.com                     # 307 → www.lingosai.com
 ```
 
-### Pending (not blocking production traffic)
+### Pending (not blocking production traffic) — _reconciled with live state 2026-06-17_
 
-- [ ] Register `https://api.lingosai.com/auth/google/callback` in Google Cloud Console
-      (Credentials → your OAuth 2.0 Client ID → Authorized redirect URIs). **Blocks Google login.**
-- [ ] SES production access — submitted 2026-06-17, awaiting AWS approval (~24h). Until approved,
-      SES only delivers to verified addresses. Email works for verified test accounts in the meantime.
-- [ ] Update `HEALTHCHECK_URL` GitHub Environment variable to `https://api.lingosai.com/health/ready`
-      (was the plain ALB DNS URL during Phase 3).
-- [ ] Merge PR #90 (`feature/phase4-domain-dns-ssl`) once Google OAuth + SES are verified.
+- [x] Register `https://api.lingosai.com/auth/google/callback` in Google Cloud Console — done.
+      Verified live: `GET /auth/google/login` 307s to Google with the correct `redirect_uri` + state.
+- [x] `HEALTHCHECK_URL` GitHub Environment variable updated to `https://api.lingosai.com/health/ready`.
+- [x] SES domain identity fully authenticated: Verified + DKIM `SUCCESS` + MAIL-FROM `SUCCESS`
+      (`mail.lingosai.com` MX detected 2026-06-17).
+- [ ] **SES production access — first request was DENIED** (case `178170275200223`; the earlier
+      "awaiting approval ~24h" note was wrong). Founder replied to the AWS case 2026-06-17 — awaiting
+      AWS re-review (`ProductionAccessEnabled` still `false`). Sandbox (verified recipients, 200/day)
+      works meanwhile.
+- [ ] End-to-end login browser test (founder), then merge PR #90 (`feature/phase4-domain-dns-ssl`).
 
 ### How to re-run a future apply
 
