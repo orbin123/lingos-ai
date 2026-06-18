@@ -2,7 +2,8 @@ name: deploy
 
 # Backend CD (Phase 3). Implements the DEPLOY.md §6 contract:
 #   OIDC -> ECR push (git-<sha>) -> migration one-off task -> ECS rolling deploy
-#   -> wait stable -> smoke /health/ready -> auto-rollback on smoke failure.
+#   -> wait stable -> smoke api /health/ready (auto-rollback on failure)
+#   -> smoke frontend www 200 (fails the run; backend untouched — G3).
 #
 # Triggers:
 #   * push to `main` -> auto-deploys PRODUCTION (the CI/CD lockstep, G1).
@@ -184,4 +185,28 @@ jobs:
             --cluster "${{ vars.ECS_CLUSTER }}" \
             --services "${{ vars.ECS_SERVICE }}"
           echo "::error::Rolled back to $PREV_TD (migrations were NOT reverted — forward-only)."
+          exit 1
+
+      # Post-deploy smoke for the FRONTEND (Vercel). Asserts www is serving 200.
+      # NOTE: this does NOT roll back the backend — the frontend is a separate
+      # Vercel deploy (AD-1), so a down www is not a backend regression. The
+      # backend was already gated + rolled-back by the /health/ready step above.
+      # Failing here surfaces a frontend outage on the deploy run (G3: "fail the
+      # run if either host is down") without touching the healthy backend.
+      # FRONTEND_SMOKE_URL defaults to the prod hostname; set the env var to
+      # override (e.g. for a staging dispatch).
+      - name: Post-deploy smoke (frontend www)
+        env:
+          FRONTEND_SMOKE_URL: ${{ vars.FRONTEND_SMOKE_URL || 'https://www.lingosai.com' }}
+        run: |
+          set -euo pipefail
+          echo "Smoking frontend: $FRONTEND_SMOKE_URL"
+          for i in $(seq 1 10); do
+            CODE=$(curl -fsSL -o /dev/null -w '%{http_code}' "$FRONTEND_SMOKE_URL" || true)
+            if [ "$CODE" = "200" ]; then
+              echo "Frontend smoke OK ($CODE)"; exit 0
+            fi
+            echo "Attempt $i: got $CODE, retrying..."; sleep 6
+          done
+          echo "::error::Frontend smoke failed for $FRONTEND_SMOKE_URL (backend left untouched — Vercel deploy is independent)."
           exit 1
