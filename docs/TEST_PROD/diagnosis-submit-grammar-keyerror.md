@@ -1,6 +1,6 @@
 # `KeyError: 'grammar'` on `POST /diagnosis/submit`
 
-**Date:** 2026-06-19 · **Severity:** High (diagnosis flow fully broken in prod) · **Status:** Fix implemented; deploy in progress
+**Date:** 2026-06-19 · **Severity:** High (diagnosis flow fully broken in prod) · **Status:** Fixed, merged, deployed to production
 
 ## Problem
 
@@ -90,11 +90,17 @@ running `alembic upgrade head` before the rolling service update).
 
 ## PR(s) created
 
-- _TBD — link added on push._
+- https://github.com/orbin123/lingos-ai/pull/118 — squash-merged to `main`.
+  (Follow-up commit in the same PR fixed `test_curriculum_v2_db.py::TestSeedAll`,
+  which now had to account for `seed_all` also seeding skills.)
 
 ## Deployment status
 
-- _Pending merge → CD. The migration runs in deploy.yml's "Run migrations" step._
+- **Deployed to production.** Deploy run
+  [27836977155](https://github.com/orbin123/lingos-ai/actions/runs/27836977155)
+  succeeded (5m15s): build → migrate → rolling update → `/health/ready` smoke, all green.
+- CloudWatch confirms the migration ran on the live RDS (migrate task log):
+  `Running upgrade q7r8s9t0u123 -> r8s9t0u1v234, seed skills: insert the 7 canonical sub-skill master rows`.
 
 ## Validation evidence
 
@@ -108,14 +114,26 @@ running `alembic upgrade head` before the rolling service update).
   updates 7).
 - `pytest tests/unit/skills tests/integration/progress tests/unit/scoring` → 93 passed.
 
-**Production (post-deploy — TBD):**
-- _Confirm CD migration task exit 0._
-- _ECS Exec: `SELECT name FROM skills` → 7 rows._
-- _Live diagnosis submit → 201, no 500._
-- _Sentry: no new `KeyError: 'grammar'`._
+**Production (post-deploy, 2026-06-19):**
+- CD migration task exited 0; migrate task CloudWatch log shows the seed migration
+  running on the live DB (see Deployment status).
+- `GET https://api.lingosai.com/health/ready` → `200`.
+- `POST https://api.lingosai.com/diagnosis/submit` (unauth probe) → `401`
+  (route reachable, **not** a 500/crash) — logged with `status: 401`, no traceback.
+- CloudWatch `filter-log-events` on `/ecs/lingosai-production-backend` for `KeyError`
+  over the 30 min post-deploy window → **no events**.
+
+Not done (blocked by policy, not required): a direct prod row-count check via ECS
+Exec (`SELECT name FROM skills`) was denied by the Claude Code prod-exec guard.
+The migration's effect is deterministic and was verified on a full Postgres chain
+locally, and the prod migrate log confirms it ran — so the 7 rows are present. If a
+belt-and-suspenders DB confirmation is wanted, run (with authorization):
+`aws ecs execute-command … --command "python -c \"from app.core.database import SessionLocal; from app.modules.skills.models import Skill; print(SessionLocal().query(Skill).count())\""`.
 
 ## Remaining follow-ups
 
 - Consider a CI job running `alembic upgrade head` against a throwaway Postgres so
   migration-seeded data is exercised — the SQLite `create_all()` harness cannot
   catch this class of bug.
+- Optional: an authenticated end-to-end diagnosis submit against prod to observe a
+  live `201` (not done here to avoid mutating a real learner's diagnosis state).
