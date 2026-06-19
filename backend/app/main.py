@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.database import engine
 from app.core.logging import AccessLogMiddleware, TraceIDMiddleware, configure_logging
 from app.core.rate_limit import AdminRateLimitMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.sentry import init_sentry
 from app.modules.admin.routes import router as admin_router
 from app.modules.auth.routes import router as auth_router
@@ -69,6 +70,10 @@ app.add_middleware(AccessLogMiddleware)
 
 # Added last → outermost: stamps a trace_id before any other middleware logs.
 app.add_middleware(TraceIDMiddleware)
+
+# Security headers (HSTS, nosniff) — production-only, outermost so they ride on
+# every response (incl. errors). No-op outside ENVIRONMENT=production.
+app.add_middleware(SecurityHeadersMiddleware)
 
 
 # ---------------------------------------------------------------------------
