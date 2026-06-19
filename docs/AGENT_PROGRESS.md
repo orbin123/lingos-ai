@@ -5,6 +5,128 @@ Most-recent session first.
 
 ---
 
+## Session 7 — Gap G8: Rollback drill + DR (Phase C close-out)
+
+**Status:** **code/IaC complete; live proof is founder-gated.** The PR enables the
+password-safe row-verify path (ECS Exec) and ships timed, repeatable drill scripts +
+a runbook. The actual close-out (apply, run the timed rollback, restore + row-verify)
+mutates prod / creates a real RDS instance, so it is a founder runbook. G8 is **not**
+marked done until the founder records: rollback timed <5 min, restored DB row-verified.
+**Branch:** `feat/g8-rollback-dr`
+**Date:** 2026-06-19
+
+### Why this gap
+G1–G6 are merged (#101–#112). Only G7 (Phase D) and G8 (Phase C) remain, and the plan
+orders **Phase C (G6+G8) before Phase D**, so G8 is the highest-priority unfinished gap.
+Session 6 explicitly recommended G8 next.
+
+### Critical finding (shaped the gap)
+`RUNBOOK.md` §3 already *prescribed* ECS Exec for the password-safe row-level data check —
+but **ECS Exec was never actually enabled**: `enable_execute_command` was absent from
+`aws_ecs_service.backend` and the task role had **no SSM messaging permissions**
+(`infra/terraform/modules/compute/main.tf`). So the founder literally could not perform
+G8's verification without putting the prod password in an env override — exactly what the
+plan forbids. The one genuinely code-actionable piece of G8 is therefore **enabling ECS
+Exec via IaC** (minimal; cleaner than standing up a bastion). Everything else is timed
+drills that mutate prod / cost money → agent writes scripts + runbook, founder executes.
+
+### Completed work (code/IaC)
+- **`infra/terraform/modules/compute/main.tf`** — `enable_execute_command = true` on the
+  backend service + an `ssmmessages:*` (Create/Open Control/Data Channel) statement on the
+  task-role policy. Not in the service `ignore_changes` list and deploy.yml only touches
+  `--task-definition`, so neither Terraform nor CD reverts it. No VPC endpoint needed (ECS SG
+  egress is all-open via NAT).
+- **`scripts/verify-dr-readiness.sh`** (new) — read-only readiness verifier mirroring
+  `verify-prod-parity.sh` (same PASS/FAIL/WARN framework, env-var defaults, exit 0 iff FAIL=0).
+  Checks: service health, ≥2 ACTIVE task-def revisions (rollback target), ECS Exec enabled,
+  RDS Multi-AZ/PITR≥7/deletion-protect/private, latest automated snapshot + age.
+- **`scripts/rollback-drill.sh`** (new, founder-run) — captures current revision, re-points the
+  service at the previous ACTIVE revision, waits stable, smokes `/health/ready`, **times** the
+  rollback vs. the 300s target, then rolls forward to the original revision. `--dry-run` +
+  typed `rollback` confirmation. Pins `--region` (CLI defaults to ap-south-1).
+- **`scripts/rds-restore-drill.sh`** (new, founder-run) — codifies RUNBOOK §3: finds the latest
+  automated snapshot, restores to a throwaway private `lingosai-restore-drill` (subnet group +
+  SG discovered live from the prod instance, not hardcoded), times the spin-up, and prints the
+  exact ECS Exec row-verify steps (python snippet that swaps only the host in the in-container
+  `$DATABASE_URL`). `--teardown` deletes with `--skip-final-snapshot`.
+- **`docs/G8_ROLLBACK_DR_RUNBOOK.md`** (new) — `[AUTO]`/`[FOUNDER]` steps + the apply→
+  force-new-deployment ordering + definition-of-done checklist (record the rollback time +
+  row-verify evidence).
+- **`docs/RUNBOOK.md`** §3 — reconciled the data-integrity note (clarified the password-safe
+  `DATABASE_URL` host-swap; noted ECS Exec is now enabled + points at the drill script).
+
+### Files changed
+- `infra/terraform/modules/compute/main.tf`
+- `scripts/verify-dr-readiness.sh` — new.
+- `scripts/rollback-drill.sh` — new.
+- `scripts/rds-restore-drill.sh` — new.
+- `docs/G8_ROLLBACK_DR_RUNBOOK.md` — new (git-ignored dir → `git add -f`).
+- `docs/RUNBOOK.md`, `docs/AGENT_PROGRESS.md` — this log.
+
+### Verification performed
+- `terraform -chdir=envs/production validate` → **Success**; `terraform fmt -check` on my added
+  block is clean (the only remaining fmt diff is a pre-existing `"${local.name_prefix}"` line I
+  deliberately left untouched to keep the diff focused — no terraform-fmt CI gate exists).
+- `bash -n` on all three scripts → OK (shellcheck not installed locally).
+- **Ran `scripts/verify-dr-readiness.sh` against LIVE prod (read-only):** `PASS=10 FAIL=1`,
+  exit 1 — the single FAIL is `ecs exec enabled` (the intended pre-apply "not done yet" signal,
+  flips to PASS after the founder applies + force-deploys). All else PASS: service ACTIVE 1/1
+  (rev 16), 16 ACTIVE revisions, RDS available/Multi-AZ/deletion-protect/private/7-day PITR,
+  latest automated snapshot `rds:lingosai-production-postgres-2026-06-19-03-06` (10h old).
+- **`rollback-drill.sh --dry-run`** (read-only resolve): correctly resolved current rev16 →
+  rollback target rev15 and printed the exact commands.
+- **`rds-restore-drill.sh --dry-run`** (read-only): resolved snapshot 2026-06-19-03-06, subnet
+  group `lingosai-production-db-subnets`, SG `sg-04f4eb40d803afb93`, engine 16.4 — all match
+  RUNBOOK §3.
+- Fixed a real bug found during the live run: jq's `//` treats `false` as empty, so the RDS
+  `PubliclyAccessible=false` field wrongly showed `?`; replaced with a null-guard `tostring`.
+
+### Findings
+- ECS Exec works over the existing all-egress ECS SG via NAT — **no VPC endpoint required** at
+  this scale (VPC endpoints remain a post-launch §6 optimization).
+- The plan's "never put the prod password in an env override" is satisfiable cleanly **only**
+  with ECS Exec (or a bastion): from inside a running task you reuse the already-injected
+  `DATABASE_URL` password and swap just the host to the drill endpoint.
+- Prod is in good DR shape already (Multi-AZ, 7-day PITR, deletion protection, daily snapshot
+  ~10h old, 16 rollback-able revisions) — the gap was the *verified drill*, not the capability.
+
+### Decisions
+- **ECS Exec over a bastion** — minimal, no new EC2/SG/key management, and it's the mechanism
+  RUNBOOK §3 already assumed.
+- **No live prod mutation by the agent** — did not `terraform apply`, run a real rollback, or
+  restore RDS. All are prod-changing / cost-incurring and are founder runbook steps.
+- **Rollback drill ends prod where it started** (forward step re-points the exact captured ARN)
+  so the drill is non-destructive to the deployed revision.
+- Left the pre-existing `"${local.name_prefix}"` fmt nit untouched to keep the IaC diff to the
+  G8 change only.
+
+### Risks
+- `enable_execute_command` only affects tasks launched **after** the apply → the founder must
+  `--force-new-deployment` once; the readiness verifier's exec check stays FAIL until then
+  (intended signal). Called out in the runbook's ordering note.
+- The rollback drill briefly serves the previous image (and a second rolling replace on the
+  forward step); single-task service → run in a quiet window. `--dry-run` previews.
+- The restore drill creates a real (small, single-AZ) RDS instance = cost until `--teardown`;
+  both the script and runbook enforce deletion with `--skip-final-snapshot`.
+- ECS Exec grants an IAM-gated interactive prod shell — standard, not app-exposed, but treat the
+  privilege like any prod-access grant.
+
+### Founder actions required (to finish G8 — see `docs/G8_ROLLBACK_DR_RUNBOOK.md`)
+1. **Review + merge** PR `feat/g8-rollback-dr`.
+2. `terraform apply` in `envs/production` + `--force-new-deployment`; re-run
+   `verify-dr-readiness.sh` → exit 0.
+3. Run `rollback-drill.sh` in a quiet window; **record the rollback time** (<5 min).
+4. Run `rds-restore-drill.sh`, row-verify via ECS Exec (reuse in-container `DATABASE_URL`),
+   record the spin-up time + row counts, then `--teardown`.
+
+### Next recommended gap
+**G7 — security close-out** (Phase D, the last gap): agent-actionable parts are the `config.py`
+prod-guard re-confirmation, the HSTS header on both hosts, and the `backup*.sql` git-history
+decision; provider-key rotation stays founder console work. Closing G7 ticks the remaining
+Appendix C boxes → launch.
+
+---
+
 ## Session 6 — Gap G6: Observability finish (Sentry capture + trace correlation)
 
 **Status:** **code complete; live proof is founder-gated.** The PR makes a forced
