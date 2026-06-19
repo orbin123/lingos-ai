@@ -5,6 +5,120 @@ Most-recent session first.
 
 ---
 
+## Session 5 — Gap G5: Email provider (SES → Resend)
+
+**Status:** **code/IaC complete; live flip is founder-gated.** The PR makes Resend the
+desired-state prod email provider and wires the `RESEND_API_KEY` secret + execution-role
+grant; the actual live cutover (domain verify, key, task-def revision, external-inbox
+test) is a founder runbook. G5 is **not** marked done until an email reaches an external
+inbox.
+**Branch:** `feat/g5-email-resend`
+**Date:** 2026-06-19
+
+### Why this gap
+Phase A (G1–G3) is merged; G4 is agent-complete (verifier + runbook) with only
+founder browser/purchase rows left. Session 4 recommended **G5 next** because it
+**directly unblocks G4 row 6** (signup OTP email) and finishes Phase B.
+
+### Decision gate — verified live (read-only)
+SES production access is **DENIED / sandbox-only** — confirmed this session:
+```
+aws sesv2 get-account → "ProductionAccessEnabled": false,
+  "ReviewDetails": {"Status":"DENIED","CaseId":"178170275200223"}
+```
+Sandbox can only email verified identities, never an arbitrary inbox. Per the plan's
+decision gate (and founder approval this session), prod sends via **Resend**.
+
+### Critical architectural finding (shaped the whole gap)
+`deploy.yml` builds each new task-def by **cloning the currently-running task-def**
+(`describe-task-definition`) and swapping only the image; the compute module has
+`lifecycle { ignore_changes = [container_definitions] }`. So **neither `terraform apply`
+nor a normal code deploy changes the live `environment`/`secrets`** — the live flip is a
+**one-time founder task-def revision** (after which deploy.yml carries it forward). There
+is also a load-bearing ordering: the execution role only reads ARNs in `all_secret_arns`,
+so `terraform apply` (creates the secret + widens the grant) **must precede** the task-def
+revision that references `RESEND_API_KEY`. Both captured in the runbook.
+
+### Completed work (code/IaC)
+- **`infra/terraform/modules/stack/main.tf`** — `EMAIL_PROVIDER` `"ses"` → `"resend"`
+  (left `SES_REGION`/`EMAIL_FROM` for an easy switch-back; `EMAIL_FROM` already on the
+  `lingosai.com` domain).
+- **`infra/terraform/modules/secrets/main.tf`** — added `RESEND_API_KEY` to
+  `founder_secret_names`, which (a) creates the empty Secrets Manager entry, (b) adds it to
+  the task-def `secrets` wiring (`secret_arns`), and (c) widens the execution-role
+  `GetSecretValue` grant (`all_secret_arns`).
+- **`scripts/verify-prod-parity.sh`** — now asserts `EMAIL_PROVIDER=resend` (was
+  "non-empty") and adds `RESEND_API_KEY` to `EXPECTED_SECRETS`, so G5 + G4-row-6 are
+  CLI-verifiable post-flip.
+- **`docs/G5_EMAIL_RUNBOOK.md`** (new) — exact founder steps: Resend domain verify +
+  DKIM/SPF, create key, `terraform apply`, `put-secret-value`, the one-time task-def
+  revision (copy-paste `aws ecs` block), external-inbox proof, verifier re-run, rollback.
+- **No app code change** — `app/email/` already supports `EMAIL_PROVIDER=resend` +
+  `RESEND_API_KEY` with a console fallback (confirmed in `app/email/__init__.py`).
+
+### Files changed
+- `infra/terraform/modules/stack/main.tf`
+- `infra/terraform/modules/secrets/main.tf`
+- `scripts/verify-prod-parity.sh`
+- `docs/G5_EMAIL_RUNBOOK.md` — new (git-ignored dir → `git add -f`).
+- `docs/AGENT_PROGRESS.md` — this log.
+
+### Verification performed
+- `terraform fmt -check` on both modules → clean (exit 0).
+- `terraform validate` (stack module, `-backend=false`) → **Success** (the lone warning is
+  a pre-existing `data.aws_region.current.name` deprecation in `compute/main.tf`, unrelated).
+- `bash -n scripts/verify-prod-parity.sh` → OK.
+- **Ran the verifier against LIVE prod** — the new assertions correctly report the
+  **pre-flip** state: `EMAIL_PROVIDER` FAIL (`got 'ses'`), `secret wiring` FAIL
+  (`missing: RESEND_API_KEY`), `PASS=12 FAIL=2 WARN=1`. These two flip to PASS once the
+  founder completes the runbook — proving the logic and giving a clear "not done yet" signal.
+
+### Findings
+- `RESEND_API_KEY` did **not** exist in Secrets Manager (prod list confirmed) — so before
+  this PR, Resend was unusable in prod even with the code support: no secret, no task-def
+  wiring, no IAM grant.
+- The live `EMAIL_PROVIDER` is still `ses` and won't change from IaC alone (ignore_changes
+  + deploy.yml inherits live env) — the one-time task-def revision is unavoidable.
+
+### Decisions
+- **Resend over re-appealing SES** (founder-approved) — SES re-review is console-only,
+  slow, and uncertain; Resend unblocks launch now.
+- **No live mutation by the agent** — did not `terraform apply`, register a task-def, write
+  the secret, or send a test email. All depend on the real Resend key + domain verification
+  (founder-only) and are prod-changing.
+- Kept `SES_REGION`/SES IAM (`ses:SendEmail` on the task role) in place — harmless, and
+  makes a switch-back trivial if SES prod access is later granted.
+
+### Risks
+- The PR changes **desired state** only; until the founder runs the runbook, live prod
+  still emails via sandboxed SES (external inboxes won't receive). The verifier's two FAILs
+  make this visible.
+- Resend needs its **own** DKIM/SPF records at Namecheap (separate from SES's). If only SES
+  records exist, Resend delivery will fail SPF/DKIM alignment → spam/bounce. Called out in
+  runbook Step 1.
+- `EMAIL_FROM=noreply@lingosai.com` requires the domain **verified in Resend**; until then
+  Resend only sends from `onboarding@resend.dev` to the account owner. Runbook Step 1.
+
+### Founder actions required (to finish G5 — see `docs/G5_EMAIL_RUNBOOK.md`)
+1. **Review + merge** PR `feat/g5-email-resend`.
+2. Verify `lingosai.com` in Resend + publish its DKIM/SPF at Namecheap.
+3. Create a Resend API key.
+4. `terraform apply` in `envs/production` (creates the secret + IAM grant).
+5. `aws secretsmanager put-secret-value` the real key.
+6. Run the one-time task-def revision (runbook Step 5) to flip live `EMAIL_PROVIDER=resend`
+   + reference the secret; wait stable.
+7. Sign up on `www` with an **external** inbox; confirm the OTP arrives (G5 + G4 row 6
+   evidence). Re-run `scripts/verify-prod-parity.sh` → both checks PASS.
+
+### Next recommended gap
+Phase B closes once the founder finishes the G5 runbook + the remaining G4 founder rows.
+The next agent-actionable gap is **G6 — observability finish**: the agent can pre-wire
+`SENTRY_DSN` consumption / a forced-error test route and document the SNS-subscription +
+503-resilience checks, leaving the DSN value + subscription click as founder actions.
+(Note: `SENTRY_DSN` already exists as a secret; confirm it holds a real value.)
+
+---
+
 ## Session 4 — Gap G4: Prove feature parity in prod (verifier + runbook)
 
 **Status:** **partially complete** — the CLI-checkable rows are **proven live**
