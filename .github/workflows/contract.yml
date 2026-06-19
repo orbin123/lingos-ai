@@ -8,13 +8,10 @@ on:
       - "backend/openapi.json"
       - "backend/scripts/export_openapi.py"
       - ".github/workflows/contract.yml"
+  # No paths filter on PRs: `openapi-drift` is a REQUIRED status check under
+  # branch protection (strict). A path-filtered required check never reports on
+  # an unrelated PR, which wedges the merge forever (see POLISHED plan, Appendix B).
   pull_request:
-    paths:
-      - "backend/app/**"
-      - "backend/openapi.json"
-      - "backend/scripts/export_openapi.py"
-      - "frontend/src/lib/**"
-      - ".github/workflows/contract.yml"
 
 concurrency:
   group: contract-${{ github.ref }}

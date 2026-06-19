@@ -1,5 +1,7 @@
 """Diagnosis HTTP routes."""
 
+import logging
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
@@ -36,6 +38,8 @@ from app.modules.diagnosis.service import DiagnosisService
 # allowed for VERIFIED users, blocked for UNVERIFIED — hence require_verified
 # here rather than the (post-trial) premium guard.
 router = APIRouter(dependencies=[Depends(require_learner), Depends(require_verified)])
+
+logger = logging.getLogger(__name__)
 
 
 @router.post("/start", status_code=status.HTTP_200_OK)
@@ -113,6 +117,17 @@ async def score_read_aloud(
             detail=str(exc),
         ) from exc
     except PronunciationError as exc:
+        # Log the concrete Azure failure (type + message) so a 502 here is
+        # diagnosable from CloudWatch — distinguishes a config/cred problem
+        # (auth/region) from a runtime/connectivity one (missing native deps,
+        # blocked egress). The route otherwise only emits the http_request 502.
+        logger.warning(
+            "pronunciation_score_failed passage_id=%s user_id=%s err_type=%s err=%s",
+            passage_id,
+            current_user.id,
+            type(exc).__name__,
+            exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(exc),

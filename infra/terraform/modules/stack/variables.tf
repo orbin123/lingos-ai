@@ -122,8 +122,20 @@ variable "azure_speech_region" {
 }
 
 # --- TLS / CDN custom domains (set in Phase 4) ------------------------------
+variable "create_api_certificate" {
+  description = "Request + DNS-validate the ACM cert for api.<domain> in this env (true in exactly one)."
+  type        = bool
+  default     = false
+}
+
+variable "api_domain" {
+  description = "FQDN the ALB serves, e.g. api.lingosai.com. The api cert is requested for this."
+  type        = string
+  default     = ""
+}
+
 variable "api_acm_certificate_arn" {
-  description = "ACM cert for api.<domain>. Empty = ALB serves HTTP only (Phase 3)."
+  description = "Escape hatch: a pre-existing ACM cert ARN for api.<domain>. Ignored when create_api_certificate=true. Empty = ALB serves HTTP only (Phase 3)."
   type        = string
   default     = ""
 }
@@ -143,6 +155,12 @@ variable "cdn_domain_aliases" {
 variable "alert_email" {
   type    = string
   default = ""
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly AWS cost budget (USD) for the cost alarm."
+  type        = number
+  default     = 200
 }
 
 variable "github_repo" {

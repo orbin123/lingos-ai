@@ -2,12 +2,17 @@
 
 from typing import Literal
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
+from app.ai.llm.eval_context import get_eval_context
 from app.core.database import get_db
+from app.core.sentry import capture_to_sentry
 from app.modules.admin.audit_service import client_ip_from_request
 from app.modules.admin.schemas import (
+    AICostReport,
     AIQualityReport,
     AIRequestLogRead,
     AdminAuditLogRead,
@@ -42,6 +47,8 @@ from app.modules.auth.models import ROLE_ADMIN, ROLE_SUPER_ADMIN, User
 from app.modules.feedback.schemas import ReviewStats
 
 require_admin = require_role([ROLE_ADMIN, ROLE_SUPER_ADMIN])
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(
     prefix="/admin",
@@ -292,6 +299,19 @@ def get_ai_quality(
 
 
 @router.get(
+    "/ai-costs",
+    response_model=AICostReport,
+    status_code=status.HTTP_200_OK,
+)
+def get_ai_costs(
+    days: int = Query(30, ge=1, le=180),
+    _current_user: User = Depends(require_permission("ai_costs.read")),
+    db: Session = Depends(get_db),
+) -> AICostReport:
+    return AdminService(db).ai_costs(days=days)
+
+
+@router.get(
     "/payments",
     response_model=list[PaymentRead],
     status_code=status.HTTP_200_OK,
@@ -456,3 +476,42 @@ def feedback_analytics_stats(
     db: Session = Depends(get_db),
 ) -> FeedbackReactionStats:
     return AdminService(db).feedback_reaction_stats()
+
+
+# ── Observability self-test (G6) ───────────────────────────────────
+
+
+@router.post(
+    "/observability/test-error",
+    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+)
+def trigger_test_error(
+    _current_user: User = Depends(require_super_admin),
+) -> JSONResponse:
+    """Deliberately raise a 500 to verify error capture end-to-end (G6).
+
+    Super-admin only. Returns the request ``trace_id`` so it can be matched
+    against the same id in Sentry (tagged via ``before_send``) and the CloudWatch
+    log line below. A single 500 is well under the ALB 5xx alarm threshold
+    (>10/60s); this is a verification tool, not a mutation, so it is not audited.
+
+    The exception is captured explicitly via :func:`capture_to_sentry` (tagged
+    with the ``trace_id``, a no-op when no DSN is configured) rather than left to
+    propagate, so it reports exactly once and the response can still carry the id.
+    """
+
+    trace_id = get_eval_context().trace_id
+    logger.error("observability_test_error", trace_id=trace_id)
+    try:
+        raise RuntimeError("G6 observability self-test: intentional error")
+    except RuntimeError as exc:
+        capture_to_sentry(exc)
+
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "status": "error",
+            "detail": "Intentional observability self-test error.",
+            "trace_id": trace_id,
+        },
+    )

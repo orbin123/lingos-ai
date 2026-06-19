@@ -1,13 +1,15 @@
 # LingosAI Operations Runbook
 
-> Phase 1 (Production Hardening) policy deliverables: environment separation,
-> secrets strategy, database backup/restore, and migration policy. AWS-specific
-> mechanics (Secrets Manager, RDS, ECS one-off tasks) land in Phase 3 — this
-> document fixes the **policies** those mechanics must implement.
+> **§§1–5 (Phase 1)** are the *policy* deliverables: environment separation,
+> secrets strategy, database backup/restore, and migration policy.
+> **§§6–11 (Phase 5)** are the *operational* runbooks now that AWS is live:
+> monitoring/alerting, incident response, deploy & rollback, secret rotation,
+> weekly/monthly maintenance, and scaling triggers. Commands use the real
+> production resource names (region **us-east-1**).
 >
 > ⚠️ `docs/` is git-ignored — this file is force-added (`git add -f docs/RUNBOOK.md`).
 >
-> Last updated: 2026-06-16.
+> Last updated: 2026-06-17.
 
 ---
 
@@ -90,10 +92,36 @@ createdb lingosai_restore
 pg_restore -d "postgresql://.../lingosai_restore" --clean --if-exists lingosai_*.dump
 ```
 
-**Restore drill — run once before launch** (an untested backup is not a backup):
-restore the latest dump into a fresh database, point a local app at it, and
-confirm login + a session loads. Targets: **RPO ≤ 5 min** (PITR), **RTO ≤ 1 hr**
-(restore snapshot to new RDS, repoint `DATABASE_URL`, redeploy).
+**Restore drill — run periodically** (an untested backup is not a backup).
+Targets: **RPO ≤ 5 min** (PITR), **RTO ≤ 1 hr** (restore snapshot → new RDS →
+repoint `DATABASE_URL` → redeploy).
+
+The RDS-snapshot drill (matches how a real recovery works):
+```bash
+# 1. latest automated snapshot
+aws rds describe-db-snapshots --region us-east-1 --snapshot-type automated \
+  --query "reverse(sort_by(DBSnapshots[?DBInstanceIdentifier=='lingosai-production-postgres'],&SnapshotCreateTime))[0].DBSnapshotIdentifier" --output text
+# 2. restore to a throwaway instance (private, single-AZ), reusing prod subnet group + SG
+aws rds restore-db-instance-from-db-snapshot --db-instance-identifier lingosai-restore-drill \
+  --db-snapshot-identifier "<snapshot>" --db-instance-class db.t4g.small --no-multi-az \
+  --no-publicly-accessible --db-subnet-group-name lingosai-production-db-subnets \
+  --vpc-security-group-ids sg-04f4eb40d803afb93 --region us-east-1
+aws rds wait db-instance-available --db-instance-identifier lingosai-restore-drill --region us-east-1
+# 3. tear down (no final snapshot — it's a throwaway)
+aws rds delete-db-instance --db-instance-identifier lingosai-restore-drill \
+  --skip-final-snapshot --delete-automated-backups --region us-east-1
+```
+> **Data-integrity check (do this hands-on — never put the prod password in a
+> file/env override):** while the drill instance is up, verify row-level data via
+> **ECS Exec** into a running task (`aws ecs execute-command … --command
+> "python -c '…psycopg count…'"` with `DATABASE_URL` pointing at the drill
+> endpoint) or `psql` from a bastion in the VPC. The drill instance is private by
+> design, so verification happens inside the VPC.
+
+**Last drill — 2026-06-18:** snapshot `rds:lingosai-production-postgres-2026-06-18-03-06`
+restored to `lingosai-restore-drill`; **available in 7m 28s** (well within the 1 hr
+RTO), engine 16.4 / 20 GB matched prod; instance torn down. Row-level data check
+deferred to a hands-on run (credential safety).
 
 ⚠️ **History-scrub prerequisite (audit E1):** `backup*.sql` dumps exist in git
 history. If they ever held production data, treat it as a disclosure risk —
@@ -131,3 +159,152 @@ Already in place; recorded here as the tuning baseline (tighten from
   `AI_RATE_LIMIT_TRANSCRIBE_PER_MINUTE=20`, `WS_MESSAGE_RATE_PER_MINUTE=20`,
   `WS_A2Z_STREAMS_PER_MINUTE=10`. Redis-backed when reachable (multi-worker safe
   on ElastiCache), in-memory fallback for dev/tests.
+
+---
+
+## 6. Monitoring & alerting (plan 5.1)
+
+One on-call (the founder), reached by **email via SNS topic
+`lingosai-production-alerts`** (→ `orbinsunny9495@gmail.com`). Confirm the SNS
+email subscription shows **Confirmed** (click the AWS confirmation email once).
+
+**CloudWatch alarms** (Terraform `modules/observability`) — high-signal only;
+everything else lives on dashboards to avoid alert fatigue:
+
+| Alarm | Fires when | First move |
+|---|---|---|
+| `lingosai-production-alb-5xx` | >10 target 5xx/min for 2 min | Sentry + ECS logs; likely app/dependency failure → consider rollback (§8) |
+| `lingosai-production-alb-unhealthy-hosts` | a target fails `/health/ready` | check `/health/ready` breakdown (db/redis); check ECS task health |
+| `lingosai-production-ecs-cpu-high` | CPU >85% for 3 min | scale task count (§11) |
+| `lingosai-production-rds-cpu-high` | RDS CPU >85% for 3 min | slow queries; watch t-class CPU credits |
+| `lingosai-production-rds-free-storage-low` | free storage <2 GiB | autoscaling should cover; investigate growth |
+| `lingosai-production-rds-cpu-credits-low` | t-class CPU credit balance <50 | sustained CPU will throttle; consider larger class |
+| `lingosai-production-rds-connections-high` | avg connections >100 for 3 min | possible leak; consider pooling (RDS Proxy/PgBouncer) |
+| `lingosai-production-ecs-memory-high` | memory >85% for 3 min | OOM-kill risk; bump task memory or scale out |
+| `lingosai-production-redis-memory-high` | memory >85% for 3 min | rate-limit/lock keys may evict; bump node size |
+| `lingosai-production-redis-evictions` | any evictions over 10 min | memory pressure dropping keys; bump node size |
+
+**Synthetic uptime:** Route53 health check `lingosai-production-uptime-health`
+hits `https://api.lingosai.com/health` every 30s from multiple AWS regions →
+alarm `lingosai-production-uptime-health` pages via SNS if it fails. Uses
+`/health` (liveness), not `/health/ready`.
+
+**Cost:** AWS Budget `lingosai-production-monthly-cost` (**$150/mo**) emails at
+80% actual + 100% forecasted spend.
+
+**Errors:** Sentry — **backend + frontend** (`@sentry/nextjs`) both wired
+(`tracesSampleRate=0.1`, no-op when DSN empty). Set **`NEXT_PUBLIC_SENTRY_DSN`**
+in Vercel (Production + Preview); optionally `SENTRY_AUTH_TOKEN` / `SENTRY_ORG` /
+`SENTRY_PROJECT` for source-map upload at build. **AI metrics:** `ai_request_logs`
+(latency/tokens/status) + the **AI-cost dashboard** at `/admin/ai-costs`
+(`ai_costs.read`): spend by capability/model + daily trend, derived from the LLM
+pricing table. **LangSmith:** off (data-residency, plan 1.12).
+
+**Known gaps (TODO):** NAT-gateway error alarm (network module doesn't export the
+NAT id yet).
+
+---
+
+## 7. Incident response (plan 5.5)
+
+**Severity matrix:**
+
+| Sev | Definition | Examples | Response |
+|---|---|---|---|
+| **SEV1** | Core user flow down | login/checkout broken, API 5xx storm, DB down | drop everything; mitigate first, communicate |
+| **SEV2** | Degraded, not down | AI eval slow/failing, one provider down | mitigate via flags; fix same day |
+| **SEV3** | Cosmetic / minor | UI glitch, single non-critical endpoint | backlog |
+
+**Loop:** (1) **Acknowledge** the alert. (2) **Localize** — CloudWatch + Sentry:
+frontend? API? DB? Redis? AI provider? Follow the request by its trace id
+(`TraceIDMiddleware`). (3) **Mitigate** — rollback (§8), scale (§11), or shed load
+via a feature flag:
+- `AI_EVAL_ENABLED=false` — stop LLM evaluation if the evaluator is failing/expensive.
+- `RAG_PER_ACTIVITY_FEEDBACK=false` — disable per-activity RAG feedback.
+- lower `AI_RATE_LIMIT_PER_MINUTE` — throttle AI load.
+
+  Flags are task-def env, so changing one needs a redeploy — in a true emergency
+  the **fastest lever is usually a rollback (§8)**, not a flag flip.
+
+(4) **Communicate** status. (5) **Postmortem** — short writeup: what, when, root
+cause, fix, prevention.
+
+---
+
+## 8. Deploy & rollback (plan 5.5 — operational; see also `DEPLOY.md`)
+
+**Standard deploy:** merge to `main` triggers `deploy.yml` (or GitHub → *Actions →
+deploy → Run workflow → production*): build **amd64** image → push `git-<sha>` to
+ECR → run the **migration one-off task** (gated on exit 0) → ECS rolling update →
+wait stable → smoke `/health/ready`. **Watch the run**; after green, confirm
+`https://api.lingosai.com/health/ready` + a real login.
+
+⚠️ **Never hand-build/push images** — Macs build arm64, which Fargate (amd64)
+cannot pull (Phase 3 lesson). Always deploy through the pipeline.
+
+**Rollback (backend)** — images are immutable by sha, so re-pointing the service
+at the previous task-def revision is instant + safe:
+```bash
+# list revisions, newest last
+aws ecs list-task-definitions --family-prefix lingosai-production-backend --region us-east-1
+# re-point at the previous revision
+aws ecs update-service --cluster lingosai-production --service lingosai-production-backend \
+  --task-definition lingosai-production-backend:<previous-revision> --region us-east-1
+aws ecs wait services-stable --cluster lingosai-production --services lingosai-production-backend \
+  --region us-east-1
+```
+
+**Rollback (frontend)** — Vercel → *Deployments → previous → Promote to Production* (one click).
+
+⚠️ The `lingos-ai-cli` user defaults to `ap-south-1`; **always pass `--region us-east-1`**.
+
+---
+
+## 9. Secret rotation (plan 5.5 — operational mechanics, extends §2)
+
+```bash
+# 1. write the new value
+aws secretsmanager put-secret-value --secret-id lingosai/production/<NAME> \
+  --secret-string "<new-value>" --region us-east-1
+# 2. force tasks to pick it up (secrets are injected at task boot)
+aws ecs update-service --cluster lingosai-production --service lingosai-production-backend \
+  --force-new-deployment --region us-east-1
+```
+- **Provider keys** (OpenAI/Pinecone/Azure/Deepgram/Razorpay/Google): create new
+  key in provider console → `put-secret-value` → `--force-new-deployment` →
+  verify → **revoke the old key**.
+- **`JWT_SECRET`** — rotating logs everyone out; do in a maintenance window.
+- **`OTP_HASHING_SECRET`** — invalidates outstanding OTPs (low impact).
+- **`DATABASE_URL` / `REDIS_URL`** — Terraform-owned; change via the data tier, not by hand.
+
+---
+
+## 10. Maintenance checklists (plan 5.6)
+
+**Weekly:**
+- [ ] Review Sentry top issues.
+- [ ] Check the AI-cost trend (`ai_request_logs`) vs revenue.
+- [ ] Confirm the latest RDS automated snapshot exists.
+- [ ] Skim admin audit logs for anomalies.
+- [ ] Merge Dependabot security PRs.
+- [ ] Verify uptime-monitor history (once the synthetic check exists).
+
+**Monthly (quarterly minimum for the drill):**
+- [ ] Restore drill — verify a snapshot restores (§3).
+- [ ] Review CloudWatch + AWS Budget spend; right-size RDS/Redis/tasks.
+- [ ] Rotate any keys due on schedule (§9).
+- [ ] Re-tighten AI rate limits from real `ai_request_logs` data.
+- [ ] Apply RDS minor-version patches in a maintenance window.
+- [ ] Review Trivy/CVE findings on the latest image.
+
+---
+
+## 11. Scaling triggers (plan 5.4 — quick reference)
+
+| Stage | Users | Move |
+|---|---|---|
+| **1** | 0–500 | minimum footprint: 1 task (single worker until B4 is cross-process), `t4g` RDS Multi-AZ, `t4g` Redis, 1 NAT. Watch dashboards, don't add capacity. |
+| **2** | 500–5k | finish B4 → multi-worker + ECS autoscaling (CPU/request target, 2–4 tasks); bump RDS class; consider a Celery worker for RAG notes. |
+| **3** | 5k–20k | Savings Plans / Fargate Spot; CloudFront media caching; RDS Proxy / read replica; SQS for async work. |
+
+Scale the **stateless tier (task count) first, the database last**.
