@@ -22,7 +22,12 @@ locals {
     FRONTEND_URL        = var.frontend_url
     GOOGLE_REDIRECT_URI = var.google_redirect_uri
 
-    EMAIL_PROVIDER          = "ses"
+    # SES production access was DENIED (sandbox-only: can't email arbitrary
+    # inboxes), so prod sends transactional email via Resend (plan G5 decision
+    # gate). RESEND_API_KEY is wired as a secret (secrets module). EMAIL_FROM
+    # must be on a Resend-verified domain (lingosai.com). SES_REGION is left for
+    # an easy switch-back if SES prod access is later granted.
+    EMAIL_PROVIDER          = "resend"
     SES_REGION              = var.region
     EMAIL_FROM              = var.email_from
     CONTACT_RECIPIENT_EMAIL = var.contact_email
@@ -41,6 +46,12 @@ locals {
     LANGCHAIN_TRACING_V2  = "false" # data-residency: off until decided (plan §1.12)
     AI_RATE_LIMIT_ENABLED = "true"
   }
+
+  # The ALB serves HTTPS from either the TF-managed cert (create_api_certificate)
+  # or a supplied ARN. `api_https_enabled` is a *static* bool (not derived from a
+  # known-after-apply ARN) so the listener count is determinable at plan time.
+  api_certificate_arn = var.create_api_certificate ? module.tls.certificate_arn : var.api_acm_certificate_arn
+  api_https_enabled   = var.create_api_certificate || var.api_acm_certificate_arn != ""
 }
 
 module "network" {
@@ -91,6 +102,12 @@ module "email" {
   create = var.create_ses_identity
 }
 
+module "tls" {
+  source     = "../tls"
+  create     = var.create_api_certificate
+  api_domain = var.api_domain
+}
+
 module "alb" {
   source                     = "../alb"
   environment                = var.environment
@@ -98,7 +115,8 @@ module "alb" {
   public_subnet_ids          = module.network.public_subnet_ids
   alb_sg_id                  = module.network.alb_sg_id
   app_port                   = var.app_port
-  certificate_arn            = var.api_acm_certificate_arn
+  certificate_arn            = local.api_certificate_arn
+  enable_https               = local.api_https_enabled
   enable_deletion_protection = var.deletion_protection
 }
 
@@ -127,12 +145,15 @@ module "observability" {
   source                     = "../observability"
   environment                = var.environment
   alert_email                = var.alert_email
+  monthly_budget_usd         = var.monthly_budget_usd
+  uptime_check_fqdn          = var.api_domain
   alb_arn_suffix             = module.alb.alb_arn_suffix
   target_group_arn_suffix    = module.alb.target_group_arn_suffix
   cluster_name               = module.compute.cluster_name
   service_name               = module.compute.service_name
   db_instance_id             = module.data.db_instance_id
   redis_replication_group_id = module.data.redis_replication_group_id
+  nat_gateway_id             = module.network.nat_gateway_id
 }
 
 module "cicd" {

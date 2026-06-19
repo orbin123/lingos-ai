@@ -64,11 +64,19 @@ RECOVERABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
 
 
 def _before_send(event: Event, hint: Hint) -> Event | None:
-    """Drop expected/recoverable exceptions; keep everything else.
+    """Drop expected/recoverable exceptions; tag everything else with ``trace_id``.
 
     Sentry passes the live exception in ``hint["exc_info"]`` (a standard
     ``(type, value, traceback)`` tuple). We inspect the value rather than the
     serialized ``event`` so the check is a plain ``isinstance``.
+
+    Before returning, we stamp the request-scoped ``trace_id`` onto the event's
+    tags. ``before_send`` runs at capture time, still inside the request's
+    contextvar scope, so this correlates **both** auto-captured unhandled 500s
+    (the real prod bugs) and explicit :func:`capture_to_sentry` calls back to the
+    same id used by the structured logs / ``AIRequestLog`` — i.e. CloudWatch.
+    ``setdefault`` never overwrites a tag a call set explicitly; a no-op when no
+    trace_id is bound.
     """
 
     exc_info = hint.get("exc_info")
@@ -76,6 +84,11 @@ def _before_send(event: Event, hint: Hint) -> Event | None:
         exc = exc_info[1]
         if isinstance(exc, RECOVERABLE_EXCEPTIONS):
             return None
+
+    trace_id = get_eval_context().trace_id
+    if trace_id:
+        tags = event.setdefault("tags", {})
+        tags.setdefault("trace_id", trace_id)
     return event
 
 

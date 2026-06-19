@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.modules.admin.audit_service import AdminAuditService
 from app.modules.admin.repository import AdminRepository
 from app.modules.admin.schemas import (
+    AICostReport,
     AIQualityReport,
     AIRequestLogRead,
     AdminAuditLogRead,
@@ -229,6 +230,9 @@ class AdminService:
 
     def ai_quality(self, *, days: int = 7) -> AIQualityReport:
         return self.repo.ai_quality(days=days)
+
+    def ai_costs(self, *, days: int = 30) -> AICostReport:
+        return self.repo.ai_costs(days=days)
 
     def list_payments(self) -> list[PaymentRead]:
         return self.repo.list_payments()

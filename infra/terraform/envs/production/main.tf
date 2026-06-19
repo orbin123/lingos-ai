@@ -46,8 +46,7 @@ module "stack" {
 
   db_password = var.db_password
 
-  # Real production hostnames (DNS wired in Phase 4; values just satisfy the
-  # config guard + app config now).
+  # Real production hostnames.
   cors_origins        = "https://www.lingosai.com"
   frontend_url        = "https://www.lingosai.com"
   google_redirect_uri = "https://api.lingosai.com/auth/google/callback"
@@ -55,7 +54,14 @@ module "stack" {
   email_from          = "LingosAI <noreply@lingosai.com>"
   contact_email       = "support@lingosai.com"
 
-  alert_email = var.alert_email
+  # Phase 4: request + DNS-validate the ACM cert for api.lingosai.com. Once the
+  # validation CNAME is published at Namecheap and the cert ISSUES, the ALB flips
+  # to HTTPS:443 with an HTTP->443 redirect.
+  create_api_certificate = true
+  api_domain             = "api.lingosai.com"
+
+  alert_email        = var.alert_email
+  monthly_budget_usd = var.monthly_budget_usd
 
   github_repo          = "orbin123/lingos-ai"
   create_oidc_provider = true # production owns the account-global OIDC provider
@@ -65,4 +71,10 @@ module "stack" {
 variable "alert_email" {
   type    = string
   default = ""
+}
+
+variable "monthly_budget_usd" {
+  description = "Monthly AWS cost budget (USD). Override with TF_VAR_monthly_budget_usd."
+  type        = number
+  default     = 150
 }

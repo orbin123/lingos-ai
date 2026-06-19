@@ -6,13 +6,17 @@
 # needed (the WS layer is stateless per the orchestrator design).
 #
 # TLS: the ACM cert for api.<domain> is requested + DNS-validated in Phase 4.
-# Until `certificate_arn` is set, the HTTP:80 listener forwards directly to the
+# Until `enable_https` is true, the HTTP:80 listener forwards directly to the
 # target group so Phase-3 health checks / smoke tests work over plain HTTP.
-# Once the cert exists, HTTP:80 becomes a 301 -> 443 and HTTPS:443 serves.
+# Once enabled, HTTP:80 becomes a 301 -> 443 and HTTPS:443 serves the cert.
+#
+# `enable_https` is a static flag (not `certificate_arn != ""`) so the listener
+# `count` stays known at plan time even when the TF-managed cert ARN is still
+# known-after-apply.
 
 locals {
   name_prefix  = "lingosai-${var.environment}"
-  https_active = var.certificate_arn != ""
+  https_active = var.enable_https
 }
 
 resource "aws_lb" "this" {

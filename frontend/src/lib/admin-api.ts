@@ -183,6 +183,41 @@ export interface AIQualityReport {
   series: AIQualityTimeSeriesPoint[];
 }
 
+export interface AICostByModel {
+  model: string;
+  requests: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+}
+
+export interface AICostByCapability {
+  agent_name: string;
+  requests: number;
+  errors: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export interface AICostDailyPoint {
+  date: string;
+  cost_usd: number;
+  requests: number;
+}
+
+export interface AICostReport {
+  days: number;
+  total_cost_usd: number;
+  total_requests: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  unpriced_requests: number;
+  by_model: AICostByModel[];
+  by_capability: AICostByCapability[];
+  daily: AICostDailyPoint[];
+}
+
 export type FeedbackReactionType = "ACTIVITY_FEEDBACK" | "COACH_NOTE";
 export type FeedbackReactionValue = "LIKE" | "DISLIKE";
 
@@ -410,6 +445,9 @@ export const adminApi = {
 
   aiQuality: (days = 7) =>
     api.get<AIQualityReport>(`/admin/ai-quality?days=${days}`).then((r) => r.data),
+
+  aiCosts: (days = 30) =>
+    api.get<AICostReport>(`/admin/ai-costs?days=${days}`).then((r) => r.data),
 
   feedbackAnalytics: (filters?: {
     feedbackType?: FeedbackReactionType;

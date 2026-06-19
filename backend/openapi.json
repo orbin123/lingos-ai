@@ -94,6 +94,172 @@
         "title": "A2ZProgressRead",
         "type": "object"
       },
+      "AICostByCapability": {
+        "description": "Spend grouped by agent (capability), summed across the models it used.",
+        "properties": {
+          "agent_name": {
+            "title": "Agent Name",
+            "type": "string"
+          },
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "errors": {
+            "title": "Errors",
+            "type": "integer"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent_name",
+          "requests",
+          "errors",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd"
+        ],
+        "title": "AICostByCapability",
+        "type": "object"
+      },
+      "AICostByModel": {
+        "description": "Spend + token totals for one model over the window.",
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model",
+          "requests",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "title": "AICostByModel",
+        "type": "object"
+      },
+      "AICostDailyPoint": {
+        "description": "Total priced spend + request count for one UTC day.",
+        "properties": {
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "cost_usd",
+          "requests"
+        ],
+        "title": "AICostDailyPoint",
+        "type": "object"
+      },
+      "AICostReport": {
+        "description": "AI spend over a rolling window, derived from ai_request_logs (plan 5.3).\n\nCost isn't stored per row — it's derived from (model, tokens) via the LLM\npricing table at read time. Non-LLM spend (TTS/STT/embeddings) and any model\nmissing from the pricing table is surfaced via ``unpriced_requests``.",
+        "properties": {
+          "by_capability": {
+            "items": {
+              "$ref": "#/components/schemas/AICostByCapability"
+            },
+            "title": "By Capability",
+            "type": "array"
+          },
+          "by_model": {
+            "items": {
+              "$ref": "#/components/schemas/AICostByModel"
+            },
+            "title": "By Model",
+            "type": "array"
+          },
+          "daily": {
+            "items": {
+              "$ref": "#/components/schemas/AICostDailyPoint"
+            },
+            "title": "Daily",
+            "type": "array"
+          },
+          "days": {
+            "title": "Days",
+            "type": "integer"
+          },
+          "total_cost_usd": {
+            "title": "Total Cost Usd",
+            "type": "number"
+          },
+          "total_input_tokens": {
+            "title": "Total Input Tokens",
+            "type": "integer"
+          },
+          "total_output_tokens": {
+            "title": "Total Output Tokens",
+            "type": "integer"
+          },
+          "total_requests": {
+            "title": "Total Requests",
+            "type": "integer"
+          },
+          "unpriced_requests": {
+            "title": "Unpriced Requests",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "days",
+          "total_cost_usd",
+          "total_requests",
+          "total_input_tokens",
+          "total_output_tokens",
+          "unpriced_requests",
+          "by_model",
+          "by_capability",
+          "daily"
+        ],
+        "title": "AICostReport",
+        "type": "object"
+      },
       "AIQualityReport": {
         "description": "Aggregated LLM-as-judge quality over a rolling window (Part B Phase 2).",
         "properties": {
@@ -7804,6 +7970,56 @@
         ]
       }
     },
+    "/admin/ai-costs": {
+      "get": {
+        "operationId": "get_ai_costs_admin_ai_costs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 180,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AICostReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Ai Costs",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/ai-logs": {
       "get": {
         "operationId": "list_ai_logs_admin_ai_logs_get",
@@ -8488,6 +8704,31 @@
           }
         ],
         "summary": "Feedback Analytics Stats",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/admin/observability/test-error": {
+      "post": {
+        "description": "Deliberately raise a 500 to verify error capture end-to-end (G6).\n\nSuper-admin only. Returns the request ``trace_id`` so it can be matched\nagainst the same id in Sentry (tagged via ``before_send``) and the CloudWatch\nlog line below. A single 500 is well under the ALB 5xx alarm threshold\n(>10/60s); this is a verification tool, not a mutation, so it is not audited.\n\nThe exception is captured explicitly via :func:`capture_to_sentry` (tagged\nwith the ``trace_id``, a no-op when no DSN is configured) rather than left to\npropagate, so it reports exactly once and the response can still carry the id.",
+        "operationId": "trigger_test_error_admin_observability_test_error_post",
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Trigger Test Error",
         "tags": [
           "admin"
         ]

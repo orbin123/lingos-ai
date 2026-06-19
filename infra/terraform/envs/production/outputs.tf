@@ -16,6 +16,10 @@ output "migrate_task_family" { value = module.stack.migrate_task_family }
 output "ecs_subnet_ids" { value = module.stack.ecs_subnet_ids }
 output "ecs_security_group_id" { value = module.stack.ecs_security_group_id }
 
+# api TLS (publish the validation CNAME in Phase 4)
+output "api_certificate_validation_records" { value = module.stack.api_certificate_validation_records }
+output "api_certificate_arn" { value = module.stack.api_certificate_arn }
+
 # SES DNS records (publish in Phase 4)
 output "ses_verification_token" { value = module.stack.ses_verification_token }
 output "ses_dkim_tokens" { value = module.stack.ses_dkim_tokens }

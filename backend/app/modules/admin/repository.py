@@ -9,7 +9,7 @@ will be wired in by the admin team in a follow-up.
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.ai.llm.usage import estimate_cost
@@ -20,6 +20,10 @@ from app.modules.admin.models import (
 )
 from app.modules.admin.sanitization import mask_sensitive_text, sanitize_for_admin
 from app.modules.admin.schemas import (
+    AICostByCapability,
+    AICostByModel,
+    AICostDailyPoint,
+    AICostReport,
     AIQualityReport,
     AIQualityRow,
     AIQualityTimeSeriesPoint,
@@ -567,6 +571,128 @@ class AdminRepository:
             means=means,
             worst=worst,
             series=series,
+        )
+
+    def ai_costs(self, *, days: int = 30) -> AICostReport:
+        """AI spend over a rolling window, derived from ai_request_logs.
+
+        Cost isn't stored — it's computed per (model, tokens) group via the LLM
+        pricing table. We aggregate in SQL by (agent_name, model) and (day,
+        model) so row counts stay bounded, then roll up cost in Python.
+        """
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+
+        grouped = (
+            self.db.query(
+                AIRequestLog.agent_name,
+                AIRequestLog.model,
+                func.count(AIRequestLog.id),
+                func.sum(case((AIRequestLog.status != "success", 1), else_=0)),
+                func.coalesce(func.sum(AIRequestLog.input_tokens), 0),
+                func.coalesce(func.sum(AIRequestLog.output_tokens), 0),
+            )
+            .filter(AIRequestLog.created_at >= since)
+            .group_by(AIRequestLog.agent_name, AIRequestLog.model)
+            .all()
+        )
+
+        by_model: dict[str, AICostByModel] = {}
+        by_cap: dict[str, AICostByCapability] = {}
+        total_cost = 0.0
+        total_requests = 0
+        total_in = 0
+        total_out = 0
+        unpriced = 0
+
+        for agent_name, model, count, errors, in_tok, out_tok in grouped:
+            count = int(count or 0)
+            errors = int(errors or 0)
+            in_tok = int(in_tok or 0)
+            out_tok = int(out_tok or 0)
+            cost = estimate_cost(model, in_tok, out_tok)
+            priced = cost is not None
+            cost_val = cost or 0.0
+
+            total_requests += count
+            total_in += in_tok
+            total_out += out_tok
+            total_cost += cost_val
+            if not priced:
+                unpriced += count
+
+            m = by_model.get(model)
+            if m is None:
+                by_model[model] = AICostByModel(
+                    model=model,
+                    requests=count,
+                    input_tokens=in_tok,
+                    output_tokens=out_tok,
+                    cost_usd=cost_val if priced else None,
+                )
+            else:
+                m.requests += count
+                m.input_tokens += in_tok
+                m.output_tokens += out_tok
+                if priced:
+                    m.cost_usd = round((m.cost_usd or 0.0) + cost_val, 6)
+
+            c = by_cap.get(agent_name)
+            if c is None:
+                by_cap[agent_name] = AICostByCapability(
+                    agent_name=agent_name,
+                    requests=count,
+                    errors=errors,
+                    input_tokens=in_tok,
+                    output_tokens=out_tok,
+                    cost_usd=round(cost_val, 6),
+                )
+            else:
+                c.requests += count
+                c.errors += errors
+                c.input_tokens += in_tok
+                c.output_tokens += out_tok
+                c.cost_usd = round(c.cost_usd + cost_val, 6)
+
+        day_col = func.date(AIRequestLog.created_at)
+        daily_rows = (
+            self.db.query(
+                day_col,
+                AIRequestLog.model,
+                func.count(AIRequestLog.id),
+                func.coalesce(func.sum(AIRequestLog.input_tokens), 0),
+                func.coalesce(func.sum(AIRequestLog.output_tokens), 0),
+            )
+            .filter(AIRequestLog.created_at >= since)
+            .group_by(day_col, AIRequestLog.model)
+            .all()
+        )
+        daily_map: dict[str, AICostDailyPoint] = {}
+        for day, model, count, in_tok, out_tok in daily_rows:
+            key = str(day)[:10]
+            cost = estimate_cost(model, int(in_tok or 0), int(out_tok or 0)) or 0.0
+            point = daily_map.get(key)
+            if point is None:
+                daily_map[key] = AICostDailyPoint(
+                    date=key, cost_usd=round(cost, 6), requests=int(count or 0)
+                )
+            else:
+                point.cost_usd = round(point.cost_usd + cost, 6)
+                point.requests += int(count or 0)
+
+        return AICostReport(
+            days=days,
+            total_cost_usd=round(total_cost, 6),
+            total_requests=total_requests,
+            total_input_tokens=total_in,
+            total_output_tokens=total_out,
+            unpriced_requests=unpriced,
+            by_model=sorted(
+                by_model.values(), key=lambda x: x.cost_usd or 0.0, reverse=True
+            ),
+            by_capability=sorted(
+                by_cap.values(), key=lambda x: x.cost_usd, reverse=True
+            ),
+            daily=sorted(daily_map.values(), key=lambda x: x.date),
         )
 
     def list_payments(self, *, limit: int = 100) -> list[PaymentRead]:
