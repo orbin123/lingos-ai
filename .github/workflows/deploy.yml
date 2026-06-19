@@ -43,10 +43,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'production' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
@@ -70,7 +70,7 @@ jobs:
       # The gha cache backend (cache-to/from below) requires the docker-container
       # buildx driver — the default `docker` driver cannot export gha cache.
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # ECR repo uses IMMUTABLE tags, so we push only the unique git-<sha> tag
       # (deploy-by-sha, per DEPLOY.md). A moving :latest / daily date tag cannot
