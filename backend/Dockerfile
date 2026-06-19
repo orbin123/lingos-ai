@@ -50,6 +50,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
 
+# Azure Speech SDK (azure-cognitiveservices-speech) is a NATIVE library, not
+# pure Python: pronunciation assessment (/diagnosis/pronunciation-score) loads a
+# C++ core that links libasound2 (ALSA) and needs ca-certificates + libssl to
+# open the TLS connection to the Azure Speech endpoint. The slim base ships none
+# of these, so the call hangs ~28s then fails and the route returns 502 — it
+# works on a dev Mac but not in the container (a local↔prod parity bug). Install
+# the runtime deps here. (libssl3 is usually already present; listed for clarity
+# and to fail loudly if a future base image drops it.)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libasound2 \
+        libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
 # Non-root runtime user (no shell, no home). Owns /app so the app can write its
 # media _cache dirs under app/ai/** when running locally without S3 (Phase 3
 # replaces local disk with S3BlobStorage).

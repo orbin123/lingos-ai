@@ -5,6 +5,337 @@ Most-recent session first.
 
 ---
 
+## Session 6 — Gap G6: Observability finish (Sentry capture + trace correlation)
+
+**Status:** **code complete; live proof is founder-gated.** The PR makes a forced
+error reproducible and makes real prod 500s correlatable to CloudWatch by `trace_id`.
+The actual close-out (populate the Sentry DSN value, set the Vercel DSN, confirm the
+SNS subscription, deliver one alarm, observe the 503 path) is a founder runbook. G6 is
+**not** marked done until those live proofs are captured.
+**Branch:** `feat/g6-observability`
+**Date:** 2026-06-19
+
+### Why this gap
+Phase A (G1–G3) is merged; G4/G5 are agent-complete + founder-gated. The plan's next
+phase is **C = G6 + G8**, with G6 first, and Session 5 explicitly recommended G6 next.
+
+### Critical finding (shaped the gap — most of G6 was already wired)
+Exploration showed the heavy lifting already exists and needed **no change**:
+backend + frontend Sentry init gated on the DSN (`app/core/sentry.py`, `main.py:48`);
+`SENTRY_DSN` secret wired end-to-end (Secrets Manager → task-def → app); **11**
+CloudWatch alarms + the `lingosai-production-alerts` SNS topic + email subscription
+(`infra/terraform/modules/observability`); the `/health/ready` 503 path + ALB health
+check. So G6 was **not** a build-from-scratch gap. The two real, agent-actionable holes:
+1. **Real unhandled 500s were NOT correlatable to CloudWatch.** Only *manually-swallowed*
+   exceptions got a `trace_id` tag (via `capture_to_sentry`); auto-captured unhandled
+   exceptions — the actual prod bugs — reached Sentry with **no `trace_id`**.
+2. **No deterministic way to force a verifiable error** in prod.
+
+### Completed work (code)
+- **`backend/app/core/sentry.py`** — `_before_send` now stamps the request-scoped
+  `trace_id` onto `event["tags"]` (via `setdefault`, never overwriting an explicit tag).
+  Runs at capture time inside the request contextvar scope, so it covers **both**
+  auto-captured 500s and `capture_to_sentry` calls. No-op when no trace_id is bound.
+- **`backend/app/modules/admin/routes.py`** — new `POST /admin/observability/test-error`,
+  gated by `require_super_admin`. Logs `observability_test_error` with the `trace_id`,
+  forwards a `RuntimeError` to Sentry via `capture_to_sentry` (tagged, no-op without DSN),
+  and returns `JSONResponse(500, {status, detail, trace_id})`. Returns the id in the body
+  so it can be matched in Sentry + CloudWatch; reports exactly once (no double-capture).
+- **`backend/openapi.json`** — regenerated (`scripts/export_openapi.py`) for the new route,
+  keeping the `openapi-drift` gate green.
+- **No IaC change** — the alarms/SNS/secret wiring already existed.
+
+### Files changed
+- `backend/app/core/sentry.py`
+- `backend/app/modules/admin/routes.py`
+- `backend/openapi.json`
+- `backend/tests/unit/platform/test_sentry.py` — 3 new `_before_send` trace_id tests.
+- `backend/tests/integration/admin/test_observability_test_error.py` — new (500+trace_id
+  for super-admin; 403 for admin-only).
+- `docs/G6_OBSERVABILITY_RUNBOOK.md` — new (git-ignored dir → `git add -f`).
+- `docs/AGENT_PROGRESS.md` — this log.
+
+### Verification performed
+- `uv run python -m pytest tests/unit/platform/ tests/integration/admin/` → **green**
+  (14 targeted tests; full admin + platform suites pass). Note: per memory, used
+  `uv run python -m pytest` (bare `uv run pytest` grabs a broken global pytest).
+- `uv run ruff check` (4 changed files) → **All checks passed**;
+  `uv run python -m mypy app/core/sentry.py app/modules/admin/routes.py` → **Success**.
+- The integration test proves the route end-to-end via `TestClient` + `TraceIDMiddleware`:
+  HTTP **500**, body `trace_id` is a 32-char hex, and the exception is forwarded to Sentry
+  exactly once (stubbed for hermeticity).
+- **Local-only artifact, not a regression:** my machine's repo-root `.env` carries a real
+  `SENTRY_DSN`, so `app.main` (imported by the `tests.fixtures.client` plugin) initialises
+  a live Sentry client and flushes a few events at exit. In CI there is no `.env`, so
+  `settings.sentry_dsn` is empty and no client initialises — confirmed by re-running with
+  `SENTRY_DSN=""`: 14 passed, **no Sentry flush**. My route test stubs `capture_to_sentry`,
+  so it never sends regardless.
+
+### Findings
+- `before_send` is the single best correlation point: it fires for every event type and
+  runs while the request contextvars are still bound — cleaner than fiddling with the
+  Sentry scope stack inside middleware.
+- Unlike G5 (which *added* a secret → needed a task-def revision), `SENTRY_DSN`'s ARN is
+  **already referenced** in the live task-def. So the founder only needs to set the secret
+  **value** and `--force-new-deployment`; **no task-def revision** is required.
+
+### Decisions
+- **No live mutation by the agent** — did not read/write the prod `SENTRY_DSN` value, set
+  the Vercel var, confirm the SNS subscription, fire an alarm, or force a 503. All are
+  prod-changing and/or console-only (founder runbook).
+- **Forced-error route returns a handled 500** (not an unhandled raise) so it reports to
+  Sentry exactly once and can still return the `trace_id` in the body. The `_before_send`
+  tagging separately ensures *genuine* unhandled 500s are also correlatable.
+- **Super-admin gating + single 500** keep the route safe in prod (well under the
+  `alb_5xx` >10/60s threshold); not audited (it is not a mutation).
+- Left the route in prod as a permanent self-test (documented as removable).
+
+### Risks
+- The PR proves the *mechanism* (capture + tagging + a forced 500), not that prod is
+  actually capturing — that needs the **real DSN value** in Secrets Manager + Vercel. Until
+  the founder sets those, Sentry capture in prod stays a no-op. Made explicit in the runbook
+  + its "definition of done".
+- The faithful 503 test briefly removes the only healthy ECS target (single task) — the
+  runbook flags doing it in a quiet window and offers a safe `set-alarm-state` alternative.
+- `TF_VAR_alert_email` must be passed on **every** `terraform apply` or the SNS subscription
+  is destroyed (pre-existing gotcha; re-stated in the runbook + `docs/AWS_SETUP.md`).
+
+### Founder actions required (to finish G6 — see `docs/G6_OBSERVABILITY_RUNBOOK.md`)
+1. **Review + merge** PR `feat/g6-observability`.
+2. Ensure `SENTRY_DSN` (Secrets Manager) holds a real value; `--force-new-deployment`.
+3. Set `NEXT_PUBLIC_SENTRY_DSN` in Vercel; redeploy the frontend.
+4. `POST /admin/observability/test-error` with a super-admin token → confirm the returned
+   `trace_id` in Sentry **and** CloudWatch.
+5. Confirm the SNS email subscription; fire one alarm (`set-alarm-state`) → confirm delivery.
+6. Observe the `/health/ready` 503 path (safe `set-alarm-state` or the faithful RDS-block).
+
+### Next recommended gap
+**G8 — rollback drill + DR** (Phase C's other half): largely founder-driven (time a real
+rollback <5 min; row-verify an RDS restore), but the agent can pre-write the drill runbook
++ any helper scripts. Alternatively **G7 — security close-out** (Phase D): the agent can do
+the `config.py` prod-guard re-confirmation, the HSTS header change, and the `backup*.sql`
+git-history decision in code, leaving key rotation as founder console work.
+
+---
+
+## Session 5 — Gap G5: Email provider (SES → Resend)
+
+**Status:** **code/IaC complete; live flip is founder-gated.** The PR makes Resend the
+desired-state prod email provider and wires the `RESEND_API_KEY` secret + execution-role
+grant; the actual live cutover (domain verify, key, task-def revision, external-inbox
+test) is a founder runbook. G5 is **not** marked done until an email reaches an external
+inbox.
+**Branch:** `feat/g5-email-resend`
+**Date:** 2026-06-19
+
+### Why this gap
+Phase A (G1–G3) is merged; G4 is agent-complete (verifier + runbook) with only
+founder browser/purchase rows left. Session 4 recommended **G5 next** because it
+**directly unblocks G4 row 6** (signup OTP email) and finishes Phase B.
+
+### Decision gate — verified live (read-only)
+SES production access is **DENIED / sandbox-only** — confirmed this session:
+```
+aws sesv2 get-account → "ProductionAccessEnabled": false,
+  "ReviewDetails": {"Status":"DENIED","CaseId":"178170275200223"}
+```
+Sandbox can only email verified identities, never an arbitrary inbox. Per the plan's
+decision gate (and founder approval this session), prod sends via **Resend**.
+
+### Critical architectural finding (shaped the whole gap)
+`deploy.yml` builds each new task-def by **cloning the currently-running task-def**
+(`describe-task-definition`) and swapping only the image; the compute module has
+`lifecycle { ignore_changes = [container_definitions] }`. So **neither `terraform apply`
+nor a normal code deploy changes the live `environment`/`secrets`** — the live flip is a
+**one-time founder task-def revision** (after which deploy.yml carries it forward). There
+is also a load-bearing ordering: the execution role only reads ARNs in `all_secret_arns`,
+so `terraform apply` (creates the secret + widens the grant) **must precede** the task-def
+revision that references `RESEND_API_KEY`. Both captured in the runbook.
+
+### Completed work (code/IaC)
+- **`infra/terraform/modules/stack/main.tf`** — `EMAIL_PROVIDER` `"ses"` → `"resend"`
+  (left `SES_REGION`/`EMAIL_FROM` for an easy switch-back; `EMAIL_FROM` already on the
+  `lingosai.com` domain).
+- **`infra/terraform/modules/secrets/main.tf`** — added `RESEND_API_KEY` to
+  `founder_secret_names`, which (a) creates the empty Secrets Manager entry, (b) adds it to
+  the task-def `secrets` wiring (`secret_arns`), and (c) widens the execution-role
+  `GetSecretValue` grant (`all_secret_arns`).
+- **`scripts/verify-prod-parity.sh`** — now asserts `EMAIL_PROVIDER=resend` (was
+  "non-empty") and adds `RESEND_API_KEY` to `EXPECTED_SECRETS`, so G5 + G4-row-6 are
+  CLI-verifiable post-flip.
+- **`docs/G5_EMAIL_RUNBOOK.md`** (new) — exact founder steps: Resend domain verify +
+  DKIM/SPF, create key, `terraform apply`, `put-secret-value`, the one-time task-def
+  revision (copy-paste `aws ecs` block), external-inbox proof, verifier re-run, rollback.
+- **No app code change** — `app/email/` already supports `EMAIL_PROVIDER=resend` +
+  `RESEND_API_KEY` with a console fallback (confirmed in `app/email/__init__.py`).
+
+### Files changed
+- `infra/terraform/modules/stack/main.tf`
+- `infra/terraform/modules/secrets/main.tf`
+- `scripts/verify-prod-parity.sh`
+- `docs/G5_EMAIL_RUNBOOK.md` — new (git-ignored dir → `git add -f`).
+- `docs/AGENT_PROGRESS.md` — this log.
+
+### Verification performed
+- `terraform fmt -check` on both modules → clean (exit 0).
+- `terraform validate` (stack module, `-backend=false`) → **Success** (the lone warning is
+  a pre-existing `data.aws_region.current.name` deprecation in `compute/main.tf`, unrelated).
+- `bash -n scripts/verify-prod-parity.sh` → OK.
+- **Ran the verifier against LIVE prod** — the new assertions correctly report the
+  **pre-flip** state: `EMAIL_PROVIDER` FAIL (`got 'ses'`), `secret wiring` FAIL
+  (`missing: RESEND_API_KEY`), `PASS=12 FAIL=2 WARN=1`. These two flip to PASS once the
+  founder completes the runbook — proving the logic and giving a clear "not done yet" signal.
+
+### Findings
+- `RESEND_API_KEY` did **not** exist in Secrets Manager (prod list confirmed) — so before
+  this PR, Resend was unusable in prod even with the code support: no secret, no task-def
+  wiring, no IAM grant.
+- The live `EMAIL_PROVIDER` is still `ses` and won't change from IaC alone (ignore_changes
+  + deploy.yml inherits live env) — the one-time task-def revision is unavoidable.
+
+### Decisions
+- **Resend over re-appealing SES** (founder-approved) — SES re-review is console-only,
+  slow, and uncertain; Resend unblocks launch now.
+- **No live mutation by the agent** — did not `terraform apply`, register a task-def, write
+  the secret, or send a test email. All depend on the real Resend key + domain verification
+  (founder-only) and are prod-changing.
+- Kept `SES_REGION`/SES IAM (`ses:SendEmail` on the task role) in place — harmless, and
+  makes a switch-back trivial if SES prod access is later granted.
+
+### Risks
+- The PR changes **desired state** only; until the founder runs the runbook, live prod
+  still emails via sandboxed SES (external inboxes won't receive). The verifier's two FAILs
+  make this visible.
+- Resend needs its **own** DKIM/SPF records at Namecheap (separate from SES's). If only SES
+  records exist, Resend delivery will fail SPF/DKIM alignment → spam/bounce. Called out in
+  runbook Step 1.
+- `EMAIL_FROM=noreply@lingosai.com` requires the domain **verified in Resend**; until then
+  Resend only sends from `onboarding@resend.dev` to the account owner. Runbook Step 1.
+
+### Founder actions required (to finish G5 — see `docs/G5_EMAIL_RUNBOOK.md`)
+1. **Review + merge** PR `feat/g5-email-resend`.
+2. Verify `lingosai.com` in Resend + publish its DKIM/SPF at Namecheap.
+3. Create a Resend API key.
+4. `terraform apply` in `envs/production` (creates the secret + IAM grant).
+5. `aws secretsmanager put-secret-value` the real key.
+6. Run the one-time task-def revision (runbook Step 5) to flip live `EMAIL_PROVIDER=resend`
+   + reference the secret; wait stable.
+7. Sign up on `www` with an **external** inbox; confirm the OTP arrives (G5 + G4 row 6
+   evidence). Re-run `scripts/verify-prod-parity.sh` → both checks PASS.
+
+### Next recommended gap
+Phase B closes once the founder finishes the G5 runbook + the remaining G4 founder rows.
+The next agent-actionable gap is **G6 — observability finish**: the agent can pre-wire
+`SENTRY_DSN` consumption / a forced-error test route and document the SNS-subscription +
+503-resilience checks, leaving the DSN value + subscription click as founder actions.
+(Note: `SENTRY_DSN` already exists as a secret; confirm it holds a real value.)
+
+---
+
+## Session 4 — Gap G4: Prove feature parity in prod (verifier + runbook)
+
+**Status:** **partially complete** — the CLI-checkable rows are **proven live**
+(verifier exits 0); the browser/purchase rows remain **founder actions** with an
+exact runbook. G4 is *not* marked done (it can't be, without human live proof).
+**Branch:** `feat/g4-prod-parity-verify`
+**Date:** 2026-06-19
+
+### Why this gap
+Phase A (G1+G2+G3) is fully merged (`#101`–`#105`); `main` is protected and
+auto-deploys with smoke+rollback. The plan's next phase is **B = G4 + G5**, and
+G4 is listed first. (Note: Session 3's "PR not merged" status below is stale —
+G3 merged as `#104`/`#105`, confirmed in git log.)
+
+### Honest scope (per charter)
+G4's close-condition is *"every row has a screenshot/log/CLI proof."* ~half the
+13-row matrix is **CLI-provable by the agent** (health, www, ECS, env/secret
+wiring, media S3/CDN infra); the other half needs a **human browser or a live
+purchase** (OAuth, Razorpay, WebSocket session, pronunciation, Deepgram, RAG).
+The agent **automated + proved the former** and **wrote an exact founder
+runbook** for the latter. G4 stays **partial** until the founder rows are ticked.
+
+### Completed work (code)
+- **`scripts/verify-prod-parity.sh`** — new **read-only** verifier (curl GET/HEAD
+  + `aws describe/list` only; no mutations). Prod defaults, overridable via env
+  (`API_URL`, `WWW_URL`, `ECS_*`, `AWS_REGION`). Tiny PASS/FAIL/WARN framework;
+  exits non-zero on any FAIL. Checks: api `/health` + `/health/ready`
+  (DB+Redis), `www` 200, ECS service running==desired & ACTIVE, task-def env
+  (`STORAGE_BACKEND=s3`, `EMAIL_PROVIDER`, `MEDIA_S3_BUCKET`, `MEDIA_CDN_URL`,
+  `DEBUG=false`, `DEV_OTP_BYPASS=false`), 13 feature secrets wired (names only,
+  values never read), both media buckets exist, CloudFront reachable, and a
+  media write→serve probe (WARN when the bucket is empty awaiting app traffic).
+- **`docs/PROD_PARITY_RUNBOOK.md`** — the 13-row matrix, each row tagged
+  **[AUTO]** or **[FOUNDER]** with click-paths + the evidence to capture; records
+  this session's live run and a clear "definition of done for G4."
+
+### Files changed
+- `scripts/verify-prod-parity.sh` — new verifier.
+- `docs/PROD_PARITY_RUNBOOK.md` — new runbook (git-ignored dir → `git add -f`).
+- `docs/AGENT_PROGRESS.md` — this log.
+
+### Commits
+- `feat(scripts): add read-only prod feature-parity verifier (G4)`
+- `docs(g4): add prod feature-parity runbook (AUTO + FOUNDER rows)`
+- (this doc commit)
+
+### Verification performed (live, this session)
+- `bash -n scripts/verify-prod-parity.sh` → OK (shellcheck not installed locally).
+- **Ran the verifier against LIVE prod** (account `924903313980`, us-east-1):
+  **`PASS=14 FAIL=0 WARN=1`, exit 0.** Proven green: `api/health` 200,
+  `api/health/ready` 200 `{database:ok,redis:ok}`, `www` 200, ECS
+  `1/1 ACTIVE (lingosai-production-backend:7)`, `STORAGE_BACKEND=s3`,
+  `EMAIL_PROVIDER=ses`, `MEDIA_S3_BUCKET=lingosai-production-media`,
+  `MEDIA_CDN_URL=https://d3ekrhb69b5j9n.cloudfront.net`, both media buckets
+  exist, CloudFront reachable (403 on root = no object, domain live), all 13
+  secrets wired, `DEBUG=false`, `DEV_OTP_BYPASS=false`.
+- **WARN explained:** `s3://lingosai-production-media` has **0 objects** — no
+  TTS/image has been generated in prod yet. Infra is proven; the write→serve
+  proof needs one real session (runbook row 5).
+
+### Findings
+- Live prod config is correct and matches Appendix A: `STORAGE_BACKEND=s3`,
+  `DEBUG/SQL_ECHO/DEV_OTP_BYPASS=false`, all 15 secrets referenced (13 feature +
+  `JWT_SECRET`/`OTP_HASHING_SECRET`). No local-only misconfiguration found in the
+  env-driven layer — nothing to "fix that only worked locally" at this level.
+- `EMAIL_PROVIDER=ses` is still the live value → row-6 OTP email to an external
+  inbox will likely fail until **G5** flips it to Resend (SES prod access denied).
+  This is a known G5 dependency, not a row-6 bug; noted in the runbook.
+
+### Decisions
+- **Read-only by design** — the verifier never mutates prod (no test signups, no
+  purchases, no media writes). The mutation-driven proofs are founder rows.
+- Media write→serve is a **WARN, not FAIL**, when the bucket is empty — an empty
+  bucket pre-traffic is expected, not a regression.
+- Did **not** attempt browser automation / live Razorpay — explicitly out of
+  scope (founder-only), per the plan and charter.
+- Secret **wiring** asserted from the task-def (names), not Secrets Manager
+  values — proves parity without `GetSecretValue` and without reading secrets.
+
+### Risks
+- The verifier proves **wiring + reachability**, not end-to-end *behaviour* for
+  the AI features. A capability can be wired yet fail at runtime (e.g. an expired
+  provider key) — only the [FOUNDER] rows catch that. This is inherent to G4 and
+  why those rows can't be agent-closed.
+- `MEDIA_CDN_URL` root returns 403 (no default-root-object) — benign, but if a
+  real object later 403s via the CDN, that's a CloudFront OAC/bucket-policy bug to
+  file (called out in runbook row 5).
+
+### Founder actions required (to finish G4)
+1. **Review + merge** PR `feat/g4-prod-parity-verify`.
+2. Work the **[FOUNDER] rows 5–13** in `docs/PROD_PARITY_RUNBOOK.md` on the prod
+   hostnames, attaching the stated evidence. Re-run `scripts/verify-prod-parity.sh`
+   after a real session to flip **media write→serve** to PASS (row 5).
+3. **Likely blocker:** row 6 (OTP email) probably needs **G5** first — flip
+   `EMAIL_PROVIDER` ses→resend (SES prod access denied). Decide G5 at/with G4.
+
+### Next recommended gap
+**G5 — email provider** (small, mostly founder/console): if SES is still
+sandboxed, set the prod task-def `EMAIL_PROVIDER=resend`, ensure `RESEND_API_KEY`
+is in Secrets Manager + the Resend domain is verified, redeploy, and send a real
+email to an external inbox. It directly unblocks G4 row 6 and finishes Phase B.
+
+---
+
 ## Session 3 — Gap G3: Post-deploy live smoke (api + www)
 
 **Status:** code implemented; PR open, **not merged**. The smoke step only *executes* on a real
