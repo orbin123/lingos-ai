@@ -5,6 +5,110 @@ Most-recent session first.
 
 ---
 
+## Session 4 — Gap G4: Prove feature parity in prod (verifier + runbook)
+
+**Status:** **partially complete** — the CLI-checkable rows are **proven live**
+(verifier exits 0); the browser/purchase rows remain **founder actions** with an
+exact runbook. G4 is *not* marked done (it can't be, without human live proof).
+**Branch:** `feat/g4-prod-parity-verify`
+**Date:** 2026-06-19
+
+### Why this gap
+Phase A (G1+G2+G3) is fully merged (`#101`–`#105`); `main` is protected and
+auto-deploys with smoke+rollback. The plan's next phase is **B = G4 + G5**, and
+G4 is listed first. (Note: Session 3's "PR not merged" status below is stale —
+G3 merged as `#104`/`#105`, confirmed in git log.)
+
+### Honest scope (per charter)
+G4's close-condition is *"every row has a screenshot/log/CLI proof."* ~half the
+13-row matrix is **CLI-provable by the agent** (health, www, ECS, env/secret
+wiring, media S3/CDN infra); the other half needs a **human browser or a live
+purchase** (OAuth, Razorpay, WebSocket session, pronunciation, Deepgram, RAG).
+The agent **automated + proved the former** and **wrote an exact founder
+runbook** for the latter. G4 stays **partial** until the founder rows are ticked.
+
+### Completed work (code)
+- **`scripts/verify-prod-parity.sh`** — new **read-only** verifier (curl GET/HEAD
+  + `aws describe/list` only; no mutations). Prod defaults, overridable via env
+  (`API_URL`, `WWW_URL`, `ECS_*`, `AWS_REGION`). Tiny PASS/FAIL/WARN framework;
+  exits non-zero on any FAIL. Checks: api `/health` + `/health/ready`
+  (DB+Redis), `www` 200, ECS service running==desired & ACTIVE, task-def env
+  (`STORAGE_BACKEND=s3`, `EMAIL_PROVIDER`, `MEDIA_S3_BUCKET`, `MEDIA_CDN_URL`,
+  `DEBUG=false`, `DEV_OTP_BYPASS=false`), 13 feature secrets wired (names only,
+  values never read), both media buckets exist, CloudFront reachable, and a
+  media write→serve probe (WARN when the bucket is empty awaiting app traffic).
+- **`docs/PROD_PARITY_RUNBOOK.md`** — the 13-row matrix, each row tagged
+  **[AUTO]** or **[FOUNDER]** with click-paths + the evidence to capture; records
+  this session's live run and a clear "definition of done for G4."
+
+### Files changed
+- `scripts/verify-prod-parity.sh` — new verifier.
+- `docs/PROD_PARITY_RUNBOOK.md` — new runbook (git-ignored dir → `git add -f`).
+- `docs/AGENT_PROGRESS.md` — this log.
+
+### Commits
+- `feat(scripts): add read-only prod feature-parity verifier (G4)`
+- `docs(g4): add prod feature-parity runbook (AUTO + FOUNDER rows)`
+- (this doc commit)
+
+### Verification performed (live, this session)
+- `bash -n scripts/verify-prod-parity.sh` → OK (shellcheck not installed locally).
+- **Ran the verifier against LIVE prod** (account `924903313980`, us-east-1):
+  **`PASS=14 FAIL=0 WARN=1`, exit 0.** Proven green: `api/health` 200,
+  `api/health/ready` 200 `{database:ok,redis:ok}`, `www` 200, ECS
+  `1/1 ACTIVE (lingosai-production-backend:7)`, `STORAGE_BACKEND=s3`,
+  `EMAIL_PROVIDER=ses`, `MEDIA_S3_BUCKET=lingosai-production-media`,
+  `MEDIA_CDN_URL=https://d3ekrhb69b5j9n.cloudfront.net`, both media buckets
+  exist, CloudFront reachable (403 on root = no object, domain live), all 13
+  secrets wired, `DEBUG=false`, `DEV_OTP_BYPASS=false`.
+- **WARN explained:** `s3://lingosai-production-media` has **0 objects** — no
+  TTS/image has been generated in prod yet. Infra is proven; the write→serve
+  proof needs one real session (runbook row 5).
+
+### Findings
+- Live prod config is correct and matches Appendix A: `STORAGE_BACKEND=s3`,
+  `DEBUG/SQL_ECHO/DEV_OTP_BYPASS=false`, all 15 secrets referenced (13 feature +
+  `JWT_SECRET`/`OTP_HASHING_SECRET`). No local-only misconfiguration found in the
+  env-driven layer — nothing to "fix that only worked locally" at this level.
+- `EMAIL_PROVIDER=ses` is still the live value → row-6 OTP email to an external
+  inbox will likely fail until **G5** flips it to Resend (SES prod access denied).
+  This is a known G5 dependency, not a row-6 bug; noted in the runbook.
+
+### Decisions
+- **Read-only by design** — the verifier never mutates prod (no test signups, no
+  purchases, no media writes). The mutation-driven proofs are founder rows.
+- Media write→serve is a **WARN, not FAIL**, when the bucket is empty — an empty
+  bucket pre-traffic is expected, not a regression.
+- Did **not** attempt browser automation / live Razorpay — explicitly out of
+  scope (founder-only), per the plan and charter.
+- Secret **wiring** asserted from the task-def (names), not Secrets Manager
+  values — proves parity without `GetSecretValue` and without reading secrets.
+
+### Risks
+- The verifier proves **wiring + reachability**, not end-to-end *behaviour* for
+  the AI features. A capability can be wired yet fail at runtime (e.g. an expired
+  provider key) — only the [FOUNDER] rows catch that. This is inherent to G4 and
+  why those rows can't be agent-closed.
+- `MEDIA_CDN_URL` root returns 403 (no default-root-object) — benign, but if a
+  real object later 403s via the CDN, that's a CloudFront OAC/bucket-policy bug to
+  file (called out in runbook row 5).
+
+### Founder actions required (to finish G4)
+1. **Review + merge** PR `feat/g4-prod-parity-verify`.
+2. Work the **[FOUNDER] rows 5–13** in `docs/PROD_PARITY_RUNBOOK.md` on the prod
+   hostnames, attaching the stated evidence. Re-run `scripts/verify-prod-parity.sh`
+   after a real session to flip **media write→serve** to PASS (row 5).
+3. **Likely blocker:** row 6 (OTP email) probably needs **G5** first — flip
+   `EMAIL_PROVIDER` ses→resend (SES prod access denied). Decide G5 at/with G4.
+
+### Next recommended gap
+**G5 — email provider** (small, mostly founder/console): if SES is still
+sandboxed, set the prod task-def `EMAIL_PROVIDER=resend`, ensure `RESEND_API_KEY`
+is in Secrets Manager + the Resend domain is verified, redeploy, and send a real
+email to an external inbox. It directly unblocks G4 row 6 and finishes Phase B.
+
+---
+
 ## Session 3 — Gap G3: Post-deploy live smoke (api + www)
 
 **Status:** code implemented; PR open, **not merged**. The smoke step only *executes* on a real
