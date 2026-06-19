@@ -126,6 +126,21 @@ data "aws_iam_policy_document" "task" {
     actions   = ["ses:SendEmail", "ses:SendRawEmail"]
     resources = ["*"]
   }
+  # ECS Exec: SSM Session Manager messaging so an IAM-gated operator can open an
+  # interactive shell in a running task (`aws ecs execute-command`). Used for the
+  # DR row-verify drill — reads the restore endpoint from inside the VPC using the
+  # password already injected as DATABASE_URL, never an env override. Egress to the
+  # SSM endpoints rides the existing all-egress ECS SG via NAT (no VPC endpoint).
+  statement {
+    sid = "ECSExecSSMMessages"
+    actions = [
+      "ssmmessages:CreateControlChannel",
+      "ssmmessages:CreateDataChannel",
+      "ssmmessages:OpenControlChannel",
+      "ssmmessages:OpenDataChannel",
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "task" {
@@ -222,6 +237,13 @@ resource "aws_ecs_service" "backend" {
   task_definition = aws_ecs_task_definition.backend.arn
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
+
+  # ECS Exec: lets an IAM-gated operator open an interactive shell in a running
+  # task (DR row-verify drill, §G8 / RUNBOOK §3). Not in `ignore_changes` and
+  # deploy.yml only touches `--task-definition`, so neither Terraform nor CD
+  # reverts it. Takes effect only for tasks launched AFTER the change — the
+  # founder must `--force-new-deployment` once (see G8 runbook).
+  enable_execute_command = true
 
   # Zero-downtime rolling deploy: never drop below 100% healthy, allow 200%
   # during a rollout so new tasks come up before old ones drain.
