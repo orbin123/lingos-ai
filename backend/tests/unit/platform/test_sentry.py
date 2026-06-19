@@ -34,6 +34,38 @@ def test_before_send_keeps_event_without_exc_info():
     assert sentry._before_send(event, {}) is event
 
 
+def test_before_send_tags_bound_trace_id():
+    event: dict = {"event_id": "abc"}
+    token = set_eval_context(trace_id="trace-123", user_id=None)
+    try:
+        result = sentry._before_send(event, _hint_for(RuntimeError("boom")))
+    finally:
+        reset_eval_context(token)
+
+    assert result is event
+    assert event["tags"]["trace_id"] == "trace-123"
+
+
+def test_before_send_noop_tag_without_trace_id():
+    event: dict = {"event_id": "abc"}
+    # No eval-context bound → no trace_id tag added.
+    result = sentry._before_send(event, _hint_for(RuntimeError("boom")))
+
+    assert result is event
+    assert "tags" not in event
+
+
+def test_before_send_does_not_overwrite_explicit_trace_id():
+    event: dict = {"event_id": "abc", "tags": {"trace_id": "explicit"}}
+    token = set_eval_context(trace_id="trace-123", user_id=None)
+    try:
+        sentry._before_send(event, _hint_for(RuntimeError("boom")))
+    finally:
+        reset_eval_context(token)
+
+    assert event["tags"]["trace_id"] == "explicit"
+
+
 # ── init_sentry ────────────────────────────────────────────────────────────
 
 

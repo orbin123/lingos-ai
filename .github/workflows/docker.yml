@@ -10,10 +10,10 @@ on:
     paths:
       - "backend/**"
       - ".github/workflows/docker.yml"
+  # No paths filter on PRs: `docker-build` is a REQUIRED status check under
+  # branch protection (strict). A path-filtered required check never reports on
+  # an unrelated PR, which wedges the merge forever (see POLISHED plan, Appendix B).
   pull_request:
-    paths:
-      - "backend/**"
-      - ".github/workflows/docker.yml"
 
 concurrency:
   group: docker-${{ github.ref }}

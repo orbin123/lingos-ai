@@ -26,6 +26,12 @@ variable "rds_connections_alarm_threshold" {
   default     = 100
 }
 
+variable "nat_gateway_id" {
+  description = "NAT gateway id for the egress error alarm. Empty = no alarm."
+  type        = string
+  default     = ""
+}
+
 variable "alb_arn_suffix" {
   type = string
 }

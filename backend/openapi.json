@@ -8709,6 +8709,31 @@
         ]
       }
     },
+    "/admin/observability/test-error": {
+      "post": {
+        "description": "Deliberately raise a 500 to verify error capture end-to-end (G6).\n\nSuper-admin only. Returns the request ``trace_id`` so it can be matched\nagainst the same id in Sentry (tagged via ``before_send``) and the CloudWatch\nlog line below. A single 500 is well under the ALB 5xx alarm threshold\n(>10/60s); this is a verification tool, not a mutation, so it is not audited.\n\nThe exception is captured explicitly via :func:`capture_to_sentry` (tagged\nwith the ``trace_id``, a no-op when no DSN is configured) rather than left to\npropagate, so it reports exactly once and the response can still carry the id.",
+        "operationId": "trigger_test_error_admin_observability_test_error_post",
+        "responses": {
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Trigger Test Error",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
     "/admin/payments": {
       "get": {
         "operationId": "list_payments_admin_payments_get",
