@@ -22,7 +22,12 @@ locals {
     FRONTEND_URL        = var.frontend_url
     GOOGLE_REDIRECT_URI = var.google_redirect_uri
 
-    EMAIL_PROVIDER          = "ses"
+    # SES production access was DENIED (sandbox-only: can't email arbitrary
+    # inboxes), so prod sends transactional email via Resend (plan G5 decision
+    # gate). RESEND_API_KEY is wired as a secret (secrets module). EMAIL_FROM
+    # must be on a Resend-verified domain (lingosai.com). SES_REGION is left for
+    # an easy switch-back if SES prod access is later granted.
+    EMAIL_PROVIDER          = "resend"
     SES_REGION              = var.region
     EMAIL_FROM              = var.email_from
     CONTACT_RECIPIENT_EMAIL = var.contact_email

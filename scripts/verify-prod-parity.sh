@@ -134,7 +134,9 @@ debug=$(get_env DEBUG)
 otp_bypass=$(get_env DEV_OTP_BYPASS)
 
 [ "$storage" = "s3" ] && pass "STORAGE_BACKEND" "s3" || fail "STORAGE_BACKEND" "expected s3, got '$storage'"
-[ -n "$email" ]  && pass "EMAIL_PROVIDER"  "$email"  || fail "EMAIL_PROVIDER"  "unset"
+# SES prod access is denied (sandbox-only), so prod must send via Resend to
+# reach arbitrary inboxes (plan G5). Assert the live provider is resend.
+[ "$email" = "resend" ] && pass "EMAIL_PROVIDER" "resend" || fail "EMAIL_PROVIDER" "expected resend (G5; SES sandboxed), got '$email'"
 [ -n "$bucket" ] && pass "MEDIA_S3_BUCKET" "$bucket" || fail "MEDIA_S3_BUCKET" "unset"
 [ -n "$cdn" ]    && pass "MEDIA_CDN_URL"   "$cdn"    || fail "MEDIA_CDN_URL"   "unset"
 
@@ -146,7 +148,8 @@ otp_bypass=$(get_env DEV_OTP_BYPASS)
 # (names only — values are never read).
 EXPECTED_SECRETS=(DATABASE_URL REDIS_URL JWT_SECRET OPENAI_API_KEY PINECONE_API_KEY \
   AZURE_SPEECH_KEY DEEPGRAM_API_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
-  RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET SENTRY_DSN)
+  RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET SENTRY_DSN \
+  RESEND_API_KEY)
 present_secrets=$(echo "$td_json" | jq -r '[.secrets[]?.name] | join(" ")')
 missing=()
 for s in "${EXPECTED_SECRETS[@]}"; do

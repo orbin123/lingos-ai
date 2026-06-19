@@ -31,6 +31,9 @@ locals {
     "RAZORPAY_WEBHOOK_SECRET",
     "SENTRY_DSN",
     "LANGCHAIN_API_KEY",
+    # Email: SES prod access was denied (sandbox-only), so prod sends via Resend
+    # (EMAIL_PROVIDER=resend in the stack). The founder puts the real key once.
+    "RESEND_API_KEY",
   ])
 }
 
