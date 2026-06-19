@@ -5,6 +5,119 @@ Most-recent session first.
 
 ---
 
+## Session 6 — Gap G6: Observability finish (Sentry capture + trace correlation)
+
+**Status:** **code complete; live proof is founder-gated.** The PR makes a forced
+error reproducible and makes real prod 500s correlatable to CloudWatch by `trace_id`.
+The actual close-out (populate the Sentry DSN value, set the Vercel DSN, confirm the
+SNS subscription, deliver one alarm, observe the 503 path) is a founder runbook. G6 is
+**not** marked done until those live proofs are captured.
+**Branch:** `feat/g6-observability`
+**Date:** 2026-06-19
+
+### Why this gap
+Phase A (G1–G3) is merged; G4/G5 are agent-complete + founder-gated. The plan's next
+phase is **C = G6 + G8**, with G6 first, and Session 5 explicitly recommended G6 next.
+
+### Critical finding (shaped the gap — most of G6 was already wired)
+Exploration showed the heavy lifting already exists and needed **no change**:
+backend + frontend Sentry init gated on the DSN (`app/core/sentry.py`, `main.py:48`);
+`SENTRY_DSN` secret wired end-to-end (Secrets Manager → task-def → app); **11**
+CloudWatch alarms + the `lingosai-production-alerts` SNS topic + email subscription
+(`infra/terraform/modules/observability`); the `/health/ready` 503 path + ALB health
+check. So G6 was **not** a build-from-scratch gap. The two real, agent-actionable holes:
+1. **Real unhandled 500s were NOT correlatable to CloudWatch.** Only *manually-swallowed*
+   exceptions got a `trace_id` tag (via `capture_to_sentry`); auto-captured unhandled
+   exceptions — the actual prod bugs — reached Sentry with **no `trace_id`**.
+2. **No deterministic way to force a verifiable error** in prod.
+
+### Completed work (code)
+- **`backend/app/core/sentry.py`** — `_before_send` now stamps the request-scoped
+  `trace_id` onto `event["tags"]` (via `setdefault`, never overwriting an explicit tag).
+  Runs at capture time inside the request contextvar scope, so it covers **both**
+  auto-captured 500s and `capture_to_sentry` calls. No-op when no trace_id is bound.
+- **`backend/app/modules/admin/routes.py`** — new `POST /admin/observability/test-error`,
+  gated by `require_super_admin`. Logs `observability_test_error` with the `trace_id`,
+  forwards a `RuntimeError` to Sentry via `capture_to_sentry` (tagged, no-op without DSN),
+  and returns `JSONResponse(500, {status, detail, trace_id})`. Returns the id in the body
+  so it can be matched in Sentry + CloudWatch; reports exactly once (no double-capture).
+- **`backend/openapi.json`** — regenerated (`scripts/export_openapi.py`) for the new route,
+  keeping the `openapi-drift` gate green.
+- **No IaC change** — the alarms/SNS/secret wiring already existed.
+
+### Files changed
+- `backend/app/core/sentry.py`
+- `backend/app/modules/admin/routes.py`
+- `backend/openapi.json`
+- `backend/tests/unit/platform/test_sentry.py` — 3 new `_before_send` trace_id tests.
+- `backend/tests/integration/admin/test_observability_test_error.py` — new (500+trace_id
+  for super-admin; 403 for admin-only).
+- `docs/G6_OBSERVABILITY_RUNBOOK.md` — new (git-ignored dir → `git add -f`).
+- `docs/AGENT_PROGRESS.md` — this log.
+
+### Verification performed
+- `uv run python -m pytest tests/unit/platform/ tests/integration/admin/` → **green**
+  (14 targeted tests; full admin + platform suites pass). Note: per memory, used
+  `uv run python -m pytest` (bare `uv run pytest` grabs a broken global pytest).
+- `uv run ruff check` (4 changed files) → **All checks passed**;
+  `uv run python -m mypy app/core/sentry.py app/modules/admin/routes.py` → **Success**.
+- The integration test proves the route end-to-end via `TestClient` + `TraceIDMiddleware`:
+  HTTP **500**, body `trace_id` is a 32-char hex, and the exception is forwarded to Sentry
+  exactly once (stubbed for hermeticity).
+- **Local-only artifact, not a regression:** my machine's repo-root `.env` carries a real
+  `SENTRY_DSN`, so `app.main` (imported by the `tests.fixtures.client` plugin) initialises
+  a live Sentry client and flushes a few events at exit. In CI there is no `.env`, so
+  `settings.sentry_dsn` is empty and no client initialises — confirmed by re-running with
+  `SENTRY_DSN=""`: 14 passed, **no Sentry flush**. My route test stubs `capture_to_sentry`,
+  so it never sends regardless.
+
+### Findings
+- `before_send` is the single best correlation point: it fires for every event type and
+  runs while the request contextvars are still bound — cleaner than fiddling with the
+  Sentry scope stack inside middleware.
+- Unlike G5 (which *added* a secret → needed a task-def revision), `SENTRY_DSN`'s ARN is
+  **already referenced** in the live task-def. So the founder only needs to set the secret
+  **value** and `--force-new-deployment`; **no task-def revision** is required.
+
+### Decisions
+- **No live mutation by the agent** — did not read/write the prod `SENTRY_DSN` value, set
+  the Vercel var, confirm the SNS subscription, fire an alarm, or force a 503. All are
+  prod-changing and/or console-only (founder runbook).
+- **Forced-error route returns a handled 500** (not an unhandled raise) so it reports to
+  Sentry exactly once and can still return the `trace_id` in the body. The `_before_send`
+  tagging separately ensures *genuine* unhandled 500s are also correlatable.
+- **Super-admin gating + single 500** keep the route safe in prod (well under the
+  `alb_5xx` >10/60s threshold); not audited (it is not a mutation).
+- Left the route in prod as a permanent self-test (documented as removable).
+
+### Risks
+- The PR proves the *mechanism* (capture + tagging + a forced 500), not that prod is
+  actually capturing — that needs the **real DSN value** in Secrets Manager + Vercel. Until
+  the founder sets those, Sentry capture in prod stays a no-op. Made explicit in the runbook
+  + its "definition of done".
+- The faithful 503 test briefly removes the only healthy ECS target (single task) — the
+  runbook flags doing it in a quiet window and offers a safe `set-alarm-state` alternative.
+- `TF_VAR_alert_email` must be passed on **every** `terraform apply` or the SNS subscription
+  is destroyed (pre-existing gotcha; re-stated in the runbook + `docs/AWS_SETUP.md`).
+
+### Founder actions required (to finish G6 — see `docs/G6_OBSERVABILITY_RUNBOOK.md`)
+1. **Review + merge** PR `feat/g6-observability`.
+2. Ensure `SENTRY_DSN` (Secrets Manager) holds a real value; `--force-new-deployment`.
+3. Set `NEXT_PUBLIC_SENTRY_DSN` in Vercel; redeploy the frontend.
+4. `POST /admin/observability/test-error` with a super-admin token → confirm the returned
+   `trace_id` in Sentry **and** CloudWatch.
+5. Confirm the SNS email subscription; fire one alarm (`set-alarm-state`) → confirm delivery.
+6. Observe the `/health/ready` 503 path (safe `set-alarm-state` or the faithful RDS-block).
+
+### Next recommended gap
+**G8 — rollback drill + DR** (Phase C's other half): largely founder-driven (time a real
+rollback <5 min; row-verify an RDS restore), but the agent can pre-write the drill runbook
++ any helper scripts. Alternatively **G7 — security close-out** (Phase D): the agent can do
+the `config.py` prod-guard re-confirmation, the HSTS header change, and the `backup*.sql`
+git-history decision in code, leaving key rotation as founder console work.
+
+---
+
 ## Session 5 — Gap G5: Email provider (SES → Resend)
 
 **Status:** **code/IaC complete; live flip is founder-gated.** The PR makes Resend the
