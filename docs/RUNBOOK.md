@@ -113,10 +113,13 @@ aws rds delete-db-instance --db-instance-identifier lingosai-restore-drill \
 ```
 > **Data-integrity check (do this hands-on — never put the prod password in a
 > file/env override):** while the drill instance is up, verify row-level data via
-> **ECS Exec** into a running task (`aws ecs execute-command … --command
-> "python -c '…psycopg count…'"` with `DATABASE_URL` pointing at the drill
-> endpoint) or `psql` from a bastion in the VPC. The drill instance is private by
-> design, so verification happens inside the VPC.
+> **ECS Exec** into a running task — open a shell with `aws ecs execute-command`,
+> then reuse the password already injected as `$DATABASE_URL` (swapping only the
+> host for the drill endpoint), so the password is never typed or written to a
+> file. The drill instance is private by design, so verification happens inside
+> the VPC. **ECS Exec is now enabled on the backend service** (G8); the scripted
+> drill + the exact steps live in `scripts/rds-restore-drill.sh` and
+> `docs/G8_ROLLBACK_DR_RUNBOOK.md`.
 
 **Last drill — 2026-06-18:** snapshot `rds:lingosai-production-postgres-2026-06-18-03-06`
 restored to `lingosai-restore-drill`; **available in 7m 28s** (well within the 1 hr
