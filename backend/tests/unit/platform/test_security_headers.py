@@ -50,8 +50,7 @@ def test_headers_present_in_production(prod_env: None) -> None:
     resp = client.get("/ok")
     assert resp.status_code == 200
     assert (
-        resp.headers["strict-transport-security"]
-        == "max-age=86400; includeSubDomains"
+        resp.headers["strict-transport-security"] == "max-age=86400; includeSubDomains"
     )
     assert resp.headers["x-content-type-options"] == "nosniff"
 
@@ -70,8 +69,7 @@ def test_headers_ride_on_error_responses(prod_env: None) -> None:
     resp = client.get("/boom")
     assert resp.status_code == 403
     assert (
-        resp.headers["strict-transport-security"]
-        == "max-age=86400; includeSubDomains"
+        resp.headers["strict-transport-security"] == "max-age=86400; includeSubDomains"
     )
 
 
