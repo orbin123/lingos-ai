@@ -34,10 +34,38 @@ from app.modules.curriculum.models import (  # noqa: E402
     ThemeType,
     CoreActivity,
 )
+from app.modules.skills.models import Skill  # noqa: E402
+from app.modules.skills.seed_data import SKILL_SEED  # noqa: E402
 from app.scoring import ARCHETYPE_REGISTRY, CourseLength  # noqa: E402
 
 
 logger = logging.getLogger(__name__)
+
+
+# ── Skill seeding ──────────────────────────────────────────────────
+
+
+def seed_skills(db: Session) -> tuple[int, int]:
+    """Upsert the 7 canonical sub-skill master rows. Returns (inserted, updated).
+
+    The authoritative fix for the empty-`skills` table lives in the Alembic data
+    migration; this is defense-in-depth so a freshly seeded environment has
+    skills even if the seeder is run without migrations. Idempotent.
+    """
+    inserted = updated = 0
+    for name, description, display_label in SKILL_SEED:
+        row = db.query(Skill).filter_by(name=name).one_or_none()
+        if row is None:
+            db.add(
+                Skill(name=name, description=description, display_label=display_label)
+            )
+            inserted += 1
+        else:
+            row.description = description
+            row.display_label = display_label
+            updated += 1
+    db.flush()
+    return inserted, updated
 
 
 # ── Archetype seeding ──────────────────────────────────────────────
@@ -134,10 +162,12 @@ def seed_course(db: Session, course_length: CourseLength) -> tuple[int, int]:
 
 
 def seed_all(db: Session) -> dict:
+    skill_ins, skill_upd = seed_skills(db)
     arch_ins, arch_upd = seed_archetypes(db)
     w24, d24 = seed_course(db, CourseLength.WEEKS_24)
     w48, d48 = seed_course(db, CourseLength.WEEKS_48)
     return {
+        "skills": {"inserted": skill_ins, "updated": skill_upd},
         "archetypes": {"inserted": arch_ins, "updated": arch_upd},
         "weeks_24w": w24, "days_24w": d24,
         "weeks_48w": w48, "days_48w": d48,

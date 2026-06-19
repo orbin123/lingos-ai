@@ -26,7 +26,8 @@ from app.modules.curriculum.repository import (
     CurriculumWeekRepository,
     TaskArchetypeRepository,
 )
-from app.scoring import ARCHETYPE_REGISTRY, CourseLength
+from app.modules.skills.models import Skill
+from app.scoring import ARCHETYPE_REGISTRY, SUB_SKILLS, CourseLength
 from scripts.seed_curriculum import (
     seed_all,
     seed_archetypes,
@@ -43,6 +44,7 @@ def db_session():
             CurriculumWeek.__table__,
             CurriculumDay.__table__,
             TaskArchetype.__table__,
+            Skill.__table__,
         ],
     )
     SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -290,6 +292,10 @@ class TestSeedAll:
         report = seed_all(db_session)
         db_session.commit()
         assert report == {
+            "skills": {
+                "inserted": len(SUB_SKILLS),
+                "updated": 0,
+            },
             "archetypes": {
                 "inserted": len(ARCHETYPE_REGISTRY),
                 "updated": 0,
