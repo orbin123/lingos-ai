@@ -436,6 +436,36 @@ class TestWebhook:
         assert res.status_code == 200
         assert db_session.query(Subscription).count() == 1
 
+    def test_verify_then_webhook_backfills_method(self, client, db_session):
+        # Common Pay-Now ordering: verify wins the race and activates without
+        # setting `method`; the later captured webhook must backfill `method` on
+        # the already-paid row (so the success page / admin views show the real
+        # instrument) without re-activating.
+        order_id = self._create_order(client)
+        client.post(
+            "/api/payments/verify",
+            json={
+                "razorpay_order_id": order_id,
+                "razorpay_payment_id": "pay_123",
+                "razorpay_signature": _checkout_signature(order_id, "pay_123"),
+            },
+        )
+        payment = (
+            db_session.query(Payment)
+            .filter(Payment.provider_order_id == order_id)
+            .one()
+        )
+        assert payment.status == "paid"
+        assert payment.method is None  # verify fast-path never sets it
+
+        res = _webhook(client, _captured_event(order_id), event_id="evt_backfill")
+        assert res.status_code == 200
+
+        db_session.refresh(payment)
+        assert payment.method == "upi"  # webhook backfilled it
+        assert payment.provider_payment_id == "pay_123"  # verify's id, untouched
+        assert db_session.query(Subscription).count() == 1  # no double activation
+
     def test_payment_failed_records_reason_no_activation(
         self, client, db_session, user
     ):

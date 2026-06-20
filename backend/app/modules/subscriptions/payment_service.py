@@ -240,7 +240,15 @@ class PaymentService:
             logger.warning("Razorpay captured event for unknown order %s", order_id)
             return
         if payment.status == "paid":
-            return  # verify callback already activated
+            # The verify fast-path already activated, but it never sets `method`
+            # (the checkout callback doesn't carry it). The webhook is the
+            # authoritative source for the instrument and the gateway payment id,
+            # so backfill them here — without re-activating — so the success page
+            # and admin views show the real method instead of "Processing…". In
+            # the common Pay-Now ordering verify wins the race, so this is the
+            # only path that ever fills `method`.
+            self._backfill_captured_fields(payment, entity)
+            return
 
         user = self.db.get(User, payment.user_id)
         if user is None:
@@ -254,6 +262,25 @@ class PaymentService:
             method=entity.get("method"),
             plan_id_hint=notes.get("plan_id") if isinstance(notes, dict) else None,
         )
+
+    def _backfill_captured_fields(self, payment: Payment, entity: dict) -> None:
+        """Fill `method`/`provider_payment_id` on an already-paid row.
+
+        Only fills fields the verify fast-path left empty — never overwrites an
+        existing value, so the `provider_payment_id` unique constraint can't be
+        violated (verify and the webhook report the same payment id anyway).
+        """
+        changed = False
+        method = entity.get("method")
+        if method and not payment.method:
+            payment.method = method
+            changed = True
+        payment_id = entity.get("id")
+        if payment_id and not payment.provider_payment_id:
+            payment.provider_payment_id = payment_id
+            changed = True
+        if changed:
+            self.db.flush()
 
     def _handle_payment_failed(self, payload: dict) -> None:
         entity = self._payment_entity(payload)
