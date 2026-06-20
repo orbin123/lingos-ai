@@ -16,6 +16,20 @@ export interface PaymentVerifyIn {
   razorpay_signature: string;
 }
 
+export interface PaymentDetailRead {
+  provider_payment_id: string | null;
+  provider_order_id: string | null;
+  amount: number; // rupees (catalog amount), not paise
+  currency: string;
+  status: string;
+  method: string | null; // null until the webhook lands — render defensively
+  paid_at: string | null;
+  plan_id: string | null;
+  plan_name: string | null;
+  subscription_status: string | null;
+  current_period_end: string | null;
+}
+
 export const paymentsApi = {
   createOrder: (planId: string) =>
     api
@@ -25,5 +39,14 @@ export const paymentsApi = {
   verify: (payload: PaymentVerifyIn) =>
     api
       .post<EntitlementRead>("/api/payments/verify", payload)
+      .then((r) => r.data),
+
+  // Server-verified proof for the Payment Success page (user-scoped: a user
+  // can only read their own order; another user's order → 404).
+  byOrder: (orderId: string) =>
+    api
+      .get<PaymentDetailRead>(
+        `/api/payments/by-order/${encodeURIComponent(orderId)}`,
+      )
       .then((r) => r.data),
 };

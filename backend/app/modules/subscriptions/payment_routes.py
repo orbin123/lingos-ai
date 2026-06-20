@@ -22,6 +22,7 @@ from app.modules.subscriptions.schemas import (
     CreateOrderIn,
     CreateOrderOut,
     EntitlementRead,
+    PaymentDetailRead,
     PaymentVerifyIn,
 )
 from app.payments.exceptions import PaymentProviderError
@@ -79,6 +80,24 @@ def verify_payment(
             },
         )
     return _entitlement_out(service.subscriptions.resolve_access(current_user))
+
+
+@payments_router.get("/by-order/{order_id}", response_model=PaymentDetailRead)
+def get_payment_by_order(
+    order_id: str,
+    current_user: User = Depends(require_verified),
+    db: Session = Depends(get_db),
+) -> PaymentDetailRead:
+    """Server-verified proof for the Payment Success page.
+
+    User-scoped: the lookup filters by ``current_user.id``, so requesting
+    another user's order returns 404 (no IDOR).
+    """
+    try:
+        detail = PaymentService(db).get_payment_detail(current_user, order_id)
+    except PaymentNotFound:
+        raise HTTPException(status_code=404, detail="Order not found.")
+    return PaymentDetailRead(**detail)
 
 
 @payments_router.post("/webhook")
