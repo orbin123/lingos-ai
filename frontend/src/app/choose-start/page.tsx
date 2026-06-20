@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { authApi } from "@/lib/auth-api";
 import { subscriptionsApi } from "@/lib/subscriptions-api";
+import { paymentsApi } from "@/lib/payments-api";
+import { useRazorpayCheckout } from "@/hooks/useRazorpayCheckout";
 import { LandingNavbar } from "@/components/layout/LandingNavbar";
 import { getApiErrorMessage } from "@/lib/errors";
 import { PreparingCheckout } from "./PreparingCheckout";
@@ -183,12 +185,17 @@ function ChooseStartInner() {
   // Only fresh `verified` users may start a trial (one trial per user).
   const trialEligible = me?.access_state === "verified";
 
+  const { openCheckout } = useRazorpayCheckout();
+
   const startTrialMutation = useMutation({
     mutationFn: async (planId: PlanId) => {
       await subscriptionsApi.selectPlan(planId);
       return subscriptionsApi.startTrial();
     },
   });
+
+  const createOrderMutation = useMutation({ mutationFn: paymentsApi.createOrder });
+  const verifyMutation = useMutation({ mutationFn: paymentsApi.verify });
 
   const handleStartTrial = async () => {
     setError(null);
@@ -203,12 +210,40 @@ function ChooseStartInner() {
     }
   };
 
-  const handlePayNow = () => {
+  // Pay-Now: create the order (server recomputes paise from PLAN_CATALOG), open
+  // the Razorpay modal, verify server-side, then route to the proof page.
+  // Checkout is opened on explicit choice, not gated on access_state — `verified`,
+  // `expired`, and `cancelled` users all pass the backend's `require_verified` guard.
+  const handlePayNow = async () => {
     setError(null);
     setPhase("preparing-pay");
-    // TODO(Phase 3): createOrder(plan) → useRazorpayCheckout.openCheckout →
-    // verify(payload) → router.replace(`/payment/success?order_id=${id}`).
-    // Phase 1 stops at this visual "Preparing Secure Checkout" state.
+    try {
+      const order = await createOrderMutation.mutateAsync(plan);
+      await openCheckout({
+        order,
+        user: me ? { name: me.name, email: me.email } : undefined,
+        onSuccess: async (payload) => {
+          try {
+            await verifyMutation.mutateAsync(payload);
+            await queryClient.invalidateQueries({ queryKey: ["me"] });
+            router.replace(
+              `/payment/success?order_id=${encodeURIComponent(payload.razorpay_order_id)}`,
+            );
+          } catch (err) {
+            setError(getApiErrorMessage(err));
+            setPhase("choose");
+          }
+        },
+        // Modal dismissed, payment.failed, or checkout.js load failure — nothing charged.
+        onFailure: (message) => {
+          setError(message);
+          setPhase("choose");
+        },
+      });
+    } catch (err) {
+      setError(getApiErrorMessage(err));
+      setPhase("choose");
+    }
   };
 
   if (phase !== "choose") {

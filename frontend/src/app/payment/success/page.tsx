@@ -1,16 +1,17 @@
 "use client";
 
 import { Suspense } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LandingNavbar } from "@/components/layout/LandingNavbar";
+import { paymentsApi, type PaymentDetailRead } from "@/lib/payments-api";
 
 /**
  * Payment Success — the reviewer-grade proof page (mock:
  * docs/PAYMENT_INTEGRATION/payment_successful.png).
  *
- * Phase 1 scaffold: layout + placeholder values only. Phase 3 wires the data
- * via `GET /api/payments/by-order/{order_id}` (paymentsApi.byOrder) and the
- * `order_id` query param read below.
+ * Data comes from `GET /api/payments/by-order/{order_id}` (paymentsApi.byOrder),
+ * keyed off the `order_id` query param set by the Pay-Now flow after `verify`.
  */
 const PRIMARY = "#0070C4";
 const GREEN = "oklch(56% 0.15 155)";
@@ -65,12 +66,124 @@ function SubRow({ k, v }: { k: string; v: string }) {
   );
 }
 
+// ── value formatters (defensive — fields may be null pre-webhook) ──────────────
+const METHOD_LABELS: Record<string, string> = {
+  card: "Card",
+  upi: "UPI",
+  netbanking: "Net Banking",
+  wallet: "Wallet",
+  emi: "EMI",
+};
+
+function formatMethod(method: string | null): string {
+  if (!method) return "Processing…"; // filled by the webhook (Phase 4); render defensively
+  const key = method.toLowerCase();
+  return METHOD_LABELS[key] ?? method.charAt(0).toUpperCase() + method.slice(1);
+}
+
+function formatDateTime(iso: string | null): string {
+  if (!iso) return PLACEHOLDER;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return PLACEHOLDER;
+  return d.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return PLACEHOLDER;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return PLACEHOLDER;
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatAmount(amount: number, currency: string): string {
+  // `amount` is in rupees (catalog unit) per the by-order schema — not paise.
+  const symbol =
+    currency?.toUpperCase() === "INR" ? "₹" : currency ? `${currency.toUpperCase()} ` : "";
+  return symbol + amount.toLocaleString("en-IN");
+}
+
+function titleCase(s: string | null): string {
+  if (!s) return PLACEHOLDER;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function Fallback({ message, onContinue }: { message: string; onContinue: () => void }) {
+  return (
+    <div style={{ maxWidth: 520, margin: "40px auto 0", padding: "0 28px", textAlign: "center" }}>
+      <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", color: NAVY }}>
+        Order not found
+      </h1>
+      <p style={{ fontSize: 15, color: INK_MUTED, marginTop: 10, lineHeight: 1.5 }}>{message}</p>
+      <button
+        onClick={onContinue}
+        style={{
+          marginTop: 24,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 9,
+          padding: "13px 24px",
+          borderRadius: 14,
+          fontSize: 15,
+          fontWeight: 800,
+          border: "none",
+          cursor: "pointer",
+          background: PRIMARY,
+          color: "white",
+          boxShadow: "0 8px 20px rgba(0,112,196,0.32)",
+        }}
+      >
+        Go to dashboard {Arrow}
+      </button>
+    </div>
+  );
+}
+
 function PaymentSuccessInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const orderId = searchParams.get("order_id");
-  // TODO(Phase 3): const { data } = useQuery(... paymentsApi.byOrder(orderId)) → populate below.
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["payment-by-order", orderId],
+    queryFn: () => paymentsApi.byOrder(orderId as string),
+    enabled: !!orderId,
+    // Bounded poll: pick up `method` once the webhook lands; stop when filled or
+    // after a few attempts (in verify-first ordering it may stay null until Phase 4).
+    refetchInterval: (query) => {
+      const d = query.state.data as PaymentDetailRead | undefined;
+      if (!d || d.method != null) return false;
+      return query.state.dataUpdateCount < 6 ? 4000 : false;
+    },
+  });
+
+  if (!orderId) {
+    return (
+      <Fallback
+        message="We couldn't find a payment reference for this page. If you completed a payment, your subscription is still active."
+        onContinue={() => router.push("/dashboard")}
+      />
+    );
+  }
+
+  if (isError) {
+    return (
+      <Fallback
+        message="We couldn't load this payment. It may belong to a different account, or the reference is invalid."
+        onContinue={() => router.push("/dashboard")}
+      />
+    );
+  }
+
+  const statusLabel =
+    data && (data.status === "paid" || data.status === "active")
+      ? "CONFIRMED"
+      : (data?.status ?? "").toUpperCase() || "PROCESSING";
 
   return (
     <div style={{ maxWidth: 760, margin: "0 auto", padding: "8px 28px 70px" }}>
@@ -103,16 +216,16 @@ function PaymentSuccessInner() {
           <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "16px 20px", fontSize: 13.5, fontWeight: 800, color: NAVY }}>
             {Receipt} Transaction summary
           </div>
-          <TRow k="Payment ID" v={PLACEHOLDER} mono />
-          <TRow k="Order ID" v={PLACEHOLDER} mono />
-          <TRow k="Amount" v={PLACEHOLDER} />
-          <TRow k="Payment Method" v={PLACEHOLDER} />
-          <TRow k="Date" v={PLACEHOLDER} />
+          <TRow k="Payment ID" v={data?.provider_payment_id ?? (isLoading ? PLACEHOLDER : "Processing…")} mono />
+          <TRow k="Order ID" v={data?.provider_order_id ?? PLACEHOLDER} mono />
+          <TRow k="Amount" v={data ? formatAmount(data.amount, data.currency) : PLACEHOLDER} />
+          <TRow k="Payment Method" v={data ? formatMethod(data.method) : PLACEHOLDER} />
+          <TRow k="Date" v={data ? formatDateTime(data.paid_at) : PLACEHOLDER} />
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", fontSize: 13.5, borderTop: `1px solid ${LINE_SOFT}` }}>
             <span style={{ color: INK_MUTED, fontWeight: 600 }}>Status</span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 11px", borderRadius: 999, background: GREEN_SOFT, color: GREEN_DEEP, fontSize: 12, fontWeight: 800 }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: GREEN }} />
-              CONFIRMED
+              {statusLabel}
             </span>
           </div>
         </div>
@@ -122,10 +235,10 @@ function PaymentSuccessInner() {
           <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "16px 20px", fontSize: 13.5, fontWeight: 800, borderBottom: "1px solid rgba(255,255,255,0.14)" }}>
             {Star} Subscription
           </div>
-          <SubRow k="Plan" v={PLACEHOLDER} />
-          <SubRow k="Status" v={PLACEHOLDER} />
-          <SubRow k="Billing" v={PLACEHOLDER} />
-          <SubRow k="Access until" v={PLACEHOLDER} />
+          <SubRow k="Plan" v={data?.plan_name ?? data?.plan_id ?? PLACEHOLDER} />
+          <SubRow k="Status" v={data ? titleCase(data.subscription_status) : PLACEHOLDER} />
+          <SubRow k="Billing" v="One-time" />
+          <SubRow k="Access until" v={data ? formatDate(data.current_period_end) : PLACEHOLDER} />
         </div>
       </div>
 
