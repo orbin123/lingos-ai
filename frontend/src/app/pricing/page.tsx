@@ -1,17 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { Check, X } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 import { authApi } from "@/lib/auth-api";
 import { LandingNavbar } from "@/components/layout/LandingNavbar";
 import { LandingFooter } from "@/components/layout/LandingFooter";
-import { subscriptionsApi } from "@/lib/subscriptions-api";
-import { paymentsApi } from "@/lib/payments-api";
-import { useRazorpayCheckout } from "@/hooks/useRazorpayCheckout";
-import { getApiErrorMessage } from "@/lib/errors";
 
 const ACCENT_HUE = 240;
 const PLANS = {
@@ -54,10 +50,7 @@ function GlassCard({
 
 export default function PricingPage() {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { isAuthenticated } = useAuthStore();
-  const [confirmPlan, setConfirmPlan] = useState<PlanId | null>(null);
-  const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
   // Users with running access don't belong on pricing. Keyed on
   // access_state, NOT preference: a plan-selected-but-no-trial user has a
@@ -73,86 +66,17 @@ export default function PricingPage() {
     }
   }, [me, router]);
 
-  // "verified" → choose plan + start free trial (no payment).
-  // "expired"/"cancelled" (or mid-trial upgrade) → Razorpay checkout.
-  const isTrialFlow = me?.access_state === "verified";
-  const { openCheckout } = useRazorpayCheckout();
-  const [isPaying, setIsPaying] = useState(false);
-
-  const startTrialMutation = useMutation({
-    mutationFn: async (planId: PlanId) => {
-      await subscriptionsApi.selectPlan(planId);
-      return subscriptionsApi.startTrial();
-    },
-  });
-
-  const handleConfirm = async () => {
-    if (!confirmPlan) return;
-
-    setPurchaseError(null);
-    const planId = confirmPlan;
-
-    if (!isTrialFlow) {
-      // Upgrade path: order server-side → Razorpay Checkout → server-side
-      // signature verification → ACTIVE.
-      setIsPaying(true);
-      try {
-        const order = await paymentsApi.createOrder(planId);
-        await openCheckout({
-          order,
-          user: me ? { name: me.name, email: me.email } : undefined,
-          onSuccess: async (payload) => {
-            try {
-              await paymentsApi.verify(payload);
-              await queryClient.invalidateQueries({ queryKey: ["me"] });
-              setIsPaying(false);
-              setConfirmPlan(null);
-              router.replace(
-                `/dashboard?purchase=success&plan=${encodeURIComponent(
-                  order.plan_name,
-                )}`,
-              );
-            } catch (error) {
-              setIsPaying(false);
-              setPurchaseError(getApiErrorMessage(error));
-            }
-          },
-          onFailure: (message) => {
-            setIsPaying(false);
-            setPurchaseError(message);
-          },
-        });
-      } catch (error) {
-        setIsPaying(false);
-        setPurchaseError(getApiErrorMessage(error));
-      }
-      return;
-    }
-
-    try {
-      await startTrialMutation.mutateAsync(planId);
-      await queryClient.invalidateQueries({ queryKey: ["me"] });
-
-      setConfirmPlan(null);
-      router.replace("/dashboard?trial=started");
-    } catch (error) {
-      setPurchaseError(getApiErrorMessage(error));
-    }
-  };
-
+  // The Trial-vs-Pay-Now fork now lives on /choose-start. Pricing just picks a
+  // plan and routes there (authenticated) or to register (anonymous).
   const handleBuyNow = (planId: PlanId) => {
     if (!isAuthenticated) {
       router.push("/register");
     } else {
-      setConfirmPlan(planId);
+      router.push(`/choose-start?plan=${encodeURIComponent(planId)}`);
     }
   };
 
-  const ctaLabel = !isAuthenticated
-    ? "Get started"
-    : isTrialFlow
-      ? "Start 7-day free trial"
-      : "Upgrade now";
+  const ctaLabel = isAuthenticated ? "Choose how to start" : "Get started";
 
   return (
     <main
@@ -643,116 +567,6 @@ export default function PricingPage() {
           </button>
         </section>
       </div>
-      {confirmPlan && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 80,
-            background: "rgba(10,18,35,0.42)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-          }}
-        >
-          <div
-            style={{
-              width: "100%",
-              maxWidth: 430,
-              background: "white",
-              borderRadius: 12,
-              padding: 24,
-              boxShadow: "0 24px 70px rgba(20,35,70,0.22)",
-            }}
-          >
-            <h2
-              style={{
-                margin: "0 0 9px",
-                color: "oklch(15% 0.09 245)",
-                fontSize: 21,
-                fontWeight: 800,
-              }}
-            >
-              {isTrialFlow ? "Start your free trial" : "Confirm purchase"}
-            </h2>
-            <p
-              style={{
-                margin: 0,
-                color: "oklch(42% 0.06 240)",
-                fontSize: 14,
-                lineHeight: 1.55,
-              }}
-            >
-              {isTrialFlow
-                ? `Start your 7-day free trial of the ${PLANS[confirmPlan].name} — no payment needed.`
-                : `Confirm one-time purchase of ${PLANS[confirmPlan].name} for ₹${PLANS[confirmPlan].price}?`}
-            </p>
-            {purchaseError && (
-              <p
-                role="alert"
-                style={{
-                  margin: "14px 0 0",
-                  color: "oklch(45% 0.18 25)",
-                  fontSize: 13,
-                  lineHeight: 1.45,
-                  fontWeight: 600,
-                }}
-              >
-                {purchaseError}
-              </p>
-            )}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 10,
-                marginTop: 22,
-              }}
-            >
-              <button
-                onClick={() => setConfirmPlan(null)}
-                style={{
-                  borderRadius: 8,
-                  padding: "11px 15px",
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  background: "white",
-                  border: "1px solid oklch(82% 0.03 245)",
-                  color: "oklch(28% 0.06 245)",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                disabled={startTrialMutation.isPending || isPaying}
-                onClick={handleConfirm}
-                style={{
-                  borderRadius: 8,
-                  padding: "11px 15px",
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor:
-                    startTrialMutation.isPending || isPaying
-                      ? "not-allowed"
-                      : "pointer",
-                  background: `oklch(52% 0.18 ${ACCENT_HUE})`,
-                  border: "1px solid transparent",
-                  color: "white",
-                  opacity: startTrialMutation.isPending || isPaying ? 0.7 : 1,
-                }}
-              >
-                {isTrialFlow
-                  ? "Start free trial"
-                  : isPaying
-                    ? "Opening checkout…"
-                    : "Pay with Razorpay"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       <LandingFooter />
     </main>
   );
