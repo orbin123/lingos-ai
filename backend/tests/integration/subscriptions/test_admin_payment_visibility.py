@@ -10,10 +10,11 @@ These tests drive the *real* payment routes (mock Razorpay provider) and the
 real `SubscriptionService`, then read the *existing* `AdminRepository` on the
 same session. No admin code is touched.
 
-It also documents the one known gap: `admin/user-progress`
-(`AdminRepository.list_user_progress`) keys plan/access off the legacy
-`Purchase` table, which the new `Subscription`-based Pay-Now flow never writes.
-See `test_pay_now_writes_subscription_not_purchase` and the flagged follow-up.
+It also covers `admin/user-progress` (`AdminRepository.list_user_progress`):
+once a gap because it keyed plan/access off the legacy `Purchase` table the
+new `Subscription`-based Pay-Now flow never writes, now closed — the view
+prefers a paid `Subscription` and falls back to `Purchase`. See
+`TestUserProgressGap`.
 """
 
 from __future__ import annotations
@@ -35,6 +36,9 @@ from app.modules.admin.repository import AdminRepository
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import Role, User, UserRole
 from app.modules.preferences.models import UserCoursePreference
+from app.modules.progress.models import SkillPoints
+from app.modules.sessions.models import ActivityAttempt, DailySession
+from app.modules.skills.models import Skill
 from app.modules.subscriptions.models import (
     Payment,
     PaymentEvent,
@@ -68,6 +72,11 @@ def db_session():
             Purchase.__table__,
             Payment.__table__,
             PaymentEvent.__table__,
+            # list_user_progress also reads sessions/skill-points tables.
+            Skill.__table__,
+            SkillPoints.__table__,
+            DailySession.__table__,
+            ActivityAttempt.__table__,
         ],
     )
     SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
@@ -270,14 +279,13 @@ class TestAdminUserBillingView:
 
 
 class TestUserProgressGap:
-    """Documents the one verified gap (flagged as a follow-up, not patched).
+    """User-Progress now resolves plan/access from `Subscription` too.
 
-    `AdminRepository.list_user_progress` reads plan/access from the legacy
-    `Purchase` table only. The new Pay-Now flow activates via `Subscription`
-    (`activate_from_payment`) and never writes a `Purchase`, so the admin
-    User-Progress view shows new-flow payers with no plan/access. We pin that
-    behaviour here: a future fix that teaches user-progress to read
-    `Subscription` should flip this assertion deliberately.
+    The Pay-Now flow activates via `Subscription` (`activate_from_payment`)
+    and never writes a legacy `Purchase`. `list_user_progress` used to key
+    plan/access off `Purchase` only, hiding new-flow payers. It now prefers a
+    paid `Subscription` (a started paid period) and falls back to `Purchase`,
+    so the view reports the active plan and access window.
     """
 
     def test_pay_now_writes_subscription_not_purchase(self, client, db_session):
@@ -286,3 +294,17 @@ class TestUserProgressGap:
         # New flow → exactly one active Subscription, and NO legacy Purchase.
         assert db_session.query(Subscription).count() == 1
         assert db_session.query(Purchase).count() == 0
+
+    def test_pay_now_shows_active_plan_in_user_progress(
+        self, client, db_session, user
+    ):
+        _pay_now(client)
+
+        items = AdminRepository(db_session).list_user_progress()
+        row = next((item for item in items if item.user_id == user.id), None)
+        assert row is not None, "payer should appear in user-progress"
+        # Plan + access resolve from the Subscription even with no Purchase row.
+        assert row.plan_id == "beginner-24w"
+        assert row.plan_name == "24-Week Foundation"
+        assert row.purchase_complete is True
+        assert row.access_expires_at is not None

@@ -7,7 +7,7 @@ will be wired in by the admin team in a follow-up.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -85,6 +85,15 @@ from app.modules.subscriptions.models import (
     SubscriptionStatus,
 )
 from app.modules.subscriptions.service import resolve_effective_status
+
+
+class _ProgressBilling(NamedTuple):
+    """Resolved plan + access window for one row of the User-Progress list."""
+
+    plan_id: str | None
+    plan_name: str | None
+    purchase_complete: bool
+    access_expires_at: datetime | None
 
 
 def _enum_value(value: object) -> str:
@@ -302,6 +311,15 @@ class AdminRepository:
         purchases = {
             purchase.user_id: purchase for purchase in self.db.query(Purchase).all()
         }
+        # Newest subscription per user wins (matches SubscriptionRepository
+        # .get_for_user and list_subscribers). The Pay-Now redesign activates
+        # via Subscription and never writes a Purchase, so plan/access must be
+        # read from here too — not from the legacy Purchase table alone.
+        subscriptions: dict[int, Subscription] = {}
+        for subscription in (
+            self.db.query(Subscription).order_by(Subscription.id.desc()).all()
+        ):
+            subscriptions.setdefault(subscription.user_id, subscription)
 
         items: list[UserProgressItem] = []
         for user in users:
@@ -309,24 +327,62 @@ class AdminRepository:
             dashboard_score = (
                 round(sum(s.score for s in skills) / len(skills), 1) if skills else None
             )
-            purchase = purchases.get(user.id)
+            billing = self._progress_billing(
+                subscriptions.get(user.id), purchases.get(user.id)
+            )
             items.append(
                 UserProgressItem(
                     user_id=user.id,
                     name=user.name,
                     email=user.email,
-                    plan_id=purchase.plan_id if purchase else None,
-                    plan_name=purchase.plan_name if purchase else None,
-                    purchase_complete=bool(purchase and purchase.status == "paid"),
-                    access_expires_at=(
-                        purchase.access_expires_at if purchase else None
-                    ),
+                    plan_id=billing.plan_id,
+                    plan_name=billing.plan_name,
+                    purchase_complete=billing.purchase_complete,
+                    access_expires_at=billing.access_expires_at,
                     activities_completed=counts.get(user.id, 0),
                     dashboard_score=dashboard_score,
                     subskill_scores=skills,
                 )
             )
         return items
+
+    @staticmethod
+    def _progress_billing(
+        subscription: Subscription | None,
+        purchase: Purchase | None,
+    ) -> _ProgressBilling:
+        """Resolve a learner's plan + access window for the progress list.
+
+        Prefers a paid `Subscription` (the new Pay-Now / activation flow,
+        identified by a started paid period) and falls back to the legacy
+        one-time `Purchase`. Plan name is resolved from `PLAN_CATALOG` and
+        `current_period_end` is the access window — mirroring `list_subscribers`.
+        """
+        # A started paid period == a completed purchase; an expired one stays
+        # "complete" (access_expires_at carries the expiry), exactly like a
+        # legacy paid Purchase past its window. Trial-only rows
+        # (current_period_start is None) are not a purchase here.
+        if subscription is not None and subscription.current_period_start is not None:
+            plan = (
+                PLAN_CATALOG.get(subscription.plan_id)
+                if subscription.plan_id
+                else None
+            )
+            plan_name = str(plan["name"]) if plan else subscription.plan_name
+            return _ProgressBilling(
+                plan_id=subscription.plan_id,
+                plan_name=plan_name,
+                purchase_complete=True,
+                access_expires_at=subscription.current_period_end,
+            )
+        if purchase is not None:
+            return _ProgressBilling(
+                plan_id=purchase.plan_id,
+                plan_name=purchase.plan_name,
+                purchase_complete=purchase.status == "paid",
+                access_expires_at=purchase.access_expires_at,
+            )
+        return _ProgressBilling(None, None, False, None)
 
     def set_user_active(self, user: User, *, is_active: bool) -> User:
         user.is_active = is_active
