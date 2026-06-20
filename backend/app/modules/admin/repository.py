@@ -364,9 +364,7 @@ class AdminRepository:
         # (current_period_start is None) are not a purchase here.
         if subscription is not None and subscription.current_period_start is not None:
             plan = (
-                PLAN_CATALOG.get(subscription.plan_id)
-                if subscription.plan_id
-                else None
+                PLAN_CATALOG.get(subscription.plan_id) if subscription.plan_id else None
             )
             plan_name = str(plan["name"]) if plan else subscription.plan_name
             return _ProgressBilling(

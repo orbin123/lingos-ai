@@ -184,9 +184,12 @@ def _pay_now(client, plan_id: str = "beginner-24w") -> str:
         },
     )
     assert res.status_code == 200
-    assert _webhook(
-        client, _captured_event(order_id), event_id="evt_admin_vis"
-    ).status_code == 200
+    assert (
+        _webhook(
+            client, _captured_event(order_id), event_id="evt_admin_vis"
+        ).status_code
+        == 200
+    )
     return order_id
 
 
@@ -217,9 +220,7 @@ class TestAdminSubscribersView:
         _pay_now(client)
 
         overview = AdminRepository(db_session).list_subscribers()
-        payer = next(
-            (s for s in overview.subscribers if s.user_id == user.id), None
-        )
+        payer = next((s for s in overview.subscribers if s.user_id == user.id), None)
         assert payer is not None, "payer should appear under subscribers"
         assert payer.status == "active"
         assert payer.plan_id == "beginner-24w"
@@ -246,9 +247,7 @@ class TestAdminSubscribersView:
         service.start_trial(trial_user)
 
         overview = AdminRepository(db_session).list_subscribers()
-        item = next(
-            (t for t in overview.trials if t.user_id == trial_user.id), None
-        )
+        item = next((t for t in overview.trials if t.user_id == trial_user.id), None)
         assert item is not None, "trial user should appear under trials"
         assert item.status == "trial"
         assert item.email_verified is True
@@ -295,9 +294,7 @@ class TestUserProgressGap:
         assert db_session.query(Subscription).count() == 1
         assert db_session.query(Purchase).count() == 0
 
-    def test_pay_now_shows_active_plan_in_user_progress(
-        self, client, db_session, user
-    ):
+    def test_pay_now_shows_active_plan_in_user_progress(self, client, db_session, user):
         _pay_now(client)
 
         items = AdminRepository(db_session).list_user_progress()
