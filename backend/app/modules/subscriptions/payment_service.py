@@ -87,6 +87,53 @@ class PaymentService:
             "plan_name": str(plan["name"]),
         }
 
+    # ── proof read (success page) ─────────────────────────────────────
+
+    def get_payment_detail(self, user: User, order_id: str) -> dict:
+        """User-scoped payment lookup backing the Payment Success page.
+
+        Filters by ``user_id`` so a learner can never read another user's
+        order (no IDOR — mirrors ``verify_checkout``'s lookup). ``plan_id`` /
+        ``plan_name`` are recovered from the server-side amount via the catalog
+        (cannot be spoofed); ``subscription_status`` reflects the live,
+        lazy-expiry-aware entitlement. ``method`` is null until the webhook
+        fills it (the verify fast-path does not set it).
+        """
+        payment = (
+            self.db.query(Payment)
+            .filter(
+                Payment.provider_order_id == order_id,
+                Payment.user_id == user.id,
+            )
+            .first()
+        )
+        if payment is None:
+            raise PaymentNotFound(order_id)
+
+        try:
+            resolved_plan_id = self._plan_id_for(payment)
+            plan_id: str | None = resolved_plan_id
+            plan_name: str | None = str(PLAN_CATALOG[resolved_plan_id]["name"])
+        except PlanNotFound:
+            plan_id = None
+            plan_name = None
+
+        resolution = self.subscriptions.resolve_access(user)
+
+        return {
+            "provider_payment_id": payment.provider_payment_id,
+            "provider_order_id": payment.provider_order_id,
+            "amount": float(payment.amount),
+            "currency": payment.currency,
+            "status": payment.status,
+            "method": payment.method,
+            "paid_at": payment.paid_at,
+            "plan_id": plan_id,
+            "plan_name": plan_name,
+            "subscription_status": resolution.state.value,
+            "current_period_end": resolution.current_period_end,
+        }
+
     # ── checkout verification (client callback) ──────────────────────
 
     def verify_checkout(
@@ -193,7 +240,15 @@ class PaymentService:
             logger.warning("Razorpay captured event for unknown order %s", order_id)
             return
         if payment.status == "paid":
-            return  # verify callback already activated
+            # The verify fast-path already activated, but it never sets `method`
+            # (the checkout callback doesn't carry it). The webhook is the
+            # authoritative source for the instrument and the gateway payment id,
+            # so backfill them here — without re-activating — so the success page
+            # and admin views show the real method instead of "Processing…". In
+            # the common Pay-Now ordering verify wins the race, so this is the
+            # only path that ever fills `method`.
+            self._backfill_captured_fields(payment, entity)
+            return
 
         user = self.db.get(User, payment.user_id)
         if user is None:
@@ -207,6 +262,25 @@ class PaymentService:
             method=entity.get("method"),
             plan_id_hint=notes.get("plan_id") if isinstance(notes, dict) else None,
         )
+
+    def _backfill_captured_fields(self, payment: Payment, entity: dict) -> None:
+        """Fill `method`/`provider_payment_id` on an already-paid row.
+
+        Only fills fields the verify fast-path left empty — never overwrites an
+        existing value, so the `provider_payment_id` unique constraint can't be
+        violated (verify and the webhook report the same payment id anyway).
+        """
+        changed = False
+        method = entity.get("method")
+        if method and not payment.method:
+            payment.method = method
+            changed = True
+        payment_id = entity.get("id")
+        if payment_id and not payment.provider_payment_id:
+            payment.provider_payment_id = payment_id
+            changed = True
+        if changed:
+            self.db.flush()
 
     def _handle_payment_failed(self, payload: dict) -> None:
         entity = self._payment_entity(payload)

@@ -108,7 +108,7 @@ export default function DiagnosisResultPage() {
     // A verified user without a trial goes to plan selection next; everyone
     // else (trial/active/legacy) lands on the dashboard.
     const me = queryClient.getQueryData<UserOut>(["me"]);
-    const next = "/dashboard";
+    const next = me?.access_state === "verified" ? "/pricing" : "/dashboard";
     // Invalidate /me and the freshly-seeded skill scores only after the user
     // has seen the result, so the dashboard renders them on arrival.
     queryClient.invalidateQueries({ queryKey: ["me"] });

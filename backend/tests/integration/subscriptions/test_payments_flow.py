@@ -269,6 +269,95 @@ class TestVerify:
         assert res.status_code == 404
 
 
+class TestByOrder:
+    """GET /api/payments/by-order/{order_id} — the success-page proof read."""
+
+    def _create_order(self, client, plan_id: str = "beginner-24w") -> str:
+        res = client.post("/api/payments/create-order", json={"plan_id": plan_id})
+        return res.json()["order_id"]
+
+    def _verify(self, client, order_id: str, payment_id: str = "pay_proof") -> None:
+        client.post(
+            "/api/payments/verify",
+            json={
+                "razorpay_order_id": order_id,
+                "razorpay_payment_id": payment_id,
+                "razorpay_signature": _checkout_signature(order_id, payment_id),
+            },
+        )
+
+    def test_verified_user_pay_now_then_proof_fields(self, client):
+        # Fresh `verified` user (the fixture) can Pay-Now end-to-end and read
+        # back a fully-populated proof record.
+        order_id = self._create_order(client)
+        self._verify(client, order_id)
+
+        res = client.get(f"/api/payments/by-order/{order_id}")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["provider_order_id"] == order_id
+        assert body["provider_payment_id"] == "pay_proof"
+        assert body["amount"] == 999.0  # rupees (catalog), not paise
+        assert body["currency"] == "INR"
+        assert body["status"] == "paid"
+        assert body["plan_id"] == "beginner-24w"
+        assert body["plan_name"] == "24-Week Foundation"
+        assert body["subscription_status"] == "active"
+        assert body["paid_at"] is not None
+        assert body["current_period_end"] is not None
+
+    def test_method_null_after_verify_only(self, client):
+        # The checkout verify fast-path does not set `method` — it stays null
+        # until the webhook lands (success page renders "Processing…").
+        order_id = self._create_order(client)
+        self._verify(client, order_id)
+        res = client.get(f"/api/payments/by-order/{order_id}")
+        assert res.json()["method"] is None
+
+    def test_method_null_pre_webhook_populated_when_webhook_activates(self, client):
+        # Webhook-wins ordering: method is null right after create-order and is
+        # populated once the webhook activates the payment.
+        order_id = self._create_order(client)
+        pre = client.get(f"/api/payments/by-order/{order_id}").json()
+        assert pre["status"] == "created"
+        assert pre["method"] is None
+        assert pre["subscription_status"] == "verified"
+
+        _webhook(client, _captured_event(order_id), event_id="evt_proof")
+        post = client.get(f"/api/payments/by-order/{order_id}").json()
+        assert post["status"] == "paid"
+        assert post["method"] == "upi"
+        assert post["subscription_status"] == "active"
+
+    def test_unknown_order_404(self, client):
+        res = client.get("/api/payments/by-order/order_missing")
+        assert res.status_code == 404
+
+    def test_other_users_order_404_no_idor(self, client, db_session):
+        other = User(
+            email="other-proof@example.com",
+            password_hash="x",
+            name="O",
+            email_verified=True,
+        )
+        db_session.add(other)
+        db_session.flush()
+        db_session.add(
+            Payment(
+                user_id=other.id,
+                provider="razorpay",
+                provider_order_id="order_other_idor",
+                provider_payment_id="pay_other",
+                amount=999.0,
+                currency="INR",
+                status="paid",
+            )
+        )
+        db_session.commit()
+        res = client.get("/api/payments/by-order/order_other_idor")
+        assert res.status_code == 404
+
+
 class TestWebhook:
     def _create_order(self, client) -> str:
         res = client.post(
@@ -346,6 +435,36 @@ class TestWebhook:
         res = _webhook(client, _captured_event(order_id), event_id="evt_after")
         assert res.status_code == 200
         assert db_session.query(Subscription).count() == 1
+
+    def test_verify_then_webhook_backfills_method(self, client, db_session):
+        # Common Pay-Now ordering: verify wins the race and activates without
+        # setting `method`; the later captured webhook must backfill `method` on
+        # the already-paid row (so the success page / admin views show the real
+        # instrument) without re-activating.
+        order_id = self._create_order(client)
+        client.post(
+            "/api/payments/verify",
+            json={
+                "razorpay_order_id": order_id,
+                "razorpay_payment_id": "pay_123",
+                "razorpay_signature": _checkout_signature(order_id, "pay_123"),
+            },
+        )
+        payment = (
+            db_session.query(Payment)
+            .filter(Payment.provider_order_id == order_id)
+            .one()
+        )
+        assert payment.status == "paid"
+        assert payment.method is None  # verify fast-path never sets it
+
+        res = _webhook(client, _captured_event(order_id), event_id="evt_backfill")
+        assert res.status_code == 200
+
+        db_session.refresh(payment)
+        assert payment.method == "upi"  # webhook backfilled it
+        assert payment.provider_payment_id == "pay_123"  # verify's id, untouched
+        assert db_session.query(Subscription).count() == 1  # no double activation
 
     def test_payment_failed_records_reason_no_activation(
         self, client, db_session, user

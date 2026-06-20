@@ -4670,6 +4670,120 @@
         "title": "PasswordResetRequestIn",
         "type": "object"
       },
+      "PaymentDetailRead": {
+        "description": "Server-verified proof for the Payment Success page.\n\nThe route that serves this is user-scoped (filters by current_user.id),\nso a learner can only ever read their own payment — no IDOR. Amounts are\nin the catalog's display unit (rupees), not paise. `method` is null until\nthe webhook lands (the checkout `verify` fast-path does not set it), so the\nsuccess page renders it defensively. `subscription_status` is the live,\nlazy-expiry-aware access state from `resolve_access`.",
+        "properties": {
+          "amount": {
+            "title": "Amount",
+            "type": "number"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "current_period_end": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Period End"
+          },
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method"
+          },
+          "paid_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paid At"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "plan_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Name"
+          },
+          "provider_order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Order Id"
+          },
+          "provider_payment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Payment Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "subscription_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subscription Status"
+          }
+        },
+        "required": [
+          "amount",
+          "currency",
+          "status"
+        ],
+        "title": "PaymentDetailRead",
+        "type": "object"
+      },
       "PaymentRead": {
         "properties": {
           "amount": {
@@ -9696,6 +9810,54 @@
         "summary": "Get Session State",
         "tags": [
           "learning_session"
+        ]
+      }
+    },
+    "/api/payments/by-order/{order_id}": {
+      "get": {
+        "description": "Server-verified proof for the Payment Success page.\n\nUser-scoped: the lookup filters by ``current_user.id``, so requesting\nanother user's order returns 404 (no IDOR).",
+        "operationId": "get_payment_by_order_api_payments_by_order__order_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "order_id",
+            "required": true,
+            "schema": {
+              "title": "Order Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentDetailRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Payment By Order",
+        "tags": [
+          "payments"
         ]
       }
     },

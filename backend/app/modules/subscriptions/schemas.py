@@ -64,6 +64,30 @@ class EntitlementRead(BaseModel):
     current_period_end: datetime | None = None
 
 
+class PaymentDetailRead(BaseModel):
+    """Server-verified proof for the Payment Success page.
+
+    The route that serves this is user-scoped (filters by current_user.id),
+    so a learner can only ever read their own payment — no IDOR. Amounts are
+    in the catalog's display unit (rupees), not paise. `method` is null until
+    the webhook lands (the checkout `verify` fast-path does not set it), so the
+    success page renders it defensively. `subscription_status` is the live,
+    lazy-expiry-aware access state from `resolve_access`.
+    """
+
+    provider_payment_id: str | None = None
+    provider_order_id: str | None = None
+    amount: float
+    currency: str
+    status: str
+    method: str | None = None
+    paid_at: datetime | None = None
+    plan_id: str | None = None
+    plan_name: str | None = None
+    subscription_status: str | None = None
+    current_period_end: datetime | None = None
+
+
 class PurchaseRead(BaseModel):
     id: int
     user_id: int
