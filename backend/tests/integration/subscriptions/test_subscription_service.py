@@ -333,6 +333,28 @@ class TestActivateAndCancel:
         # MVP: no trial-day credit — the paid window starts now.
         assert abs((row.current_period_start - _now()).total_seconds()) < 60
 
+    def test_activate_from_expired_trial_restores_active(self, db_session):
+        # Trial-locking re-purchase path (Phase 5 checklist #4): a lapsed trial
+        # resolves EXPIRED (locked dashboard), then a payment restores ACTIVE on
+        # the same row with a fresh window — and the user may switch plans (24w
+        # trial → buy 48w), exercising "both plans offered on re-entry".
+        user = _user(db_session)
+        service = SubscriptionService(db_session)
+        service.select_plan(user, "beginner-24w")
+        row = service.start_trial(user)
+        row.trial_ends_at = _now() - timedelta(days=1)
+        db_session.commit()
+        assert service.resolve_access(user).state is AccessState.EXPIRED
+
+        activated = service.activate_from_payment(
+            user, plan_id="beginner-48w", provider="razorpay"
+        )
+        assert activated.id == row.id  # same row, flipped in place — no duplicate
+        assert activated.status == SubscriptionStatus.ACTIVE.value
+        assert activated.plan_id == "beginner-48w"
+        assert service.resolve_access(user).state is AccessState.ACTIVE
+        assert db_session.query(Subscription).count() == 1
+
     def test_cancel_active_keeps_period_end(self, db_session):
         user = _user(db_session)
         service = SubscriptionService(db_session)
