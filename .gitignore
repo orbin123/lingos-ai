@@ -47,6 +47,10 @@ backend/scripts/*
 !backend/scripts/golden_set.json
 # Production entrypoint — part of the deploy contract, must be committed:
 !backend/scripts/start-prod.sh
+# DB seeders run by the deploy pipeline (CD) — must ship in the image, not ad-hoc:
+!backend/scripts/seed_curriculum.py
+!backend/scripts/seed_ielts_challenge.py
+!backend/scripts/seed_a2z_challenge.py
 
 # Local archive of deprecated files (kept locally, not committed)
 backend/.archive/
