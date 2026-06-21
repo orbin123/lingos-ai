@@ -28,13 +28,6 @@ const T = {
 
 // ─── Mocks for sections with no tracking data yet ─────────────────────────────
 const MOCK_TIME_PRACTICED = "–";
-const MOCK_PRACTICE = [
-  { num: "–",   unit: "",    label: "Most active" },
-  { num: "–",   unit: "",    label: "Avg session" },
-  { num: "–",   unit: "",    label: "Best day" },
-  { num: "–",   unit: "",    label: "Per week" },
-];
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 // Axes use the LEGACY backend sub-skill identifiers as keys. The displayed
 // label is the friendlier wording shipped via `display_label` in the API
@@ -577,7 +570,7 @@ export default function StatsPage() {
 
   const statsQuery = useQuery({
     queryKey: ["progress-stats"],
-    queryFn: progressApi.getStats,
+    queryFn: () => progressApi.getStats(),
     enabled: isReady && !!userQuery.data?.diagnosis_completed,
   });
 
@@ -611,6 +604,26 @@ export default function StatsPage() {
   const difficultyDist = stats?.difficulty_distribution;
   const bestSkill = displaySkillName(weekly?.best_skill_name ?? null);
   const bestScore = weekly?.best_skill_score;
+
+  const practice = stats?.practice_patterns;
+  const avgSessionMin =
+    practice?.avg_session_seconds != null
+      ? Math.round(practice.avg_session_seconds / 60)
+      : null;
+  const practiceTiles = [
+    { num: practice?.most_active_day ?? "—", unit: "", label: "Most active" },
+    {
+      num: avgSessionMin != null ? String(avgSessionMin) : "—",
+      unit: avgSessionMin != null ? "min" : "",
+      label: "Avg session",
+    },
+    { num: practice?.best_day ?? "—", unit: "", label: "Best day" },
+    {
+      num: practice ? String(practice.sessions_count) : "—",
+      unit: "",
+      label: "Per week",
+    },
+  ];
 
   return (
     <>
@@ -837,9 +850,9 @@ export default function StatsPage() {
 
                   {/* Practice patterns */}
                   <Card style={{ marginBottom: 0 }}>
-                    <CardHead title="Practice patterns" sub="Last 30 days"/>
+                    <CardHead title="Practice patterns" sub={practice?.subtitle ?? "This curriculum week"}/>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                      {MOCK_PRACTICE.map(p => (
+                      {practiceTiles.map(p => (
                         <div key={p.label} style={{ padding: 12, borderRadius: 12, background: "oklch(97% 0.02 240)" }}>
                           <div style={{ fontSize: 22, fontWeight: 800, color: T.navy, letterSpacing: "-0.02em", lineHeight: 1 }}>
                             {p.num}

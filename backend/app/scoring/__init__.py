@@ -18,6 +18,7 @@ from app.scoring.archetypes import (
     ARCHETYPE_REGISTRY,
     get_archetype,
     list_mvp_archetypes,
+    speaking_archetype_ids,
 )
 from app.scoring.constants import (
     ARCHETYPE_WEIGHT_TOLERANCE,
@@ -75,5 +76,6 @@ __all__ = [
     "get_archetype",
     "list_mvp_archetypes",
     "points_to_dashboard",
+    "speaking_archetype_ids",
     "tier_for_score",
 ]

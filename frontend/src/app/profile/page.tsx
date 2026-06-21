@@ -110,7 +110,7 @@ function ProfilePageInner() {
 
   const statsQuery = useQuery({
     queryKey: ["progress-stats"],
-    queryFn: progressApi.getStats,
+    queryFn: () => progressApi.getStats(),
     enabled: isReady && !!userQuery.data?.diagnosis_completed,
   });
 

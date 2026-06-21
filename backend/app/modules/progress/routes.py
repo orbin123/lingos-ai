@@ -6,6 +6,8 @@ layer and ProgressLog history).
 """
 
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func
@@ -13,7 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user, require_learner
-from app.modules.auth.models import User
+from app.modules.auth.models import User, UserProfile
 from app.modules.curriculum.models import CurriculumDay, CurriculumWeek
 from app.modules.feedback_memory.rag_service import FeedbackRAGService
 from app.modules.preferences.service import PreferenceService
@@ -44,6 +46,8 @@ from app.modules.progress.schemas import (
     StatsFeedback,
     StatsMistake,
     WeeklySnapshot,
+    YesterdayWin,
+    YesterdayWins,
 )
 from app.modules.sessions.models import (
     ActivityAttempt,
@@ -53,7 +57,8 @@ from app.modules.sessions.models import (
     DailySession,
 )
 from app.modules.skills.models import Skill
-from app.scoring import get_archetype
+from app.modules.streaks.dates import DEFAULT_TIMEZONE, get_user_local_date
+from app.scoring import get_archetype, speaking_archetype_ids
 
 
 router = APIRouter(
@@ -209,6 +214,25 @@ def _count_completed(db: Session, user_id: int, day_ids: list[str]) -> int:
     )
 
 
+def _count_speaking_completed(db: Session, user_id: int, day_ids: list[str]) -> int:
+    """Count EVALUATED speaking activities (pronunciation focus) in the period."""
+    speaking_ids = speaking_archetype_ids()
+    if not day_ids or not speaking_ids:
+        return 0
+    return int(
+        db.query(func.count(ActivityAttempt.id))
+        .join(DailySession, DailySession.id == ActivityAttempt.session_id)
+        .filter(
+            DailySession.user_id == user_id,
+            ActivityAttempt.status == AttemptStatus.EVALUATED,
+            ActivityAttempt.archetype_id.in_(speaking_ids),
+            DailySession.day_id.in_(day_ids),
+        )
+        .scalar()
+        or 0
+    )
+
+
 def _completed_sessions(
     db: Session, user_id: int, day_ids: list[str]
 ) -> list[DailySession]:
@@ -296,6 +320,7 @@ def get_stats_dashboard(
     )
 
     tasks_completed = _count_completed(db, user_id, period.day_ids)
+    speaking_tasks_completed = _count_speaking_completed(db, user_id, period.day_ids)
     tasks_goal = period.expected_tasks
     completion_pct = (
         round(100.0 * tasks_completed / tasks_goal, 1) if tasks_goal else 0.0
@@ -549,7 +574,135 @@ def get_stats_dashboard(
             focus_areas=focus_areas,
         ),
         recent_activities=recent_activities,
+        speaking_tasks_completed=speaking_tasks_completed,
     )
+
+
+def _format_score(score: float) -> str:
+    """Compact score badge: drop a trailing ``.0`` (``9.0`` → ``9``)."""
+    return f"{score:g}"
+
+
+def _local_yesterday_window(tz_name: str) -> tuple[datetime, datetime]:
+    """UTC ``[start, end)`` bounds covering the learner's previous local day."""
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo(DEFAULT_TIMEZONE)
+        tz_name = DEFAULT_TIMEZONE
+    yesterday = get_user_local_date(tz_name) - timedelta(days=1)
+    start_local = datetime(yesterday.year, yesterday.month, yesterday.day, tzinfo=tz)
+    end_local = start_local + timedelta(days=1)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+@router.get(
+    "/yesterday-wins",
+    response_model=YesterdayWins,
+    status_code=status.HTTP_200_OK,
+)
+def get_yesterday_wins(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> YesterdayWins:
+    """Up to three always-positive highlights from the learner's previous day.
+
+    "Yesterday" is the learner's *local* prior day (same timezone convention as
+    streaks). Each win is independent and omitted when its data is absent, so an
+    inactive day returns ``wins: []`` and the dashboard hides the card.
+    """
+    user_id = current_user.id
+    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    tz_name = (profile.timezone if profile else None) or DEFAULT_TIMEZONE
+    start_utc, end_utc = _local_yesterday_window(tz_name)
+    # Activities are "done yesterday" by when they were submitted (fall back to
+    # created_at for legacy rows that never recorded a submit time).
+    activity_ts = func.coalesce(
+        ActivityAttempt.submitted_at, ActivityAttempt.created_at
+    )
+
+    wins: list[YesterdayWin] = []
+
+    # ── Win 1 — best individual activity score ──
+    top_activity = (
+        db.query(ActivityAttempt.archetype_id, ActivityEvaluation.raw_score)
+        .join(
+            ActivityEvaluation,
+            ActivityEvaluation.attempt_id == ActivityAttempt.id,
+        )
+        .join(DailySession, DailySession.id == ActivityAttempt.session_id)
+        .filter(
+            DailySession.user_id == user_id,
+            ActivityAttempt.status == AttemptStatus.EVALUATED,
+            activity_ts >= start_utc,
+            activity_ts < end_utc,
+        )
+        .order_by(ActivityEvaluation.raw_score.desc())
+        .first()
+    )
+    if top_activity is not None:
+        archetype_id, raw_score = top_activity
+        wins.append(
+            YesterdayWin(
+                kind="top_activity",
+                badge=_format_score(float(raw_score)),
+                text=f"Best score of the day — {_archetype_name(archetype_id)}",
+            )
+        )
+
+    # ── Win 2 — biggest skill-point gain ──
+    top_skill = (
+        db.query(
+            SkillPointsLog.skill_id,
+            func.sum(SkillPointsLog.points_earned).label("pts"),
+        )
+        .filter(
+            SkillPointsLog.user_id == user_id,
+            SkillPointsLog.created_at >= start_utc,
+            SkillPointsLog.created_at < end_utc,
+        )
+        .group_by(SkillPointsLog.skill_id)
+        .order_by(func.sum(SkillPointsLog.points_earned).desc())
+        .first()
+    )
+    if top_skill is not None and top_skill.pts and int(top_skill.pts) > 0:
+        skill = db.query(Skill).filter(Skill.id == top_skill.skill_id).first()
+        label = (skill.display_label or skill.name) if skill else "a skill"
+        wins.append(
+            YesterdayWin(
+                kind="top_skill_gain",
+                badge=f"+{int(top_skill.pts)}",
+                text=f"Biggest gain — {label}",
+            )
+        )
+
+    # ── Win 3 — a praise line from the feedback agent ──
+    feedback_rows = (
+        db.query(ActivityFeedback.did_well)
+        .join(ActivityAttempt, ActivityAttempt.id == ActivityFeedback.attempt_id)
+        .join(DailySession, DailySession.id == ActivityAttempt.session_id)
+        .outerjoin(
+            ActivityEvaluation,
+            ActivityEvaluation.attempt_id == ActivityAttempt.id,
+        )
+        .filter(
+            DailySession.user_id == user_id,
+            activity_ts >= start_utc,
+            activity_ts < end_utc,
+        )
+        .order_by(ActivityEvaluation.raw_score.desc().nullslast())
+        .all()
+    )
+    for (did_well,) in feedback_rows:
+        line = next(
+            (s.strip() for s in (did_well or []) if isinstance(s, str) and s.strip()),
+            None,
+        )
+        if line:
+            wins.append(YesterdayWin(kind="praise", badge="★", text=line))
+            break
+
+    return YesterdayWins(wins=wins)
 
 
 @router.get(

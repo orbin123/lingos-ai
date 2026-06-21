@@ -56,8 +56,18 @@ export interface DifficultyDistribution {
   total: number;
 }
 
+export interface PracticePatterns {
+  /** Formatted "Day N" — N is the curriculum day-in-week (1–7), not a weekday. */
+  most_active_day: string | null;
+  best_day: string | null;
+  avg_session_seconds: number | null;
+  sessions_count: number;
+  subtitle: string;
+}
+
 export interface StatsDashboard {
   weekly_snapshot: WeeklySnapshot;
+  practice_patterns: PracticePatterns;
   skill_scores: SkillScoreSnapshot[];
   weekly_points_by_skill: Record<number, number>;
   difficulty_distribution: DifficultyDistribution;
@@ -65,10 +75,25 @@ export interface StatsDashboard {
   skill_history: SkillHistorySeries[];
   feedback: StatsFeedback;
   recent_activities: RecentActivity[];
+  /** Completed speaking/pronunciation activities in the selected period. */
+  speaking_tasks_completed: number;
+}
+
+export type StatsRange = "week" | "month" | "all";
+
+export interface YesterdayWin {
+  kind: string;
+  badge: string;
+  text: string;
 }
 
 export const progressApi = {
-  getStats: () => api.get<StatsDashboard>("/progress/stats").then((r) => r.data),
+  getStats: (range?: StatsRange) =>
+    api
+      .get<StatsDashboard>("/progress/stats", {
+        params: range ? { range } : undefined,
+      })
+      .then((r) => r.data),
   /** Current display score (0–10) for every tracked skill — seeded by diagnosis. */
   getScores: () =>
     api.get<SkillScoreSnapshot[]>("/progress/scores").then((r) => r.data),
@@ -76,4 +101,9 @@ export const progressApi = {
     api
       .get<RecentActivity[]>("/progress/activities", { params: { limit, offset } })
       .then((r) => r.data),
+  /** Up to three positive highlights from the learner's previous local day. */
+  getYesterdayWins: () =>
+    api
+      .get<{ wins: YesterdayWin[] }>("/progress/yesterday-wins")
+      .then((r) => r.data.wins),
 };

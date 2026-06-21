@@ -14,6 +14,7 @@ import {
 } from "@/lib/preferences-api";
 import { subscriptionsApi } from "@/lib/subscriptions-api";
 import type { NotificationSettings } from "@/lib/subscriptions-api";
+import { progressApi } from "@/lib/progress-api";
 import { useAuthStore } from "@/store/authStore";
 
 const DEFAULT_NOTIFICATIONS: NotificationSettings = {
@@ -158,6 +159,13 @@ export default function SettingsPage() {
     queryKey: ["purchase"],
     queryFn: subscriptionsApi.me,
     enabled: isReady,
+  });
+
+  // Curriculum-month usage for the Course & purchase tiles.
+  const monthStatsQuery = useQuery({
+    queryKey: ["progress-stats", "month"],
+    queryFn: () => progressApi.getStats("month"),
+    enabled: isReady && !!user?.diagnosis_completed,
   });
 
   useEffect(() => {
@@ -311,6 +319,8 @@ export default function SettingsPage() {
             amount={formatMoney(currentPlan.amount_paid, currentPlan.currency)}
             purchasedDate={formatDate(currentPlan.created_at)}
             status={currentPlan.status}
+            tasksThisMonth={monthStatsQuery.data?.weekly_snapshot.tasks_completed}
+            speakingTasks={monthStatsQuery.data?.speaking_tasks_completed}
             onDetails={() => router.push("/payment/receipt")}
             onUpgrade={() => router.push("/pricing")}
           />
@@ -418,6 +428,8 @@ function CourseCard({
   amount,
   purchasedDate,
   status,
+  tasksThisMonth,
+  speakingTasks,
   onDetails,
   onUpgrade,
 }: {
@@ -425,6 +437,8 @@ function CourseCard({
   amount: string;
   purchasedDate: string;
   status: string;
+  tasksThisMonth?: number;
+  speakingTasks?: number;
   onDetails: () => void;
   onUpgrade: () => void;
 }) {
@@ -460,8 +474,14 @@ function CourseCard({
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 14 }}>
-        <UsageTile label="Tasks completed this month" value="18" />
-        <UsageTile label="Pronunciation minutes" value="42 / 120" />
+        <UsageTile
+          label="Tasks completed this month"
+          value={tasksThisMonth != null ? String(tasksThisMonth) : "—"}
+        />
+        <UsageTile
+          label="Speaking tasks completed"
+          value={speakingTasks != null ? String(speakingTasks) : "—"}
+        />
         <UsageTile label="Purchase amount" value={amount} detail="Billed once" />
       </div>
     </section>

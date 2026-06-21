@@ -127,11 +127,12 @@ function GoalRing({ pct }: { pct: number }) {
   );
 }
 
-const YESTERDAY_WINS = [
-  { badge: "+5", badgeColor: "#0070C4", text: "Grammar score climbed from 5.5 → 6.0" },
-  { badge: "★", badgeColor: "oklch(45% 0.16 60)", text: 'Fixed "go" → "went" pattern in 3 sentences' },
-  { badge: "14", badgeColor: "oklch(45% 0.16 290)", text: "New verbs added to your vocabulary deck" },
-] as const;
+// Badge colour per win kind (returned by GET /progress/yesterday-wins).
+const WIN_BADGE_COLORS: Record<string, string> = {
+  top_activity: "#0070C4",
+  top_skill_gain: "oklch(45% 0.16 290)",
+  praise: "oklch(45% 0.16 60)",
+};
 
 /* ── Card wrapper ── */
 function Card({
@@ -427,6 +428,10 @@ function EnrolledView({
   onViewStats,
   userName,
 }: EnrolledViewProps) {
+  const { data: yesterdayWins } = useQuery({
+    queryKey: ["progress", "yesterday-wins"],
+    queryFn: progressApi.getYesterdayWins,
+  });
   const totalWeeks = preference.course_length === "48w" ? 48 : 24;
   // Days completed before today in the current week (1-based: day 1 = 0 done).
   const daysCompletedThisWeek = preference.current_day_in_week - 1;
@@ -621,7 +626,8 @@ function EnrolledView({
           {/* 13-week activity grid */}
           <ActivityGridCard />
 
-          {/* Yesterday's wins */}
+          {/* Yesterday's wins — hidden entirely when there's no prior-day activity */}
+          {yesterdayWins && yesterdayWins.length > 0 && (
           <Card>
             <div
               style={{
@@ -635,7 +641,7 @@ function EnrolledView({
               Yesterday&apos;s wins
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {YESTERDAY_WINS.map((item, i) => (
+              {yesterdayWins.map((item, i) => (
                 <div
                   key={i}
                   style={{
@@ -661,7 +667,7 @@ function EnrolledView({
                       flexShrink: 0,
                       fontWeight: 800,
                       fontSize: 11,
-                      color: item.badgeColor,
+                      color: WIN_BADGE_COLORS[item.kind] ?? "#0070C4",
                     }}
                   >
                     {item.badge}
@@ -680,6 +686,7 @@ function EnrolledView({
               ))}
             </div>
           </Card>
+          )}
 
           {/* Curriculum Calendar widget */}
           <CurriculumCalendarCard preference={preference} />

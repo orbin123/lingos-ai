@@ -539,3 +539,14 @@ def get_archetype(archetype_id: str) -> ArchetypeSpec:
 def list_mvp_archetypes() -> tuple[ArchetypeSpec, ...]:
     """Return the subset of archetypes flagged mvp=True. Used by Phase 2 seed."""
     return tuple(spec for spec in _ALL if spec.mvp)
+
+
+def speaking_archetype_ids() -> frozenset[str]:
+    """Archetype ids whose core activity is speaking (pronunciation / fluency).
+
+    Derived from the registry rather than hardcoded so new speaking archetypes
+    are picked up automatically.
+    """
+    return frozenset(
+        spec.archetype_id for spec in _ALL if spec.core_activity == "speak"
+    )
