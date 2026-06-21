@@ -16,8 +16,8 @@ export function useVerifyEmail() {
     onSuccess: (res) => {
       setToken(res.access_token);
       clearPendingVerification();
-      // Fresh accounts always start with diagnosis
-      router.push("/diagnosis");
+      // Welcome the freshly verified learner before the placement test
+      router.push("/diagnosis/intro");
     },
   });
 }
