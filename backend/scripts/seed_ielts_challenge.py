@@ -1,10 +1,29 @@
-"""Seed the IELTS Sprint challenge catalog and levels."""
+"""Seed the IELTS Sprint challenge catalog and levels.
+
+Usage:
+    uv run python -m scripts.seed_ielts_challenge
+
+This creates or updates the challenge catalog row plus its three levels.
+It does not touch user attempts or progress.
+"""
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
+import logging
+import sys
+from pathlib import Path
 
-from app.modules.challenges.models import Challenge, ChallengeLevel
+# Allow `uv run python scripts/seed_ielts_challenge.py` from anywhere.
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(_BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_ROOT))
+
+from sqlalchemy.orm import Session  # noqa: E402
+
+from app.modules.challenges.models import Challenge, ChallengeLevel  # noqa: E402
+
+
+logger = logging.getLogger(__name__)
 
 
 IELTS_SLUG = "ielts"
@@ -110,3 +129,22 @@ def seed_ielts_challenge(db: Session) -> dict[str, int]:
 
     db.flush()
     return {"inserted": inserted, "updated": updated}
+
+
+def main() -> None:
+    from app.core.database import SessionLocal
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    with SessionLocal() as db:
+        try:
+            report = seed_ielts_challenge(db)
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("IELTS challenge seed failed - rolled back")
+            raise
+    logger.info("IELTS challenge seed complete: %s", report)
+
+
+if __name__ == "__main__":
+    main()

@@ -89,6 +89,7 @@ jobs:
       # as a one-off, and WAIT for exit 0 before touching the service. On
       # failure the step errors and the deploy aborts — old tasks keep serving.
       - name: Run migrations (alembic upgrade head)
+        id: migrate
         env:
           IMAGE_SHA: ${{ steps.tags.outputs.image_sha }}
         run: |
@@ -104,6 +105,11 @@ jobs:
             --cli-input-json "$NEW_TD" \
             --query taskDefinition.taskDefinitionArn --output text)
           echo "Registered migrate task def: $MIGRATE_ARN"
+          # Expose the registered revision + container name so the seed step can
+          # reuse this exact task-def (new image/env/roles) instead of re-registering.
+          CONTAINER_NAME=$(printf '%s' "$NEW_TD" | jq -r '.containerDefinitions[0].name')
+          echo "migrate_arn=$MIGRATE_ARN" >> "$GITHUB_OUTPUT"
+          echo "container_name=$CONTAINER_NAME" >> "$GITHUB_OUTPUT"
 
           SUBNETS="${{ vars.ECS_SUBNETS }}"
           NETCFG="awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[${{ vars.ECS_SECURITY_GROUP }}],assignPublicIp=DISABLED}"
@@ -121,6 +127,39 @@ jobs:
           echo "Migration exit code: $EXIT"
           if [ "$EXIT" != "0" ]; then
             echo "::error::Migration failed (exit $EXIT) — aborting deploy."
+            exit 1
+          fi
+
+      # Seed the challenge catalog (A2Z + IELTS Sprint) into the DB. The schema
+      # migration creates the `challenges` tables EMPTY on purpose; without this
+      # the /challenges page renders only "More coming soon". Reuses the migrate
+      # task-def revision (same new image/env/roles), overriding only the container
+      # command. The seeders are idempotent upserts, so running them on every deploy
+      # is safe and keeps names/levels in sync with code. A non-zero exit aborts the
+      # deploy before the service is touched — old tasks keep serving.
+      - name: Seed challenges (A2Z + IELTS)
+        run: |
+          set -euo pipefail
+          SUBNETS="${{ vars.ECS_SUBNETS }}"
+          NETCFG="awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[${{ vars.ECS_SECURITY_GROUP }}],assignPublicIp=DISABLED}"
+          OVERRIDES=$(jq -nc \
+            --arg name "${{ steps.migrate.outputs.container_name }}" \
+            '{containerOverrides:[{name:$name,command:["sh","-c","python -m scripts.seed_ielts_challenge && python -m scripts.seed_a2z_challenge"]}]}')
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --task-definition "${{ steps.migrate.outputs.migrate_arn }}" \
+            --launch-type FARGATE \
+            --network-configuration "$NETCFG" \
+            --overrides "$OVERRIDES" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Seed task: $TASK_ARN"
+
+          aws ecs wait tasks-stopped --cluster "${{ vars.ECS_CLUSTER }}" --tasks "$TASK_ARN"
+          EXIT=$(aws ecs describe-tasks --cluster "${{ vars.ECS_CLUSTER }}" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          echo "Seed exit code: $EXIT"
+          if [ "$EXIT" != "0" ]; then
+            echo "::error::Challenge seed failed (exit $EXIT) — aborting deploy."
             exit 1
           fi
 
