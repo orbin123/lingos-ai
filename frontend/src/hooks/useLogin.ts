@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { authApi } from "@/lib/auth-api";
 import { getApiErrorCode } from "@/lib/errors";
@@ -10,6 +10,7 @@ import type { LoginInput } from "@/lib/validators/auth";
 
 export function useLogin() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const setToken = useAuthStore((s) => s.setToken);
 
   return useMutation({
@@ -21,6 +22,11 @@ export function useLogin() {
       return me;
     },
     onSuccess: (me) => {
+      // Wipe any previous user's cached queries, then seed the current user's
+      // ["me"] so destination pages render fresh data instead of bouncing on a
+      // stale diagnosis_completed value.
+      queryClient.clear();
+      queryClient.setQueryData(["me"], me);
       if (!me.diagnosis_completed) {
         router.push("/diagnosis");
       } else if (me.access_state === "verified") {
