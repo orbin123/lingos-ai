@@ -25,6 +25,82 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* ── Marketing responsive utilities ─────────────────────────────────
+   The public marketing pages (landing, features, how-it-works, pricing,
+   about, contact) and the shared navbar/footer are styled with inline
+   React styles, which cannot hold media queries. These class-based
+   overrides use !important to beat the (non-important) inline styles on
+   small screens, so desktop markup is left untouched. Breakpoints:
+   768px = tablet/phone, 480px = small phone. */
+
+/* Prevent any stray element from causing horizontal scroll on mobile. */
+html,
+body {
+  overflow-x: hidden;
+}
+
+.mkt-nav-toggle,
+.mkt-nav-mobile-panel {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  /* Tighter side padding than the desktop "0 40px". */
+  .mkt-section {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+
+  /* Collapse multi-column grids into a single stacked column. */
+  .mkt-grid-2,
+  .mkt-grid-3,
+  .mkt-hero-grid {
+    grid-template-columns: 1fr !important;
+    gap: 28px !important;
+  }
+
+  /* Hide heavy desktop-only visuals (previews, decorative charts). */
+  .mkt-hide-mobile {
+    display: none !important;
+  }
+
+  /* Stack flex rows. */
+  .mkt-stack-mobile {
+    flex-direction: column !important;
+  }
+
+  /* Footer: 4 columns -> 2 on tablet/phone. */
+  .mkt-footer-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 28px !important;
+  }
+
+  /* Navbar: swap desktop links for a hamburger. */
+  .mkt-nav-desktop {
+    display: none !important;
+  }
+  .mkt-nav-toggle {
+    display: inline-flex !important;
+  }
+  .mkt-nav-mobile-panel {
+    display: block !important;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Footer: single column on small phones. */
+  .mkt-footer-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Wide tables (pricing comparison) scroll horizontally instead of
+   overflowing the viewport. */
+.mkt-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 @keyframes fadeSlideUp {
   from { opacity: 0; transform: translateY(14px); }
   to   { opacity: 1; transform: translateY(0); }

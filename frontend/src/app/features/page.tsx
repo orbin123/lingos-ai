@@ -272,6 +272,7 @@ function Hero({ onCTAClick, ctaText }: { onCTAClick: () => void; ctaText: string
     >
       <DotGrid opacity={0.14} />
       <div
+        className="mkt-section"
         style={{
           maxWidth: 800,
           margin: "0 auto",
@@ -385,6 +386,7 @@ function CoreFeatures() {
   ];
   return (
     <section
+      className="mkt-section"
       style={{
         padding: "100px 40px",
         background: "oklch(94% 0.015 240)",
@@ -481,6 +483,7 @@ function CoreFeatures() {
 function FeatureBreakdown() {
   return (
     <section
+      className="mkt-section"
       style={{
         padding: "100px 40px",
         background:
@@ -494,6 +497,7 @@ function FeatureBreakdown() {
 
         {/* Row 1: Diagnosis */}
         <div
+          className="mkt-grid-2"
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
@@ -568,6 +572,7 @@ function FeatureBreakdown() {
 
         {/* Row 2: Daily Tasks */}
         <div
+          className="mkt-grid-2"
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
@@ -687,6 +692,7 @@ function FeatureBreakdown() {
 
         {/* Row 3: Feedback Engine */}
         <div
+          className="mkt-grid-2"
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
@@ -742,6 +748,7 @@ function FeatureBreakdown() {
 function CTA({ onCTAClick, ctaText }: { onCTAClick: () => void; ctaText: string }) {
   return (
     <section
+      className="mkt-section"
       style={{
         padding: "100px 40px",
         background: `linear-gradient(160deg, oklch(82% 0.07 ${ACCENT_HUE}) 0%, oklch(78% 0.09 ${ACCENT_HUE - 10}) 100%)`,

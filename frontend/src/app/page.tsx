@@ -395,6 +395,7 @@ function Hero({ onCTAClick, ctaText }: { onCTAClick: () => void; ctaText: string
     >
       <DotGrid opacity={0.14} />
       <div
+        className="mkt-section mkt-hero-grid"
         style={{
           maxWidth: 1180,
           margin: "0 auto",
@@ -742,6 +743,7 @@ function Problem() {
   ];
   return (
     <section
+      className="mkt-section"
       style={{ padding: "100px 40px", background: "oklch(93% 0.025 240)" }}
     >
       <div style={{ maxWidth: 1180, margin: "0 auto" }}>
@@ -773,6 +775,7 @@ function Problem() {
           </h2>
         </div>
         <div
+          className="mkt-grid-2"
           style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}
         >
           <GlassCard style={{ padding: 36 }}>
@@ -932,6 +935,7 @@ function HowItWorks() {
   return (
     <section
       id="how-it-works"
+      className="mkt-section"
       style={{
         padding: "100px 40px",
         background:
@@ -970,6 +974,7 @@ function HowItWorks() {
           </h2>
         </div>
         <div
+          className="mkt-grid-2"
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
@@ -1058,7 +1063,7 @@ function HowItWorks() {
               </div>
             ))}
           </div>
-          <GlassCard style={{ padding: 28 }}>
+          <GlassCard className="mkt-hide-mobile" style={{ padding: 28 }}>
             {active === 0 && (
               <div>
                 <div
@@ -1301,6 +1306,7 @@ function Features() {
   return (
     <section
       id="features"
+      className="mkt-section"
       style={{ padding: "100px 40px", background: "oklch(93% 0.022 240)" }}
     >
       <div style={{ maxWidth: 1180, margin: "0 auto" }}>
@@ -1330,6 +1336,7 @@ function Features() {
           </h2>
         </div>
         <div
+          className="mkt-grid-3"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",
@@ -1404,6 +1411,7 @@ function UIPreview() {
 
   return (
     <section
+      className="mkt-hide-mobile"
       style={{
         padding: "100px 40px",
         background:
@@ -1947,6 +1955,7 @@ function Testimonials() {
   ];
   return (
     <section
+      className="mkt-section"
       style={{ padding: "100px 40px", background: "oklch(92% 0.028 240)" }}
     >
       <div style={{ maxWidth: 1180, margin: "0 auto" }}>
@@ -1975,6 +1984,7 @@ function Testimonials() {
           </h2>
         </div>
         <div
+          className="mkt-grid-3"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(3, 1fr)",
@@ -2058,6 +2068,7 @@ function Testimonials() {
 function CTA({ onCTAClick, ctaText }: { onCTAClick: () => void; ctaText: string }) {
   return (
     <section
+      className="mkt-section"
       style={{
         padding: "100px 40px",
         background: `linear-gradient(160deg, oklch(82% 0.07 ${ACCENT_HUE}) 0%, oklch(78% 0.09 ${ACCENT_HUE - 10}) 100%)`,

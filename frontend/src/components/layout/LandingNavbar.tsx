@@ -7,6 +7,14 @@ import { useMarketingCTA } from "@/hooks/useMarketingCTA";
 
 const ACCENT_HUE = 240;
 
+const NAV_LINKS = [
+  { label: "Features", href: "/features" },
+  { label: "How It Works", href: "/how-it-works" },
+  { label: "Pricing", href: "/pricing" },
+  { label: "About", href: "/about" },
+  { label: "Contact", href: "/contact" },
+];
+
 interface LandingNavbarProps {
   variant?: "full" | "minimal";
   onCTAClick?: () => void;
@@ -19,6 +27,7 @@ export function LandingNavbar({
   showCTA = false,
 }: LandingNavbarProps) {
   const [scrolled, setScrolled] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const isMinimal = variant === "minimal";
@@ -30,8 +39,21 @@ export function LandingNavbar({
     return () => window.removeEventListener("scroll", h);
   }, []);
 
+  // Close the mobile menu whenever the route changes.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
+  const handleCTA = () => {
+    setMenuOpen(false);
+    if (isAuthed) router.push(ctaHref);
+    else onCTAClick?.();
+  };
+  const showCTAButton = !isMinimal && (isAuthed || showCTA);
+
   return (
     <nav
+      className="mkt-section"
       style={{
         position: "fixed",
         top: 0,
@@ -84,14 +106,8 @@ export function LandingNavbar({
           </span>
         </Link>
         {!isMinimal && (
-        <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-          {[
-            { label: "Features", href: "/features" },
-            { label: "How It Works", href: "/how-it-works" },
-            { label: "Pricing", href: "/pricing" },
-            { label: "About", href: "/about" },
-            { label: "Contact", href: "/contact" },
-          ].map((l) => {
+        <div className="mkt-nav-desktop" style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+          {NAV_LINKS.map((l) => {
             const isActive = pathname === l.href;
             return (
               <Link
@@ -120,9 +136,10 @@ export function LandingNavbar({
           })}
         </div>
         )}
-        {!isMinimal && (isAuthed || showCTA) && (
+        {showCTAButton && (
           <button
-            onClick={isAuthed ? () => router.push(ctaHref) : onCTAClick}
+            className="mkt-nav-desktop"
+            onClick={handleCTA}
             style={{
               padding: "9px 22px",
               borderRadius: 50,
@@ -150,7 +167,115 @@ export function LandingNavbar({
             {isAuthed ? ctaLabel : "Start Learning Free"}
           </button>
         )}
+
+        {!isMinimal && (
+          <button
+            className="mkt-nav-toggle"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+            style={{
+              marginLeft: "auto",
+              width: 42,
+              height: 42,
+              padding: 0,
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.7)",
+              cursor: "pointer",
+              background: "rgba(255,255,255,0.6)",
+              backdropFilter: "blur(12px)",
+              color: "oklch(20% 0.07 245)",
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+              {menuOpen ? (
+                <>
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                </>
+              ) : (
+                <>
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </>
+              )}
+            </svg>
+          </button>
+        )}
       </div>
+
+      {!isMinimal && menuOpen && (
+        <div
+          className="mkt-nav-mobile-panel"
+          style={{
+            margin: "0 auto",
+            maxWidth: 1180,
+            padding: "8px 4px 16px",
+            animation: "slideDown 0.2s ease",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              padding: 12,
+              borderRadius: 16,
+              background: "rgba(245,250,255,0.96)",
+              backdropFilter: "blur(20px)",
+              border: "1px solid rgba(255,255,255,0.8)",
+              boxShadow: "0 12px 40px rgba(30,60,120,0.16)",
+            }}
+          >
+            {NAV_LINKS.map((l) => {
+              const isActive = pathname === l.href;
+              return (
+                <Link
+                  key={l.label}
+                  href={l.href}
+                  onClick={() => setMenuOpen(false)}
+                  style={{
+                    padding: "12px 16px",
+                    borderRadius: 12,
+                    fontSize: 15.5,
+                    fontWeight: 600,
+                    color: isActive
+                      ? `oklch(40% 0.14 ${ACCENT_HUE})`
+                      : "oklch(24% 0.07 245)",
+                    background: isActive ? "rgba(255,255,255,0.7)" : "transparent",
+                    textDecoration: "none",
+                  }}
+                >
+                  {l.label}
+                </Link>
+              );
+            })}
+            {showCTAButton && (
+              <button
+                onClick={handleCTA}
+                style={{
+                  marginTop: 6,
+                  padding: "13px 22px",
+                  borderRadius: 12,
+                  border: "none",
+                  cursor: "pointer",
+                  background: `oklch(22% 0.09 ${ACCENT_HUE})`,
+                  color: "white",
+                  fontFamily: "inherit",
+                  fontWeight: 600,
+                  fontSize: 15,
+                  boxShadow: "0 2px 12px rgba(30,60,120,0.18)",
+                }}
+              >
+                {isAuthed ? ctaLabel : "Start Learning Free"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </nav>
   );
 }
