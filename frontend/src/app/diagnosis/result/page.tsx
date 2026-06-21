@@ -4,7 +4,6 @@ import React, { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useDiagnosisStore } from "@/store/diagnosisStore";
-import type { UserOut } from "@/lib/auth-api";
 import { SKILL_LABEL_FALLBACK } from "@/lib/skill-labels";
 import { LandingNavbar } from "@/components/layout/LandingNavbar";
 
@@ -105,16 +104,14 @@ export default function DiagnosisResultPage() {
     // Mark that we're navigating away so the guard effect doesn't redirect
     // back to /diagnosis when clear() nulls the result below.
     leavingRef.current = true;
-    // A verified user without a trial goes to plan selection next; everyone
-    // else (trial/active/legacy) lands on the dashboard.
-    const me = queryClient.getQueryData<UserOut>(["me"]);
-    const next = me?.access_state === "verified" ? "/pricing" : "/dashboard";
     // Invalidate /me and the freshly-seeded skill scores only after the user
     // has seen the result, so the dashboard renders them on arrival.
     queryClient.invalidateQueries({ queryKey: ["me"] });
     queryClient.invalidateQueries({ queryKey: ["progress", "scores"] });
     clear();
-    router.push(next);
+    // Always land on the dashboard: verified users see the NoEnrollmentView
+    // with plan cards there, letting them explore the UI before choosing.
+    router.push("/dashboard");
   };
 
   return (

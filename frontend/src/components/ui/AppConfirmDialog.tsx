@@ -116,7 +116,7 @@ export function AppConfirmDialog({
               ...buttonStyle,
               background: "white",
               borderColor: "oklch(84% 0.025 240)",
-              color: "oklch(28% 0.08 245)",
+              color: "#334155",
               cursor: isLoading ? "not-allowed" : "pointer",
               opacity: isLoading ? 0.55 : 1,
             }}
