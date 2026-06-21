@@ -12,7 +12,8 @@ plain function (FastAPI deps are just defaults).
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine
@@ -155,6 +156,7 @@ def _complete_session(
     score: float = 7.0,
     started: datetime | None = None,
     completed: datetime | None = None,
+    archetype: str | None = None,
 ) -> DailySession:
     """One completed session with ``n_attempts`` evaluated attempts."""
     started = started or datetime.now(timezone.utc)
@@ -171,7 +173,7 @@ def _complete_session(
     )
     db.add(session)
     db.flush()
-    arch = _archetype_id(db)
+    arch = archetype or _archetype_id(db)
     for seq in range(n_attempts):
         attempt = ActivityAttempt(
             session_id=session.id,
@@ -213,6 +215,48 @@ def _add_feedback_log(db, *, user_id, session_id, attempt_id, mistakes, did_well
 
 def _stats(db, user: User, range_: str = "week"):
     return stats_routes.get_stats_dashboard(range_=range_, current_user=user, db=db)
+
+
+def _yesterday_wins(db, user: User):
+    return stats_routes.get_yesterday_wins(current_user=user, db=db)
+
+
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def _ist_day_utc(days_ago: int) -> datetime:
+    """UTC instant at noon IST `days_ago` days back (safely inside that local day)."""
+    target = datetime.now(_IST).date() - timedelta(days=days_ago)
+    return datetime.combine(target, time(12, 0), tzinfo=_IST).astimezone(timezone.utc)
+
+
+def _add_activity_feedback(db, *, attempt_id: int, score: int, did_well: list[str]):
+    db.add(
+        ActivityFeedback(
+            attempt_id=attempt_id,
+            score=score,
+            summary="Nice work.",
+            did_well=did_well,
+            mistakes=[],
+            next_tip=None,
+            sub_skill_breakdown={},
+        )
+    )
+    db.commit()
+
+
+def _add_points_log(db, *, user_id, skill_id, points, created_at, session_id=None):
+    db.add(
+        SkillPointsLog(
+            user_id=user_id,
+            skill_id=skill_id,
+            points_earned=points,
+            reason="task",
+            session_id=session_id,
+            created_at=created_at,
+        )
+    )
+    db.commit()
 
 
 # ── build_period (pure) ────────────────────────────────────────────
@@ -462,3 +506,112 @@ class TestMilestone:
         assert stats.curriculum_milestone.current_day == 2
         assert stats.curriculum_milestone.total_weeks == 24
         assert stats.curriculum_milestone.course_length == "24w"
+
+
+# ── endpoint: speaking-tasks count (settings tile) ─────────────────
+
+
+class TestSpeakingTasks:
+    def test_counts_only_speaking_archetypes_in_period(self, db_session):
+        user = _seed_user(db_session, tasks_per_day=4, current_week=1, current_day=4)
+        week = _add_week(db_session, 1)
+        d1 = _add_day(db_session, week, 1)
+        _complete_session(
+            db_session,
+            user_id=user.id,
+            day_id=d1.day_id,
+            n_attempts=2,
+            archetype="SPEAK_READ_ALOUD",
+        )
+        d2 = _add_day(db_session, week, 2)
+        _complete_session(
+            db_session,
+            user_id=user.id,
+            day_id=d2.day_id,
+            n_attempts=3,
+            archetype="READ_CLOZE",
+        )
+
+        stats = _stats(db_session, user, "week")
+        assert stats.speaking_tasks_completed == 2
+        assert stats.weekly_snapshot.tasks_completed == 5
+
+
+# ── endpoint: yesterday's wins (dashboard card) ────────────────────
+
+
+class TestYesterdayWins:
+    def test_empty_when_no_activity(self, db_session):
+        user = _seed_user(db_session)
+        wins = _yesterday_wins(db_session, user)
+        assert wins.wins == []
+
+    def test_three_wins_from_yesterday(self, db_session):
+        user = _seed_user(db_session)
+        week = _add_week(db_session, 1)
+        day = _add_day(db_session, week, 1)
+        y = _ist_day_utc(1)
+        _complete_session(
+            db_session,
+            user_id=user.id,
+            day_id=day.day_id,
+            n_attempts=1,
+            score=9.0,
+            started=y,
+            completed=y,
+            archetype="SPEAK_READ_ALOUD",
+        )
+        attempt = db_session.query(ActivityAttempt).first()
+        _add_activity_feedback(
+            db_session,
+            attempt_id=attempt.id,
+            score=9,
+            did_well=["Clear pronunciation throughout"],
+        )
+        skill = db_session.query(Skill).first()
+        _add_points_log(
+            db_session,
+            user_id=user.id,
+            skill_id=skill.id,
+            points=14,
+            created_at=y,
+        )
+
+        wins = _yesterday_wins(db_session, user).wins
+        by_kind = {w.kind: w for w in wins}
+        assert set(by_kind) == {"top_activity", "top_skill_gain", "praise"}
+        assert by_kind["top_activity"].badge == "9"
+        assert "Read Aloud" in by_kind["top_activity"].text
+        assert by_kind["top_skill_gain"].badge == "+14"
+        assert by_kind["praise"].text == "Clear pronunciation throughout"
+
+    def test_today_activity_is_excluded(self, db_session):
+        user = _seed_user(db_session)
+        week = _add_week(db_session, 1)
+        day = _add_day(db_session, week, 1)
+        today = _ist_day_utc(0)
+        _complete_session(
+            db_session,
+            user_id=user.id,
+            day_id=day.day_id,
+            n_attempts=1,
+            score=9.0,
+            started=today,
+            completed=today,
+        )
+        assert _yesterday_wins(db_session, user).wins == []
+
+    def test_wins_are_independent_partial_data(self, db_session):
+        # Only a skill-point gain yesterday — no evaluated attempt, no feedback.
+        user = _seed_user(db_session)
+        skill = db_session.query(Skill).first()
+        _add_points_log(
+            db_session,
+            user_id=user.id,
+            skill_id=skill.id,
+            points=7,
+            created_at=_ist_day_utc(1),
+        )
+        wins = _yesterday_wins(db_session, user).wins
+        assert [w.kind for w in wins] == ["top_skill_gain"]
+        assert wins[0].badge == "+7"

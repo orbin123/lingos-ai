@@ -164,6 +164,22 @@ class StatsDashboard(BaseModel):
     skill_history: list[SkillHistorySeries]
     feedback: StatsFeedback
     recent_activities: list[RecentActivity]
+    # Count of completed speaking/pronunciation activities in the period.
+    speaking_tasks_completed: int
+
+
+class YesterdayWin(BaseModel):
+    """One always-positive highlight from the learner's previous local day."""
+
+    kind: str
+    badge: str
+    text: str
+
+
+class YesterdayWins(BaseModel):
+    """Up to three highlights; empty when yesterday had no activity."""
+
+    wins: list[YesterdayWin]
 
 
 class SkillPointsRead(BaseModel):

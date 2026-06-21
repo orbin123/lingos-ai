@@ -6251,6 +6251,10 @@
             "title": "Skill Scores",
             "type": "array"
           },
+          "speaking_tasks_completed": {
+            "title": "Speaking Tasks Completed",
+            "type": "integer"
+          },
           "weekly_points_by_skill": {
             "additionalProperties": {
               "type": "integer"
@@ -6274,7 +6278,8 @@
           "skill_history_labels",
           "skill_history",
           "feedback",
-          "recent_activities"
+          "recent_activities",
+          "speaking_tasks_completed"
         ],
         "title": "StatsDashboard",
         "type": "object"
@@ -8042,6 +8047,47 @@
           "response_text"
         ],
         "title": "WritingIn",
+        "type": "object"
+      },
+      "YesterdayWin": {
+        "description": "One always-positive highlight from the learner's previous local day.",
+        "properties": {
+          "badge": {
+            "title": "Badge",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "badge",
+          "text"
+        ],
+        "title": "YesterdayWin",
+        "type": "object"
+      },
+      "YesterdayWins": {
+        "description": "Up to three highlights; empty when yesterday had no activity.",
+        "properties": {
+          "wins": {
+            "items": {
+              "$ref": "#/components/schemas/YesterdayWin"
+            },
+            "title": "Wins",
+            "type": "array"
+          }
+        },
+        "required": [
+          "wins"
+        ],
+        "title": "YesterdayWins",
         "type": "object"
       }
     },
@@ -13247,6 +13293,33 @@
           }
         ],
         "summary": "Get Stats Dashboard",
+        "tags": [
+          "progress"
+        ]
+      }
+    },
+    "/progress/yesterday-wins": {
+      "get": {
+        "description": "Up to three always-positive highlights from the learner's previous day.\n\n\"Yesterday\" is the learner's *local* prior day (same timezone convention as\nstreaks). Each win is independent and omitted when its data is absent, so an\ninactive day returns ``wins: []`` and the dashboard hides the card.",
+        "operationId": "get_yesterday_wins_progress_yesterday_wins_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YesterdayWins"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Yesterday Wins",
         "tags": [
           "progress"
         ]
