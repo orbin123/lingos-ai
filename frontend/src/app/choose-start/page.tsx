@@ -179,17 +179,21 @@ function ChooseStartInner() {
     enabled: isAuthenticated,
   });
 
-  // Users with running access don't belong here — except the user who is
-  // completing a payment on this very page (completedPayRef), who is being
-  // routed to /payment/success and must not be bounced to /dashboard.
+  // Trial users land here to UPGRADE (pay to convert their trial to a paid
+  // plan), routed from /pricing with ?upgrade=1. Paid (`active`) users have
+  // nothing to do here and are bounced — except the user who is completing a
+  // payment on this very page (completedPayRef), who is being routed to
+  // /payment/success and must not be bounced to /dashboard.
+  const isUpgrade = me?.access_state === "trial" || searchParams.get("upgrade") === "1";
   useEffect(() => {
     if (completedPayRef.current) return;
-    if (me && (me.access_state === "trial" || me.access_state === "active")) {
+    if (me && me.access_state === "active") {
       router.replace("/dashboard");
     }
   }, [me, router]);
 
-  // Only fresh `verified` users may start a trial (one trial per user).
+  // Only fresh `verified` users may start a trial (one trial per user). Trial
+  // users upgrading see Pay-Now only — the free-trial option is disabled.
   const trialEligible = me?.access_state === "verified";
 
   const { openCheckout } = useRazorpayCheckout();
@@ -281,15 +285,19 @@ function ChooseStartInner() {
     <div style={{ maxWidth: 1080, margin: "0 auto", padding: "14px 28px 70px" }}>
       <Stepper step={1} />
       <h1 style={{ fontSize: 38, fontWeight: 800, letterSpacing: "-0.03em", color: NAVY, lineHeight: 1.05, textAlign: "center", marginTop: 18 }}>
-        Choose how you want to start
+        {isUpgrade ? "Complete your upgrade" : "Choose how you want to start"}
       </h1>
       <p style={{ fontSize: 16, color: INK_MUTED, textAlign: "center", maxWidth: 560, margin: "12px auto 0", lineHeight: 1.5 }}>
-        {trialEligible
-          ? "Try LingosAI free for 7 days, or unlock everything instantly. You can switch or cancel anytime."
-          : "Unlock your full program instantly with a secure one-time payment."}
+        {isUpgrade
+          ? "Upgrade from your free trial with a secure one-time payment. Your progress carries over."
+          : trialEligible
+            ? "Try LingosAI free for 7 days, or unlock everything instantly. You can switch or cancel anytime."
+            : "Unlock your full program instantly with a secure one-time payment."}
       </p>
 
-      {/* plan switch */}
+      {/* plan switch — hidden during upgrade: the plan is locked to the one the
+          learner is already trialing */}
+      {!isUpgrade && (
       <div style={{ display: "flex", justifyContent: "center", marginTop: 24 }}>
         <div style={{ display: "inline-flex", gap: 4, padding: 4, background: "rgba(255,255,255,0.7)", border: `1.5px solid ${LINE}`, borderRadius: 999 }}>
           {(Object.keys(PLANS) as PlanId[]).map((id) => {
@@ -317,6 +325,7 @@ function ChooseStartInner() {
           })}
         </div>
       </div>
+      )}
 
       {error && (
         <p role="alert" style={{ textAlign: "center", color: "oklch(45% 0.18 25)", fontSize: 13.5, fontWeight: 600, marginTop: 18 }}>
@@ -360,8 +369,12 @@ function ChooseStartInner() {
         )}
 
         <div style={{ ...cardStyle, borderLeft: `5px solid ${PRIMARY}` }}>
-          <span style={{ ...tagStyle, background: PRIMARY_SOFT, color: PRIMARY_DEEP }}>{Lock} PAY ONCE</span>
-          <h3 style={titleStyle}>Pay now &amp; start immediately</h3>
+          <span style={{ ...tagStyle, background: PRIMARY_SOFT, color: PRIMARY_DEEP }}>
+            {Lock} {isUpgrade ? "UPGRADE" : "PAY ONCE"}
+          </span>
+          <h3 style={titleStyle}>
+            {isUpgrade ? "Purchase your course" : "Pay now & start immediately"}
+          </h3>
           <div style={priceRowStyle}>
             <b style={priceBigStyle}>{inr(p.price)}</b>
             <span style={priceSubStyle}>one-time · {p.weeks} weeks</span>
@@ -371,7 +384,7 @@ function ChooseStartInner() {
             onClick={handlePayNow}
             style={{ ...btnStyle, marginTop: 18, background: PRIMARY, color: "white", boxShadow: "0 8px 20px rgba(0,112,196,0.32)" }}
           >
-            Pay {inr(p.price)} securely {Lock}
+            {isUpgrade ? `Purchase for ${inr(p.price)}` : `Pay ${inr(p.price)} securely`} {Lock}
           </button>
         </div>
       </div>

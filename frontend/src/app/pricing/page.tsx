@@ -52,19 +52,25 @@ export default function PricingPage() {
   const router = useRouter();
   const { isAuthenticated } = useAuthStore();
 
-  // Users with running access don't belong on pricing. Keyed on
-  // access_state, NOT preference: a plan-selected-but-no-trial user has a
-  // preference row already and must still reach this page.
+  // Only users with *paid* access don't belong on pricing — they've already
+  // bought. Trial users DO stay: this page doubles as the upgrade surface
+  // where they convert their trial to a paid plan.
   const { data: me } = useQuery({
     queryKey: ["me"],
     queryFn: authApi.me,
     enabled: isAuthenticated,
   });
   useEffect(() => {
-    if (me && (me.access_state === "trial" || me.access_state === "active")) {
+    if (me && me.access_state === "active") {
       router.replace("/dashboard");
     }
   }, [me, router]);
+
+  // Trial users see the upgrade variant: locked to the plan they're trialing.
+  const isTrialUpgrade = me?.access_state === "trial";
+  const currentPlanId: PlanId =
+    me?.plan_id && me.plan_id in PLANS ? (me.plan_id as PlanId) : "beginner-48w";
+  const currentPlan = PLANS[currentPlanId];
 
   // The Trial-vs-Pay-Now fork now lives on /choose-start. Pricing just picks a
   // plan and routes there (authenticated) or to register (anonymous).
@@ -74,6 +80,11 @@ export default function PricingPage() {
     } else {
       router.push(`/choose-start?plan=${encodeURIComponent(planId)}`);
     }
+  };
+
+  // Trial upgrade always buys the plan the learner is already trialing.
+  const handleUpgrade = () => {
+    router.push(`/choose-start?plan=${encodeURIComponent(currentPlanId)}&upgrade=1`);
   };
 
   const ctaLabel = isAuthenticated ? "Choose how to start" : "Get started";
@@ -128,7 +139,7 @@ export default function PricingPage() {
               marginBottom: 16,
             }}
           >
-            Choose your learning path
+            {isTrialUpgrade ? "Upgrade from your free trial" : "Choose your learning path"}
           </h1>
           <p
             style={{
@@ -139,12 +150,155 @@ export default function PricingPage() {
               lineHeight: 1.6,
             }}
           >
-            Structured AI learning designed to fit your goals. Master English
-            communication with consistent daily practice.
+            {isTrialUpgrade
+              ? "You're already learning on your free trial. Purchase your course now to keep full access — your progress carries over."
+              : "Structured AI learning designed to fit your goals. Master English communication with consistent daily practice."}
           </p>
         </section>
 
+        {/* 2a. Trial upgrade panel — "how to pay" for trial users */}
+        {isTrialUpgrade && (
+          <section style={{ marginBottom: 80 }}>
+            <GlassCard
+              style={{
+                padding: 40,
+                maxWidth: 620,
+                margin: "0 auto",
+                display: "flex",
+                flexDirection: "column",
+                border: `2px solid oklch(50% 0.18 ${ACCENT_HUE})`,
+                boxShadow: "0 12px 48px rgba(50,100,220,0.15)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: `oklch(40% 0.14 ${ACCENT_HUE})`,
+                  background: `oklch(95% 0.05 ${ACCENT_HUE})`,
+                  padding: "6px 14px",
+                  borderRadius: 50,
+                  display: "inline-block",
+                  marginBottom: 20,
+                  alignSelf: "flex-start",
+                }}
+              >
+                {me?.days_remaining != null
+                  ? `You're on a free trial — ${me.days_remaining} ${
+                      me.days_remaining === 1 ? "day" : "days"
+                    } left`
+                  : "You're on a free trial"}
+              </div>
+              <h2
+                style={{
+                  fontSize: 26,
+                  fontWeight: 800,
+                  color: "oklch(20% 0.09 245)",
+                  marginBottom: 8,
+                }}
+              >
+                {currentPlan.name}
+              </h2>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 24 }}>
+                <span
+                  style={{
+                    fontSize: 42,
+                    fontWeight: 800,
+                    color: "oklch(15% 0.09 245)",
+                    letterSpacing: "-1px",
+                  }}
+                >
+                  ₹{currentPlan.price}
+                </span>
+                <span style={{ fontSize: 14, color: "oklch(50% 0.07 240)", fontWeight: 600 }}>
+                  one-time · billed once
+                </span>
+              </div>
+
+              <div
+                style={{
+                  background: `oklch(97% 0.02 ${ACCENT_HUE})`,
+                  borderRadius: 14,
+                  padding: "18px 20px",
+                  marginBottom: 28,
+                }}
+              >
+                <p
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 700,
+                    color: "oklch(30% 0.08 240)",
+                    margin: "0 0 12px 0",
+                  }}
+                >
+                  How payment works
+                </p>
+                <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                  {[
+                    "Secure one-time payment via Razorpay",
+                    "We guide you through checkout step by step",
+                    "Instant full access — no more trial countdown",
+                    "All your existing progress carries over",
+                  ].map((line, i) => (
+                    <li
+                      key={i}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        marginBottom: i === 3 ? 0 : 10,
+                        fontSize: 14.5,
+                        color: "oklch(30% 0.08 240)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          background: `oklch(90% 0.06 ${ACCENT_HUE})`,
+                          borderRadius: "50%",
+                          padding: 4,
+                          display: "flex",
+                        }}
+                      >
+                        <Check size={13} color={`oklch(35% 0.14 ${ACCENT_HUE})`} />
+                      </div>
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <button
+                onClick={handleUpgrade}
+                style={{
+                  width: "100%",
+                  padding: "16px 0",
+                  borderRadius: 12,
+                  border: "none",
+                  background: `linear-gradient(135deg, oklch(45% 0.18 ${ACCENT_HUE}), oklch(35% 0.2 ${ACCENT_HUE}))`,
+                  color: "white",
+                  fontSize: 16,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                  boxShadow: "0 6px 20px rgba(50,100,220,0.3)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                  e.currentTarget.style.boxShadow = "0 8px 24px rgba(50,100,220,0.4)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.boxShadow = "0 6px 20px rgba(50,100,220,0.3)";
+                }}
+              >
+                Purchase the course for ₹{currentPlan.price}
+              </button>
+            </GlassCard>
+          </section>
+        )}
+
         {/* 2. Pricing Cards */}
+        {!isTrialUpgrade && (
         <section
           style={{
             display: "grid",
@@ -450,6 +604,7 @@ export default function PricingPage() {
             </p>
           </GlassCard>
         </section>
+        )}
 
         {/* 3. Comparison Table */}
         <section style={{ marginBottom: 80 }}>
