@@ -25,6 +25,13 @@ interface RazorpayOptions {
   handler: (response: RazorpaySuccessResponse) => void;
   modal: { ondismiss: () => void };
   theme: { color: string };
+  // Checkout retries auth on a soft first failure by default, which re-presents
+  // the OTP/3DS step and reads to the user as "I entered the OTP twice". Disable
+  // it so a single Pay-Now asks for the OTP exactly once.
+  retry: { enabled: boolean };
+  // Hard ceiling on the modal lifetime (seconds) so an abandoned auth doesn't
+  // hang forever.
+  timeout: number;
 }
 
 declare global {
@@ -101,6 +108,8 @@ export function useRazorpayCheckout() {
             onFailure("Payment was not completed — you have not been charged."),
         },
         theme: { color: "#0070C4" },
+        retry: { enabled: false },
+        timeout: 300,
       });
       instance.on("payment.failed", () =>
         onFailure("Payment failed — you have not been charged. Please retry."),

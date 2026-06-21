@@ -51,12 +51,7 @@ const DEFAULT_PRACTICE_SETTINGS: PracticeSettings = {
   pass_threshold_pct: 65,
 };
 
-type ModalKind =
-  | "purchase-details"
-  | "pause"
-  | "delete-step-1"
-  | "delete-step-2"
-  | null;
+type ModalKind = "pause" | "delete-step-1" | "delete-step-2" | null;
 
 const cardStyle: CSSProperties = {
   background: "rgba(255,255,255,0.88)",
@@ -316,7 +311,7 @@ export default function SettingsPage() {
             amount={formatMoney(currentPlan.amount_paid, currentPlan.currency)}
             purchasedDate={formatDate(currentPlan.created_at)}
             status={currentPlan.status}
-            onDetails={() => setModal("purchase-details")}
+            onDetails={() => router.push("/payment/receipt")}
             onUpgrade={() => router.push("/pricing")}
           />
           {user?.preference && (
@@ -352,20 +347,6 @@ export default function SettingsPage() {
         </div>
       </DashboardLayout>
 
-      {modal === "purchase-details" && (
-        <ConfirmModal
-          title="Purchase details"
-          body={`${currentPlan.plan_name} was purchased for ${formatMoney(
-            currentPlan.amount_paid,
-            currentPlan.currency,
-          )}. Purchase date: ${formatDate(currentPlan.created_at)}. Status: ${
-            currentPlan.status
-          }.`}
-          confirmLabel="Done"
-          onCancel={() => setModal(null)}
-          onConfirm={() => setModal(null)}
-        />
-      )}
       {modal === "pause" && (
         <ConfirmModal
           title="Pause course"

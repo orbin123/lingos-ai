@@ -9908,6 +9908,37 @@
         ]
       }
     },
+    "/api/payments/mine": {
+      "get": {
+        "description": "The current user's payments (newest first) for the receipt list.\n\nUser-scoped: filters by ``current_user.id``, so a learner only ever sees\ntheir own payments (no IDOR — mirrors ``by-order``).",
+        "operationId": "list_my_payments_api_payments_mine_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PaymentDetailRead"
+                  },
+                  "title": "Response List My Payments Api Payments Mine Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List My Payments",
+        "tags": [
+          "payments"
+        ]
+      }
+    },
     "/api/payments/verify": {
       "post": {
         "description": "Checkout success callback: verify the signature, then activate.",

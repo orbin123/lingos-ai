@@ -82,6 +82,20 @@ def verify_payment(
     return _entitlement_out(service.subscriptions.resolve_access(current_user))
 
 
+@payments_router.get("/mine", response_model=list[PaymentDetailRead])
+def list_my_payments(
+    current_user: User = Depends(require_verified),
+    db: Session = Depends(get_db),
+) -> list[PaymentDetailRead]:
+    """The current user's payments (newest first) for the receipt list.
+
+    User-scoped: filters by ``current_user.id``, so a learner only ever sees
+    their own payments (no IDOR — mirrors ``by-order``).
+    """
+    details = PaymentService(db).list_payments(current_user)
+    return [PaymentDetailRead(**d) for d in details]
+
+
 @payments_router.get("/by-order/{order_id}", response_model=PaymentDetailRead)
 def get_payment_by_order(
     order_id: str,

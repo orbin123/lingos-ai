@@ -49,4 +49,9 @@ export const paymentsApi = {
         `/api/payments/by-order/${encodeURIComponent(orderId)}`,
       )
       .then((r) => r.data),
+
+  // The current user's payments, newest first (user-scoped). Backs the
+  // Settings → receipt entry point and the receipt list.
+  mine: () =>
+    api.get<PaymentDetailRead[]>("/api/payments/mine").then((r) => r.data),
 };
