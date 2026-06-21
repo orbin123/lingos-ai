@@ -465,7 +465,8 @@ export default function PricingPage() {
             Compare Plans
           </h3>
           <GlassCard style={{ padding: "0 24px", overflow: "hidden" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+            <div className="mkt-table-scroll">
+            <table style={{ width: "100%", minWidth: 420, borderCollapse: "collapse", textAlign: "left" }}>
               <thead>
                 <tr>
                   <th style={{ padding: "24px 16px", borderBottom: "1px solid rgba(0,0,0,0.05)", width: "50%", color: "oklch(30% 0.08 240)", fontWeight: 600 }}>Features</th>
@@ -494,6 +495,7 @@ export default function PricingPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </GlassCard>
         </section>
 

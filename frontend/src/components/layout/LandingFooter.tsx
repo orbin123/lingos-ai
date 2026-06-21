@@ -34,6 +34,7 @@ export function LandingFooter() {
   const { homeHref } = useMarketingCTA();
   return (
     <footer
+      className="mkt-section"
       style={{
         padding: "56px 40px 40px",
         background: "oklch(18% 0.09 245)",
@@ -41,6 +42,7 @@ export function LandingFooter() {
       }}
     >
       <div
+        className="mkt-footer-grid"
         style={{
           maxWidth: 1180,
           margin: "0 auto",

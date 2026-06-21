@@ -205,6 +205,7 @@ export default function HowItWorksPage() {
 
       {/* SECTION 1: Why Most People Fail (Hero-ish) */}
       <section
+        className="mkt-section"
         style={{
           position: "relative",
           padding: "160px 40px 100px",
@@ -239,6 +240,7 @@ export default function HowItWorksPage() {
         />
 
         <div
+          className="mkt-hero-grid"
           style={{
             maxWidth: 1180,
             margin: "0 auto",
@@ -439,6 +441,7 @@ export default function HowItWorksPage() {
 
       {/* SECTION 2: 7 Subskills */}
       <section
+        className="mkt-section"
         style={{
           padding: "100px 40px",
           background: "white",
@@ -565,8 +568,9 @@ export default function HowItWorksPage() {
       </section>
 
       {/* SECTION 3: Activity Mapping (Alternating Pattern) */}
-      <section style={{ padding: "100px 40px", position: "relative" }}>
+      <section className="mkt-section" style={{ padding: "100px 40px", position: "relative" }}>
         <div
+          className="mkt-grid-2"
           style={{
             maxWidth: 1180,
             margin: "0 auto",
@@ -670,6 +674,7 @@ export default function HowItWorksPage() {
 
       {/* SECTION 4: Weekly Structure */}
       <section
+        className="mkt-section"
         style={{
           padding: "100px 40px",
           background: "white",
@@ -677,6 +682,7 @@ export default function HowItWorksPage() {
         }}
       >
         <div
+          className="mkt-grid-2"
           style={{
             maxWidth: 1180,
             margin: "0 auto",
@@ -775,7 +781,7 @@ export default function HowItWorksPage() {
       </section>
 
       {/* SECTION 5: AI Engine */}
-      <section style={{ padding: "100px 40px", position: "relative" }}>
+      <section className="mkt-section" style={{ padding: "100px 40px", position: "relative" }}>
         <DotGrid opacity={0.15} />
         <div style={{ maxWidth: 1000, margin: "0 auto", textAlign: "center" }}>
           <h2
@@ -889,6 +895,7 @@ export default function HowItWorksPage() {
 
       {/* SECTION 6: Diagnostic Stats */}
       <section
+        className="mkt-section"
         style={{
           padding: "100px 40px",
           background: "white",
@@ -896,6 +903,7 @@ export default function HowItWorksPage() {
         }}
       >
         <div
+          className="mkt-grid-2"
           style={{
             maxWidth: 1180,
             margin: "0 auto",
@@ -977,6 +985,7 @@ export default function HowItWorksPage() {
 
       {/* SECTION 7: CTA Section */}
       <section
+        className="mkt-section"
         style={{
           padding: "120px 40px",
           background: `oklch(18% 0.05 240)`,

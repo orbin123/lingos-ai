@@ -72,6 +72,7 @@ export default function ContactPage() {
 
       {/* HERO */}
       <section
+        className="mkt-section"
         style={{
           position: "relative",
           padding: "70px 40px 50px",
@@ -107,7 +108,7 @@ export default function ContactPage() {
       </section>
 
       {/* FORM + INFO */}
-      <section style={{ padding: "10px 40px 90px" }}>
+      <section className="mkt-section" style={{ padding: "10px 40px 90px" }}>
         <div className="contact-layout" style={{ maxWidth: 1080, margin: "0 auto" }}>
           <div>
             <ContactForm />
@@ -145,7 +146,7 @@ export default function ContactPage() {
       </section>
 
       {/* FAQ */}
-      <section style={{ padding: "0 40px 90px" }}>
+      <section className="mkt-section" style={{ padding: "0 40px 90px" }}>
         <div style={{ maxWidth: 820, margin: "0 auto" }}>
           <h2
             style={{
@@ -176,7 +177,7 @@ export default function ContactPage() {
       </section>
 
       {/* CTA */}
-      <section style={{ padding: "0 40px 110px" }}>
+      <section className="mkt-section" style={{ padding: "0 40px 110px" }}>
         <div
           style={{
             maxWidth: 1080,

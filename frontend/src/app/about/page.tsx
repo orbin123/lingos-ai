@@ -106,6 +106,7 @@ export default function AboutPage() {
 
       {/* 1. HERO SECTION */}
       <section
+        className="mkt-section"
         style={{
           position: "relative",
           padding: "80px 40px",
@@ -187,7 +188,7 @@ export default function AboutPage() {
       </section>
 
       {/* 2. THE PROBLEM SECTION */}
-      <section style={{ padding: "80px 40px", background: "white", position: "relative" }}>
+      <section className="mkt-section" style={{ padding: "80px 40px", background: "white", position: "relative" }}>
         <DotGrid opacity={0.12} />
         <div style={{ maxWidth: 1000, margin: "0 auto", position: "relative" }}>
           <div style={{ textAlign: "center", marginBottom: 40 }}>
@@ -246,7 +247,7 @@ export default function AboutPage() {
       </section>
 
       {/* 3. OUR APPROACH SECTION */}
-      <section style={{ padding: "100px 40px", background: "oklch(98% 0.01 240)" }}>
+      <section className="mkt-section" style={{ padding: "100px 40px", background: "oklch(98% 0.01 240)" }}>
         <div style={{ maxWidth: 1180, margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: 60 }}>
             <h2
@@ -309,7 +310,7 @@ export default function AboutPage() {
       </section>
 
       {/* 4. HOW LINGOSAI HELPS */}
-      <section style={{ padding: "100px 40px", background: "white" }}>
+      <section className="mkt-section" style={{ padding: "100px 40px", background: "white" }}>
         <div style={{ maxWidth: 1000, margin: "0 auto" }}>
           <h2
             style={{
@@ -399,6 +400,7 @@ export default function AboutPage() {
 
       {/* 5. WHY WE BUILT THIS */}
       <section
+        className="mkt-section"
         style={{
           padding: "100px 40px",
           background: `linear-gradient(135deg, oklch(35% 0.15 ${ACCENT_HUE}), oklch(25% 0.1 ${ACCENT_HUE}))`,
@@ -417,7 +419,7 @@ export default function AboutPage() {
       </section>
 
       {/* 6. FUTURE VISION SECTION */}
-      <section style={{ padding: "100px 40px", background: "oklch(98% 0.01 240)" }}>
+      <section className="mkt-section" style={{ padding: "100px 40px", background: "oklch(98% 0.01 240)" }}>
         <div style={{ maxWidth: 1000, margin: "0 auto" }}>
           <div style={{ textAlign: "center", marginBottom: 60 }}>
             <h2
@@ -434,6 +436,7 @@ export default function AboutPage() {
           </div>
 
           <div
+            className="mkt-grid-2"
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
@@ -465,7 +468,7 @@ export default function AboutPage() {
       </section>
 
       {/* 7. FINAL CTA SECTION */}
-      <section style={{ padding: "120px 40px", background: "white", textAlign: "center" }}>
+      <section className="mkt-section" style={{ padding: "120px 40px", background: "white", textAlign: "center" }}>
         <div style={{ maxWidth: 800, margin: "0 auto" }}>
           <h2
             style={{
