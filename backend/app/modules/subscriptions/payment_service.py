@@ -21,7 +21,7 @@ from app.modules.auth.models import User
 from app.modules.subscriptions.catalog import PLAN_CATALOG
 from app.modules.subscriptions.exceptions import PlanNotFound, SubscriptionError
 from app.modules.subscriptions.models import Payment, PaymentEvent
-from app.modules.subscriptions.service import SubscriptionService
+from app.modules.subscriptions.service import AccessResolution, SubscriptionService
 from app.payments import get_default_razorpay_client
 from app.payments.signatures import (
     verify_checkout_signature,
@@ -110,6 +110,35 @@ class PaymentService:
         if payment is None:
             raise PaymentNotFound(order_id)
 
+        resolution = self.subscriptions.resolve_access(user)
+        return self._payment_detail_dict(payment, resolution)
+
+    def list_payments(self, user: User) -> list[dict]:
+        """User-scoped list of the learner's payments, newest first.
+
+        Backs ``GET /api/payments/mine`` (the receipt list). Same IDOR
+        protection as ``get_payment_detail`` (filters by ``user_id``); the live
+        ``subscription_status`` / ``current_period_end`` are resolved once and
+        shared across rows since they're user-level, not per-payment.
+        """
+        payments = (
+            self.db.query(Payment)
+            .filter(Payment.user_id == user.id)
+            .order_by(Payment.id.desc())
+            .all()
+        )
+        resolution = self.subscriptions.resolve_access(user)
+        return [self._payment_detail_dict(p, resolution) for p in payments]
+
+    def _payment_detail_dict(
+        self, payment: Payment, resolution: AccessResolution
+    ) -> dict:
+        """Shape a ``Payment`` row into the ``PaymentDetailRead`` dict.
+
+        ``plan_id`` / ``plan_name`` are recovered from the server-side amount via
+        the catalog (cannot be spoofed); ``method`` is null until the webhook
+        fills it (the verify fast-path does not set it).
+        """
         try:
             resolved_plan_id = self._plan_id_for(payment)
             plan_id: str | None = resolved_plan_id
@@ -117,8 +146,6 @@ class PaymentService:
         except PlanNotFound:
             plan_id = None
             plan_name = None
-
-        resolution = self.subscriptions.resolve_access(user)
 
         return {
             "provider_payment_id": payment.provider_payment_id,

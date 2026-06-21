@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
@@ -163,6 +163,10 @@ function ChooseStartInner() {
   });
   const [phase, setPhase] = useState<"choose" | "preparing-trial" | "preparing-pay">("choose");
   const [error, setError] = useState<string | null>(null);
+  // Set true the instant a Pay-Now verifies, BEFORE we refetch `me`. The guard
+  // effect below would otherwise see the freshly-`active` `me` and clobber the
+  // /payment/success navigation with a /dashboard bounce.
+  const completedPayRef = useRef(false);
 
   // Unauthenticated users can't enrol — bounce to register.
   useEffect(() => {
@@ -175,8 +179,11 @@ function ChooseStartInner() {
     enabled: isAuthenticated,
   });
 
-  // Users with running access don't belong here.
+  // Users with running access don't belong here — except the user who is
+  // completing a payment on this very page (completedPayRef), who is being
+  // routed to /payment/success and must not be bounced to /dashboard.
   useEffect(() => {
+    if (completedPayRef.current) return;
     if (me && (me.access_state === "trial" || me.access_state === "active")) {
       router.replace("/dashboard");
     }
@@ -225,10 +232,14 @@ function ChooseStartInner() {
         onSuccess: async (payload) => {
           try {
             await verifyMutation.mutateAsync(payload);
-            await queryClient.invalidateQueries({ queryKey: ["me"] });
+            // Claim the in-flight payment, then navigate to the proof page
+            // FIRST. Refresh `me` only afterwards so the now-`active` state
+            // can't trip the guard effect into a /dashboard bounce.
+            completedPayRef.current = true;
             router.replace(
               `/payment/success?order_id=${encodeURIComponent(payload.razorpay_order_id)}`,
             );
+            await queryClient.invalidateQueries({ queryKey: ["me"] });
           } catch (err) {
             setError(getApiErrorMessage(err));
             setPhase("choose");

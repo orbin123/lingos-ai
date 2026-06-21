@@ -358,6 +358,77 @@ class TestByOrder:
         assert res.status_code == 404
 
 
+class TestMine:
+    """GET /api/payments/mine — the user-scoped receipt list."""
+
+    def _create_order(self, client, plan_id: str = "beginner-24w") -> str:
+        res = client.post("/api/payments/create-order", json={"plan_id": plan_id})
+        return res.json()["order_id"]
+
+    def _verify(self, client, order_id: str, payment_id: str) -> None:
+        client.post(
+            "/api/payments/verify",
+            json={
+                "razorpay_order_id": order_id,
+                "razorpay_payment_id": payment_id,
+                "razorpay_signature": _checkout_signature(order_id, payment_id),
+            },
+        )
+
+    def test_empty_when_no_payments(self, client):
+        res = client.get("/api/payments/mine")
+        assert res.status_code == 200
+        assert res.json() == []
+
+    def test_lists_users_payments_newest_first(self, client):
+        first = self._create_order(client, "beginner-24w")
+        self._verify(client, first, "pay_first")
+        second = self._create_order(client, "beginner-48w")
+        self._verify(client, second, "pay_second")
+
+        res = client.get("/api/payments/mine")
+        assert res.status_code == 200
+        body = res.json()
+        assert len(body) == 2
+        # Newest first: the second (higher id) order leads.
+        assert body[0]["provider_order_id"] == second
+        assert body[0]["amount"] == 1999.0
+        assert body[1]["provider_order_id"] == first
+        assert body[1]["amount"] == 999.0
+        assert body[0]["subscription_status"] == "active"
+
+    def test_excludes_other_users_payments_no_idor(self, client, db_session):
+        mine = self._create_order(client, "beginner-24w")
+        self._verify(client, mine, "pay_mine")
+
+        other = User(
+            email="other-mine@example.com",
+            password_hash="x",
+            name="O",
+            email_verified=True,
+        )
+        db_session.add(other)
+        db_session.flush()
+        db_session.add(
+            Payment(
+                user_id=other.id,
+                provider="razorpay",
+                provider_order_id="order_other_mine",
+                provider_payment_id="pay_other_mine",
+                amount=999.0,
+                currency="INR",
+                status="paid",
+            )
+        )
+        db_session.commit()
+
+        res = client.get("/api/payments/mine")
+        assert res.status_code == 200
+        orders = {p["provider_order_id"] for p in res.json()}
+        assert orders == {mine}
+        assert "order_other_mine" not in orders
+
+
 class TestWebhook:
     def _create_order(self, client) -> str:
         res = client.post(
