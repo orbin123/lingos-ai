@@ -7132,6 +7132,18 @@
             "title": "Allow Write",
             "type": "boolean"
           },
+          "course_completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Completed At"
+          },
           "course_length": {
             "enum": [
               "24w",

@@ -21,6 +21,7 @@ from app.modules.curriculum.models import (
     TaskArchetype,
     ThemeType,
 )
+from app.modules.preferences.models import UserCoursePreference
 from app.modules.progress.models import SkillPoints, SkillPointsLog
 from app.modules.sessions.evaluator import StubEvaluator
 from app.modules.sessions.feedback_generator import StubFeedbackGenerator
@@ -63,6 +64,8 @@ def db_session():
             ActivityEvaluation.__table__,
             ActivityFeedback.__table__,
             SessionScorecard.__table__,
+            # complete_session now reads preferences to detect course completion.
+            UserCoursePreference.__table__,
         ],
     )
     SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)

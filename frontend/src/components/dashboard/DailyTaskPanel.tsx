@@ -93,6 +93,10 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
     (weekOverride !== null && weekOverride !== preference.current_week) ||
     (dayOverride !== null && dayOverride !== preference.current_day_in_week);
 
+  // Course finished: replace the (now dead-end) advance flow with a completion
+  // block. Suppressed while previewing a past week so review/replay still works.
+  const isCourseComplete = Boolean(preference.course_completed_at) && !isInOverrideMode;
+
   const handleStart = useCallback(async () => {
     const week = Number(searchParams.get("week") || preference.current_week || 1);
     const day = Number(searchParams.get("day") || preference.current_day_in_week || 1);
@@ -171,8 +175,14 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
         />
       )}
 
+      {/* Course finished: congratulations + completion entry point. Takes
+          precedence over the per-day completed/advance blocks. */}
+      {!isLoading && !isError && plan && isCourseComplete && (
+        <CourseCompleteBlock onViewCompletion={() => router.push("/course-complete")} />
+      )}
+
       {/* Completed state: advance to the next day from the dashboard only */}
-      {!isLoading && !isError && plan && completed && (
+      {!isLoading && !isError && plan && !isCourseComplete && completed && (
         <CompletedDayBlock
           week={preference.current_week}
           day={preference.current_day_in_week}
@@ -183,7 +193,7 @@ export function DailyTaskPanel({ preference }: DailyTaskPanelProps) {
         />
       )}
 
-      {!isLoading && !isError && plan && !completed && (
+      {!isLoading && !isError && plan && !isCourseComplete && !completed && (
         <ActiveSessionBlock
           activities={plan.activities}
           topic={plan.topic}
@@ -518,6 +528,76 @@ function ActivityRow({
           Unlocks next
         </span>
       )}
+    </div>
+  );
+}
+
+function CourseCompleteBlock({ onViewCompletion }: { onViewCompletion: () => void }) {
+  return (
+    <div
+      style={{
+        padding: "22px 4px 6px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 14,
+      }}
+    >
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 7,
+          padding: "6px 14px",
+          borderRadius: 999,
+          background: "oklch(94% 0.06 155)",
+          border: "1px solid oklch(80% 0.1 155)",
+          fontSize: 12.5,
+          fontWeight: 800,
+          color: "oklch(32% 0.16 155)",
+          letterSpacing: "0.01em",
+        }}
+      >
+        🎉 Course complete
+      </div>
+
+      <p
+        style={{
+          margin: 0,
+          color: "oklch(45% 0.07 240)",
+          fontSize: 13.5,
+          lineHeight: 1.6,
+          textAlign: "center",
+        }}
+      >
+        You&apos;ve finished every lesson of your course. Download your certificate and
+        celebrate — you can still revisit any past week from the calendar.
+      </p>
+
+      <button
+        type="button"
+        onClick={onViewCompletion}
+        style={{
+          width: "100%",
+          padding: "13px 18px",
+          borderRadius: 14,
+          border: "none",
+          background: "#0070C4",
+          color: "white",
+          fontFamily: "inherit",
+          fontSize: 14,
+          fontWeight: 800,
+          cursor: "pointer",
+          boxShadow: "0 6px 18px rgba(0,112,196,0.22)",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+        }}
+      >
+        View your completion
+        <ArrowIcon />
+      </button>
     </div>
   );
 }

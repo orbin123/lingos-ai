@@ -13,6 +13,9 @@ export interface UserCoursePreferenceRead {
   current_day_in_week: number;
   current_day_started_at: string;
   last_completed_on: string | null;
+  /** Set once the learner finishes the final day of the course; null while in
+   *  progress. Drives the dashboard "course complete" state + certificate. */
+  course_completed_at: string | null;
   require_pass_to_advance: boolean;
   pass_threshold_pct: number;
 }

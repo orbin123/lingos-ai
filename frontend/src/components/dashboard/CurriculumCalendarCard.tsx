@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { UserCoursePreferenceRead } from "@/lib/preferences-api";
 
@@ -9,7 +10,9 @@ interface CurriculumCalendarCardProps {
 }
 
 export function CurriculumCalendarCard({ preference }: CurriculumCalendarCardProps) {
+  const router = useRouter();
   // Parse active progress
+  const courseCompleted = Boolean(preference.course_completed_at);
   const totalWeeks = preference.course_length === "48w" ? 48 : 24;
   const totalMonths = totalWeeks / 4;
   const activeMonth = Math.floor((preference.current_week - 1) / 4) + 1;
@@ -71,7 +74,7 @@ export function CurriculumCalendarCard({ preference }: CurriculumCalendarCardPro
               marginTop: 3,
             }}
           >
-            Month {selectedMonth}
+            {courseCompleted ? `Month ${selectedMonth} · tap any day to review` : `Month ${selectedMonth}`}
           </div>
         </div>
 
@@ -185,11 +188,16 @@ export function CurriculumCalendarCard({ preference }: CurriculumCalendarCardPro
               {/* Day Cells (Static progress blocks) */}
               {Array.from({ length: 7 }).map((_, colIdx) => {
                 const dayNum = colIdx + 1;
+                // Once the course is complete every day reads as done (all
+                // weeks unlocked) and nothing pulses as the "current" day.
                 const isCompleted =
+                  courseCompleted ||
                   weekNum < preference.current_week ||
                   (weekNum === preference.current_week && dayNum < preference.current_day_in_week);
                 const isCurrent =
-                  weekNum === preference.current_week && dayNum === preference.current_day_in_week;
+                  !courseCompleted &&
+                  weekNum === preference.current_week &&
+                  dayNum === preference.current_day_in_week;
 
                 // Color coding
                 let bg = "oklch(94% 0.02 240)"; // Upcoming/blank color
@@ -202,15 +210,38 @@ export function CurriculumCalendarCard({ preference }: CurriculumCalendarCardPro
                   animation = "pulseGlow 2s infinite";
                 }
 
+                // Once complete, every cell becomes a read-only review entry
+                // point that drops back into the existing ?week=&day= preview
+                // path (which never advances progress).
+                const reviewable = courseCompleted;
+                const goReview = () =>
+                  router.push(`/dashboard?week=${weekNum}&day=${dayNum}`);
+
                 // Tooltip info
-                const tooltip = `Week ${weekNum}, Day ${dayNum}${
-                  isCurrent ? " (Active Day)" : isCompleted ? " (Completed)" : ""
-                }`;
+                const tooltip = reviewable
+                  ? `Review Week ${weekNum}, Day ${dayNum}`
+                  : `Week ${weekNum}, Day ${dayNum}${
+                      isCurrent ? " (Active Day)" : isCompleted ? " (Completed)" : ""
+                    }`;
 
                 return (
                   <div
                     key={dayNum}
                     title={tooltip}
+                    role={reviewable ? "button" : undefined}
+                    tabIndex={reviewable ? 0 : undefined}
+                    aria-label={reviewable ? tooltip : undefined}
+                    onClick={reviewable ? goReview : undefined}
+                    onKeyDown={
+                      reviewable
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              goReview();
+                            }
+                          }
+                        : undefined
+                    }
                     style={{
                       aspectRatio: "1",
                       borderRadius: 6,
@@ -220,6 +251,7 @@ export function CurriculumCalendarCard({ preference }: CurriculumCalendarCardPro
                       alignItems: "center",
                       justifyContent: "center",
                       position: "relative",
+                      cursor: reviewable ? "pointer" : "default",
                     }}
                   />
                 );
