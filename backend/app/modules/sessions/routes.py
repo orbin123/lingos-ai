@@ -50,6 +50,7 @@ from app.modules.curriculum.repository import (
 )
 from app.modules.preferences.models import UserCoursePreference
 from app.modules.preferences.service import PreferenceService
+from app.ai.sessions.exceptions import TaskGenerationFailed
 from app.modules.sessions.exceptions import (
     AttemptAlreadySubmitted,
     AttemptNotFound,
@@ -581,6 +582,17 @@ async def start_session(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except NoActivitiesPlanned as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except TaskGenerationFailed as exc:
+        # Transient LLM failure — nothing is committed (the session only commits
+        # after every activity generates), so the client can safely retry.
+        logger.warning("start_session task generation failed: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "task_generation_failed",
+                "message": "We couldn't prepare today's lesson. Please try again.",
+            },
+        ) from exc
 
 
 # ── POST /sessions/start-today ─────────────────────────────────────

@@ -1385,7 +1385,14 @@ def normalize_error_spotting_payload(content: dict) -> dict:
 
 
 def is_valid_error_spotting_payload(content: dict) -> bool:
-    """Return True when an error-spotting payload is safe to render/score."""
+    """Return True when an error-spotting payload is safe to render/score.
+
+    Only *structural* integrity is gated here — the widget renders and scores
+    from any number of sentences as long as each has exactly one marked error
+    token whose id matches its ``error`` object. Pedagogical-quality targets
+    (exactly 5 sentences, >=4 distinct categories, 10+ tokens) are intentionally
+    NOT enforced: a stochastic LLM that misses them must not fail the session.
+    """
     if (
         normalize_widget_key(
             str(content.get("widget") or content.get("ui_widget") or "")
@@ -1394,10 +1401,8 @@ def is_valid_error_spotting_payload(content: dict) -> bool:
     ):
         return False
     sentences = content.get("passage_sentences")
-    if not isinstance(sentences, list) or len(sentences) != 5:
+    if not isinstance(sentences, list) or len(sentences) < 1:
         return False
-    token_ids: set[str] = set()
-    error_types: set[str] = set()
     for sentence in sentences:
         if not isinstance(sentence, dict):
             return False
@@ -1415,19 +1420,9 @@ def is_valid_error_spotting_payload(content: dict) -> bool:
         error_token_id = str(error.get("token_id") or "")
         if error_token_id not in sentence_error_ids:
             return False
-        token_ids.update(
-            str(token.get("token_id") or "")
-            for token in tokens
-            if isinstance(token, dict)
-        )
         if not str(error.get("correction") or "").strip():
             return False
-        error_types.add(str(error.get("error_type") or ""))
-    return (
-        int(content.get("total_errors") or 0) == 5
-        and len(token_ids) >= 10
-        and len(error_types) >= 4
-    )
+    return True
 
 
 def _normalize_error_sentence(sentence: dict, sentence_index: int) -> dict:

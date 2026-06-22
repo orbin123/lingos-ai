@@ -237,7 +237,7 @@ class ListenClozeTaskLLM(BaseModel):
     audio_script: str
     inner_widget: str = "fill_in_blanks"
     passage: str
-    items: list[ListenClozeItemLLM] = Field(min_length=4, max_length=5)
+    items: list[ListenClozeItemLLM] = Field(min_length=1, max_length=5)
 
 
 class ListenRetellTaskLLM(BaseModel):
@@ -276,7 +276,7 @@ class ErrorCorrectionTask(BaseModel):
     instructions: str
     task_intro: str
     estimated_time_minutes: int | None = None
-    items: list[ErrorCorrectionItem] = Field(min_length=3, max_length=3)
+    items: list[ErrorCorrectionItem] = Field(min_length=1, max_length=3)
 
 
 ErrorSpottingType = Literal[
@@ -330,7 +330,7 @@ class ErrorSpottingTaskLLM(BaseModel):
     primary_text: str = ""
     estimated_time_minutes: int | None = None
     passage_sentences: list[ErrorSpottingSentenceLLM] = Field(
-        min_length=5, max_length=5
+        min_length=1, max_length=5
     )
     total_errors: int = 5
 
@@ -362,16 +362,25 @@ class ErrorSpottingTask(BaseModel):
     task_intro: str
     primary_text: str = ""
     estimated_time_minutes: int | None = None
-    passage_sentences: list[ErrorSpottingSentence] = Field(min_length=5, max_length=5)
+    passage_sentences: list[ErrorSpottingSentence] = Field(min_length=1, max_length=5)
     total_errors: int = 5
 
     @model_validator(mode="after")
-    def validate_five_diverse_errors(self) -> "ErrorSpottingTask":
-        if self.total_errors != 5:
-            raise ValueError("total_errors must be exactly 5")
+    def normalize_quality_targets(self) -> "ErrorSpottingTask":
+        # Structural integrity (one marked error token per sentence, matching
+        # error.token_id) is enforced per-sentence in ``ErrorSpottingSentence``.
+        # The constraints below are pedagogical *quality* targets, not render
+        # requirements — coerce the derived total and log diversity misses
+        # instead of failing the whole session over a stochastic LLM output.
+        self.total_errors = len(self.passage_sentences)
         categories = {sentence.error.error_type for sentence in self.passage_sentences}
         if len(categories) < 4:
-            raise ValueError("use at least four distinct past-tense error categories")
+            logger.warning(
+                "error_spotting quality below target: %d distinct error "
+                "categories (target >=4) across %d sentences",
+                len(categories),
+                len(self.passage_sentences),
+            )
         return self
 
 

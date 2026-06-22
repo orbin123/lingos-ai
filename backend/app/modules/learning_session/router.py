@@ -42,12 +42,20 @@ from app.modules.learning_session.service import (
     LearningSessionService,
     LearningSessionTaskUnavailable,
 )
+from app.ai.sessions.exceptions import TaskGenerationFailed
 from app.modules.sessions.exceptions import (
     AttemptNotFound,
     SessionNotFound,
 )
 
 logger = logging.getLogger(__name__)
+
+# Surfaced to the dashboard so the "Start session" button can flip to a red
+# "Retry session" affordance instead of a dead-end 500. See DailyTaskPanel.
+TASK_GENERATION_FAILED_DETAIL = {
+    "code": "task_generation_failed",
+    "message": "We couldn't prepare today's lesson. Please try again.",
+}
 
 
 # --- REST -------------------------------------------------------------
@@ -85,6 +93,17 @@ async def start_session(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LearningSessionTaskUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except TaskGenerationFailed as exc:
+        # Transient: the LLM couldn't produce renderable content for an
+        # activity after retries. Tell the client to retry rather than 500.
+        logger.warning(
+            "start_session task generation failed for user_id=%s: %s",
+            current_user.id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=503, detail=TASK_GENERATION_FAILED_DETAIL
+        ) from exc
     except Exception as exc:  # pragma: no cover — unexpected
         logger.exception("start_session failed for user_id=%s", current_user.id)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
