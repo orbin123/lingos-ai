@@ -112,6 +112,15 @@ class Settings(BaseSettings):
 
     # AI / LLM
     OPENAI_API_KEY: str
+    # Default chat model for ALL generation agents (task generator, feedback,
+    # teacher, evaluator, planner, personalization, RAG mentor notes, IELTS +
+    # diagnosis agents). One knob flips the whole app. `gpt-5` is a reasoning
+    # model: it ignores `temperature` (only the default is accepted), so the
+    # client drops any per-call temperature override for reasoning models.
+    OPENAI_CHAT_MODEL: str = "gpt-5"
+    # Reasoning effort for the generation client: minimal | low | medium | high.
+    # `medium` balances quality vs. latency on the learner's critical path.
+    OPENAI_REASONING_EFFORT: str = "medium"
     # Off by default (data-residency, audit A5): tracing ships learner content
     # to LangSmith, so it must be enabled consciously. Dev .env can set it True.
     LANGCHAIN_TRACING_V2: bool = False
@@ -145,8 +154,14 @@ class Settings(BaseSettings):
     # judge runs post-commit, fire-and-forget, and never blocks the learner.
     AI_EVAL_ENABLED: bool = True
     AI_EVAL_SAMPLE_RATE: float = 0.1
-    AI_EVAL_JUDGE_MODEL: str = "gpt-4.1"
-    AI_EVAL_TIMEOUT_S: float = 20.0
+    AI_EVAL_JUDGE_MODEL: str = "gpt-5"
+    # Judge runs at higher reasoning effort than the generator — judging quality
+    # is the highest-value signal and the judge is off the critical path.
+    AI_EVAL_JUDGE_REASONING_EFFORT: str = "high"
+    # Headroom for a high-effort gpt-5 judge (reasoning tokens are slow). The
+    # judge is post-commit/fire-and-forget, so a generous timeout never blocks
+    # the learner; too-tight a value just drops the ai_evaluations row.
+    AI_EVAL_TIMEOUT_S: float = 60.0
     # Mentor-note (RAG) judging sample rate (Part B Phase 3). Notes are produced
     # once per session completion — far rarer than per-activity feedback — and
     # RAG faithfulness is the highest-value bug-catcher, so judge every one.
