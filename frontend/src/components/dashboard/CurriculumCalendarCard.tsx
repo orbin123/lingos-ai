@@ -10,6 +10,7 @@ interface CurriculumCalendarCardProps {
 
 export function CurriculumCalendarCard({ preference }: CurriculumCalendarCardProps) {
   // Parse active progress
+  const courseCompleted = Boolean(preference.course_completed_at);
   const totalWeeks = preference.course_length === "48w" ? 48 : 24;
   const totalMonths = totalWeeks / 4;
   const activeMonth = Math.floor((preference.current_week - 1) / 4) + 1;
@@ -185,11 +186,16 @@ export function CurriculumCalendarCard({ preference }: CurriculumCalendarCardPro
               {/* Day Cells (Static progress blocks) */}
               {Array.from({ length: 7 }).map((_, colIdx) => {
                 const dayNum = colIdx + 1;
+                // Once the course is complete every day reads as done (all
+                // weeks unlocked) and nothing pulses as the "current" day.
                 const isCompleted =
+                  courseCompleted ||
                   weekNum < preference.current_week ||
                   (weekNum === preference.current_week && dayNum < preference.current_day_in_week);
                 const isCurrent =
-                  weekNum === preference.current_week && dayNum === preference.current_day_in_week;
+                  !courseCompleted &&
+                  weekNum === preference.current_week &&
+                  dayNum === preference.current_day_in_week;
 
                 // Color coding
                 let bg = "oklch(94% 0.02 240)"; // Upcoming/blank color

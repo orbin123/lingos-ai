@@ -478,7 +478,9 @@ function EnrolledView({
               marginBottom: 0,
             }}
           >
-            Week {preference.current_week}, Day {preference.current_day_in_week} — keep the momentum going.
+            {preference.course_completed_at
+              ? "🎉 You've completed your course — congratulations!"
+              : `Week ${preference.current_week}, Day ${preference.current_day_in_week} — keep the momentum going.`}
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>

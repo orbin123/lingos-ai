@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
@@ -17,6 +17,7 @@ import {
 
 import { api } from "@/lib/api";
 import { WS_BASE_URL } from "@/lib/api-config";
+import { authApi } from "@/lib/auth-api";
 
 import { tasksApi } from "@/lib/tasks-api";
 import {
@@ -1238,12 +1239,72 @@ function CompletedActivityRow({
   );
 }
 
+/* ── Course-completion CTA (shown after the final-day results) ────────── */
+function CourseCompletionBanner({ onView }: { onView: () => void }) {
+  return (
+    <div
+      style={{
+        marginTop: 20,
+        padding: "20px 22px",
+        borderRadius: 16,
+        background: "oklch(96% 0.05 155)",
+        border: "1px solid oklch(82% 0.1 155)",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 12,
+        textAlign: "center",
+      }}
+    >
+      <div style={{ fontSize: 30, lineHeight: 1 }}>🎉</div>
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 800,
+          color: "oklch(28% 0.12 155)",
+        }}
+      >
+        You&apos;ve completed your course!
+      </div>
+      <div style={{ fontSize: 13.5, color: "oklch(40% 0.06 200)", lineHeight: 1.6 }}>
+        That was your final lesson. Celebrate the milestone and grab your
+        certificate.
+      </div>
+      <button
+        type="button"
+        onClick={onView}
+        style={{
+          marginTop: 2,
+          padding: "12px 22px",
+          borderRadius: 14,
+          border: "none",
+          background: "#0070C4",
+          color: "white",
+          fontFamily: "inherit",
+          fontSize: 14,
+          fontWeight: 800,
+          cursor: "pointer",
+          boxShadow: "0 6px 18px rgba(0,112,196,0.22)",
+        }}
+      >
+        See your completion
+      </button>
+    </div>
+  );
+}
+
 /* ── Main page ───────────────────────────────────────────────────────── */
 export default function ChatSessionPage() {
   const params = useParams<{ sessionId: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const sessionId = params?.sessionId;
+
+  // Course completion is stamped server-side the moment the final-day session
+  // completes. Read it off /me so the results screen can offer the completion
+  // CTA; the value is refreshed when the session ends (see effect below).
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: authApi.me });
+  const courseCompleted = Boolean(me?.preference?.course_completed_at);
 
   useEffect(() => {
     if (typeof sessionId === "string" && sessionId.length > 0) {
@@ -1410,6 +1471,14 @@ export default function ChatSessionPage() {
       cancelled = true;
     };
   }, [phase, sessionId, daySessionScorecard, sessionCompletedByServer]);
+
+  // When the server confirms the session is done, refresh /me so a freshly
+  // stamped course_completed_at surfaces the completion CTA on this screen.
+  useEffect(() => {
+    if (sessionCompletedByServer) {
+      queryClient.invalidateQueries({ queryKey: ["me"] });
+    }
+  }, [sessionCompletedByServer, queryClient]);
 
   useEffect(() => {
     if (phase === "ended") return;
@@ -2491,6 +2560,10 @@ export default function ChatSessionPage() {
                 <ChatBubble role="ai">Loading your session scorecard…</ChatBubble>
               )}
             </div>
+          )}
+
+          {courseCompleted && (sessionCompletedByServer || hasFinalScorecard) && (
+            <CourseCompletionBanner onView={() => router.push("/course-complete")} />
           )}
 
           <div style={{ height: 60 }} />
