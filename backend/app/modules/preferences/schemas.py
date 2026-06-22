@@ -26,6 +26,10 @@ class UserCoursePreferenceRead(BaseModel):
     current_day_in_week: int
     current_day_started_at: datetime
     last_completed_on: date | None
+    # Stamped once when the learner finishes the final day of the course; null
+    # while still in progress. Drives the dashboard "course complete" state and
+    # the completion certificate date.
+    course_completed_at: datetime | None = None
     require_pass_to_advance: bool
     pass_threshold_pct: int = Field(..., ge=0, le=100)
 

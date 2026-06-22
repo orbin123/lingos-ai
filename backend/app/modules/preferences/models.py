@@ -110,6 +110,15 @@ class UserCoursePreference(Base, IDMixin, TimestampMixin):
         server_default=func.now(),
     )
     last_completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Set exactly once, the moment the learner completes the final day of their
+    # course (week == max_week, day 7). Null for everyone still in progress, so
+    # this is inert for existing learners. The dashboard / certificate read it
+    # to switch into the "course complete" state. Idempotent: never moved once
+    # set (a final-day restart/replay leaves the original timestamp).
+    course_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     # Pass-mark gating: when enabled the learner must clear `pass_threshold_pct`
     # on an activity before advancing, otherwise they retry it. Off by default
     # so existing learners are unaffected.

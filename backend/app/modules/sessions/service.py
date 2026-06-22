@@ -42,6 +42,7 @@ from app.modules.sessions.contracts.agent_inputs import (
 from app.modules.sessions.contracts.validation import normalize_task_content
 from app.modules.curriculum.file_source import (
     get_day_by_id as file_get_day_by_id,
+    parse_day_id,
     resolve_archetypes as file_resolve_archetypes,
     task_spec_for as file_task_spec_for,
 )
@@ -903,6 +904,7 @@ class SessionService:
         # instead of racing a hard inline timeout. See ensure_mentor_note.
         session.status = SessionStatus.COMPLETED
         session.completed_at = now
+        self._mark_course_complete_if_final(session=session, now=now)
 
         try:
             self.db.commit()
@@ -1274,6 +1276,50 @@ class SessionService:
         return session
 
     # ── advance day ────────────────────────────────────────────────
+
+    def _mark_course_complete_if_final(
+        self, *, session: DailySession, now: datetime
+    ) -> None:
+        """Stamp ``course_completed_at`` the first time a learner finishes the
+        final day of their course.
+
+        Fires only when the just-completed session is genuinely the learner's
+        final curriculum day (week == ``max_week``, day 7) AND their progress
+        pointer is actually parked there. The pointer check is what makes a
+        *preview/override* completion of the final day safe: a learner sitting
+        at week 3 who previews week 24/day 7 completes that session, but their
+        pointer is not at the end, so this never false-triggers.
+
+        Idempotent: once set, the timestamp is never moved, so a final-day
+        restart/replay (which re-runs ``complete_session``) is a no-op here.
+
+        A pure read — no flush/commit — so it never disturbs the surrounding
+        completion transaction. Every real learner has a preference row (it is
+        the source of truth for ``current_week``/``current_day``); if it is
+        somehow absent we simply cannot place the learner, so we no-op.
+        """
+        pref = self.preferences_repo.get_for_user(session.user_id)
+        if pref is None or pref.course_completed_at is not None:
+            return
+        if session.course_length != pref.course_length:
+            return
+        try:
+            _, session_week, session_day = parse_day_id(session.day_id)
+        except ValueError:
+            return
+
+        weeks = self.weeks_repo.list_for_course(pref.course_length)
+        course_cap = 24 if pref.course_length == "24w" else 48
+        max_week = min(max((w.week_number for w in weeks), default=0), course_cap)
+        if max_week <= 0:
+            return
+
+        is_final_day = session_week >= max_week and session_day >= 7
+        pointer_at_final = (
+            pref.current_week >= max_week and pref.current_day_in_week >= 7
+        )
+        if is_final_day and pointer_at_final:
+            pref.course_completed_at = now
 
     def advance_day(self, *, user_id: int) -> tuple[int, int]:
         """Move the learner's preference pointer to the next unlocked day."""
