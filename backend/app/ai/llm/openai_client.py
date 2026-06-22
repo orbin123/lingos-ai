@@ -49,13 +49,29 @@ T = TypeVar("T", bound=BaseModel)
 
 # ---------------------------------------------------------------------------
 # Defaults — single source of truth for "which model + which knobs".
-# Override per-call via constructor args if needed (e.g. lower temperature
-# for the evaluator agent in the future).
+# The chat model + reasoning effort come from settings so the whole app can be
+# retuned from env without a code change. Override per-call via constructor
+# args if needed (e.g. a different model for the judge).
 # ---------------------------------------------------------------------------
-_DEFAULT_MODEL = "gpt-4o-mini"
+_DEFAULT_MODEL = settings.OPENAI_CHAT_MODEL
+_DEFAULT_REASONING_EFFORT = settings.OPENAI_REASONING_EFFORT
 _DEFAULT_TEMPERATURE = 0.7
-_DEFAULT_TIMEOUT_S = 30.0
+# Reasoning models (gpt-5, o-series) spend output tokens "thinking" and are
+# slower than gpt-4o — 30s risked task-gen timeouts on the learner's path.
+_DEFAULT_TIMEOUT_S = 60.0
 _MAX_RETRIES = 3  # ChatOpenAI's built-in retry handles transient errors
+
+
+def _is_reasoning_model(model: str) -> bool:
+    """True for models that reject a custom `temperature`.
+
+    OpenAI reasoning models (the gpt-5 family and the o1/o3/o4 series) only
+    accept the default temperature; any explicit value 400s at the API. They
+    take a `reasoning_effort` knob instead. We detect them by id prefix so the
+    client can drop temperature and (optionally) pass reasoning_effort.
+    """
+    m = model.lower()
+    return m.startswith("gpt-5") or m.startswith(("o1", "o3", "o4"))
 
 
 class OpenAILLMClient:
@@ -70,25 +86,45 @@ class OpenAILLMClient:
         *,
         model: str = _DEFAULT_MODEL,
         temperature: float = _DEFAULT_TEMPERATURE,
+        reasoning_effort: str | None = _DEFAULT_REASONING_EFFORT,
         timeout: float = _DEFAULT_TIMEOUT_S,
         max_retries: int = _MAX_RETRIES,
         usage_sink: Callable[[UsageRecord], None] | None = None,
     ) -> None:
         self._model = model
         self._temperature = temperature
+        self._timeout = timeout
+        self._max_retries = max_retries
+        self._is_reasoning = _is_reasoning_model(model)
+        self._reasoning_effort = reasoning_effort if self._is_reasoning else None
         # Optional hook invoked with the UsageRecord after every call. Used by
         # the AIRequestLog instrumentation seam (LoggingLLMClient) to capture
         # token counts; default None keeps the client's behaviour unchanged.
         self._usage_sink = usage_sink
         # ChatOpenAI handles its own retry/backoff for transient errors.
         # We tell it how many tries; it does exponential backoff internally.
-        self._chat = ChatOpenAI(
-            model=model,
-            temperature=temperature,
-            timeout=timeout,
-            max_retries=max_retries,
-            api_key=SecretStr(settings.OPENAI_API_KEY),
-        )
+        self._chat = self._build_chat(temperature)
+
+    def _build_chat(self, temperature: float) -> ChatOpenAI:
+        """Construct a ChatOpenAI honouring the reasoning/non-reasoning split.
+
+        Reasoning models (gpt-5, o-series) reject a custom `temperature` and
+        take `reasoning_effort` instead; sending temperature 400s. So we omit
+        temperature for them and pass reasoning_effort when set. Non-reasoning
+        models keep the original behaviour (temperature passed through).
+        """
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "timeout": self._timeout,
+            "max_retries": self._max_retries,
+            "api_key": SecretStr(settings.OPENAI_API_KEY),
+        }
+        if self._is_reasoning:
+            if self._reasoning_effort:
+                kwargs["reasoning_effort"] = self._reasoning_effort
+        else:
+            kwargs["temperature"] = temperature
+        return ChatOpenAI(**kwargs)
 
     @property
     def model(self) -> str:
@@ -253,16 +289,19 @@ class OpenAILLMClient:
         ChatOpenAI is cheap to construct — fine to spin a new one when
         a per-call temperature is requested. Keeps the default instance
         pure (same temperature for the whole app).
+
+        For reasoning models (gpt-5, o-series) this is a deliberate no-op:
+        those models reject a custom temperature, so per-call overrides from
+        the evaluator/feedback/task-gen agents are silently ignored rather
+        than 400ing. Effort is governed by `reasoning_effort`, not temperature.
         """
-        if temperature is None or temperature == self._temperature:
+        if (
+            self._is_reasoning
+            or temperature is None
+            or temperature == self._temperature
+        ):
             return self._chat
-        return ChatOpenAI(
-            model=self._model,
-            temperature=temperature,
-            api_key=SecretStr(settings.OPENAI_API_KEY),
-            max_retries=_MAX_RETRIES,
-            timeout=_DEFAULT_TIMEOUT_S,
-        )
+        return self._build_chat(temperature)
 
     def _log_response_usage(self, response: Any) -> None:
         """Pull token counts off the AIMessage and emit one log line."""

@@ -9,7 +9,7 @@ proper Prometheus / DB-backed usage tracker comes in Phase 6 when we
 add per-user budget caps.
 
 Pricing (USD per 1M tokens) — keep this list small and current.
-Source: https://openai.com/pricing — last checked 2025-11.
+Source: https://openai.com/pricing — last checked 2026-06.
 
 If a model is missing here we just log tokens without cost (no crash).
 """
@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _PRICING_PER_1M: dict[str, tuple[float, float]] = {
     # model_name             (input_$, output_$)
+    "gpt-5": (1.25, 10.00),
+    "gpt-5-mini": (0.25, 2.00),
+    "gpt-5-nano": (0.05, 0.40),
+    # Legacy models kept so historical ai_request_logs / cost roll-ups resolve.
     "gpt-4o-mini": (0.15, 0.60),
     "gpt-4o": (2.50, 10.00),
     "gpt-4.1-mini": (0.40, 1.60),

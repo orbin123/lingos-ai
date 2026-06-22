@@ -46,7 +46,11 @@ def _shared_default_client() -> OpenAILLMClient:
 def _shared_judge_client() -> OpenAILLMClient:
     return OpenAILLMClient(
         model=settings.AI_EVAL_JUDGE_MODEL,
+        # temperature is inert for reasoning models (gpt-5) — the client drops
+        # it; effort is controlled by reasoning_effort instead. Kept at 0.0 so
+        # a non-reasoning judge model would still score deterministically.
         temperature=0.0,
+        reasoning_effort=settings.AI_EVAL_JUDGE_REASONING_EFFORT,
         usage_sink=record_usage,
     )
 
@@ -122,9 +126,9 @@ def build_rag_services(
 def build_judge(*, llm: ILLMClient | None = None) -> FeedbackJudge:
     """Return the production quality judge (Part B Phase 2).
 
-    Uses a *stronger* model than the generator (``AI_EVAL_JUDGE_MODEL``,
-    default ``gpt-4.1``) at temperature 0.0 to reduce self-preference bias and
-    keep scoring deterministic. The judge's own client is wrapped in a
+    Uses the ``AI_EVAL_JUDGE_MODEL`` (default ``gpt-5``) at higher reasoning
+    effort than the generator to reduce self-preference bias and keep scoring
+    sharp. The judge's own client is wrapped in a
     ``LoggingLLMClient`` tagged ``judge.feedback`` so its cost/latency is logged
     and joins the feedback call on the shared ``trace_id``. Pass ``llm`` (tests)
     to bypass wrapping — logging stays inert.
@@ -145,8 +149,8 @@ def build_judge(*, llm: ILLMClient | None = None) -> FeedbackJudge:
 def build_mentor_judge(*, llm: ILLMClient | None = None) -> MentorNoteJudge:
     """Return the production RAG mentor-note judge (Part B Phase 3).
 
-    Same stronger model (``AI_EVAL_JUDGE_MODEL``) at temperature 0.0 as
-    ``build_judge``, but scores the Coach's Note against its *retrieved* RAG
+    Same model + effort (``AI_EVAL_JUDGE_MODEL``) as ``build_judge``, but
+    scores the Coach's Note against its *retrieved* RAG
     context and adds a ``faithfulness`` axis. Its client is wrapped in a
     ``LoggingLLMClient`` tagged ``judge.mentor_note`` so the judge's own cost
     joins the mentor-note call on the shared ``trace_id``. Pass ``llm`` (tests)
