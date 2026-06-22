@@ -7,8 +7,7 @@
 - [ ] Tests added/updated for the change (or N/A with a reason).
 - [ ] **DB migration**: this PR adds/changes an ORM model → an Alembic migration
       is included **and** the model is registered in `app/models.py`. (or N/A)
-- [ ] **New env var**: added to `.env.example`, `.env.production.example`, and the
-      Environment Variable Matrix in `docs/complete_production_plan.md`. (or N/A)
+- [ ] **New env var**: added to `.env.example` and `.env.production.example`. (or N/A)
 - [ ] **OpenAPI**: routes changed → snapshot regenerated
       (`uv run python scripts/export_openapi.py`) and committed. (or N/A)
 - [ ] **Security note**: any auth/secrets/PII/CORS/cookie impact considered and
