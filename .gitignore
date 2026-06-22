@@ -34,6 +34,10 @@ dist/
 backup*.sql
 *.dump
 
+# Root-level ad-hoc/ops scripts (DR drills, dev shortcut) — kept local, not online.
+# Anchored with a leading slash so it does NOT also match backend/scripts/.
+/scripts/
+
 # Test Files
 backend/scratch
 # Ignore scripts/ contents (ad-hoc DB tools), but git must descend into the dir
@@ -41,6 +45,7 @@ backend/scratch
 # the dir itself (`backend/scripts`) would make those negations a no-op.
 backend/scripts/*
 # …but these are part of the test/CI contract, not ad-hoc tooling:
+!backend/scripts/__init__.py
 !backend/scripts/export_openapi.py
 !backend/scripts/run_evals.py
 !backend/scripts/calibrate_judge.py
