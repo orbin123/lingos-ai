@@ -32,7 +32,7 @@ function ArrowRightIcon({ className = "" }: { className?: string }) {
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-3 py-1 text-[12.5px] font-semibold text-blue-800 shadow-sm">
+    <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-3 py-1 text-[12.5px] font-semibold text-blue-800 shadow-sm">
       <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
       {children}
     </div>
@@ -99,15 +99,16 @@ export default function DiagnosisIntroPage() {
 
       <section className="relative z-10 mx-auto w-full max-w-[640px] px-4 pb-20 pt-[68px] sm:px-6">
         <div className="animate-[fadeIn_0.4s_ease] rounded-3xl border border-white/90 bg-white/90 px-5 py-8 shadow-[0_8px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl sm:px-10 sm:py-10" style={{ animationFillMode: "both" }}>
-          {/* Verified badge */}
-          <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3.5 py-1.5 text-[13px] font-semibold text-emerald-700">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100">
-              <CheckIcon className="text-emerald-600" />
-            </span>
-            Email verified
+          {/* Status badges — stacked so the two pills don't visually fuse on one row */}
+          <div className="mb-5 flex flex-col items-start gap-2.5">
+            <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3.5 py-1.5 text-[13px] font-semibold text-emerald-700">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100">
+                <CheckIcon className="text-emerald-600" />
+              </span>
+              Email verified
+            </div>
+            <Eyebrow>Next: a quick placement check</Eyebrow>
           </div>
-
-          <Eyebrow>Next: a quick placement check</Eyebrow>
           <h1 className="text-2xl font-extrabold tracking-tight text-[#0a1f44] sm:text-[28px]">
             You&apos;re in 🎉 Let&apos;s find your starting point
           </h1>
