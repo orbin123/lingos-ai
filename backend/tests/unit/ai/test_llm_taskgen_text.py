@@ -17,6 +17,10 @@ from app.ai.sessions.llm_task_generator import (
     LLMTaskGenerator,
     TaskGenOutput,
 )
+from app.modules.sessions.task_generator import (
+    is_valid_error_spotting_payload,
+    normalize_error_spotting_payload,
+)
 from app.scoring import get_archetype
 from app.tasks.schemas import FillInBlanksTask
 from app.tasks.schemas.llm_output_schemas import FillInBlanksTaskLLM
@@ -24,6 +28,17 @@ from app.tasks.schemas.llm_output_schemas import FillInBlanksTaskLLM
 # Canonical fakes (Phase 3 — moved out of this file into tests/mocks/).
 from tests.mocks.llm import FakeLLMClient
 from tests.unit.ai._llm_agent_support import _error_spotting_content
+
+
+def _error_spotting_three_categories() -> dict:
+    """Valid structure but only 3 distinct error categories (below the
+    pedagogical target of 4) — must NOT fail generation/validation."""
+    payload = _error_spotting_content()
+    # Collapse s4 + s5 onto already-used categories → {irregular_past,
+    # missing_past_auxiliary, passive_helper_missing} = 3 distinct.
+    payload["passage_sentences"][3]["error"]["error_type"] = "irregular_past"
+    payload["passage_sentences"][4]["error"]["error_type"] = "irregular_past"
+    return payload
 
 
 class TestLLMTaskGenerator:
@@ -190,6 +205,66 @@ class TestLLMTaskGenerator:
             )
         assert exc_info.value.archetype_id == "READ_ERROR_SPOT"
         assert len(fake.calls) == 3
+
+    def test_error_spotting_strict_schema_accepts_three_categories(self):
+        """Regression for the Day 2/Week 1 24w crash: <4 distinct error
+        categories is a quality miss, not a hard failure — it must validate."""
+        payload = _error_spotting_three_categories()
+        distinct = {s["error"]["error_type"] for s in payload["passage_sentences"]}
+        assert len(distinct) == 3
+
+        # Previously raised "use at least four distinct past-tense error
+        # categories"; now it validates and coerces the derived total.
+        model = ErrorSpottingTask.model_validate(payload)
+        assert model.total_errors == len(model.passage_sentences)
+
+        # The contract-level "is renderable" check must agree (or the failure
+        # just relocates to the heal/regenerate path).
+        assert is_valid_error_spotting_payload(
+            normalize_error_spotting_payload(payload)
+        )
+
+    def test_error_spotting_coerces_total_errors(self):
+        payload = _error_spotting_content()
+        payload["total_errors"] = 99
+        model = ErrorSpottingTask.model_validate(payload)
+        assert model.total_errors == 5
+
+    @pytest.mark.asyncio
+    async def test_error_spotting_generates_with_three_categories(self):
+        """End-to-end generate() must succeed for a 3-category payload."""
+        spec = get_archetype("READ_ERROR_SPOT")
+        canned = ErrorSpottingTaskLLM.model_validate(_error_spotting_three_categories())
+        fake = FakeLLMClient([canned])
+        agent = LLMTaskGenerator(fake)
+
+        generated = await agent.generate(
+            archetype=spec,
+            day_topic="Spot past tense errors",
+            explanation_brief="Past tense error spotting.",
+            cefr_level="A1",
+            sub_level=1,
+        )
+
+        assert generated.content["phase"] == "live"
+        assert generated.content["widget"] == "error_spotting"
+        assert len(fake.calls) == 1  # no wasted retries on a quality miss
+
+    def test_fill_in_blanks_coerces_total_blanks(self):
+        task = FillInBlanksTask(
+            topic="Routines",
+            instructions="Fill each blank.",
+            total_blanks=99,
+            items=[
+                {
+                    "item_id": "b1",
+                    "sentence_with_blank": "She ___ early.",
+                    "correct_answer": "wakes",
+                    "explanation": "third-person -s",
+                }
+            ],
+        )
+        assert task.total_blanks == len(task.items) == 1
 
     @pytest.mark.asyncio
     async def test_w1d1_simple_present_fill_in_blanks_calls_llm(self):

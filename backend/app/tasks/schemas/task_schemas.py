@@ -64,8 +64,8 @@ class FillInBlanksTask(GeneratedTaskBase):
 
     @model_validator(mode="after")
     def _sync_total_blanks(self) -> "FillInBlanksTask":
-        if self.total_blanks is None:
-            self.total_blanks = len(self.items)
-        if self.total_blanks != len(self.items):
-            raise ValueError("total_blanks must match the number of items")
+        # `total_blanks` is a derived count, not an independent input — coerce it
+        # to the real item count rather than rejecting a payload the widget can
+        # render fine. (A stochastic LLM that miscounts must not fail the session.)
+        self.total_blanks = len(self.items)
         return self

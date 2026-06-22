@@ -24,8 +24,10 @@ class FillInBlanksTaskLLM(FillInBlanksTask):
 
     # Narrows the base `list[BlankItem]` to the extra="forbid" item model; lists
     # are invariant so mypy flags the override even though it's intentional.
+    # Floor relaxed to 1: the prompt targets 4-5 blanks, but accepting fewer
+    # renders fine and avoids a hard failure when the LLM under-produces.
     items: list[BlankItemLLM] = Field(  # type: ignore[assignment]
-        default_factory=list, min_length=4, max_length=5
+        default_factory=list, min_length=1, max_length=5
     )
 
 

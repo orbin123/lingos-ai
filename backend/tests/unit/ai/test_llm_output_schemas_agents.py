@@ -60,17 +60,31 @@ class TestErrorSpottingSchema:
         assert task.total_errors == 5
         assert len(task.passage_sentences) == 5
 
-    def test_rejects_less_than_five_sentences(self):
+    def test_accepts_fewer_than_five_sentences(self):
+        # Exact-count is a quality target, not a render requirement — fewer
+        # sentences validate and the derived total is coerced to the real count.
         payload = _error_spotting_content()
         payload["passage_sentences"] = payload["passage_sentences"][:4]
 
-        with pytest.raises(ValidationError):
-            ErrorSpottingTask.model_validate(payload)
+        task = ErrorSpottingTask.model_validate(payload)
+        assert task.total_errors == 4
 
-    def test_rejects_low_diversity_error_types(self):
+    def test_accepts_low_diversity_error_types(self):
+        # <4 distinct categories is logged as a quality miss, not raised — a
+        # stochastic LLM output must never fail the learner's session.
         payload = _error_spotting_content()
         for sentence in payload["passage_sentences"]:
             sentence["error"]["error_type"] = "regular_past_ending"
+
+        task = ErrorSpottingTask.model_validate(payload)
+        assert task.total_errors == 5
+
+    def test_rejects_sentence_without_a_marked_error_token(self):
+        # Structural integrity stays a hard gate: the widget can't render a
+        # sentence that has no clickable error token.
+        payload = _error_spotting_content()
+        for token in payload["passage_sentences"][0]["tokens"]:
+            token["is_error"] = False
 
         with pytest.raises(ValidationError):
             ErrorSpottingTask.model_validate(payload)

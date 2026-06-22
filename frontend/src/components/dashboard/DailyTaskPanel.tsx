@@ -6,7 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 
 import type { UserCoursePreferenceRead } from "@/lib/preferences-api";
-import { getApiErrorMessage } from "@/lib/errors";
+import { getApiErrorMessage, getApiErrorCode } from "@/lib/errors";
 import { useTodaySessionPlan, useStartLearningSession } from "@/hooks/useSessionsFlow";
 import {
   sessionsApi,
@@ -278,7 +278,8 @@ const CORE_ACTIVITY_LABEL: Record<string, string> = {
   speak: "Speak",
 };
 
-function ActiveSessionBlock({
+// Exported for unit tests (retry-state rendering); used internally by the panel.
+export function ActiveSessionBlock({
   activities,
   topic,
   isPreview,
@@ -306,6 +307,14 @@ function ActiveSessionBlock({
   if (!isPreview) {
     if (sessionStatus === "in_progress" || allDone) buttonLabel = "Continue session";
   }
+
+  // A transient task-generation failure (503) — let the learner re-run the
+  // whole generation instead of dead-ending on an error message.
+  const isRetryable =
+    !!startError &&
+    (getApiErrorCode(startError) === "task_generation_failed" ||
+      (startError as AxiosError).response?.status === 503);
+  if (isRetryable) buttonLabel = "Retry session";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -373,7 +382,9 @@ function ActiveSessionBlock({
 
       {startError && (
         <p style={{ margin: 0, color: "oklch(40% 0.15 15)", fontSize: 13 }}>
-          {getApiErrorMessage(startError as AxiosError)}
+          {isRetryable
+            ? "We couldn't prepare today's lesson — tap to retry."
+            : getApiErrorMessage(startError as AxiosError)}
         </p>
       )}
 
@@ -387,13 +398,21 @@ function ActiveSessionBlock({
           padding: "13px 18px",
           borderRadius: 14,
           border: "none",
-          background: isStarting ? "oklch(68% 0.06 240)" : "#0070C4",
+          background: isStarting
+            ? "oklch(68% 0.06 240)"
+            : isRetryable
+              ? "#C0362C"
+              : "#0070C4",
           color: "white",
           fontFamily: "inherit",
           fontSize: 14,
           fontWeight: 800,
           cursor: isStarting ? "default" : "pointer",
-          boxShadow: isStarting ? "none" : "0 6px 18px rgba(0,112,196,0.22)",
+          boxShadow: isStarting
+            ? "none"
+            : isRetryable
+              ? "0 6px 18px rgba(192,54,44,0.22)"
+              : "0 6px 18px rgba(0,112,196,0.22)",
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
