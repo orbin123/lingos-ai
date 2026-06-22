@@ -1,4 +1,4 @@
-11# CLAUDE.md
+# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -17,27 +17,67 @@ LingosAI is an AI English-tutoring platform. A learner follows a multi-week curr
 uv sync                                   # install deps
 uv run alembic upgrade head               # apply migrations
 uv run uvicorn app.main:app --reload      # API at http://127.0.0.1:8000 (docs at /docs)
-uv run pytest                             # all tests
-uv run pytest tests/test_session_lifecycle.py            # single file
-uv run pytest tests/test_session_lifecycle.py::test_name # single test
-uv run ruff check .                       # lint
-uv run mypy app                           # type-check
+uv run pytest                             # all tests (CI uses this)
+uv run pytest tests/unit -q               # fast unit suite
+uv run pytest tests/integration -q        # integration suite
+uv run pytest tests/unit/sessions/test_session_planner.py            # single file
+uv run pytest tests/unit/sessions/test_session_planner.py::test_name # single test
+uv run ruff check app tests               # lint  (CI also runs `ruff format --check`)
+uv run ruff format app tests              # auto-format before pushing (format-check is blocking)
+uv run mypy app                           # type-check (app/ is mypy-clean; blocking in CI)
+uv run python scripts/export_openapi.py   # regenerate openapi.json after route changes (drift is gated)
 uv run alembic revision --autogenerate -m "msg"  # new migration
 ```
-From the repo root, `./scripts/dev-backend.sh` is a shortcut for the uvicorn command (`chmod +x` once).
+Tests live under `tests/unit/` and `tests/integration/` (the old flat `tests/test_*.py` layout is gone). On this machine, prefer `uv run python -m pytest …` — a broken global `pytest` can shadow `uv run pytest`. From the repo root, `./scripts/dev-backend.sh` is a shortcut for the uvicorn command (`chmod +x` once).
 
 ### Frontend (run from `frontend/`)
 ```bash
 npm run dev            # dev server at http://localhost:3000
 npm run build
 npm run lint
-npm run test:admin     # node --test tests/*.test.mjs  (the only JS test suite)
+npm test               # Vitest unit + integration suite (`vitest run`)
+npm run test:coverage  # Vitest + coverage (the gate CI runs)
+npx tsc --noEmit       # type-check (blocking in CI)
 ```
 
 ### Infra
 ```bash
 docker compose up -d   # Postgres + Redis (ports come from .env)
 ```
+
+## CI/CD, deployment & DCO
+
+Every change ships the same way: **branch → PR → green required checks → squash-merge to `main` → auto-deploy to production.** Never push to `main` directly — it is branch-protected and a merge is what triggers the deploy. There is no manual prod-deploy step; merging *is* the deploy.
+
+### GitHub Actions (`.github/workflows/`)
+PR-triggered jobs run on **every** PR with no `paths` filter — that's deliberate: each is a *required* status check under branch protection, and a path-filtered required check never reports on an unrelated PR and wedges the merge forever. The same jobs are `paths`-filtered on push to `main`.
+
+| Workflow | Jobs (required check names) | Gate |
+| --- | --- | --- |
+| `backend.yml` | `lint`, `types`, `unit`, `integration`, `migrations`, `coverage` | ruff check **+ `ruff format --check`**; mypy clean; unit + integration; full Alembic replay on a real Postgres 16; coverage `--cov-fail-under=73` (ratchet up, never down) |
+| `frontend.yml` | `ci` | ESLint, `tsc --noEmit`, Vitest + coverage, `next build` |
+| `contract.yml` | `openapi-drift` | regenerates `backend/openapi.json` and fails if it drifted — run `uv run python scripts/export_openapi.py` and commit after changing routes |
+| `docker.yml` | `docker-build` | backend image builds + Trivy HIGH/CRITICAL CVE scan (repo-root `.trivyignore` is the justified allowlist) |
+| `backend-curriculum.yml` | `curriculum-seed-smoke` | path-filtered pre-deploy guard: both 24w/48w calendars import + seed/composer/teacher tests |
+| `deploy.yml` | — (CD, no PR run) | the production deploy; see below |
+
+Two more required checks come from GitHub Apps, not Actions: **`DCO`** (sign-off, see below) and **`Vercel`** (frontend preview/prod deploy). `migrations` exists because the unit/integration suites use SQLite `create_all` and never exercise the real migration graph — never delete it.
+
+### Auto-deploy (`deploy.yml`)
+On push to `main` it deploys **production** automatically (manual `workflow_dispatch` can target `staging`/`production`). Backend pipeline: OIDC → build & push the backend image to ECR under the immutable `git-<sha>` tag → run `alembic upgrade head` as a one-off ECS task (abort if it fails) → seed the challenge catalog (idempotent A2Z + IELTS upserts) → snapshot the current task-def as the rollback target → ECS Fargate rolling update → wait for stable → smoke `/health/ready` with **auto-rollback** (re-point the service at the previous task-def; migrations are **forward-only and are NOT reverted**) → smoke the frontend `www` (failure surfaces a frontend outage but leaves the healthy backend untouched). The **frontend deploys separately on Vercel** on the same `main` commit. Per-environment config lives in GitHub Environments (`staging` / `production`) as variables sourced from `terraform output`. The deploy contract is documented in `docs/DEPLOY.md`; DR/rollback drill scripts live in `scripts/` (`rollback-drill.sh`, `rds-restore-drill.sh`, `verify-dr-readiness.sh`, `verify-prod-parity.sh`).
+
+### DCO sign-off — required on every commit
+A required `DCO` check (the probot DCO app) blocks any PR whose commits lack a `Signed-off-by:` trailer whose name/email **match the commit author**. Always commit with sign-off:
+```bash
+git commit -s -m "feat(scope): summary"     # -s appends the Signed-off-by trailer
+git rebase --signoff main                   # retro-fix a branch that forgot it
+```
+When Claude authors a commit, include both trailers (one per line, after a blank line):
+```
+Signed-off-by: Orbin Sunny <91816511+orbin123@users.noreply.github.com>
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+```
+Use the conventional-commit style the history follows (`feat(scope): …`, `fix(scope): …`, `chore(deps): …`). Fill in `.github/pull_request_template.md` (tests, DB-migration, new-env-var, OpenAPI-snapshot, and security-note checklist) — it mirrors the gates above.
 
 ## Environment & config
 
@@ -62,7 +102,7 @@ exceptions.py          → domain exceptions (routes translate these to HTTPExce
 
 Not every module has all layers (e.g. `responses/` is route-only; `skills/` is models + repository). Routes are registered in `app/main.py` via `include_router`. Services receive collaborators (evaluators, feedback generators, repositories) by injection so the LLM-backed implementations can be swapped for stubs in tests.
 
-The modules: `auth`, `admin`, `sessions`, `learning_session`, `curriculum`, `challenges`, `diagnosis`, `progress`, `streaks`, `preferences`, `subscriptions`, `responses`, `skills`, `personalization`, `feedback_memory`.
+The modules: `auth`, `admin`, `sessions`, `learning_session`, `curriculum`, `challenges`, `diagnosis`, `progress`, `streaks`, `preferences`, `subscriptions`, `responses`, `skills`, `personalization`, `feedback_memory`, plus the newer `feedback` (user-facing product feedback/ratings — distinct from the RAG `feedback_memory`), `reviews` (testimonials), `blog` (a small CMS with public + admin routers, media under `blog/_media`), and `contact` (contact-form submissions; route + service, no models). All routers are wired in `app/main.py`.
 
 ### Model registry — important
 `app/models.py` imports **every** ORM model from every module. This populates SQLAlchemy's registry so cross-module `relationship()` string references resolve and Alembic can discover all tables via `Base.metadata`. **When you add a new model, add it to `app/models.py`** or migrations and relationships will silently break. `Base` is defined in `app/core/database.py`; shared column mixins (`IDMixin`, `CreatedAtMixin`, `TimestampMixin`) live in `app/core/mixins.py`.
@@ -96,7 +136,7 @@ Curriculum can come from **authored Python dataclasses** in three level-band fil
 
 ### AI layer (`app/ai/`)
 - Each AI *capability* is a subpackage with the same shape: `interface.py` (abstract contract) + a concrete client (`openai_client.py`, `azure_client.py`) + `exceptions.py`, plus a `get_default_*_service()` factory. Capabilities: `llm`, `tts`, `stt`, `pronunciation` (Azure), `imagegen`, `embeddings`.
-- `app/ai/agents/` holds the prompt-driven agents (`teacher`, `evaluator`, `feedback`, `planner`, `task_generator`, `personalization`, and the `ielts_challenge/` agents — generator, evaluator, feedback, speaking evaluator). Prompts are Markdown files loaded by `prompt_loader.py` via slash-delimited names (e.g. `ielts/generator`) with `{{variable}}` placeholders rendered by `render_prompt_template` (does not interpret JSON braces).
+- `app/ai/agents/` holds the prompt-driven agents (`teacher`, `evaluator`, `feedback`, `planner`, `task_generator`, `personalization`, `relevance_classifier`). The IELTS-challenge agents live with their feature, under `app/modules/challenges/ielts_sprint/`, and load prompts from `app/ai/agents/prompts/ielts/`. Prompts are Markdown files loaded by `prompt_loader.py` via slash-delimited names (e.g. `ielts/generator`) with `{{variable}}` placeholders rendered by `render_prompt_template` (does not interpret JSON braces).
 - `app/ai/sessions/` holds the **LLM-backed session collaborators** the `SessionService` injects in prod: `llm_evaluator.py`, `llm_feedback.py`, `llm_task_generator.py`, `speaking_eval.py`, wired by `factory.py` (`build_default_agents`, `build_rag_services`). Tests swap these for stubs.
 - `app/ai/graphs/` is the LangGraph definition. The compiled graph documents the flow and is used in tests; the live chat flow is driven from the WebSocket layer, and DB writes are owned by `SessionService.submit_activity`, not by graph nodes.
 - LangSmith tracing is on by default (`LANGCHAIN_TRACING_V2=True`).
@@ -112,7 +152,7 @@ TTS audio and generated images are written to disk by `LocalBlobStorage` (`app/a
 
 ## Frontend architecture
 
-- **App Router** under `src/app/`. Route groups like `(auth)` and dynamic segments like `sessions/[sessionId]` are in use. Top-level pages include `dashboard`, `courses`, `sessions`, `task`, `challenges`, `diagnosis`, `stats`, `profile`, `settings`, plus marketing pages (`about`, `features`, `pricing`, `how-it-works`). Admin pages live under `src/app/admin/`.
+- **App Router** under `src/app/`. Route groups like `(auth)` and dynamic segments like `sessions/[sessionId]` are in use. Top-level pages include `dashboard`, `courses`, `sessions`, `task`, `challenges`, `diagnosis`, `choose-start`, `payment`, `stats`, `profile`, `settings`, plus marketing/legal pages (`about`, `features`, `pricing`, `how-it-works`, `blog`, `contact`, `privacy`, `terms`). Admin pages live under `src/app/admin/`. Sentry is wired via `instrumentation*.ts` + `sentry.*.config.ts`.
 - **API access**: one shared axios instance in `src/lib/api.ts`. It auto-attaches the JWT from `localStorage` and, on a `401` from a non-auth endpoint, clears the token and redirects to `/login`. Per-domain wrappers (`sessions-api.ts`, `auth-api.ts`, `challenges-api.ts`, `progress-api.ts`, `streak-api.ts`, `preferences-api.ts`, `subscriptions-api.ts`, `diagnosis-api.ts`, `tasks-api.ts`, `admin-api.ts`, …) build on it — add new calls to the matching `*-api.ts`, don't create new axios instances. Base URL comes from `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000`).
 - **Server state** via TanStack Query (`src/providers/query-provider.tsx`); domain hooks in `src/hooks/` (e.g. `useSessionsFlow`, `useNextTask`, `useSubmitResponse`, `useDiagnosis`, `useStreakDisplay`). **Client state** via Zustand stores in `src/store/` (`authStore`, `sessionStore`, `taskStore`, `diagnosisStore`, `streakDemoStore`).
 - **Chat UI** is component-driven: `src/components/chat/` (`ChatUI.tsx`, `ChatChrome.tsx`, `orchestrator.tsx`) with `tasks/`, `feedback/`, `teaching/`, `evaluation/` subfolders and per-widget renderers. `runtimeMapping.tsx` / `runtimeReviewMapping.tsx` / `contractTaskAdapter.ts` map backend payloads to widgets. Backend widget keys are normalized to stable snake_case by `app/modules/sessions/widget_mapping.py` — keep that mapping in sync when adding task/widget types on either side.
@@ -126,3 +166,6 @@ TTS audio and generated images are written to disk by `LocalBlobStorage` (`app/a
 - New activity *kind* → add an archetype to `app/scoring/archetypes.py` **and** a contract row in `app/modules/sessions/contracts/registry.py` (it will fail at import if you add one without the other).
 - New task/widget type → update both the backend widget mapping and the corresponding `src/components/chat/` renderer.
 - Scoring math is deterministic and lives only in `app/scoring/` — consume it, don't duplicate it. See `backend/RESTRUCTURE_DECISIONS.md` for the locked constants' rationale.
+- Changed backend routes → regenerate `backend/openapi.json` (`uv run python scripts/export_openapi.py`) and commit it, or the `openapi-drift` check fails.
+- **Ship via PR, never push to `main`.** Merging to `main` auto-deploys to production (`deploy.yml` for backend on ECS, Vercel for frontend). Get the required checks green first, run `ruff format` + `mypy` + the relevant tests locally before pushing, and keep migrations forward-only (a smoke-failure rollback re-points the service but does **not** revert migrations).
+- **Sign off every commit** (`git commit -s`) so the required `DCO` check passes — the trailer's name/email must match the author. Claude-authored commits carry both `Signed-off-by:` and `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
