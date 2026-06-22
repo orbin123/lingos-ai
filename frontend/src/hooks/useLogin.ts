@@ -29,10 +29,11 @@ export function useLogin() {
       queryClient.setQueryData(["me"], me);
       if (!me.diagnosis_completed) {
         router.push("/diagnosis");
-      } else if (me.access_state === "verified") {
-        // Diagnosis done but no trial yet — pick a plan and start it.
-        router.push("/pricing");
       } else {
+        // Diagnosis done — always land on the dashboard. Verified (no-plan)
+        // users see the NoEnrollmentView plan cards there and choose from the
+        // locked dashboard, matching the post-diagnosis result-page flow (#126).
+        // Never jump straight to /pricing.
         router.push("/dashboard");
       }
     },

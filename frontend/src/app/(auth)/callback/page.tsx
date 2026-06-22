@@ -14,6 +14,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
+import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
 export default function AuthCallbackPage() {
@@ -28,6 +29,7 @@ function AuthCallbackInner() {
   const router = useRouter();
   const params = useSearchParams();
   const setToken = useAuthStore((s) => s.setToken);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     const next = params.get("next") ?? "dashboard";
@@ -56,7 +58,14 @@ function AuthCallbackInner() {
         );
         if (cancelled) return;
         setToken(res.data.access_token);
-        router.replace(`/${next}`);
+        // Mirror useVerifyEmail (#128): drop any previous user's cached queries
+        // so the destination fetches a fresh ["me"] instead of bouncing on a
+        // stale value.
+        queryClient.clear();
+        // New Google users (backend sends next=diagnosis) get the same
+        // welcome/intro page as OTP users before the placement test.
+        const dest = next === "diagnosis" ? "/diagnosis/intro" : `/${next}`;
+        router.replace(dest);
       } catch {
         if (cancelled) return;
         router.replace("/login?error=google_failed");
@@ -66,7 +75,7 @@ function AuthCallbackInner() {
     return () => {
       cancelled = true;
     };
-  }, [params, router, setToken]);
+  }, [params, router, setToken, queryClient]);
 
   return (
     <CallbackLoading />
