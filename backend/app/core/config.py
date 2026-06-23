@@ -127,6 +127,15 @@ class Settings(BaseSettings):
     # model is a reasoning model (gpt-5 / o-series); the client drops it for
     # non-reasoning models like the gpt-4.1-mini default above.
     OPENAI_REASONING_EFFORT: str = "medium"
+    # Task generation runs on its OWN client, NOT the interactive default above.
+    # Unlike the latency-critical chat agents, task generation is not streamed and
+    # benefits from a reasoning model's think-time: gpt-5 at HIGH effort produces
+    # cleaner, single-error, on-topic task content (the temperature-equivalent
+    # lever for a reasoning model, which ignores `temperature`). Wired as a
+    # dedicated client in app/ai/sessions/factory.py; only the task generator
+    # uses it — evaluator/feedback stay on the fast non-reasoning default.
+    OPENAI_TASKGEN_MODEL: str = "gpt-5"
+    OPENAI_TASKGEN_REASONING_EFFORT: str = "high"
     # Off by default (data-residency, audit A5): tracing ships learner content
     # to LangSmith, so it must be enabled consciously. Dev .env can set it True.
     LANGCHAIN_TRACING_V2: bool = False

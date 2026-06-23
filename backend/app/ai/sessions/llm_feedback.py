@@ -17,6 +17,7 @@ from app.ai.llm.exceptions import LLMError
 from app.ai.llm.interface import ILLMClient
 from app.ai.sessions.prompts import (
     build_feedback_user_prompt,
+    compute_error_correction_wrong_items,
     compute_error_spotting_wrong_items,
     compute_listen_cloze_wrong_items,
     compute_mcq_wrong_items,
@@ -54,13 +55,15 @@ _DETERMINISTIC_SCORE_ARCHETYPES = frozenset(
     }
 )
 _MCQ_INNER_WIDGET_KEYS = {"listen_and_respond"}
+# error_correction is deliberately NOT here: it carries a per-item answer key
+# (sample_answer), so its mistakes are computed deterministically rather than
+# re-derived by the LLM (which over-counted them — the "3 vs 2" bug).
 _OPEN_ENDED_WIDGET_KEYS = {
     "open_text",
     "timed_text",
     "structured_essay",
     "speak_and_record",
     "storyboard",
-    "error_correction",
 }
 _FREQUENCY_ADVERBS = {
     "always",
@@ -132,6 +135,11 @@ class LLMFeedbackGenerator:
             widget_key in _DETERMINISTIC_WIDGET_KEYS and task_content and user_response
         ):
             confirmed_mistakes = compute_wrong_items(task_content, user_response)
+        elif widget_key == "error_correction" and task_content and user_response:
+            confirmed_mistakes = compute_error_correction_wrong_items(
+                task_content,
+                user_response,
+            )
         elif widget_key == "mcq" and task_content and user_response:
             confirmed_mistakes = compute_mcq_wrong_items(task_content, user_response)
             use_mcq_mistake_normalization = True
@@ -190,6 +198,8 @@ class LLMFeedbackGenerator:
             )
         elif widget_key == "error_spotting" and confirmed_mistakes is not None:
             mistakes = _normalize_error_spotting_mistakes(confirmed_mistakes)
+        elif widget_key == "error_correction" and confirmed_mistakes is not None:
+            mistakes = _normalize_error_correction_mistakes(confirmed_mistakes)
         elif widget_key in _OPEN_ENDED_WIDGET_KEYS:
             mistakes = _filter_open_ended_mistakes(mistakes)
 
@@ -290,6 +300,33 @@ def _normalize_error_spotting_mistakes(
                 user_wrote=user_wrote,
                 correction=correction,
                 rule=rule,
+            )
+        )
+    return mistakes
+
+
+def _normalize_error_correction_mistakes(
+    confirmed_mistakes: list[dict],
+) -> list[MistakeOutSchema]:
+    """Turn deterministic error-correction misses into learner-facing feedback.
+
+    The confirmed set is the ground truth (learner answer != sample_answer), so
+    the rendered mistakes are EXACTLY these — the LLM can no longer invent a
+    third one. An empty list (all items correct) yields no mistakes.
+    """
+    mistakes: list[MistakeOutSchema] = []
+    for item in confirmed_mistakes:
+        user_wrote = str(item.get("user_wrote") or "").strip()
+        correction = str(item.get("correct_answer") or "").strip()
+        rule = str(item.get("explanation") or item.get("rule") or "").strip()
+        if not user_wrote or not correction:
+            continue
+        mistakes.append(
+            MistakeOutSchema(
+                issue=f'"{user_wrote}" should be "{correction}".',
+                user_wrote=user_wrote,
+                correction=correction,
+                rule=rule or None,
             )
         )
     return mistakes

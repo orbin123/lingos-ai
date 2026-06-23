@@ -414,6 +414,52 @@ def compute_error_spotting_wrong_items(
     return wrong
 
 
+def compute_error_correction_wrong_items(
+    task_content: dict, user_response: dict
+) -> list[dict]:
+    """Deterministically find which error-correction items the learner got wrong.
+
+    Each item gives an ``incorrect_sentence`` to fix and a ``sample_answer`` key;
+    the learner submits a flat ``{item_id: corrected_text}`` map (the same shape
+    the generic LLM evaluator reads). We compare with sentence normalization so
+    capitalization and trailing punctuation don't count against the learner —
+    mirroring the error-correction grading in ``agents/evaluator.py`` — which
+    lets feedback cite EXACTLY the items the learner missed instead of letting
+    the LLM re-derive (and over-count) them.
+
+    Only items the learner actually answered are checked; blank answers are
+    excluded so unanswered items never surface as mistakes.
+    """
+    wrong: list[dict] = []
+    for item in task_content.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        item_id = item.get("item_id", "")
+        sample_answer = str(
+            item.get("sample_answer")
+            or item.get("correct_sentence")
+            or item.get("correction")
+            or ""
+        )
+        user_val_raw = user_response.get(item_id)
+        user_val = str(user_val_raw or "")
+        if not user_val.strip() or not sample_answer.strip():
+            continue
+        if _normalize_correction_sentence(user_val) != _normalize_correction_sentence(
+            sample_answer
+        ):
+            wrong.append(
+                {
+                    "item_id": item_id,
+                    "user_wrote": user_val_raw,
+                    "correct_answer": sample_answer,
+                    "incorrect_sentence": item.get("incorrect_sentence", ""),
+                    "explanation": _error_correction_rule_hint(item),
+                }
+            )
+    return wrong
+
+
 def build_feedback_user_prompt(
     *,
     archetype: ArchetypeSpec,
@@ -821,6 +867,34 @@ def _compact(content: dict) -> dict:
 
 def _widget_key(ui_widget: str) -> str:
     return normalize_widget_key(ui_widget)
+
+
+def _normalize_correction_sentence(text: str) -> str:
+    """Lowercase, strip trailing sentence punctuation, collapse inner whitespace.
+
+    Mirrors ``app.ai.agents.evaluator._normalize_sentence`` so the feedback's
+    wrong-item set matches how an error-correction answer would be graded as
+    correct (word order matters; capitalization and a trailing . ! ? do not).
+    """
+    s = text.strip().lower()
+    while s.endswith((".", "!", "?")):
+        s = s[:-1].rstrip()
+    return " ".join(s.split())
+
+
+def _error_correction_rule_hint(item: dict) -> str:
+    """Best-effort grammar hint for an error-correction item.
+
+    Error-correction items carry short ``watch_hints`` (e.g. "tense",
+    "agreement") rather than a full explanation; join them into a rule note,
+    falling back to any ``explanation`` field if present.
+    """
+    hints = item.get("watch_hints")
+    if isinstance(hints, (list, tuple)):
+        joined = ", ".join(str(h).strip() for h in hints if str(h).strip())
+        if joined:
+            return joined
+    return str(item.get("explanation") or "")
 
 
 # ── System-prompt accessors ────────────────────────────────────────
