@@ -12653,37 +12653,6 @@
         ]
       }
     },
-    "/diagnosis/start": {
-      "post": {
-        "description": "Prepare the current user to enter the diagnosis flow.\n\nThis supports retakes. Existing progress rows are left untouched; the\nnext diagnosis submission updates the current skill scores.",
-        "operationId": "start_diagnosis_diagnosis_start_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Response Start Diagnosis Diagnosis Start Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Start Diagnosis",
-        "tags": [
-          "diagnosis"
-        ]
-      }
-    },
     "/diagnosis/submit": {
       "post": {
         "description": "Submit diagnosis answers, compute skill scores, and return AI feedback.\n\nAuth: Bearer token required.",

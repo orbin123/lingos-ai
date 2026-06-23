@@ -67,9 +67,6 @@ export interface DiagnosisResult {
 // ── API calls ──────────────────────────────────────────────────────────────
 
 export const diagnosisApi = {
-  start: (): Promise<{ next: string }> =>
-    api.post<{ next: string }>("/diagnosis/start").then((r) => r.data),
-
   /**
    * Score a read-aloud recording with Azure Speech Pronunciation Assessment.
    * Azure does not accept WebM, so we convert the recorded blob to WAV on the

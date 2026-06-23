@@ -17,8 +17,8 @@ import {
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { authApi, type UserOut, type UserUpdateInput } from "@/lib/auth-api";
-import { diagnosisApi } from "@/lib/diagnosis-api";
 import { progressApi, type SkillScoreSnapshot } from "@/lib/progress-api";
+import { getSkillLabel, SKILL_ORDER } from "@/lib/skill-labels";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { useAuthStore } from "@/store/authStore";
 
@@ -35,25 +35,11 @@ const GOAL_OPTIONS = [
 const COUNTRY_OPTIONS = ["India", "United States", "United Kingdom", "Canada", "Australia", "Germany", "Singapore"];
 const LANGUAGE_OPTIONS = ["Hindi", "Tamil", "Malayalam", "Telugu", "Kannada", "English", "Spanish", "Arabic"];
 
-const SKILL_LABELS = [
-  "Grammar",
-  "Vocabulary",
-  "Pronunciation",
-  "Fluency",
-  "Thought Org.",
-  "Listening",
-  "Tone & Register",
-];
-
 function getInitials(name: string | undefined): string {
   if (!name) return "??";
   const parts = name.trim().split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   return name.slice(0, 2).toUpperCase();
-}
-
-function normalizeSkill(name: string) {
-  return name.toLowerCase().replace(/[_&.]/g, " ").replace(/\s+/g, " ");
 }
 
 function displayGoal(goal: string | null | undefined) {
@@ -120,12 +106,6 @@ function ProfilePageInner() {
       queryClient.setQueryData(["me"], user);
     },
   });
-  const startDiagnosisMutation = useMutation({
-    mutationFn: diagnosisApi.start,
-    onSuccess: (result) => {
-      router.push(result.next);
-    },
-  });
   const googleRelinkMutation = useMutation({
     mutationFn: authApi.googleRelinkUrl,
     onSuccess: (result) => {
@@ -177,7 +157,7 @@ function ProfilePageInner() {
               <EditProfileSection
                 key={
                   user
-                    ? `edit-${user.id}-${user.email}-${user.display_name}-${user.phone_number}-${user.country}-${user.native_language}-${user.primary_goals.join("|")}`
+                    ? `edit-${user.id}-${user.email}-${user.display_name}-${user.phone_number}-${user.country}-${user.native_language}-${user.goal ?? ""}-${user.primary_goals.join("|")}`
                     : "edit-loading"
                 }
                 isSaving={updateMutation.isPending}
@@ -197,14 +177,7 @@ function ProfilePageInner() {
                 user={user}
               />
             )}
-            {activeTab === "diagnosis" && (
-              <DiagnosisSection
-                isStartingRetake={startDiagnosisMutation.isPending}
-                onRetake={() => startDiagnosisMutation.mutate()}
-                scores={scores}
-                user={user}
-              />
-            )}
+            {activeTab === "diagnosis" && <DiagnosisSection scores={scores} />}
           </section>
         </div>
       </DashboardLayout>
@@ -321,7 +294,16 @@ function EditProfileSection({
   const [phone, setPhone] = useState(user?.phone_number ?? "");
   const [country, setCountry] = useState(user?.country ?? "");
   const [nativeLanguage, setNativeLanguage] = useState(user?.native_language ?? "");
-  const [goals, setGoals] = useState<string[]>(user?.primary_goals ?? []);
+  // Pre-select the goal chosen at signup (stored on `goal`) until the learner
+  // edits their multi-select `primary_goals`. The three signup goals map onto
+  // GOAL_OPTIONS pills, so the seeded goal renders highlighted.
+  const seededGoals =
+    user?.primary_goals && user.primary_goals.length > 0
+      ? user.primary_goals
+      : user?.goal
+        ? [displayGoal(user.goal)]
+        : [];
+  const [goals, setGoals] = useState<string[]>(seededGoals);
 
   function resetDraft() {
     setDisplayName(user?.display_name ?? user?.name ?? "");
@@ -333,7 +315,7 @@ function EditProfileSection({
     setPhone(user?.phone_number ?? "");
     setCountry(user?.country ?? "");
     setNativeLanguage(user?.native_language ?? "");
-    setGoals(user?.primary_goals ?? []);
+    setGoals(seededGoals);
   }
 
   function toggleGoal(goal: string) {
@@ -560,59 +542,39 @@ function PersonalisationSection({
   );
 }
 
-function DiagnosisSection({
-  isStartingRetake,
-  onRetake,
-  scores,
-  user,
-}: {
-  isStartingRetake: boolean;
-  onRetake: () => void;
-  scores: SkillScoreSnapshot[];
-  user: UserOut | undefined;
-}) {
+function DiagnosisSection({ scores }: { scores: SkillScoreSnapshot[] }) {
+  // Match each canonical sub-skill by its exact backend `skill_name` and render
+  // the server `display_label` (falling back to the shared label table). This is
+  // what makes "Thought Organization" (expression) and "Listening"
+  // (comprehension) resolve to their real scores instead of 0.
   const skillRows = useMemo(() => {
-    return SKILL_LABELS.map((label) => {
-      const match = scores.find((score) => normalizeSkill(label).split(" ")[0] && normalizeSkill(score.skill_name).includes(normalizeSkill(label).split(" ")[0]));
-      const current = match?.score ?? 0;
-      return { label, initial: current, current };
+    return SKILL_ORDER.map((key) => {
+      const match = scores.find((score) => score.skill_name === key);
+      return { label: match?.display_label ?? getSkillLabel(key), value: match?.score ?? 0 };
     });
   }, [scores]);
 
-  const sorted = [...skillRows].sort((a, b) => b.current - a.current);
+  const sorted = [...skillRows].sort((a, b) => b.value - a.value);
   const strongest = sorted[0]?.label ?? "No data yet";
-  const weakest = [...skillRows].sort((a, b) => a.current - b.current)[0]?.label ?? "No data yet";
+  const weakest = [...skillRows].sort((a, b) => a.value - b.value)[0]?.label ?? "No data yet";
 
   return (
     <div style={contentCardStyle}>
       <PageHeader eyebrow="YOUR BASELINE" title="Initial diagnosis" copy="Your starting point — this is where your journey began." />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12 }}>
         <SnapshotTile label="Starting CEFR level" value={cefrFromAverage(scores.length ? scores.reduce((sum, score) => sum + score.score, 0) / scores.length : 4)} />
-        <SnapshotTile label="Primary goal at signup" value={displayGoal(user?.goal)} />
         <SnapshotTile label="Strongest skill at start" value={strongest} />
         <SnapshotTile label="Weakest skill at start" value={weakest} />
       </div>
 
       <div style={{ marginTop: 28 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+        <div style={{ marginBottom: 16 }}>
           <h3 style={{ margin: 0, color: "oklch(18% 0.09 245)", fontSize: 17, fontWeight: 800 }}>Current scores</h3>
-          <span style={smallPillStyle}>then vs now</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {skillRows.map((row) => <ThenNowBar key={row.label} {...row} />)}
+          {skillRows.map((row) => <SkillScoreBar key={row.label} {...row} />)}
         </div>
       </div>
-
-      <div style={warningBoxStyle}>
-        <AlertTriangle size={18} style={{ flexShrink: 0 }} />
-        <span>
-          Retaking the diagnosis will generate 3 new test tasks. Your scores will be updated based on your performance. Your history is preserved.
-        </span>
-      </div>
-
-      <button type="button" onClick={onRetake} style={primaryButtonStyle}>
-        {isStartingRetake ? "Starting..." : "Retake diagnosis →"}
-      </button>
     </div>
   );
 }
@@ -747,16 +709,15 @@ function SnapshotTile({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ThenNowBar({ current, initial, label }: { current: number; initial: number; label: string }) {
+function SkillScoreBar({ label, value }: { label: string; value: number }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 7 }}>
         <span style={{ color: "oklch(30% 0.07 240)", fontSize: 13, fontWeight: 750 }}>{label}</span>
-        <span style={{ color: "oklch(48% 0.06 240)", fontSize: 12 }}>{initial.toFixed(1)} → {current.toFixed(1)}</span>
+        <span style={{ color: "oklch(48% 0.06 240)", fontSize: 12 }}>{value.toFixed(1)}</span>
       </div>
       <div style={{ position: "relative", height: 11, borderRadius: 999, background: "oklch(92% 0.018 245)", overflow: "hidden" }}>
-        <div style={{ position: "absolute", inset: 0, width: `${Math.min(initial * 10, 100)}%`, background: "rgba(80,120,200,0.2)" }} />
-        <div style={{ position: "absolute", inset: 0, width: `${Math.min(current * 10, 100)}%`, background: "oklch(52% 0.18 240)", borderRadius: 999 }} />
+        <div style={{ position: "absolute", inset: 0, width: `${Math.min(value * 10, 100)}%`, background: "oklch(52% 0.18 240)", borderRadius: 999 }} />
       </div>
     </div>
   );
@@ -950,18 +911,6 @@ const infoBoxStyle: CSSProperties = {
   padding: 14,
 };
 
-const warningBoxStyle: CSSProperties = {
-  display: "flex",
-  gap: 10,
-  margin: "28px 0 16px",
-  borderRadius: 8,
-  background: "oklch(95% 0.06 88)",
-  color: "oklch(42% 0.12 70)",
-  fontSize: 13,
-  lineHeight: 1.55,
-  padding: 14,
-};
-
 const oauthErrorBannerStyle: CSSProperties = {
   display: "flex",
   gap: 10,
@@ -973,13 +922,4 @@ const oauthErrorBannerStyle: CSSProperties = {
   fontWeight: 700,
   lineHeight: 1.55,
   padding: 14,
-};
-
-const smallPillStyle: CSSProperties = {
-  borderRadius: 999,
-  background: "oklch(92% 0.035 245)",
-  color: "oklch(42% 0.14 240)",
-  fontSize: 11,
-  fontWeight: 800,
-  padding: "5px 9px",
 };
