@@ -112,14 +112,20 @@ class Settings(BaseSettings):
 
     # AI / LLM
     OPENAI_API_KEY: str
-    # Default chat model for ALL generation agents (task generator, feedback,
-    # teacher, evaluator, planner, personalization, RAG mentor notes, IELTS +
-    # diagnosis agents). One knob flips the whole app. `gpt-5` is a reasoning
-    # model: it ignores `temperature` (only the default is accepted), so the
-    # client drops any per-call temperature override for reasoning models.
-    OPENAI_CHAT_MODEL: str = "gpt-5"
-    # Reasoning effort for the generation client: minimal | low | medium | high.
-    # `medium` balances quality vs. latency on the learner's critical path.
+    # Default chat model for the INTERACTIVE agents on the learner's critical
+    # path (teacher, evaluator, feedback, planner, personalization, RAG mentor
+    # notes, IELTS + diagnosis agents). `gpt-4.1-mini` is a NON-reasoning model:
+    # it returns first tokens in ~1s (the streamed teaching turn needs that — a
+    # reasoning model's think-then-generate latency blew past the teaching
+    # stream timeout and silently fell back) and it HONORS `temperature`, so the
+    # teacher's 0.4 / evaluator's 0.2 / feedback's 0.4 actually take effect.
+    # Task generation and the quality judge deliberately stay on a reasoning
+    # model (gpt-5) where think-time improves output — they're wired separately
+    # (OPENAI_TASKGEN_MODEL / AI_EVAL_JUDGE_MODEL), not from this default.
+    OPENAI_CHAT_MODEL: str = "gpt-4.1-mini"
+    # Reasoning effort: minimal | low | medium | high. Only sent when the chosen
+    # model is a reasoning model (gpt-5 / o-series); the client drops it for
+    # non-reasoning models like the gpt-4.1-mini default above.
     OPENAI_REASONING_EFFORT: str = "medium"
     # Off by default (data-residency, audit A5): tracing ships learner content
     # to LangSmith, so it must be enabled consciously. Dev .env can set it True.

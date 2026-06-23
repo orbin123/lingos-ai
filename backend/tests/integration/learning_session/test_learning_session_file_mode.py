@@ -1590,3 +1590,127 @@ async def test_resume_announces_completion_when_no_pending_activity(
     assert not any(m.payload_kind == "task" for m in messages)
     text = " ".join(m.content or "" for m in messages)
     assert "Today's activities are complete" in text
+
+
+@pytest.mark.asyncio
+async def test_teaching_runs_multiple_turns_then_redirects_offtopic(
+    monkeypatch,
+) -> None:
+    """Phase 1 end-to-end: once the teacher actually responds, the multi-turn
+    machinery takes over. Two relevant non-ready answers produce two DISTINCT
+    teaching turns with no activity delivered; an off-topic reply is redirected
+    rather than advancing. (Turn 1 only reaches this machinery because the
+    streaming short-circuit no longer fires — see test_teaching_stream.py.)"""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.session_repo = MagicMock()
+
+    session = SimpleNamespace(
+        session_id="chat-multi",
+        user_id=7,
+        phase="teaching",
+        understanding_confirmed=False,
+        messages=[
+            {
+                "role": "ai",
+                "content": (
+                    "With I, use the base verb: 'I work.' "
+                    "Give me one sentence about your routine."
+                ),
+                "type": "chat",
+            }
+        ],
+    )
+    service._load_session = MagicMock(return_value=session)
+    service._enrich_state_with_profile = MagicMock()
+
+    # State is rederived from the (mutated) session each turn so the transcript
+    # accumulates across the three WebSocket messages.
+    def _state_from_row(row):  # noqa: ANN001
+        return {
+            "phase": "teaching",
+            "topic": "the simple present",
+            "messages": list(row.messages),
+            "daily_plan": {},
+        }
+
+    service._state_from_row = _state_from_row
+
+    # Advancing to a practice activity during teaching is a failure here.
+    service._next_pending_attempt = MagicMock(
+        side_effect=AssertionError("must not advance to an activity during teaching")
+    )
+
+    def _apply_update(row, update):  # noqa: ANN001
+        if "messages" in update:
+            row.messages = update["messages"]
+        if "phase" in update:
+            row.phase = update["phase"]
+
+    service._apply_update = _apply_update
+
+    # Stub the teaching turn to emit DISTINCT content per call and persist it,
+    # exactly as the real _stream_teaching_turn does.
+    turns: list[str] = []
+
+    async def _fake_teaching(row, st):  # noqa: ANN001
+        content = f"Teaching turn {len(turns) + 1}: good — one more short sentence?"
+        turns.append(content)
+        msgs = list(st.get("messages", []))
+        msgs.append({"role": "ai", "content": content, "type": "chat"})
+        st["messages"] = msgs
+        row.messages = msgs
+        yield WSOutgoingMessage(
+            type="chat_stream_end", role="assistant", content=content
+        )
+
+    service._stream_teaching_turn = _fake_teaching
+
+    async def _fake_chat_text(text):  # noqa: ANN001
+        yield WSOutgoingMessage(type="chat_stream_end", role="assistant", content=text)
+
+    service._stream_chat_text = _fake_chat_text
+
+    # The relevance classifier flags only the football reply as off-topic.
+    async def _classify(*, topic, current_step, learner_reply):  # noqa: ANN001
+        verdict = "OFF_TOPIC" if "football" in learner_reply.lower() else "RELEVANT"
+        return SimpleNamespace(verdict=verdict)
+
+    monkeypatch.setattr(
+        "app.modules.learning_session.service.classify_reply_relevance",
+        _classify,
+    )
+
+    async def _drive(text: str) -> list[WSOutgoingMessage]:
+        return [
+            msg
+            async for msg in service.process_message_stream(
+                "chat-multi",
+                WSIncomingMessage(type="user_message", content=text),
+            )
+        ]
+
+    out1 = await _drive("She walks to school")
+    out2 = await _drive("He plays tennis in the evening")
+
+    teaching_ends = [
+        m.content
+        for m in (out1 + out2)
+        if m.type == "chat_stream_end" and "Teaching turn" in (m.content or "")
+    ]
+    # Two distinct teaching turns happened, before any activity.
+    assert len(teaching_ends) == 2
+    assert teaching_ends[0] != teaching_ends[1]
+
+    # An off-topic reply is redirected, not advanced.
+    out3 = await _drive("let's talk about football instead")
+
+    # Still teaching; the last persisted turn is a tagged redirect.
+    assert session.phase == "teaching"
+    assert session.messages[-1].get("redirect") is True
+    # The redirect streamed back as plain chat — no task widget was delivered.
+    assert any(m.type == "chat_stream_end" for m in out3)
+    assert all(m.widget is None for m in out3)
+
+    # The activity-advance path was never taken across all three turns.
+    service._next_pending_attempt.assert_not_called()
