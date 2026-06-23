@@ -211,24 +211,34 @@ async def test_generate_structured_raises_on_parsing_error(monkeypatch):
 
 
 def test_build_default_agents_shares_one_inner_client():
-    """Repeated factory calls must reuse the process-wide client singleton;
-    only the cheap per-agent LoggingLLMClient wrappers are rebuilt."""
+    """Repeated factory calls must reuse the process-wide client singletons;
+    only the cheap per-agent LoggingLLMClient wrappers are rebuilt.
+
+    Evaluator + feedback share the fast non-reasoning default client; the task
+    generator rides its OWN reasoning-model client (gpt-5 high effort), so it must
+    NOT share the default inner client.
+    """
     from app.ai.sessions import factory
 
     factory._shared_default_client.cache_clear()
+    factory._shared_taskgen_client.cache_clear()
     try:
         eval_a, fb_a, gen_a = factory.build_default_agents()
         eval_b, fb_b, gen_b = factory.build_default_agents()
 
         inner_a = eval_a.llm._inner
-        # Same inner client across agents within a call…
+        # Evaluator + feedback share the default inner client within a call…
         assert fb_a.llm._inner is inner_a
-        assert gen_a.llm._inner is inner_a
         # …and across calls.
         assert eval_b.llm._inner is inner_a
+        # The task generator uses a SEPARATE (reasoning-model) inner client.
+        assert gen_a.llm._inner is not inner_a
+        assert gen_a.llm._inner is gen_b.llm._inner
+        assert gen_a.llm._inner is factory._shared_taskgen_client()
         # Wrappers stay per-call/per-agent so agent_name attribution holds.
         assert eval_a.llm is not eval_b.llm
         assert eval_a.llm._agent_name == "session.evaluator"
         assert gen_a.llm._agent_name == "session.task_generator"
     finally:
         factory._shared_default_client.cache_clear()
+        factory._shared_taskgen_client.cache_clear()

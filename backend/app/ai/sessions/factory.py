@@ -43,6 +43,24 @@ def _shared_default_client() -> OpenAILLMClient:
 
 
 @lru_cache(maxsize=1)
+def _shared_taskgen_client() -> OpenAILLMClient:
+    """Dedicated client for the task generator.
+
+    Task generation deliberately stays on a reasoning model (gpt-5) at HIGH
+    effort while the interactive agents (evaluator/feedback/teacher) ride the
+    fast non-reasoning default — generation quality benefits from think-time,
+    and it isn't on the latency-critical streaming path. ``temperature`` is not
+    passed: the client drops it for reasoning models anyway, so effort is the
+    only lever here.
+    """
+    return OpenAILLMClient(
+        model=settings.OPENAI_TASKGEN_MODEL,
+        reasoning_effort=settings.OPENAI_TASKGEN_REASONING_EFFORT,
+        usage_sink=record_usage,
+    )
+
+
+@lru_cache(maxsize=1)
 def _shared_judge_client() -> OpenAILLMClient:
     return OpenAILLMClient(
         model=settings.AI_EVAL_JUDGE_MODEL,
@@ -72,10 +90,14 @@ def build_default_agents(
     Pass `llm` to override the default OpenAI client (mainly for tests
     or for swapping providers in environment-specific code paths).
 
-    Each collaborator gets the same underlying client wrapped in a
-    ``LoggingLLMClient`` tagged with its own ``agent_name`` so every call is
-    recorded to ``ai_request_logs`` (see Part B Phase 1). When ``llm`` is
-    overridden (tests), no wrapping happens — logging stays inert.
+    The evaluator and feedback generator share the fast non-reasoning default
+    client; the task generator gets its OWN reasoning-model client
+    (``_shared_taskgen_client``, gpt-5 at high effort) — generation quality
+    benefits from think-time and it's off the latency-critical streaming path.
+    Each collaborator wraps its client in a ``LoggingLLMClient`` tagged with its
+    own ``agent_name`` so every call is recorded to ``ai_request_logs`` (see
+    Part B Phase 1). When ``llm`` is overridden (tests), no wrapping happens —
+    logging stays inert.
     """
     if llm is not None:
         return (
@@ -86,6 +108,7 @@ def build_default_agents(
 
     client = _shared_default_client()
     model = client.model
+    taskgen_client = _shared_taskgen_client()
     return (
         LLMEvaluator(
             LoggingLLMClient(client, agent_name="session.evaluator", model=model)
@@ -94,7 +117,11 @@ def build_default_agents(
             LoggingLLMClient(client, agent_name="session.feedback", model=model)
         ),
         LLMTaskGenerator(
-            LoggingLLMClient(client, agent_name="session.task_generator", model=model)
+            LoggingLLMClient(
+                taskgen_client,
+                agent_name="session.task_generator",
+                model=taskgen_client.model,
+            )
         ),
     )
 

@@ -107,6 +107,76 @@ class TestComputeWrongItems:
         assert wrong[0]["correct_answer"] == "had"
 
 
+class TestComputeErrorCorrectionWrongItems:
+    """Deterministic answer-key checking for error-correction items.
+
+    The learner submits a flat ``{item_id: corrected_text}`` map; each item's
+    ``sample_answer`` is the key. Comparison ignores case and trailing
+    punctuation (sentence normalization), mirroring the grading intent.
+    """
+
+    def _task(self):
+        return {
+            "widget": "error_correction",
+            "items": [
+                {
+                    "item_id": "e1",
+                    "incorrect_sentence": "She walk to work.",
+                    "sample_answer": "She walked to work.",
+                    "watch_hints": ["tense"],
+                },
+                {
+                    "item_id": "e2",
+                    "incorrect_sentence": "They was happy.",
+                    "sample_answer": "They were happy.",
+                    "watch_hints": ["agreement"],
+                },
+                {
+                    "item_id": "e3",
+                    "incorrect_sentence": "He go home yesterday.",
+                    "sample_answer": "He went home yesterday.",
+                    "watch_hints": ["irregular past"],
+                },
+            ],
+        }
+
+    def test_only_unfixed_items_are_flagged(self):
+        from app.ai.sessions.prompts import compute_error_correction_wrong_items
+
+        user_response = {
+            "e1": "She walk to work.",  # unchanged → wrong
+            "e2": "They were happy.",  # fixed → correct
+            "e3": "He went home yesterday.",  # fixed → correct
+        }
+        wrong = compute_error_correction_wrong_items(self._task(), user_response)
+        assert [w["item_id"] for w in wrong] == ["e1"]
+        assert wrong[0]["user_wrote"] == "She walk to work."
+        assert wrong[0]["correct_answer"] == "She walked to work."
+        # watch_hints become the rule hint.
+        assert wrong[0]["explanation"] == "tense"
+
+    def test_case_and_trailing_punctuation_insensitive(self):
+        from app.ai.sessions.prompts import compute_error_correction_wrong_items
+
+        user_response = {
+            "e1": "she walked to work",  # no capital, no period → still correct
+            "e2": "  They Were Happy!  ",  # spacing + casing + ! → still correct
+            "e3": "He went home yesterday.",
+        }
+        assert compute_error_correction_wrong_items(self._task(), user_response) == []
+
+    def test_blank_answer_not_flagged(self):
+        from app.ai.sessions.prompts import compute_error_correction_wrong_items
+
+        user_response = {
+            "e1": "",
+            "e2": "They were happy.",
+            "e3": "He went home yesterday.",
+        }
+        wrong = compute_error_correction_wrong_items(self._task(), user_response)
+        assert not any(w["item_id"] == "e1" for w in wrong)
+
+
 class TestFeedbackConfirmedMistakes:
     """Tests that the feedback generator threads confirmed_mistakes into the prompt
     for fill_in_blanks and that open-text widgets are unaffected."""
@@ -183,6 +253,46 @@ class TestFeedbackConfirmedMistakes:
         assert '"b2"' in confirmed_section
         # b4 (correct answer "drink" for "they") must NOT appear in the confirmed section.
         assert '"b4"' not in confirmed_section
+
+    @pytest.mark.asyncio
+    async def test_error_correction_injects_confirmed_wrong_answers(self):
+        """error_correction is no longer open-ended: the prompt must carry the
+        deterministic confirmed set (real misses only), not the open-ended block."""
+        spec = get_archetype("WRITE_ERROR_CORR")
+        fake = FakeLLMClient([self._canned_feedback(spec)])
+        agent = LLMFeedbackGenerator(fake)
+
+        await agent.generate(
+            archetype=spec,
+            evaluation=self._eval(),
+            user_response={
+                "e1": "She walk to work.",  # wrong (unchanged)
+                "e2": "They were happy.",  # correct
+            },
+            task_content={
+                "widget": "error_correction",
+                "items": [
+                    {
+                        "item_id": "e1",
+                        "incorrect_sentence": "She walk to work.",
+                        "sample_answer": "She walked to work.",
+                        "watch_hints": ["tense"],
+                    },
+                    {
+                        "item_id": "e2",
+                        "incorrect_sentence": "They was happy.",
+                        "sample_answer": "They were happy.",
+                        "watch_hints": ["agreement"],
+                    },
+                ],
+            },
+        )
+
+        prompt = fake.calls[0]["user_prompt"]
+        assert "open-ended feedback mode" not in prompt.lower()
+        confirmed_section = prompt.lower().split("confirmed wrong answers", 1)[1]
+        assert '"e1"' in confirmed_section
+        assert '"e2"' not in confirmed_section
 
     @pytest.mark.asyncio
     async def test_open_text_does_not_inject_confirmed_mistakes(self):
