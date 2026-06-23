@@ -26,10 +26,24 @@ from app.ai.llm.openai_client import OpenAILLMClient, _is_reasoning_model
         ("gpt-4o-mini", False),
         ("gpt-4o", False),
         ("gpt-4.1", False),
+        # The interactive default (teacher/evaluator/feedback) post GPT-5
+        # migration: non-reasoning, so its tuned temperature is honored.
+        ("gpt-4.1-mini", False),
     ],
 )
 def test_is_reasoning_model(model: str, expected: bool) -> None:
     assert _is_reasoning_model(model) is expected
+
+
+def test_teacher_default_model_honours_temperature() -> None:
+    """The teacher rides the shared default client at temperature 0.4; on the
+    non-reasoning gpt-4.1-mini that value must actually reach the API (on a
+    reasoning model it would be silently dropped)."""
+    client = OpenAILLMClient(model="gpt-4.1-mini", temperature=0.4)
+    assert client._is_reasoning is False
+    assert client._chat.temperature == 0.4
+    assert client._reasoning_effort is None
+    assert client._chat.reasoning_effort is None
 
 
 def test_reasoning_model_omits_temperature_and_sets_effort() -> None:

@@ -331,9 +331,15 @@ _READINESS_PROMPT_PATTERNS = (
     re.compile(r"\bbegin\s+the\s+practice\s+(task|exercise|activity)\b"),
 )
 
-_TEACHING_STREAM_FIRST_CHUNK_TIMEOUT_S = 8.0
+# First-chunk budget for a streamed tutor turn. The teacher buffers the WHOLE
+# LLM response (and may make one validation-retry call) before yielding its
+# single chunk, so this must cover a full generate (+ retry), not just first
+# token. The old 8s assumed gpt-4o-mini's ~1-2s first token; it was too tight
+# and a slow turn silently fell back to the canned "Say 'ready'…" message. 30s
+# is defense-in-depth on top of routing the teacher to the fast gpt-4.1-mini.
+_TEACHING_STREAM_FIRST_CHUNK_TIMEOUT_S = 30.0
 _TEACHING_STREAM_CHUNK_TIMEOUT_S = 20.0
-_FOLLOWUP_STREAM_FIRST_CHUNK_TIMEOUT_S = 8.0
+_FOLLOWUP_STREAM_FIRST_CHUNK_TIMEOUT_S = 30.0
 _FOLLOWUP_STREAM_CHUNK_TIMEOUT_S = 20.0
 
 
