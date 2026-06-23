@@ -19,7 +19,6 @@ from app.modules.auth.dependencies import (
     require_verified,
 )
 from app.modules.auth.models import User
-from app.modules.auth.repository import UserProfileRepository
 from app.modules.diagnosis.diagnosis_agents.evaluators import PASSAGES
 from app.modules.diagnosis.exceptions import (
     DiagnosisAlreadyCompleted,
@@ -40,26 +39,6 @@ from app.modules.diagnosis.service import DiagnosisService
 router = APIRouter(dependencies=[Depends(require_learner), Depends(require_verified)])
 
 logger = logging.getLogger(__name__)
-
-
-@router.post("/start", status_code=status.HTTP_200_OK)
-def start_diagnosis(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> dict[str, str]:
-    """Prepare the current user to enter the diagnosis flow.
-
-    This supports retakes. Existing progress rows are left untouched; the
-    next diagnosis submission updates the current skill scores.
-    """
-    profile_repo = UserProfileRepository(db)
-    profile = profile_repo.get_by_user_id(current_user.id)
-    if profile is None:
-        profile = profile_repo.create_default(current_user.id)
-
-    profile.diagnosis_completed = False
-    db.commit()
-    return {"next": "/diagnosis"}
 
 
 @router.post(
