@@ -327,46 +327,34 @@ class SessionService:
                 for activity in plan
             ]
 
-        # Generate all task content concurrently (LLM/TTS/imagegen only — no
-        # DB access), then persist sequentially: the sync SQLAlchemy Session
-        # must not be touched from concurrent coroutines. A single failure
-        # cancels the siblings and propagates, so nothing is committed —
-        # the same all-or-nothing semantics as the old sequential loop.
-        gen_t0 = time.perf_counter()
-        sem = asyncio.Semaphore(_TASKGEN_CONCURRENCY)
-
-        async def _timed_generate(item: dict) -> tuple[dict, float]:
-            async with sem:
-                t = time.perf_counter()
-                content = await self._generate_attempt_content(**item)
-                return content, (time.perf_counter() - t) * 1000
-
-        results = await asyncio.gather(*(_timed_generate(i) for i in items))
-        task_gen_total_ms = (time.perf_counter() - gen_t0) * 1000
-
+        # Lazy task generation: start returns instantly. Each attempt is
+        # persisted with a *placeholder* task_content that carries (a) the
+        # generation recipe (``__pending_taskgen``) and (b) the deterministic
+        # activity contract — so the blueprint and the position-reserving
+        # skeletons resolve before any LLM runs. No task LLM is called here.
+        # Real content is filled by a fire-and-forget background worker and, as
+        # a safety net, on demand at delivery time via
+        # ``prepare_attempt_for_delivery`` → ``ensure_attempt_content``.
         persist_t0 = time.perf_counter()
-        for item, (content, _ms) in zip(items, results):
+        for item in items:
             self._persist_attempt(
                 session=session,
                 archetype_id=item["archetype_id"],
                 sequence=item["sequence"],
                 is_mandatory=item["is_mandatory"],
-                content=content,
+                content=self._pending_task_content(item),
             )
 
         self.db.commit()
         self.db.refresh(session)
+        self._schedule_lazy_taskgen(session_id=session.session_id, user_id=user_id)
         log.info(
             "session_start_timing",
             user_id=user_id,
             day_id=day_id,
             file_authored=file_day_override is not None,
             activity_count=len(items),
-            per_activity_ms=[
-                {"archetype_id": item["archetype_id"], "ms": round(ms)}
-                for item, (_content, ms) in zip(items, results)
-            ],
-            task_gen_total_ms=round(task_gen_total_ms),
+            lazy_taskgen=True,
             persist_ms=round((time.perf_counter() - persist_t0) * 1000),
             total_ms=round((time.perf_counter() - t0) * 1000),
         )
@@ -411,6 +399,10 @@ class SessionService:
 
         No-op when the existing content is already valid for its archetype.
         """
+        # Lazy-gen safety net: if the learner reached this task before the
+        # background worker filled it, generate it now (awaited). The chat shows
+        # the task skeleton during this wait. No-op once content is real.
+        attempt = await self.ensure_attempt_content(attempt)
         spec = get_archetype(attempt.archetype_id)
         content = dict(attempt.task_content or {})
         healed = normalize_task_content(spec.archetype_id, content)
@@ -1522,6 +1514,117 @@ class SessionService:
             task_spec=task_spec,
         )
 
+    # ── lazy task generation ───────────────────────────────────────
+
+    def _pending_task_content(self, item: dict) -> dict:
+        """Build a placeholder ``task_content`` for an as-yet-ungenerated attempt.
+
+        Carries the deterministic activity contract (so the blueprint and the
+        position-reserving skeletons resolve without an LLM call) plus the
+        generation recipe under ``__pending_taskgen``. Replaced wholesale by
+        ``ensure_attempt_content`` when the real content is generated.
+        """
+        spec = get_archetype(item["archetype_id"])
+        content = self._attach_activity_contract(
+            content={},
+            archetype=spec,
+            sequence=item["sequence"],
+            is_mandatory=item["is_mandatory"],
+            task_spec=item.get("task_spec"),
+        )
+        content["__pending_taskgen"] = dict(item)
+        content["widget"] = spec.ui_widget
+        return content
+
+    async def ensure_attempt_content(self, attempt: ActivityAttempt) -> ActivityAttempt:
+        """Turn a lazy-gen placeholder into real generated content.
+
+        No-op unless the attempt is still ``PENDING`` and still carries a
+        ``__pending_taskgen`` recipe. This is the single place that fills a
+        placeholder — used by the background worker (``fill_pending_task_content``)
+        and on demand by ``prepare_attempt_for_delivery`` when the learner
+        reaches a task the worker hasn't filled yet.
+        """
+        recipe = (attempt.task_content or {}).get("__pending_taskgen")
+        if not isinstance(recipe, dict) or attempt.status is not AttemptStatus.PENDING:
+            return attempt
+
+        generated = await self._generate_attempt_content(**recipe)
+
+        # The re-read + assign + commit + refresh below is one synchronous
+        # critical section (no ``await``), so concurrent fills of *different*
+        # attempts on this same DB session can't interleave. Re-read first: a
+        # separate DB session (the learner submitting) may have advanced this
+        # attempt while we were generating — never clobber graded content.
+        self.db.refresh(attempt)
+        recipe_after = (attempt.task_content or {}).get("__pending_taskgen")
+        if not isinstance(recipe_after, dict) or attempt.status is not (
+            AttemptStatus.PENDING
+        ):
+            return attempt
+        attempt.task_content = generated
+        self.db.commit()
+        self.db.refresh(attempt)
+        return attempt
+
+    async def fill_pending_task_content(self, *, session_id: str, user_id: int) -> None:
+        """Generate real content for every placeholder attempt of a session.
+
+        Runs in the background right after ``start_session`` (on its own DB
+        session — see ``_run_lazy_taskgen_worker``). Generations run concurrently
+        under the ``_TASKGEN_CONCURRENCY`` semaphore; each attempt is committed
+        independently by ``ensure_attempt_content``. Best-effort: a single
+        attempt's failure is logged and skipped — the on-demand delivery seam
+        regenerates anything the worker missed.
+        """
+        session = self._load_owned(session_id=session_id, user_id=user_id)
+        pending = [
+            attempt
+            for attempt in self.attempts_repo.list_for_session(session.id)
+            if attempt.status is AttemptStatus.PENDING
+            and isinstance((attempt.task_content or {}).get("__pending_taskgen"), dict)
+        ]
+        if not pending:
+            return
+
+        sem = asyncio.Semaphore(_TASKGEN_CONCURRENCY)
+
+        async def _fill(attempt: ActivityAttempt) -> None:
+            async with sem:
+                await self.ensure_attempt_content(attempt)
+
+        results = await asyncio.gather(
+            *(_fill(attempt) for attempt in pending),
+            return_exceptions=True,
+        )
+        failed = sum(1 for r in results if isinstance(r, BaseException))
+        if failed:
+            log.warning(
+                "lazy_taskgen_partial",
+                session_id=session_id,
+                failed=failed,
+                total=len(pending),
+            )
+
+    def _schedule_lazy_taskgen(self, *, session_id: str, user_id: int) -> None:
+        """Fire-and-forget background fill of placeholder task content.
+
+        Mirrors ``_schedule_post_completion_rag``: the worker opens a fresh
+        ``SessionLocal`` (never touches the request/WebSocket ``self.db``) and
+        reuses the *same* injected agents, so test stubs stay in force.
+        """
+        task = asyncio.create_task(
+            _run_lazy_taskgen_worker(
+                session_id=session_id,
+                user_id=user_id,
+                evaluator=self.evaluator,
+                feedback_generator=self.feedback_generator,
+                task_generator=self.task_generator,
+            )
+        )
+        self._pending_rag_tasks.append(task)
+        task.add_done_callback(self._discard_pending_rag_task)
+
     def _persist_attempt(
         self,
         *,
@@ -1778,6 +1881,46 @@ async def _run_post_completion_rag_worker(
     except Exception:
         log.warning(
             "post_completion_rag_worker_failed",
+            session_id=session_id,
+            exc_info=True,
+        )
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def _run_lazy_taskgen_worker(
+    *,
+    session_id: str,
+    user_id: int,
+    evaluator: Evaluator,
+    feedback_generator: FeedbackGenerator,
+    task_generator: TaskGenerator,
+) -> None:
+    """Background worker (own DB session) that fills placeholder task content.
+
+    Reuses the *same* injected agents as the scheduling service (so test stubs
+    stay in force) but on a fresh ``SessionLocal`` — the request/WebSocket
+    ``self.db`` must never be touched from a background task. Best-effort: a
+    failure is logged and dropped; the on-demand delivery seam covers any gap.
+    """
+    from app.core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        service = SessionService(
+            db,
+            evaluator=evaluator,
+            feedback_generator=feedback_generator,
+            task_generator=task_generator,
+        )
+        await service.fill_pending_task_content(
+            session_id=session_id,
+            user_id=user_id,
+        )
+    except Exception:
+        log.warning(
+            "lazy_taskgen_worker_failed",
             session_id=session_id,
             exc_info=True,
         )
