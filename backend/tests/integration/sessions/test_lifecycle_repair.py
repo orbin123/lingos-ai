@@ -181,9 +181,13 @@ class TestAttemptDeliveryRepair:
             for a in session.attempts
             if ARCHETYPE_REGISTRY[a.archetype_id].core_activity == "listen"
         )
-        original = dict(listening.task_content)
+        # Lazy gen: the first delivery fills the placeholder with valid content.
+        listening = await service.prepare_attempt_for_delivery(listening)
+        filled = dict(listening.task_content)
+        assert "__pending_taskgen" not in filled
+        # A second delivery of already-valid content is a no-op.
         repaired = await service.prepare_attempt_for_delivery(listening)
-        assert repaired.task_content == original
+        assert repaired.task_content == filled
 
     @pytest.mark.asyncio
     async def test_speaking_attempt_without_prompt_is_repaired_from_source_spec(
