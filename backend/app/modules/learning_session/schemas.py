@@ -84,7 +84,7 @@ class StartSessionResponse(BaseModel):
 class WSIncomingMessage(BaseModel):
     """Message shape sent FROM the frontend chat composer."""
 
-    type: str  # "user_message" | "task_submission" | "follow_up_action"
+    type: str  # "user_message" | "task_submission" | "follow_up_action" | "ping"
     content: Optional[str] = None
     answers: Optional[dict] = None
     action: Optional[str] = None
@@ -93,7 +93,7 @@ class WSIncomingMessage(BaseModel):
 class WSOutgoingMessage(BaseModel):
     """Message shape sent FROM the backend back to the frontend."""
 
-    type: str  # "chat_message" | "chat_stream_*" | "ui_event" | "error"
+    type: str  # "chat_message" | "chat_stream_*" | "ui_event" | "error" | "pong"
     role: Optional[str] = None
     content: Optional[str] = None
     stream_id: Optional[str] = None

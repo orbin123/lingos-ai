@@ -40,7 +40,7 @@ function isAuthEndpoint(url: string): boolean {
 // One refresh in flight at a time — concurrent 401s await the same promise.
 let refreshPromise: Promise<string> | null = null;
 
-function refreshAccessToken(): Promise<string> {
+export function refreshAccessToken(): Promise<string> {
     refreshPromise ??= axios
         // Bare axios (not `api`) so this call skips the interceptors.
         .post<{ access_token: string }>(
