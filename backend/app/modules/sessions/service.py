@@ -118,17 +118,6 @@ log = structlog.get_logger(__name__)
 # max(activities).
 _TASKGEN_CONCURRENCY = 4
 
-# Process-lived strong references to in-flight fire-and-forget background tasks
-# (lazy task prefill, post-completion RAG, etc.). The event loop only keeps a
-# *weak* reference to a Task, so without a strong ref here the whole
-# task→done-callback→SessionService→list→task cycle becomes collectable the
-# moment the scheduling service goes out of scope — and the chat layer builds a
-# *transient* SessionService per request (see ``_make_v2_session_service``) that
-# is dropped as soon as ``start_session`` returns. That GC race silently killed
-# lazy task prefill mid-generation. Tasks remove themselves on completion via
-# ``_discard_pending_rag_task``.
-_BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
-
 
 class EvaluationPhase(NamedTuple):
     """First phase of a submit: grading is done, feedback is not yet generated.
@@ -1124,7 +1113,8 @@ class SessionService:
                 user_id=user_id,
             )
         )
-        self._track_background(task)
+        self._pending_rag_tasks.append(task)
+        task.add_done_callback(self._discard_pending_rag_task)
 
     def _schedule_rag_delete(
         self,
@@ -1146,7 +1136,8 @@ class SessionService:
                 delete_summary=delete_summary,
             )
         )
-        self._track_background(task)
+        self._pending_rag_tasks.append(task)
+        task.add_done_callback(self._discard_pending_rag_task)
 
     def _schedule_ai_eval(
         self,
@@ -1175,7 +1166,8 @@ class SessionService:
                 feedback=feedback,
             )
         )
-        self._track_background(task)
+        self._pending_rag_tasks.append(task)
+        task.add_done_callback(self._discard_pending_rag_task)
 
     def _schedule_mentor_note_eval(
         self,
@@ -1204,23 +1196,10 @@ class SessionService:
                 today_activities=today_activities,
             )
         )
-        self._track_background(task)
-
-    def _track_background(self, task: asyncio.Task[None]) -> None:
-        """Hold a strong reference to a fire-and-forget background task.
-
-        Registers the task both on the instance (for in-process bookkeeping) and
-        in the module-level ``_BACKGROUND_TASKS`` set so it survives even after
-        this (often transient) service is garbage-collected — otherwise the
-        event loop's weak ref lets the task die mid-flight. The done-callback
-        removes it from both.
-        """
         self._pending_rag_tasks.append(task)
-        _BACKGROUND_TASKS.add(task)
         task.add_done_callback(self._discard_pending_rag_task)
 
     def _discard_pending_rag_task(self, task: asyncio.Task[None]) -> None:
-        _BACKGROUND_TASKS.discard(task)
         try:
             self._pending_rag_tasks.remove(task)
         except ValueError:
@@ -1607,10 +1586,6 @@ class SessionService:
         ]
         if not pending:
             return
-        # Generate in delivery order: the soonest-needed attempt is admitted to
-        # the concurrency semaphore first, so the learner's *next* task finishes
-        # first even when there are more placeholders than semaphore slots.
-        pending.sort(key=lambda attempt: attempt.sequence)
 
         sem = asyncio.Semaphore(_TASKGEN_CONCURRENCY)
 
@@ -1647,7 +1622,8 @@ class SessionService:
                 task_generator=self.task_generator,
             )
         )
-        self._track_background(task)
+        self._pending_rag_tasks.append(task)
+        task.add_done_callback(self._discard_pending_rag_task)
 
     def _persist_attempt(
         self,
