@@ -6,9 +6,13 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, LogOut, Settings, User } from "lucide-react";
 import type { UserOut } from "@/lib/auth-api";
-import type { ActivityGridCell } from "@/lib/streak-api";
 import { StreakCelebration } from "@/components/streak/StreakCelebration";
 import { useStreakDisplay } from "@/hooks/useStreakDisplay";
+import {
+  buildLastSevenDays,
+  type DayState,
+  type StreakWeekDay,
+} from "@/lib/streak-week-grid";
 
 interface NavbarProps {
   user: UserOut | undefined;
@@ -28,43 +32,6 @@ function getInitials(name: string | undefined): string {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
   return name.slice(0, 2).toUpperCase();
-}
-
-// Maps a single backend activity_grid cell to the navbar popup's
-// per-day "state" — done | today | miss | future | frozen.
-type DayState = "done" | "today" | "miss" | "future" | "frozen";
-
-interface PopupDay {
-  d: string; // weekday letter
-  n: number; // day-of-month
-  st: DayState;
-}
-
-const WEEKDAY_LETTER = ["S", "M", "T", "W", "T", "F", "S"] as const;
-
-function buildLastSevenDays(
-  grid: ActivityGridCell[],
-  todayIso: string | null,
-): PopupDay[] {
-  // The backend grid is ascending and always 91 cells; the last 7 are the
-  // most recent week (oldest → today). Each cell's `date` is YYYY-MM-DD in
-  // the user's timezone, so we parse with `T00:00:00` to avoid UTC drift.
-  const slice = grid.slice(-7);
-  return slice.map((cell) => {
-    const parts = cell.date.split("-").map((n) => Number.parseInt(n, 10));
-    const localDate = new Date(parts[0], parts[1] - 1, parts[2]);
-    const isToday = todayIso !== null && cell.date === todayIso;
-    let st: DayState;
-    if (cell.frozen_protected) st = "frozen";
-    else if (isToday) st = cell.completed ? "done" : "today";
-    else if (cell.completed) st = "done";
-    else st = "miss";
-    return {
-      d: WEEKDAY_LETTER[localDate.getDay()],
-      n: localDate.getDate(),
-      st,
-    };
-  });
 }
 
 function FlameIcon() {
@@ -171,7 +138,7 @@ function StreakPill() {
     return gridData.activity_grid[gridData.activity_grid.length - 1]?.date ?? null;
   }, [gridData]);
 
-  const days: PopupDay[] = useMemo(
+  const days: StreakWeekDay[] = useMemo(
     () =>
       gridData ? buildLastSevenDays(gridData.activity_grid, todayIso) : [],
     [gridData, todayIso],
@@ -220,12 +187,13 @@ function StreakPill() {
 
   return (
     <div style={{ position: "relative" }} ref={popoverRef}>
-      {showAutoCelebration && display.autoAnimationType && (
+      {showAutoCelebration && display.autoAnimationType && days.length > 0 && (
         <StreakCelebration
           streak={streak}
           best={best}
           animationType={display.autoAnimationType}
           variant={display.celebrationVariant}
+          weekDays={days}
           onClose={() => display.refetch()}
         />
       )}

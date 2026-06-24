@@ -4,14 +4,20 @@ import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AnimationType } from "@/lib/streak-api";
+import { streakApi } from "@/lib/streak-api";
+import {
+  buildPreviewWeekDays,
+  type StreakWeekDay,
+} from "@/lib/streak-week-grid";
 
 type StreakCelebrationVariant = "default" | "on_fire";
-import { streakApi } from "@/lib/streak-api";
 
 interface Props {
   streak: number;
   best: number;
   animationType: AnimationType;
+  /** Last 7 days from the streak API (same source as the navbar popover). */
+  weekDays?: StreakWeekDay[];
   /** Demo panel: do not persist animation-seen on the server */
   preview?: boolean;
   variant?: StreakCelebrationVariant;
@@ -129,6 +135,7 @@ export function StreakCelebration({
   streak,
   best,
   animationType,
+  weekDays: weekDaysProp,
   preview = false,
   variant = "default",
   onClose,
@@ -239,12 +246,11 @@ export function StreakCelebration({
   );
 
   const off = isThaw ? 1.5 : 0;
-  const dayLetters = ["M", "T", "W", "T", "F", "S", "S"];
-  const dayNums = [28, 29, 30, 1, 2, 3, 4];
-  const litArr = isThaw
-    ? [false, false, false, false, true, false, false]
-    : Array.from({ length: 7 }, (_, i) => i < Math.min(displayStreak, 7));
-  const todayIdx = 4;
+  const weekDays = useMemo(() => {
+    if (weekDaysProp && weekDaysProp.length > 0) return weekDaysProp;
+    if (preview) return buildPreviewWeekDays();
+    return [];
+  }, [weekDaysProp, preview]);
   const eyebrowText =
     isThaw || animationType === "rekindle"
       ? "Streak rekindled"
@@ -447,16 +453,16 @@ export function StreakCelebration({
         <div className="celebrate-msg">{message}</div>
 
         <div className="celebrate-week">
-          {dayLetters.map((d, i) => (
+          {weekDays.map((day, i) => (
             <div
-              key={`${d}-${dayNums[i]}-${i}`}
-              className={`cw-cell ${litArr[i] ? "lit" : ""} ${
-                i === todayIdx ? "today" : ""
-              }`}
+              key={day.date}
+              className={`cw-cell ${day.st === "done" ? "lit" : ""} ${
+                day.st === "frozen" ? "frozen" : ""
+              } ${day.isToday ? "today" : ""}`}
               style={{ animationDelay: `${1.3 + off + i * 0.07}s` }}
             >
-              <span className="cw-d">{d}</span>
-              <span className="cw-num">{dayNums[i]}</span>
+              <span className="cw-d">{day.d}</span>
+              <span className="cw-num">{day.n}</span>
             </div>
           ))}
         </div>
@@ -760,6 +766,13 @@ const CELEBRATION_CSS = `
     color: white;
     border-color: rgba(255,200,120,0.55);
     box-shadow: 0 6px 18px rgba(255,120,20,0.45), inset 0 1px 0 rgba(255,255,255,0.35);
+  }
+
+  .cw-cell.frozen {
+    background: linear-gradient(135deg, #7dc8ff, #bfe5ff);
+    color: white;
+    border-color: rgba(125,200,255,0.55);
+    box-shadow: 0 6px 18px rgba(125,200,255,0.35), inset 0 1px 0 rgba(255,255,255,0.35);
   }
 
   .cw-cell.today::after {
