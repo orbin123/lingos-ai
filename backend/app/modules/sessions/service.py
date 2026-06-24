@@ -17,8 +17,9 @@ from __future__ import annotations
 import asyncio
 import random
 import time
+from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import uuid4
 
 import structlog
@@ -116,6 +117,27 @@ log = structlog.get_logger(__name__)
 # pressure while still collapsing wall time from sum(activities) to roughly
 # max(activities).
 _TASKGEN_CONCURRENCY = 4
+
+
+class EvaluationPhase(NamedTuple):
+    """First phase of a submit: grading is done, feedback is not yet generated.
+
+    Yielded by :meth:`SessionService.submit_activity_phased` so the WebSocket
+    layer can emit the score the instant grading finishes, before the (slower)
+    feedback generation. The ``ActivityEvaluation`` row is added to the session
+    but **not yet committed** (the single commit happens in the feedback phase).
+    """
+
+    attempt: ActivityAttempt
+    evaluation: ActivityEvaluation
+
+
+class FeedbackPhase(NamedTuple):
+    """Second phase of a submit: feedback is ready and the transaction is
+    committed (eval + feedback + streak in one commit, exactly as the legacy
+    single-shot submit)."""
+
+    feedback: ActivityFeedback
 
 
 def _validate_agent_input(model_cls, **fields) -> None:
@@ -534,26 +556,43 @@ class SessionService:
     ) -> tuple[ActivityAttempt, ActivityEvaluation, ActivityFeedback]:
         """Public entry point. Stamps one correlation ``trace_id`` on this submit
         so every LLM call it triggers (evaluator, feedback) shares a trace in
-        ``ai_request_logs``, then delegates to the implementation. Reuses the
-        ambient ``trace_id`` stamped by ``TraceIDMiddleware`` when present so
-        logs, cost and quality all join on one id; mints a fresh one when called
-        outside an HTTP request (e.g. tests)."""
+        ``ai_request_logs``, then drains the phased generator into the legacy
+        ``(attempt, evaluation, feedback)`` triple — no behaviour change for
+        non-streaming callers (REST route + tests). Reuses the ambient
+        ``trace_id`` stamped by ``TraceIDMiddleware`` when present so logs, cost
+        and quality all join on one id; mints a fresh one when called outside an
+        HTTP request (e.g. tests). The WebSocket layer iterates
+        :meth:`submit_activity_phased` directly so it can emit the score before
+        feedback is ready."""
         existing = get_eval_context()
         token = set_eval_context(
             trace_id=existing.trace_id or uuid4().hex, user_id=user_id
         )
         try:
-            return await self._submit_activity_inner(
+            attempt: ActivityAttempt | None = None
+            evaluation: ActivityEvaluation | None = None
+            feedback: ActivityFeedback | None = None
+            async for phase in self.submit_activity_phased(
                 session_id=session_id,
                 user_id=user_id,
                 sequence=sequence,
                 user_response=user_response,
                 now=now,
+            ):
+                if isinstance(phase, EvaluationPhase):
+                    attempt, evaluation = phase.attempt, phase.evaluation
+                else:
+                    feedback = phase.feedback
+            assert (
+                attempt is not None and evaluation is not None and feedback is not None
+            ), (
+                "submit_activity_phased must yield both an evaluation and a feedback phase"
             )
+            return attempt, evaluation, feedback
         finally:
             reset_eval_context(token)
 
-    async def _submit_activity_inner(
+    async def submit_activity_phased(
         self,
         *,
         session_id: str,
@@ -561,8 +600,26 @@ class SessionService:
         sequence: int,
         user_response: dict | None,
         now: datetime | None = None,
-    ) -> tuple[ActivityAttempt, ActivityEvaluation, ActivityFeedback]:
-        """Persist response, run evaluator + feedback generator, store results."""
+    ) -> AsyncGenerator[EvaluationPhase | FeedbackPhase, None]:
+        """Persist response, run evaluator + feedback generator, store results —
+        in two phases that share **one** DB transaction and **one** commit.
+
+        Yields ``EvaluationPhase`` the instant grading finishes (the
+        ``ActivityEvaluation`` row is added but **not** committed), then
+        ``FeedbackPhase`` once feedback is generated, the streak is recorded, and
+        the single ``commit()`` lands. The WebSocket layer emits the score event
+        between the two yields so the learner sees the score immediately.
+
+        Trace context: the public ``submit_activity`` wrapper sets the eval
+        context for non-streaming callers; the WebSocket caller is already
+        wrapped by ``process_message_stream``'s per-message ``trace_id``. So both
+        LLM calls share one trace in every path; this generator does not manage
+        the eval context itself.
+
+        Replay guard: ``attempt.status`` flips to ``EVALUATED`` only at the final
+        commit, so a re-submit between phases re-enters cleanly; if the feedback
+        phase throws, nothing is committed and the attempt stays re-deliverable.
+        """
         now = now or datetime.now(timezone.utc)
         session = self._load_owned(session_id=session_id, user_id=user_id)
         self._guard_open(session)
@@ -587,7 +644,7 @@ class SessionService:
         # Lookup file-authored overrides for evaluator and feedback.
         file_overrides = self._file_overrides_for_day(session.day_id)
 
-        # Run the evaluator.
+        # ── Phase 1: evaluate ──────────────────────────────────────────
         _validate_agent_input(
             EvaluatorAgentInput,
             archetype_id=attempt.archetype_id,
@@ -614,7 +671,11 @@ class SessionService:
         )
         self.evaluations_repo.add(evaluation)
 
-        # Run the feedback generator.
+        # Grading is done — hand the score to the caller before generating
+        # feedback (no commit yet; the single commit lands in phase 2).
+        yield EvaluationPhase(attempt, evaluation)
+
+        # ── Phase 2: feedback (+ streak, single commit) ────────────────
         _validate_agent_input(
             FeedbackAgentInput,
             archetype_id=attempt.archetype_id,
@@ -679,6 +740,9 @@ class SessionService:
         attempt.status = AttemptStatus.EVALUATED
 
         # Streak: first evaluated activity per local calendar day (same TX).
+        # Kept here, right before the single commit, so its concurrent-double-
+        # fire rollback path (streaks/service.py) has the same transaction scope
+        # as the legacy single-shot submit.
         from app.modules.streaks.service import StreakService
 
         StreakService(self.db).record_in_same_tx(
@@ -723,7 +787,7 @@ class SessionService:
                 },
             )
 
-        return attempt, evaluation, feedback
+        yield FeedbackPhase(feedback)
 
     # ── complete ───────────────────────────────────────────────────
 
