@@ -98,6 +98,25 @@ export function TaskWidgetFrame({
   );
 }
 
+/**
+ * True when `node` would render visible, non-whitespace content. Empty or
+ * whitespace-only strings count as "no content" — most task widgets pass
+ * `{task.grammarRule}` straight through, so an absent rule arrives here as `""`.
+ */
+function hasRuleContent(node: ReactNode): boolean {
+  if (node === null || node === undefined || typeof node === "boolean") {
+    return false;
+  }
+  if (typeof node === "string") {
+    return node.trim().length > 0;
+  }
+  if (Array.isArray(node)) {
+    return node.some(hasRuleContent);
+  }
+  // Numbers (including 0) and React elements/fragments render something.
+  return true;
+}
+
 export function RuleCallout({
   label,
   children,
@@ -105,6 +124,13 @@ export function RuleCallout({
   label: string;
   children: ReactNode;
 }) {
+  // Hide the whole callout when there is no rule to show. Most widgets render
+  // `<RuleCallout>{task.grammarRule}</RuleCallout>` unconditionally, so an empty
+  // or whitespace rule would otherwise draw a blank labelled box (e.g. the empty
+  // "CORRECTION RULE" card on error-correction tasks).
+  if (!hasRuleContent(children)) {
+    return null;
+  }
   return (
     <div className="tw-rule-callout">
       <div className="tw-rule-icon">

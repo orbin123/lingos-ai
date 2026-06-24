@@ -88,3 +88,35 @@ Screenshot `tasks_eval_feedback_distorted.png`: an error task where grading mark
 - **S2 (pre‑delivery quality gate):** if gpt‑5/high still lets multi‑error/off‑topic sentences through, add a judge‑backed structural gate (`factory._shared_judge_client`) that rejects+regenerates bad error tasks. Belt‑and‑suspenders; not required for the demo.
 - **Dead debug cruft:** `llm_task_generator.py` has `_agent_debug_log()` (a Cursor `# region agent log` block) that writes to `.cursor/debug-dfa507.log` on every listening‑task generation, swallowing all exceptions. It's leftover agent‑debugging instrumentation and should be removed (flagged as a separate task).
 - **error‑correction score determinism** (see "next session must know") — optional consistency improvement.
+
+---
+
+## Phase 3 — Empty "Correction rule" box
+
+**Session date:** 2026‑06‑24
+**Branch:** `fix/empty-correction-rule-card` (off `main` — #135 + #136 already merged, so no stacking needed)
+**PR:** https://github.com/orbin123/lingos-ai/pull/137
+
+### What changed & why
+Screenshot `correction_rule_empty.png`: error‑correction tasks rendered a blank orange **CORRECTION RULE** card with no text. Root cause confirmed: ~30 task widgets render `<RuleCallout label=…>{task.grammarRule}</RuleCallout>` **unconditionally**, and the error‑correction LLM output schema carries **no rule field**, so `task.grammarRule` arrives as `""` and the component still drew an empty labelled box. (The generic `runtimeMapping.tsx:144` path already guarded with `grammarRule && …`; the per‑widget callers didn't.)
+
+Fix = the plan's recommended **step 1, frontend‑only**: guard inside `RuleCallout` itself (in `TaskWidgetFrame.tsx`) — return `null` when its children are empty/whitespace via a small `hasRuleContent(node)` helper (handles `""`, whitespace, `null`/`undefined`/boolean, and recurses arrays; real strings / numbers / elements render). One change fixes **every** widget at once without deleting the rule for tasks that *do* carry one. Did **not** do the optional backend step (adding `grammar_rule_to_practice` to `ErrorCorrectionTask`) — deferred below.
+
+### Files changed
+- `frontend/src/components/chat/tasks/task_widgets/TaskWidgetFrame.tsx` — new private `hasRuleContent()` helper + an early `return null` guard in `RuleCallout`.
+- `frontend/tests/unit/components/RuleCallout.test.tsx` *(new)* — `RuleCallout` renders null for `""`/whitespace/nullish, renders for real content; `ErrorCorrectionTaskWidget` with empty `grammarRule` shows no card, with a real rule shows it. (Tests live under `frontend/tests/**`, not colocated — see `vitest.config.ts` `include`.)
+- `docs/Final_fixes/AGENT_WALKTHROUGH.md` — this entry (bundled into the code PR; docs‑only PRs to `main` are blocked).
+
+### How verified (proof)
+- Frontend gates all green: `npm run lint` → **0 errors** (89 pre‑existing warnings, none in the changed files); `npx tsc --noEmit` → **exit 0**; `npm test` → **23 files / 114 tests pass** (incl. the 6 new); `npm run build` → **Compiled successfully**, exit 0.
+- **Live browser proof** (this is a purely visual frontend fix, so unlike Phases 1–2 it *was* feasible without the backend): rendered the real `ErrorCorrectionTaskWidget` via a throwaway dev page (`npm run dev`), one instance with empty `grammarRule` and one with a real rule. Accessibility snapshot + screenshot confirm the empty case jumps straight from the task pills to the question — **no orange card** — while the real‑rule control still shows `CORRECTION RULE` + its text. No console errors. The throwaway page was deleted before committing (`git status` clean of it; gate runs reflect the committed tree).
+- No backend routes changed → **no OpenAPI/Alembic step**.
+
+### What the next session must know
+- **Only Phase 4 (WebSocket resilience) remains.** It's `config.py`/`factory.py`‑independent and branches cleanly off `main` once #137 merges. It's frontend‑heavy (`frontend/src/app/task/chat/[sessionId]/page.tsx`) + a small backend ping/pong handler (`learning_session/router.py`); see the plan's Phase 4 for the four layered fixes (heartbeat, universal reconnect, token refresh on reconnect, "Reload session" CTA).
+- This PR moved the empty/whitespace guard into `RuleCallout`, so the per‑widget external guards on `ListenCloze`/`ListenDictation` and the generic `runtimeMapping.tsx:144` are now redundant (harmless — they short‑circuit before an already‑safe component). No need to touch them.
+- The fix is generic: **any** widget passing an empty `grammarRule` now hides its callout, not just error‑correction.
+
+### Deferred follow‑ups
+- **Optional Phase 3 step 2 (populate the rule):** add `grammar_rule_to_practice: str | None = None` to `ErrorCorrectionTask` (`backend/app/ai/sessions/llm_task_generator.py:272`); the projection already maps it (`projection.py:163‑165`). Would show a real one‑line rule instead of hiding the card. Not required for the bug; skipped to keep this the smallest, lowest‑risk PR.
+- **Dead debug cruft** (carried over from Phase 2): `llm_task_generator.py` `_agent_debug_log()` writes to `.cursor/debug-dfa507.log` and swallows exceptions — should be removed in a separate cleanup.
