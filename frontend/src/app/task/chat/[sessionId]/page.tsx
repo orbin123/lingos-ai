@@ -36,6 +36,7 @@ import {
 } from "@/lib/hooks/useVoiceRecorder";
 import { markDailyChatEntered, markScorecardViewed } from "@/lib/daily-session-entry";
 import {
+  CoachSkeleton,
   TaskChatLoadingSkeleton,
   type TaskChatLoadingType,
 } from "@/components/chat/TaskChatSkeletons";
@@ -267,6 +268,52 @@ function sequenceFromMeta(payload: Record<string, unknown> | undefined): number 
   if (meta && typeof meta.current_task_index === "number") return meta.current_task_index + 1;
   const direct = payload?.sequence;
   return typeof direct === "number" ? direct : null;
+}
+
+function activitySequence(activity: RuntimeActivityContract): number {
+  return Number(activity.sequence ?? 0);
+}
+
+/**
+ * Deterministic label for the task skeleton that holds the *next* activity's
+ * slot. Reads the blueprint's ordered activities and the just-completed
+ * sequence so the skeleton's section marker matches the label the real task
+ * event will render (`WIDGET_SECTION_LABEL`), falling back to a broad
+ * skill-bucket label from the archetype id.
+ */
+function nextActivitySkeletonLabel(
+  blueprint: RuntimeBlueprint | null,
+  currentSequence: number | null,
+): string {
+  const activities = blueprint?.activities ?? [];
+  if (!activities.length) return "Practice task";
+  const sorted = [...activities].sort((a, b) => activitySequence(a) - activitySequence(b));
+  const next =
+    currentSequence === null
+      ? sorted[0]
+      : (sorted.find((a) => activitySequence(a) > currentSequence) ?? sorted[sorted.length - 1]);
+  if (!next) return "Practice task";
+
+  const rawWidget = String(next.task_widget ?? "");
+  if (rawWidget) return WIDGET_SECTION_LABEL[normalizeWidgetKey(rawWidget)];
+
+  const raw = String(next.archetype_id ?? next.activity ?? "").toUpperCase();
+  if (raw.includes("LISTEN")) return "Listening task";
+  if (raw.includes("SPEAK")) return "Speaking task";
+  if (raw.includes("WRIT")) return "Writing task";
+  if (raw.includes("READ")) return "Reading task";
+  return "Practice task";
+}
+
+/** True when `sequence` is the highest-sequence activity in the blueprint. */
+function isLastActivitySequence(
+  blueprint: RuntimeBlueprint | null,
+  sequence: number | null,
+): boolean {
+  const activities = blueprint?.activities ?? [];
+  if (!activities.length || sequence === null) return false;
+  const maxSeq = Math.max(...activities.map(activitySequence));
+  return sequence >= maxSeq;
 }
 
 const RETRY_ACTIVITY_ACTION = "Retry activity";
@@ -1363,6 +1410,9 @@ export default function ChatSessionPage() {
   const pendingSendsRef = useRef<WSOutgoing[]>([]);
   const eventsRef = useRef<ChatEvent[]>(events);
   const runtimeBlueprintRef = useRef<RuntimeBlueprint | null>(null);
+  // Mirrors `currentSequence` so the stable (`[]`-dep) WS handler can detect
+  // when the *just-graded* activity is the last one (→ "completing" skeleton).
+  const currentSequenceRef = useRef<number | null>(null);
   // Set when a restart/retry intentionally wipes the transcript so the next
   // WebSocket open clears non-chat events instead of preserving them.
   const fullResetRef = useRef(false);
@@ -1377,6 +1427,10 @@ export default function ChatSessionPage() {
   useEffect(() => {
     eventsRef.current = events;
   }, [events]);
+
+  useEffect(() => {
+    currentSequenceRef.current = currentSequence;
+  }, [currentSequence]);
 
   // Hydrate phase + lesson meta from the REST snapshot on mount so a returning
   // learner lands on the correct step without a teaching flash. The WebSocket
@@ -1873,9 +1927,14 @@ export default function ChatSessionPage() {
         return;
       }
       if (msg.widget === "pronunciation_result") {
-        setLoadingType(null);
+        const seq = sequenceFromMeta(msg.payload);
+        // Pronunciation is a single combined card; if it's the final activity,
+        // hold the completion (final scorecard + coach) skeletons next.
+        setLoadingType(
+          isLastActivitySequence(runtimeBlueprintRef.current, seq) ? "completing" : null,
+        );
         const payload = msg.payload as unknown as PronunciationResultPayload;
-        setCurrentSequence(sequenceFromMeta(msg.payload));
+        setCurrentSequence(seq);
         setEvents((prev) => [
           ...prev,
           { kind: "section", tone: "score", label: "Pronunciation assessment" },
@@ -1904,7 +1963,15 @@ export default function ChatSessionPage() {
         return;
       }
       if (msg.widget === "feedback_card" || payloadKind === "feedback") {
-        setLoadingType(null);
+        // After the last activity's feedback, hold the completion skeletons
+        // (final scorecard + coach) until the server emits those events. The
+        // graded sequence comes from the scorecard event that always precedes
+        // feedback (mirrored into currentSequenceRef).
+        setLoadingType(
+          isLastActivitySequence(runtimeBlueprintRef.current, currentSequenceRef.current)
+            ? "completing"
+            : null,
+        );
         const payload = msg.payload as unknown as FeedbackPayload;
         setEvents((prev) => [
           ...prev,
@@ -2087,7 +2154,10 @@ export default function ChatSessionPage() {
   const send = useCallback((payload: WSOutgoing) => {
     // This local loading phase mirrors WebSocket waits only; backend session phase remains authoritative.
     if (payload.type === "task_submission") {
-      setLoadingType("feedback_loading");
+      // Score arrives first (backend emits the scorecard the moment grading
+      // finishes — Workstream A), so reserve the score slot now; the scorecard
+      // event advances this to the feedback skeleton.
+      setLoadingType("evaluation_loading");
     } else if (payload.type === "follow_up_action") {
       setLoadingType(
         payload.action.trim().toLowerCase() === "next activity"
@@ -2302,7 +2372,6 @@ export default function ChatSessionPage() {
   const hasActiveAiStream = events.some(
     (evt) => evt.kind === "chat" && evt.role === "ai" && evt.streaming,
   );
-  const hasFeedback = events.some((evt) => evt.kind === "feedback" || evt.kind === "pronunciation");
   // The compact completed-activity rows are a *resume* affordance. Once the
   // live transcript already shows result widgets (the learner has been working
   // in this session), suppress the rows so a mid-session reconnect — which
@@ -2315,12 +2384,18 @@ export default function ChatSessionPage() {
       evt.kind === "pronunciation" ||
       evt.kind === "final_scorecard",
   );
+  // The score/feedback/completion skeletons don't need a result-existence
+  // guard: each real event's handler advances `loadingType` atomically when it
+  // appends its widget, so the trailing skeleton is replaced in place. Only the
+  // teacher skeleton needs suppression — it's set on connect and an active
+  // stream bubble already covers that slot. (A global result check would
+  // wrongly suppress every activity after the first, since the transcript is
+  // append-only and keeps prior results.)
   const visibleLoadingType: TaskChatLoadingType =
-    loadingType === "teacher_loading" && hasActiveAiStream
-      ? null
-      : loadingType === "feedback_loading" && hasFeedback
-        ? null
-        : loadingType;
+    loadingType === "teacher_loading" && hasActiveAiStream ? null : loadingType;
+  // Deterministic label for the trailing task skeleton (next activity in the
+  // blueprint), so its section marker matches the real task event that replaces it.
+  const skeletonTaskLabel = nextActivitySkeletonLabel(runtimeBlueprintRef.current, currentSequence);
   const hasLiveTask = events.some((evt) => evt.kind === "task");
   const hasFinalScorecard = events.some((evt) => evt.kind === "final_scorecard");
   const showScrollToDayResults =
@@ -2559,6 +2634,10 @@ export default function ChatSessionPage() {
               );
             }
             if (evt.kind === "rag_feedback") {
+              // The "pending" placeholder holds the coach slot with a
+              // shape-matched skeleton (the "Coach note" section marker is
+              // already appended ahead of this event) until the real note lands.
+              if (evt.payload.pending) return <CoachSkeleton key={i} />;
               return <RuntimeRagFeedback key={i} payload={evt.payload} />;
             }
             if (evt.kind === "feedback") {
@@ -2585,7 +2664,7 @@ export default function ChatSessionPage() {
             return null;
           })}
 
-          <TaskChatLoadingSkeleton type={visibleLoadingType} />
+          <TaskChatLoadingSkeleton type={visibleLoadingType} taskLabel={skeletonTaskLabel} />
 
           {loadingTimedOut && (
             <div style={{ marginTop: 16 }}>
