@@ -39,6 +39,10 @@ export function ChatGlobalStyles() {
           0%, 100% { opacity: 0.25; transform: scaleY(0.75); }
           50% { opacity: 1; transform: scaleY(1); }
         }
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
         strong { font-weight: 700; }
         em { font-style: italic; }
         @media (max-width: 720px) {
