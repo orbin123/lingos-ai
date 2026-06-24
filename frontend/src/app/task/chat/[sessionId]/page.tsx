@@ -15,8 +15,17 @@ import {
   Sparkles,
 } from "lucide-react";
 
-import { api } from "@/lib/api";
+import { api, refreshAccessToken } from "@/lib/api";
 import { WS_BASE_URL } from "@/lib/api-config";
+import { useAuthStore } from "@/store/authStore";
+import {
+  buildLearningWsUrl,
+  HEARTBEAT_INTERVAL_MS,
+  nextReconnectDelayMs,
+  reconnectExhausted,
+  shouldScheduleReconnect,
+} from "@/lib/ws-reconnect";
+import { ReconnectNotice } from "@/components/chat/ReconnectNotice";
 import { authApi } from "@/lib/auth-api";
 
 import { tasksApi } from "@/lib/tasks-api";
@@ -210,6 +219,7 @@ type WSIncoming =
   | { type: "chat_stream_delta"; role?: string; stream_id?: string; content?: string }
   | { type: "chat_stream_end"; role?: string; stream_id?: string; content?: string; actions?: string[] }
   | { type: "ui_event"; widget: string; payload: Record<string, unknown> }
+  | { type: "pong" }
   | { type: "error"; content?: string };
 
 type WSOutgoing =
@@ -1359,6 +1369,10 @@ export default function ChatSessionPage() {
   const nextActivityLockRef = useRef(false);
   const reconnectIntentRef = useRef<"none" | "retry" | "auto">("none");
   const [isReconnecting, setIsReconnecting] = useState(false);
+  // Consecutive failed auto-reconnects. The ref drives the backoff/cap math
+  // synchronously inside callbacks; the state mirror re-renders the CTA.
+  const reconnectFailuresRef = useRef(0);
+  const [reconnectFailures, setReconnectFailures] = useState(0);
 
   useEffect(() => {
     eventsRef.current = events;
@@ -1520,24 +1534,41 @@ export default function ChatSessionPage() {
     };
   }, [connectionState, phase, sessionId, daySessionScorecard]);
 
-  // If the socket drops while evaluation/feedback is in flight, reconnect so
-  // the resume stream can replay scorecard + feedback widgets.
+  // Auto-reconnect after ANY drop, in EVERY phase, with capped exponential
+  // backoff. (Pre-Phase-4 this only ran during submitted/feedback, so a drop
+  // mid-teaching or mid-practice stranded the learner on a dead
+  // "Connection closed. Reconnecting…".) On reconnect the backend resume stream
+  // rehydrates the transcript + in-progress activity. Once the budget is spent,
+  // we stop and let the "Reload session" CTA take over.
   useEffect(() => {
-    if (accessBlocked) return;
-    if (connectionState !== "closed" && connectionState !== "error") return;
-    if (reconnectIntentRef.current !== "none") return;
-    if (phase !== "submitted" && loadingType !== "feedback_loading") return;
     if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    if (
+      !shouldScheduleReconnect({
+        connectionState,
+        accessBlocked,
+        exhausted: reconnectExhausted(reconnectFailuresRef.current),
+      })
+    ) {
+      // Budget spent → stop the spinner so the Reload CTA renders.
+      if (reconnectExhausted(reconnectFailuresRef.current)) {
+        setIsReconnecting(false);
+      }
+      return;
+    }
 
     const timer = window.setTimeout(() => {
-      reconnectIntentRef.current = "auto";
+      reconnectFailuresRef.current += 1;
+      setReconnectFailures(reconnectFailuresRef.current);
+      if (reconnectIntentRef.current === "none") {
+        reconnectIntentRef.current = "auto";
+      }
       setIsReconnecting(true);
       setConnectionState("connecting");
       setReconnectAttempt((attempt) => attempt + 1);
-    }, 600);
+    }, nextReconnectDelayMs(reconnectFailuresRef.current));
 
     return () => window.clearTimeout(timer);
-  }, [connectionState, phase, loadingType, sessionId]);
+  }, [connectionState, accessBlocked, sessionId, reconnectFailures]);
 
   const LOADING_TIMEOUT_MS = 90_000;
 
@@ -1558,6 +1589,21 @@ export default function ChatSessionPage() {
 
   const retryLoadingConnection = useCallback(() => {
     setLoadingTimedOut(false);
+    reconnectFailuresRef.current = 0;
+    setReconnectFailures(0);
+    reconnectIntentRef.current = "auto";
+    setIsReconnecting(true);
+    setConnectionState("connecting");
+    setReconnectAttempt((attempt) => attempt + 1);
+  }, []);
+
+  // "Reload session" CTA after the auto-reconnect budget is spent. Resets the
+  // budget and forces a fresh connect; bumping reconnectAttempt also re-runs the
+  // REST state-hydrate effect, so we re-pull the snapshot and the WS resume
+  // replays the in-progress activity — the learner picks up where they were.
+  const reloadSession = useCallback(() => {
+    reconnectFailuresRef.current = 0;
+    setReconnectFailures(0);
     reconnectIntentRef.current = "auto";
     setIsReconnecting(true);
     setConnectionState("connecting");
@@ -1639,6 +1685,8 @@ export default function ChatSessionPage() {
   }, [events, lastSubmittedSequence, currentSequence, completedSummaries]);
 
   const handleIncoming = useCallback((msg: WSIncoming) => {
+    // Heartbeat reply — keeps the connection alive; nothing to render.
+    if (msg.type === "pong") return;
     if (msg.type === "chat_message") {
       setLoadingType((curr) =>
         shouldShowActivitySkeletonAfterChat(msg.content)
@@ -1927,67 +1975,112 @@ export default function ChatSessionPage() {
   /* --- WebSocket lifecycle ---------------------------------------- */
   useEffect(() => {
     if (!sessionId) return;
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-    if (!token) return;
+    let cancelled = false;
+    let socket: WebSocket | null = null;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
 
-    const url = `${WS_BASE_URL}/ws/learning/${sessionId}?token=${encodeURIComponent(token || "")}`;
-
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      if (wsRef.current !== ws) return;
-      reconnectIntentRef.current = "none";
-      setIsReconnecting(false);
-      setConnectionState("open");
-      setLoadingType((curr) => curr ?? (eventsRef.current.length === 0 ? "teacher_loading" : null));
-      // The backend resume re-sends the blueprint and the live task widget on
-      // every (re)connect. Drop only the stale live task to avoid duplicates,
-      // but keep already-delivered results (scorecards/feedback) and the chat
-      // transcript so an in-app reconnect doesn't lose the screen. A confirmed
-      // restart/retry wipes everything (it already cleared events), so honour
-      // that by filtering to chat-only.
-      if (fullResetRef.current) {
-        fullResetRef.current = false;
-        setEvents((prev) => prev.filter((e) => e.kind === "chat"));
-      } else {
-        setEvents((prev) => prev.filter((e) => e.kind !== "task"));
+    const clearHeartbeat = () => {
+      if (heartbeat !== undefined) {
+        clearInterval(heartbeat);
+        heartbeat = undefined;
       }
-      const queued = pendingSendsRef.current.splice(0);
-      queued.forEach((payload) => ws.send(JSON.stringify(payload)));
     };
-    ws.onclose = (event) => {
-      if (wsRef.current !== ws) return;
-      if (event.code === 4402) {
-        setAccessBlocked(true);
+
+    void (async () => {
+      let token =
+        typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      // On a reconnect (not the initial mount) refresh the JWT FIRST: a session
+      // running past the 20-min access-token TTL would otherwise present an
+      // expired token and be 4401-closed forever. The first connect uses the
+      // freshly-minted login token as-is (no extra round-trip).
+      if (reconnectAttempt > 0) {
+        try {
+          token = await refreshAccessToken();
+          useAuthStore.getState().setToken(token);
+        } catch {
+          // Refresh failed (refresh cookie also gone). Fall back to the stored
+          // token; a resulting 4401 surfaces via the reconnect budget → CTA.
+        }
+      }
+      if (cancelled || !token) return;
+
+      const ws = new WebSocket(buildLearningWsUrl(WS_BASE_URL, sessionId, token));
+      socket = ws;
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (wsRef.current !== ws) return;
+        reconnectIntentRef.current = "none";
+        reconnectFailuresRef.current = 0;
+        setReconnectFailures(0);
+        setIsReconnecting(false);
+        setConnectionState("open");
+        setLoadingType((curr) => curr ?? (eventsRef.current.length === 0 ? "teacher_loading" : null));
+        // Heartbeat: ping under the ALB's 120s idle window so a reading/thinking
+        // lull never drops the socket. The server pongs (ignored on receipt).
+        clearHeartbeat();
+        heartbeat = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, HEARTBEAT_INTERVAL_MS);
+        // The backend resume re-sends the blueprint and the live task widget on
+        // every (re)connect. Drop only the stale live task to avoid duplicates,
+        // but keep already-delivered results (scorecards/feedback) and the chat
+        // transcript so an in-app reconnect doesn't lose the screen. A confirmed
+        // restart/retry wipes everything (it already cleared events), so honour
+        // that by filtering to chat-only.
+        if (fullResetRef.current) {
+          fullResetRef.current = false;
+          setEvents((prev) => prev.filter((e) => e.kind === "chat"));
+        } else {
+          setEvents((prev) => prev.filter((e) => e.kind !== "task"));
+        }
+        const queued = pendingSendsRef.current.splice(0);
+        queued.forEach((payload) => ws.send(JSON.stringify(payload)));
+      };
+      ws.onclose = (event) => {
+        if (wsRef.current !== ws) return;
+        clearHeartbeat();
+        if (event.code === 4402) {
+          setAccessBlocked(true);
+          setConnectionState("error");
+          setLoadingType(null);
+          return;
+        }
+        // Mark closed whether this was a fresh drop OR a failed reconnect
+        // attempt (intent still "auto"/"retry"). The reconnect effect then
+        // retries with backoff, or surfaces the Reload CTA once the budget is
+        // spent. The old `intent !== "none"` early-return is exactly what left a
+        // failed reconnect stuck on a permanent "Reconnecting…".
+        setConnectionState("closed");
+        setLoadingType(null);
+      };
+      ws.onerror = () => {
+        if (wsRef.current !== ws) return;
+        clearHeartbeat();
         setConnectionState("error");
         setLoadingType(null);
-        return;
-      }
-      if (reconnectIntentRef.current !== "none") return;
-      setConnectionState("closed");
-      setLoadingType(null);
-    };
-    ws.onerror = () => {
-      if (wsRef.current !== ws) return;
-      if (reconnectIntentRef.current !== "none") return;
-      setConnectionState("error");
-      setLoadingType(null);
-    };
+      };
 
-    ws.onmessage = (raw) => {
-      if (wsRef.current !== ws) return;
-      try {
-        const msg = JSON.parse(raw.data) as WSIncoming;
-        handleIncoming(msg);
-      } catch (err) {
-        console.error("Bad WS payload", err);
-      }
-    };
+      ws.onmessage = (raw) => {
+        if (wsRef.current !== ws) return;
+        try {
+          const msg = JSON.parse(raw.data) as WSIncoming;
+          handleIncoming(msg);
+        } catch (err) {
+          console.error("Bad WS payload", err);
+        }
+      };
+    })();
 
     return () => {
-      ws.close();
-      if (wsRef.current === ws) wsRef.current = null;
+      cancelled = true;
+      clearHeartbeat();
+      if (socket) {
+        socket.close();
+        if (wsRef.current === socket) wsRef.current = null;
+      }
     };
   }, [sessionId, handleIncoming, reconnectAttempt]);
 
@@ -2241,11 +2334,14 @@ export default function ChatSessionPage() {
     !hasInlineResults &&
     !visibleLoadingType &&
     connectionState === "open";
+  // Surface a connection notice whenever the socket isn't open and there is no
+  // loading skeleton already covering it. Unlike before, we no longer suppress
+  // it during `isReconnecting` — an active recovery now shows a calm
+  // "Reconnecting…", and a spent budget shows the "Reload session" CTA, instead
+  // of a silent dead-end.
+  const reconnectIsExhausted = reconnectExhausted(reconnectFailures);
   const showConnectionIssue =
-    connectionState !== "open" &&
-    phase !== "ended" &&
-    !visibleLoadingType &&
-    !isReconnecting;
+    connectionState !== "open" && phase !== "ended" && !visibleLoadingType;
 
   return (
     <>
@@ -2517,24 +2613,14 @@ export default function ChatSessionPage() {
           )}
 
           {showConnectionIssue && (
-            <div style={{ marginTop: 16 }}>
-              <ChatBubble role="ai" name={events.length === 0 ? "LingosAI" : undefined}>
-                {accessBlocked ? (
-                  <>
-                    Your trial has ended — upgrade to continue this lesson.{" "}
-                    <a href="/pricing" style={{ fontWeight: 700 }}>
-                      Upgrade now
-                    </a>
-                  </>
-                ) : (
-                  <>
-                    {connectionState === "connecting" && "Connecting to your session…"}
-                    {connectionState === "closed" && "Connection closed. Reconnecting…"}
-                    {connectionState === "error" && "Could not reach the session. Make sure you're signed in."}
-                  </>
-                )}
-              </ChatBubble>
-            </div>
+            <ReconnectNotice
+              connectionState={connectionState}
+              accessBlocked={accessBlocked}
+              isReconnecting={isReconnecting}
+              exhausted={reconnectIsExhausted}
+              labelAsLingos={events.length === 0}
+              onReload={reloadSession}
+            />
           )}
 
           {phase === "ended" && !hasFinalScorecard && sessionCompletedByServer && (

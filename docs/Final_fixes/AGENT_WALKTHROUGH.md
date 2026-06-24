@@ -120,3 +120,54 @@ Fix = the plan's recommended **step 1, frontend‑only**: guard inside `RuleCall
 ### Deferred follow‑ups
 - **Optional Phase 3 step 2 (populate the rule):** add `grammar_rule_to_practice: str | None = None` to `ErrorCorrectionTask` (`backend/app/ai/sessions/llm_task_generator.py:272`); the projection already maps it (`projection.py:163‑165`). Would show a real one‑line rule instead of hiding the card. Not required for the bug; skipped to keep this the smallest, lowest‑risk PR.
 - **Dead debug cruft** (carried over from Phase 2): `llm_task_generator.py` `_agent_debug_log()` writes to `.cursor/debug-dfa507.log` and swallows exceptions — should be removed in a separate cleanup.
+
+---
+
+## Phase 4 — WebSocket resilience: kill "Connection closed" for good
+
+**Session date:** 2026‑06‑24
+**Branch:** `fix/websocket-resilience-heartbeat-reconnect` (off `main`)
+**PR:** https://github.com/orbin123/lingos-ai/pull/138
+
+### Merge order (resolved)
+This branch was cut from `main` while #137 (Phase 3) was still open, so it temporarily re‑included the Phase 3 entry to keep the walkthrough ordered. #137 was merged first; this branch was then rebased onto `main` and the duplicate Phase 3 section dropped (the Phase 3 entry above now comes from #137). The code never overlapped Phase 3 (`TaskWidgetFrame.tsx`) — only this doc did.
+
+### What changed & why
+Screenshot `connection_closed.png`: mid‑session the chat shows a permanent "Connection closed. Reconnecting…" and the learner is stranded — can't submit, never recovers. Three compounding causes (all confirmed in code), fixed in four layers:
+
+1. **No heartbeat → ALB 120s idle drop.** The backend receive loop had no keepalive handling, so any 2‑minute lull (reading, or a long buffered LLM turn) dropped the socket. **Fix:** the client pings every 25s; a new `ping` short‑circuit in the WS receive loop (`router.py`) replies `pong` *before* the rate‑limit guard and `process_message_stream`, so it never consumes the message budget or touches session state.
+2. **Phase‑gated reconnect + stuck‑on‑failed‑reconnect.** The reconnect effect bailed unless `phase==="submitted"`/`feedback_loading`, and `onclose`/`onerror` returned early during an in‑flight reconnect (`intent !== "none"`), leaving `connectionState` stuck on "connecting" with no retry. **Fix:** universal, phase‑independent auto‑reconnect with capped exponential backoff (600ms→…→10s, 5 attempts); failed reconnects now mark the socket closed so the next attempt fires.
+3. **Stale token on reconnect.** The socket carried the localStorage JWT, validated once at the handshake; a session past the 20‑min access‑token TTL reconnected with an expired token → server `4401` → permanently stuck. **Fix:** `refreshAccessToken()` (now exported from `lib/api.ts`) runs before each reconnect; the fresh token is persisted via `authStore.setToken` and used to build the WS URL.
+4. **Honest fallback UX.** After the 5‑attempt budget is spent, the dishonest "Reconnecting…" is replaced by a real **"Reload session"** CTA (`ReconnectNotice`) that resets the budget and forces a fresh connect; bumping `reconnectAttempt` also re‑runs the REST `/state` hydrate, so the learner resumes the in‑progress activity.
+
+Recovery was already mostly built server‑side (Postgres‑persisted transcript/phase/queue + `resume_messages_stream` replay), so the work was purely in the connection layer — no new server state. The ALB `idle_timeout` bump (defense‑in‑depth) is intentionally **left to a separate infra PR** per the plan; the heartbeat is the portable real fix.
+
+### Files changed
+- `backend/app/modules/learning_session/router.py` — `ping`→`pong` branch in the WS receive loop (before rate‑limit + session pipeline).
+- `backend/app/modules/learning_session/schemas.py` — documented `ping`/`pong` in the WS message‑type comments (the `type` field is a free `str`, so no functional schema change → no OpenAPI drift).
+- `frontend/src/lib/api.ts` — `export` the existing `refreshAccessToken` (was private).
+- `frontend/src/lib/ws-reconnect.ts` *(new)* — pure helpers: `HEARTBEAT_INTERVAL_MS` (25s), `MAX_RECONNECT_ATTEMPTS` (5), `nextReconnectDelayMs` (backoff+cap), `reconnectExhausted`, `shouldScheduleReconnect` (phase‑agnostic by construction), `buildLearningWsUrl`.
+- `frontend/src/components/chat/ReconnectNotice.tsx` *(new)* — connection‑status bubble: upgrade prompt (4402) / "Reload session" CTA (exhausted) / calm "Reconnecting…".
+- `frontend/src/app/task/chat/[sessionId]/page.tsx` — wired it together: heartbeat interval in the WS effect; async token‑refresh before reconnect; universal backoff reconnect effect (replaces the feedback‑only gate); `onclose`/`onerror` recover instead of returning early; `reloadSession`; ignore `pong` in `handleIncoming`; render `ReconnectNotice`. (Large diff is mostly re‑indentation from wrapping the connect logic in an `async` IIFE to `await` the refresh.)
+- `backend/tests/integration/learning_session/test_ws_heartbeat.py` *(new)* — ping→pong via a real `TestClient` WS handshake (service stubbed; `LearningSession` JSONB can't compile on SQLite), proving a ping is ponged and never enters the session pipeline (a 2nd ping is a FIFO barrier confirming the real `user_message` was processed).
+- `frontend/tests/unit/lib/ws-reconnect.test.ts` *(new)* — backoff sequence + cap, exhaustion threshold (= "after N failures"), phase‑independence of `shouldScheduleReconnect`, and `buildLearningWsUrl` token encoding (= "URL carries refreshed token").
+- `frontend/tests/unit/components/ReconnectNotice.test.tsx` *(new)* — Reload CTA renders + fires when exhausted; calm "Reconnecting…" while recovering; upgrade (not reload) on 4402.
+
+### How verified (proof)
+- **Backend gates:** `ruff format` (410 files unchanged), `ruff check app tests` → **All checks passed**, `mypy app` → **Success: no issues in 270 files**. `export_openapi.py` → **no drift**.
+- **Backend tests:** full `python -m pytest tests/unit tests/integration` → **exit 0**, no failures. WS‑focused subset (learning_session + premium_guard) = **62 passed**, including the new ping→pong test.
+- **Frontend gates:** `npm run lint` → **0 errors** (88 pre‑existing warnings, none in changed files); `npx tsc --noEmit` → **exit 0**; `npm test` → **24 files / 122 tests pass** (incl. 10 ws‑reconnect + 4 ReconnectNotice); `npm run build` → **Compiled successfully**.
+- **Deterministic proof maps to each Phase‑4 requirement:** ping→pong + no state mutation (backend integration test); backoff/cap/exhaustion + phase‑independent reconnect + refreshed‑token URL (ws‑reconnect unit tests); "Reload session" CTA renders + fires (ReconnectNotice test); resume replays the in‑progress activity (already covered by existing `test_resume_lands_on_pending_activity_without_replaying_feedback` / `test_resume_keeps_next_activity_when_attempt_is_pending`).
+- **Not run:** a full live‑browser E2E (idle 2.5 min → heartbeat holds; force‑drop mid‑teaching → auto‑reconnect + state restore; token‑expiry → refresh‑on‑reconnect; blocked reconnect → Reload CTA). Same constraint as Phases 1–2: it needs a running backend + seeded curriculum DB + an authenticated live session + real LLM spend, which this environment isn't set up for. The unit/integration tests exercise every decision path with only the socket/LLM boundary stubbed. **Worth a manual demo‑day walkthrough** following the plan's "Verify E2E" steps.
+
+### What the next session must know
+- **All four OBVIOUS phases (1–4) are now implemented.** Remaining work is only the optional SUGGESTED fixes (S1–S5). The plan's "Verification summary" demo acceptance walk is the next sensible step before the interview.
+- **The ALB `idle_timeout` 120→300s bump is NOT done** — deliberately deferred to a separate infra/Terraform PR (`infra/terraform/modules/alb/main.tf:29`). The heartbeat makes it non‑critical, but it's cheap defense‑in‑depth.
+- Heartbeat cadence / attempt budget live in `frontend/src/lib/ws-reconnect.ts` (25s ping, 5 attempts, 10s max backoff) — tune there, no page edits needed.
+- The WS `ping`/`pong` frames are not in `openapi.json` (WS isn't in the REST schema) — no contract step for this change.
+
+### Deferred follow‑ups
+- **ALB idle_timeout** (separate infra PR) as above.
+- **S4 (longer / sliding session token):** the 20‑min access‑token TTL is aggressive for tutoring; Phase 4 heals on reconnect but a sliding refresh would remove mid‑session expiry as a factor (`config.py:99` + auth refresh path).
+- **Long‑turn keepalive:** the heartbeat covers idle drops (the documented #1 cause). A single server turn exceeding 120s with no streamed bytes is still theoretically at risk; interleaving server keepalive frames during long buffered turns (or S1 true‑streaming) would close that gap. Current turns stay under the 90s frontend loading timeout, so low‑risk.
+- **Carry‑over cruft (from Phases 2–3):** `llm_task_generator.py` `_agent_debug_log()` writes to `.cursor/debug-dfa507.log` and swallows exceptions — remove in a cleanup PR.

@@ -454,6 +454,15 @@ async def learning_session_ws(
                 )
                 continue
 
+            # Heartbeat: the client pings every ~25s to keep traffic flowing so
+            # the ALB's 120s idle timeout never drops the socket. Reply with a
+            # pong and skip the rate-limit guard + session pipeline entirely — a
+            # ping is a keepalive, not a learner action, so it must not consume
+            # the message-rate budget or touch session state.
+            if incoming.type == "ping":
+                await _send(websocket, WSOutgoingMessage(type="pong"))
+                continue
+
             # Per-user message-rate guard: every accepted message can fan out
             # into LLM calls, so throttle at the submit boundary. The
             # connection stays open — the client already renders error frames.
