@@ -27,6 +27,29 @@ from app.modules.learning_session.service import (
 )
 from app.modules.learning_session.schemas import WSIncomingMessage, WSOutgoingMessage
 from app.modules.sessions.models import AttemptStatus, SessionStatus
+from app.modules.sessions.service import EvaluationPhase, FeedbackPhase
+
+
+def _phased_submit(attempt, evaluation, feedback):  # noqa: ANN001
+    """Stand-in for ``SessionService.submit_activity_phased``: yields the
+    evaluation phase (score ready) then the feedback phase (committed), mirroring
+    the real two-phase generator the WS handler now consumes."""
+
+    async def _gen(**_kwargs):
+        yield EvaluationPhase(attempt, evaluation)
+        yield FeedbackPhase(feedback)
+
+    return _gen
+
+
+def _phased_raises(exc: Exception):
+    """Stand-in for ``submit_activity_phased`` that raises on first iteration."""
+
+    async def _gen(**_kwargs):
+        raise exc
+        yield  # pragma: no cover — makes this an async generator
+
+    return _gen
 
 
 def _mock_no_existing_scorecard(monkeypatch) -> None:
@@ -880,7 +903,7 @@ async def test_read_cloze_submission_emits_validated_contract_payloads(
     feedback.sub_skill_breakdown = {"grammar": 8}
 
     v2_service = MagicMock()
-    v2_service.submit_activity = AsyncMock(return_value=(attempt, evaluation, feedback))
+    v2_service.submit_activity_phased = _phased_submit(attempt, evaluation, feedback)
     monkeypatch.setattr(
         "app.modules.learning_session.service._make_v2_session_service",
         MagicMock(return_value=v2_service),
@@ -901,6 +924,9 @@ async def test_read_cloze_submission_emits_validated_contract_payloads(
     feedback_event = next(
         m for m in messages if m.type == "ui_event" and m.widget == "feedback_card"
     )
+
+    # Progressive reveal: the score event is emitted before the feedback event.
+    assert messages.index(scorecard_event) < messages.index(feedback_event)
 
     # Evaluation went through ActivityEvaluationOutput → tier + percentage derived.
     evaluation_payload = scorecard_event.payload["evaluation"]
@@ -938,7 +964,7 @@ async def test_task_submission_unexpected_error_yields_ws_error(monkeypatch) -> 
     service.db.get.return_value = daily
 
     v2_service = MagicMock()
-    v2_service.submit_activity = AsyncMock(side_effect=RuntimeError("pinecone boom"))
+    v2_service.submit_activity_phased = _phased_raises(RuntimeError("pinecone boom"))
     monkeypatch.setattr(
         "app.modules.learning_session.service._make_v2_session_service",
         MagicMock(return_value=v2_service),
@@ -1022,7 +1048,7 @@ async def test_task_submission_events_expose_activity_contract(monkeypatch) -> N
     feedback.sub_skill_breakdown = {"grammar": 8}
 
     v2_service = MagicMock()
-    v2_service.submit_activity = AsyncMock(return_value=(attempt, evaluation, feedback))
+    v2_service.submit_activity_phased = _phased_submit(attempt, evaluation, feedback)
     monkeypatch.setattr(
         "app.modules.learning_session.service._make_v2_session_service",
         MagicMock(return_value=v2_service),

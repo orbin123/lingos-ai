@@ -101,7 +101,12 @@ from app.modules.sessions.contracts import (
 )
 from app.modules.sessions.evaluator import EvaluationResult
 from app.modules.sessions.feedback_generator import FeedbackResult, MistakeOut
-from app.modules.sessions.service import SessionService, generate_mentor_note_async
+from app.modules.sessions.service import (
+    EvaluationPhase,
+    FeedbackPhase,
+    SessionService,
+    generate_mentor_note_async,
+)
 from app.modules.sessions.widget_mapping import normalize_widget_key
 from app.modules.skills.repository import SkillRepository
 from app.scoring import CourseLength, get_archetype
@@ -1892,13 +1897,269 @@ class LearningSessionService:
             )
             return
 
+        # Progressive reveal: drive the phased submit so the SCORE is emitted the
+        # instant grading finishes, then FEEDBACK once it is generated. Both
+        # phases share one DB transaction + one commit inside the generator (the
+        # commit lands in the feedback phase, exactly like the legacy submit).
+        phased = v2_service.submit_activity_phased(
+            session_id=daily.session_id,
+            user_id=session.user_id,
+            sequence=int(sequence),
+            user_response=answers,
+        )
+
+        # Built in phase 1, reused in phase 2 and in the persistence below.
+        evaluation_dict: dict[str, Any] = {}
+        feedback_dict: dict[str, Any] = {}
+        pronunciation_data: dict[str, Any] | None = None
+        session_meta: dict[str, Any] = {}
+        eval_projected = False
+        gate_threshold = 0
+        gate_score_pct = 0
+        gated_fail = False
+
         try:
-            attempt, evaluation, feedback = await v2_service.submit_activity(
-                session_id=daily.session_id,
-                user_id=session.user_id,
-                sequence=int(sequence),
-                user_response=answers,
+            # ── Phase 1: grading is done → emit the score immediately ──
+            eval_phase = await anext(phased)
+            assert isinstance(eval_phase, EvaluationPhase)
+            attempt = eval_phase.attempt
+            evaluation = eval_phase.evaluation
+
+            evaluation_dict = {
+                "raw_score": float(evaluation.raw_score),
+                "rubric_scores": dict(evaluation.rubric_scores or {}),
+                "base_reward": evaluation.base_reward,
+                "weighted_points": dict(evaluation.weighted_points or {}),
+                "evaluator_notes": evaluation.evaluator_notes,
+            }
+            # Schema boundary: project the evaluation onto its strict contract so
+            # the scorecard carries tier/percentage. `sub_skill_breakdown` is a
+            # feedback concern (unused on the scorecard payload + reload
+            # hydration), so it is empty here and merged back in phase 2 for
+            # `session.evaluation` parity. Bad output is logged and the legacy
+            # dict is emitted as-is (unless STRICT_CONTRACTS is set).
+            try:
+                evaluation_dict.update(
+                    project_evaluation(
+                        attempt.archetype_id,
+                        activity_id=str(attempt.id),
+                        evaluation=EvaluationResult(
+                            raw_score=float(evaluation.raw_score),
+                            rubric_scores=dict(evaluation.rubric_scores or {}),
+                            evaluator_notes=evaluation.evaluator_notes,
+                        ),
+                        sub_skill_breakdown={},
+                    )
+                )
+                eval_projected = True
+            except ContractValidationError as exc:
+                if settings.strict_contracts:
+                    raise
+                log.warning(
+                    "contract_projection_failed_evaluation",
+                    attempt_id=attempt.id,
+                    archetype=attempt.archetype_id,
+                    detail=exc.detail,
+                    note="emitting legacy evaluation payload",
+                )
+
+            # Detect a pronunciation (read-aloud) submission — its card bundles
+            # feedback, so we buffer the score and emit one combined event below.
+            if evaluation.evaluator_notes:
+                try:
+                    parsed_notes = json.loads(evaluation.evaluator_notes)
+                    if (
+                        isinstance(parsed_notes, dict)
+                        and parsed_notes.get("task_type") == "speak_read_aloud"
+                        and isinstance(parsed_notes.get("pronunciation"), dict)
+                    ):
+                        pronunciation_data = parsed_notes["pronunciation"]
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            session_meta = {
+                "current_task_index": int(state.get("current_task_index") or 0),
+                "total_tasks": len(session.task_queue or []) or 1,
+                "sequence": int(sequence),
+                "daily_session_id": session.daily_session_id,
+            }
+            task_content = dict(attempt.task_content or {})
+            activity_contract = dict(task_content.get("activity_contract") or {})
+            task_widget = normalize_widget_key(
+                str(
+                    task_content.get("widget")
+                    or task_content.get("ui_widget")
+                    or activity_contract.get("task_widget")
+                    or session.task_type
+                    or ""
+                )
             )
+            evaluation_widget = str(
+                activity_contract.get("evaluation_widget")
+                or task_content.get("evaluation_widget")
+                or "activity_score"
+            )
+            feedback_widget_key = str(
+                activity_contract.get("feedback_widget")
+                or task_content.get("feedback_widget")
+                or "feedback_card"
+            )
+
+            if pronunciation_data is None:
+                # Normal path: emit the generic scorecard now (feedback follows).
+                correct_count, total = _deterministic_scorecard_counts(
+                    attempt.archetype_id,
+                    evaluation.evaluator_notes,
+                )
+                scorecard_payload = {
+                    "overall_score": float(evaluation.raw_score),
+                    "skill_name": session.skill_name,
+                    "topic": session.topic,
+                    "rubric_scores": evaluation_dict["rubric_scores"],
+                    "weighted_points": evaluation_dict["weighted_points"],
+                    "activity_contract": activity_contract,
+                    "task_widget": task_widget,
+                    "evaluation_widget": evaluation_widget,
+                    "feedback_widget": feedback_widget_key,
+                    "_session": session_meta,
+                }
+                if correct_count is not None and total is not None:
+                    scorecard_payload["correct_count"] = correct_count
+                    scorecard_payload["total"] = total
+                    scorecard_payload["answered_count"] = total
+                yield self._event_orchestrator().evaluation_event(
+                    widget="scorecard",
+                    evaluation_payload=scorecard_payload,
+                    evaluation=evaluation_dict,
+                    session_meta=session_meta,
+                )
+
+            # ── Phase 2: feedback ready (transaction committed) → emit it ──
+            fb_phase = await anext(phased)
+            assert isinstance(fb_phase, FeedbackPhase)
+            feedback = fb_phase.feedback
+
+            feedback_dict = {
+                # The ActivityFeedback row id — lets the chat UI attach a 👍/👎
+                # reaction (feedback_type=ACTIVITY_FEEDBACK) keyed to this feedback.
+                "feedback_id": feedback.id,
+                "score": feedback.score,
+                "summary": feedback.summary,
+                "did_well": list(feedback.did_well or []),
+                "mistakes": list(feedback.mistakes or []),
+                "next_tip": feedback.next_tip,
+                "sub_skill_breakdown": dict(feedback.sub_skill_breakdown or {}),
+            }
+            try:
+                feedback_dict.update(
+                    project_feedback(
+                        attempt.archetype_id,
+                        activity_id=str(attempt.id),
+                        feedback=FeedbackResult(
+                            score=int(feedback.score),
+                            summary=feedback.summary or "",
+                            did_well=tuple(feedback.did_well or ()),
+                            mistakes=tuple(
+                                MistakeOut(
+                                    issue=str(m.get("issue") or ""),
+                                    user_wrote=m.get("user_wrote"),
+                                    correction=m.get("correction"),
+                                    rule=m.get("rule"),
+                                    sub_skills_affected=tuple(
+                                        m.get("sub_skills_affected") or ()
+                                    ),
+                                )
+                                for m in (feedback.mistakes or [])
+                                if isinstance(m, dict)
+                            ),
+                            next_tip=feedback.next_tip,
+                            sub_skill_breakdown=dict(
+                                feedback.sub_skill_breakdown or {}
+                            ),
+                        ),
+                    )
+                )
+                # Keep persisted `session.evaluation` byte-identical to the legacy
+                # path: re-attach the (real) feedback breakdown to the projected
+                # evaluation dict that we score-emitted with an empty one.
+                if eval_projected:
+                    evaluation_dict["sub_skill_breakdown"] = dict(
+                        feedback.sub_skill_breakdown or {}
+                    )
+            except ContractValidationError as exc:
+                if settings.strict_contracts:
+                    raise
+                log.warning(
+                    "contract_projection_failed_feedback",
+                    attempt_id=attempt.id,
+                    archetype=attempt.archetype_id,
+                    detail=exc.detail,
+                    note="emitting legacy feedback payload",
+                )
+
+            # Pass-mark gating: decide (once) whether this attempt clears the
+            # learner's threshold. The V2 feedback phase already committed +
+            # refreshed the attempt, so `attempt.evaluation` is populated here.
+            # When gating is on we stamp a `gate` block onto the feedback so the
+            # card can render a "Not passed" banner, and a `gated_fail`
+            # short-circuits advancement/completion further down.
+            gate_required, gate_threshold = self._gate_settings(session.user_id)
+            gate_score_pct = round(float(evaluation.raw_score) * 10)
+            gated_fail = gate_required and not self._attempt_passes_gate(
+                attempt, gate_threshold
+            )
+            if gate_required:
+                feedback_dict["gate"] = {
+                    "passed": not gated_fail,
+                    "score_pct": gate_score_pct,
+                    "threshold_pct": gate_threshold,
+                }
+
+            if pronunciation_data is not None:
+                # ── Read-aloud: emit the combined pronunciation_result widget ──
+                reference_text = (
+                    task_content.get("text_to_read_aloud")
+                    or task_content.get("passage")
+                    or ""
+                )
+                pronunciation_payload = {
+                    "pronunciation": pronunciation_data,
+                    "raw_score": float(evaluation.raw_score),
+                    "reference_text": reference_text,
+                    "feedback": feedback_dict,
+                    "activity_contract": activity_contract,
+                    "task_widget": task_widget,
+                    "evaluation_widget": evaluation_widget,
+                    "feedback_widget": feedback_widget_key,
+                    "_session": session_meta,
+                }
+                yield self._event_orchestrator().evaluation_event(
+                    widget="pronunciation_result",
+                    evaluation_payload=pronunciation_payload,
+                    evaluation={
+                        **evaluation_dict,
+                        "pronunciation": pronunciation_data,
+                        "reference_text": reference_text,
+                    },
+                    session_meta=session_meta,
+                )
+            else:
+                feedback_payload = {
+                    **feedback_dict,
+                    "score": float(evaluation.raw_score),
+                    "widget": task_widget,
+                    "activity_contract": activity_contract,
+                    "task_widget": task_widget,
+                    "evaluation_widget": evaluation_widget,
+                    "feedback_widget": feedback_widget_key,
+                    "_session": session_meta,
+                }
+                yield self._event_orchestrator().feedback_event(
+                    widget="feedback_card",
+                    feedback_payload=feedback_payload,
+                    feedback=feedback_dict,
+                    session_meta=session_meta,
+                )
         except AttemptAlreadySubmitted:
             yield WSOutgoingMessage(
                 type="error",
@@ -1909,8 +2170,11 @@ class LearningSessionService:
             yield WSOutgoingMessage(type="error", content=str(exc))
             return
         except Exception:
-            # Any other failure (DB, LLM, unexpected RAG error) must not kill the
-            # WS handler — surface a recoverable error and keep the connection.
+            # Any other failure (DB, LLM, unexpected RAG/contract error) must not
+            # kill the WS handler. Roll back so a feedback-phase failure (after
+            # the score was already emitted) leaves nothing committed and the
+            # attempt stays re-deliverable, then surface a recoverable error.
+            self.db.rollback()
             log.warning(
                 "submit_activity_failed",
                 session_id=session.session_id,
@@ -1922,211 +2186,9 @@ class LearningSessionService:
                 content="Something went wrong while submitting your answer. Please try again.",
             )
             return
-
-        evaluation_dict = {
-            "raw_score": float(evaluation.raw_score),
-            "rubric_scores": dict(evaluation.rubric_scores or {}),
-            "base_reward": evaluation.base_reward,
-            "weighted_points": dict(evaluation.weighted_points or {}),
-            "evaluator_notes": evaluation.evaluator_notes,
-        }
-        feedback_dict = {
-            # The ActivityFeedback row id — lets the chat UI attach a 👍/👎
-            # reaction (feedback_type=ACTIVITY_FEEDBACK) keyed to this feedback.
-            "feedback_id": feedback.id,
-            "score": feedback.score,
-            "summary": feedback.summary,
-            "did_well": list(feedback.did_well or []),
-            "mistakes": list(feedback.mistakes or []),
-            "next_tip": feedback.next_tip,
-            "sub_skill_breakdown": dict(feedback.sub_skill_breakdown or {}),
-        }
-
-        # Schema boundary: validate every archetype's evaluation/feedback against
-        # its strict contract and merge the validated shape into the wire
-        # payloads. Bad output is logged and the legacy dicts are emitted as-is
-        # rather than reaching a widget malformed (unless STRICT_CONTRACTS is set).
-        try:
-            evaluation_dict.update(
-                project_evaluation(
-                    attempt.archetype_id,
-                    activity_id=str(attempt.id),
-                    evaluation=EvaluationResult(
-                        raw_score=float(evaluation.raw_score),
-                        rubric_scores=dict(evaluation.rubric_scores or {}),
-                        evaluator_notes=evaluation.evaluator_notes,
-                    ),
-                    sub_skill_breakdown=dict(feedback.sub_skill_breakdown or {}),
-                )
-            )
-            feedback_dict.update(
-                project_feedback(
-                    attempt.archetype_id,
-                    activity_id=str(attempt.id),
-                    feedback=FeedbackResult(
-                        score=int(feedback.score),
-                        summary=feedback.summary or "",
-                        did_well=tuple(feedback.did_well or ()),
-                        mistakes=tuple(
-                            MistakeOut(
-                                issue=str(m.get("issue") or ""),
-                                user_wrote=m.get("user_wrote"),
-                                correction=m.get("correction"),
-                                rule=m.get("rule"),
-                                sub_skills_affected=tuple(
-                                    m.get("sub_skills_affected") or ()
-                                ),
-                            )
-                            for m in (feedback.mistakes or [])
-                            if isinstance(m, dict)
-                        ),
-                        next_tip=feedback.next_tip,
-                        sub_skill_breakdown=dict(feedback.sub_skill_breakdown or {}),
-                    ),
-                )
-            )
-        except ContractValidationError as exc:
-            if settings.strict_contracts:
-                raise
-            log.warning(
-                "contract_projection_failed_eval_feedback",
-                attempt_id=attempt.id,
-                archetype=attempt.archetype_id,
-                detail=exc.detail,
-                note="emitting legacy payloads",
-            )
-
-        # Pass-mark gating: decide (once) whether this attempt clears the
-        # learner's threshold. When gating is on we stamp a `gate` block onto
-        # the feedback so the card can render a "Not passed" banner, and a
-        # `gated_fail` short-circuits advancement/completion further down.
-        gate_required, gate_threshold = self._gate_settings(session.user_id)
-        gate_score_pct = round(float(evaluation.raw_score) * 10)
-        gated_fail = gate_required and not self._attempt_passes_gate(
-            attempt, gate_threshold
-        )
-        if gate_required:
-            feedback_dict["gate"] = {
-                "passed": not gated_fail,
-                "score_pct": gate_score_pct,
-                "threshold_pct": gate_threshold,
-            }
-
-        # Check if this is a pronunciation (read-aloud) submission.
-        pronunciation_data = None
-        if evaluation.evaluator_notes:
-            try:
-                parsed_notes = json.loads(evaluation.evaluator_notes)
-                if (
-                    isinstance(parsed_notes, dict)
-                    and parsed_notes.get("task_type") == "speak_read_aloud"
-                    and isinstance(parsed_notes.get("pronunciation"), dict)
-                ):
-                    pronunciation_data = parsed_notes["pronunciation"]
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        session_meta = {
-            "current_task_index": int(state.get("current_task_index") or 0),
-            "total_tasks": len(session.task_queue or []) or 1,
-            "sequence": int(sequence),
-            "daily_session_id": session.daily_session_id,
-        }
-        task_content = dict(attempt.task_content or {})
-        activity_contract = dict(task_content.get("activity_contract") or {})
-        task_widget = normalize_widget_key(
-            str(
-                task_content.get("widget")
-                or task_content.get("ui_widget")
-                or activity_contract.get("task_widget")
-                or session.task_type
-                or ""
-            )
-        )
-        evaluation_widget = str(
-            activity_contract.get("evaluation_widget")
-            or task_content.get("evaluation_widget")
-            or "activity_score"
-        )
-        feedback_widget_key = str(
-            activity_contract.get("feedback_widget")
-            or task_content.get("feedback_widget")
-            or "feedback_card"
-        )
-
-        if pronunciation_data is not None:
-            # ── Read-aloud: emit a dedicated pronunciation_result widget ──
-            reference_text = (
-                task_content.get("text_to_read_aloud")
-                or task_content.get("passage")
-                or ""
-            )
-            pronunciation_payload = {
-                "pronunciation": pronunciation_data,
-                "raw_score": float(evaluation.raw_score),
-                "reference_text": reference_text,
-                "feedback": feedback_dict,
-                "activity_contract": activity_contract,
-                "task_widget": task_widget,
-                "evaluation_widget": evaluation_widget,
-                "feedback_widget": feedback_widget_key,
-                "_session": session_meta,
-            }
-            yield self._event_orchestrator().evaluation_event(
-                widget="pronunciation_result",
-                evaluation_payload=pronunciation_payload,
-                evaluation={
-                    **evaluation_dict,
-                    "pronunciation": pronunciation_data,
-                    "reference_text": reference_text,
-                },
-                session_meta=session_meta,
-            )
-        else:
-            # ── Normal path: emit generic scorecard + feedback_card ──
-            correct_count, total = _deterministic_scorecard_counts(
-                attempt.archetype_id,
-                evaluation.evaluator_notes,
-            )
-            scorecard_payload = {
-                "overall_score": float(evaluation.raw_score),
-                "skill_name": session.skill_name,
-                "topic": session.topic,
-                "rubric_scores": evaluation_dict["rubric_scores"],
-                "weighted_points": evaluation_dict["weighted_points"],
-                "activity_contract": activity_contract,
-                "task_widget": task_widget,
-                "evaluation_widget": evaluation_widget,
-                "feedback_widget": feedback_widget_key,
-                "_session": session_meta,
-            }
-            if correct_count is not None and total is not None:
-                scorecard_payload["correct_count"] = correct_count
-                scorecard_payload["total"] = total
-                scorecard_payload["answered_count"] = total
-            yield self._event_orchestrator().evaluation_event(
-                widget="scorecard",
-                evaluation_payload=scorecard_payload,
-                evaluation=evaluation_dict,
-                session_meta=session_meta,
-            )
-
-            feedback_payload = {
-                **feedback_dict,
-                "score": float(evaluation.raw_score),
-                "widget": task_widget,
-                "activity_contract": activity_contract,
-                "task_widget": task_widget,
-                "evaluation_widget": evaluation_widget,
-                "feedback_widget": feedback_widget_key,
-                "_session": session_meta,
-            }
-            yield self._event_orchestrator().feedback_event(
-                widget="feedback_card",
-                feedback_payload=feedback_payload,
-                feedback=feedback_dict,
-                session_meta=session_meta,
-            )
+        finally:
+            # Promptly finalise the generator (idempotent if already exhausted).
+            await phased.aclose()
 
         session.evaluation = evaluation_dict
         session.feedback = feedback_dict
