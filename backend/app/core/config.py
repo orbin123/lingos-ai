@@ -128,13 +128,13 @@ class Settings(BaseSettings):
     # non-reasoning models like the gpt-4.1-mini default above.
     OPENAI_REASONING_EFFORT: str = "medium"
     # Task generation runs on its OWN client, NOT the interactive default above.
-    # Unlike the latency-critical chat agents, task generation is not streamed and
-    # benefits from a reasoning model's think-time: gpt-5 at HIGH effort produces
-    # cleaner, single-error, on-topic task content (the temperature-equivalent
-    # lever for a reasoning model, which ignores `temperature`). Wired as a
-    # dedicated client in app/ai/sessions/factory.py; only the task generator
-    # uses it — evaluator/feedback stay on the fast non-reasoning default.
-    OPENAI_TASKGEN_MODEL: str = "gpt-5"
+    # Kept on the cheap non-reasoning `gpt-4o-mini` for cost — a reasoning model
+    # (gpt-5) at high effort burns far too many reasoning tokens for a per-activity
+    # call. Wired as a dedicated client in app/ai/sessions/factory.py; only the
+    # task generator uses it. `OPENAI_TASKGEN_REASONING_EFFORT` is INERT for a
+    # non-reasoning model (the client only sends it to reasoning models) — it's
+    # kept so the model can be swapped back to a reasoning one from .env alone.
+    OPENAI_TASKGEN_MODEL: str = "gpt-4o-mini"
     OPENAI_TASKGEN_REASONING_EFFORT: str = "high"
     # Off by default (data-residency, audit A5): tracing ships learner content
     # to LangSmith, so it must be enabled consciously. Dev .env can set it True.
@@ -169,13 +169,13 @@ class Settings(BaseSettings):
     # judge runs post-commit, fire-and-forget, and never blocks the learner.
     AI_EVAL_ENABLED: bool = True
     AI_EVAL_SAMPLE_RATE: float = 0.1
-    AI_EVAL_JUDGE_MODEL: str = "gpt-5"
-    # Judge runs at higher reasoning effort than the generator — judging quality
-    # is the highest-value signal and the judge is off the critical path.
+    AI_EVAL_JUDGE_MODEL: str = "gpt-4.1"
+    # `AI_EVAL_JUDGE_REASONING_EFFORT` is INERT on the non-reasoning `gpt-4.1`
+    # judge (the client only sends it to reasoning models); kept so the judge can
+    # be swapped back to a reasoning model from .env alone.
     AI_EVAL_JUDGE_REASONING_EFFORT: str = "high"
-    # Headroom for a high-effort gpt-5 judge (reasoning tokens are slow). The
-    # judge is post-commit/fire-and-forget, so a generous timeout never blocks
-    # the learner; too-tight a value just drops the ai_evaluations row.
+    # Generous post-commit/fire-and-forget timeout — the judge never blocks the
+    # learner, so headroom only ever costs a dropped ai_evaluations row.
     AI_EVAL_TIMEOUT_S: float = 60.0
     # Mentor-note (RAG) judging sample rate (Part B Phase 3). Notes are produced
     # once per session completion — far rarer than per-activity feedback — and

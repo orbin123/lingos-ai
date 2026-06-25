@@ -214,9 +214,9 @@ def test_build_default_agents_shares_one_inner_client():
     """Repeated factory calls must reuse the process-wide client singletons;
     only the cheap per-agent LoggingLLMClient wrappers are rebuilt.
 
-    Evaluator + feedback share the fast non-reasoning default client; the task
-    generator rides its OWN reasoning-model client (gpt-5 high effort), so it must
-    NOT share the default inner client.
+    Evaluator + feedback share the fast default client; the task generator rides
+    its OWN dedicated client (OPENAI_TASKGEN_MODEL), so it must NOT share the
+    default inner client.
     """
     from app.ai.sessions import factory
 
