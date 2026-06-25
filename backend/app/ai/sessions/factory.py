@@ -46,12 +46,11 @@ def _shared_default_client() -> OpenAILLMClient:
 def _shared_taskgen_client() -> OpenAILLMClient:
     """Dedicated client for the task generator.
 
-    Task generation deliberately stays on a reasoning model (gpt-5) at HIGH
-    effort while the interactive agents (evaluator/feedback/teacher) ride the
-    fast non-reasoning default — generation quality benefits from think-time,
-    and it isn't on the latency-critical streaming path. ``temperature`` is not
-    passed: the client drops it for reasoning models anyway, so effort is the
-    only lever here.
+    Task generation runs on its own client (``OPENAI_TASKGEN_MODEL``, the cheap
+    non-reasoning ``gpt-4o-mini`` default) separate from the interactive agents,
+    so it can be retuned independently from .env. ``temperature`` is not passed
+    and ``reasoning_effort`` is inert for a non-reasoning model — both only take
+    effect if the model is swapped back to a reasoning one.
     """
     return OpenAILLMClient(
         model=settings.OPENAI_TASKGEN_MODEL,
@@ -90,10 +89,9 @@ def build_default_agents(
     Pass `llm` to override the default OpenAI client (mainly for tests
     or for swapping providers in environment-specific code paths).
 
-    The evaluator and feedback generator share the fast non-reasoning default
-    client; the task generator gets its OWN reasoning-model client
-    (``_shared_taskgen_client``, gpt-5 at high effort) — generation quality
-    benefits from think-time and it's off the latency-critical streaming path.
+    The evaluator and feedback generator share the fast default client; the task
+    generator gets its OWN client (``_shared_taskgen_client``,
+    ``OPENAI_TASKGEN_MODEL``) so it can be retuned independently from .env.
     Each collaborator wraps its client in a ``LoggingLLMClient`` tagged with its
     own ``agent_name`` so every call is recorded to ``ai_request_logs`` (see
     Part B Phase 1). When ``llm`` is overridden (tests), no wrapping happens —
@@ -153,9 +151,9 @@ def build_rag_services(
 def build_judge(*, llm: ILLMClient | None = None) -> FeedbackJudge:
     """Return the production quality judge (Part B Phase 2).
 
-    Uses the ``AI_EVAL_JUDGE_MODEL`` (default ``gpt-5``) at higher reasoning
-    effort than the generator to reduce self-preference bias and keep scoring
-    sharp. The judge's own client is wrapped in a
+    Uses the ``AI_EVAL_JUDGE_MODEL`` (default ``gpt-4.1``) at temperature 0.0 to
+    reduce self-preference bias and keep scoring deterministic. The judge's own
+    client is wrapped in a
     ``LoggingLLMClient`` tagged ``judge.feedback`` so its cost/latency is logged
     and joins the feedback call on the shared ``trace_id``. Pass ``llm`` (tests)
     to bypass wrapping — logging stays inert.
