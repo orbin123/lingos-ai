@@ -869,7 +869,13 @@ export default function StatsPage() {
                   </Card>
 
                   {/* Sub-skill overview */}
-                  <Card>
+                  {/* position+zIndex lift the card's stacking context so the
+                      ScoreHelp popover (which overflows the card) paints above
+                      the sibling "Recent activities" card below it. Sibling
+                      cards each form their own stacking context via the
+                      backdrop-filter in <Card>, so an inner z-index alone can't
+                      escape — the card itself must be elevated. */}
+                  <Card style={{ position: "relative", zIndex: 30 }}>
                     <CardHead
                       title="Sub-skill overview"
                       sub="Mastery level · points earned this week"
