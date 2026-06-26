@@ -4976,8 +4976,15 @@
             "type": "number"
           },
           "overall_score_change": {
-            "title": "Overall Score Change",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Score Change"
           },
           "range": {
             "enum": [
@@ -6197,7 +6204,7 @@
         "type": "object"
       },
       "StatsDashboard": {
-        "description": "Everything the frontend stats page needs in one read-only response.\n\nRange-dependent sections (``period_snapshot``, ``skill_history*``,\n``practice_patterns``, ``recent_activities``) reflect the requested\n``range``. ``skill_scores`` and ``difficulty_distribution`` are always\nall-time (the sub-skill overview and difficulty donut ignore the range).",
+        "description": "Everything the frontend stats page needs in one read-only response.\n\nRange-dependent sections (``period_snapshot``, ``skill_history*``,\n``practice_patterns``, ``recent_activities``, ``difficulty_distribution``)\nreflect the requested ``range``. ``skill_scores`` is always all-time\nmastery (a skill *level* must not reset weekly); its weekly movement is\nsurfaced via ``weekly_points_by_skill``.",
         "properties": {
           "curriculum_milestone": {
             "$ref": "#/components/schemas/CurriculumMilestone"
@@ -7941,8 +7948,15 @@
             "type": "number"
           },
           "overall_score_change": {
-            "title": "Overall Score Change",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overall Score Change"
           },
           "tasks_completed": {
             "title": "Tasks Completed",
@@ -13225,7 +13239,7 @@
     },
     "/progress/stats": {
       "get": {
-        "description": "Stats page data, anchored to the learner's *curriculum* calendar.\n\nRange-dependent sections (period KPIs, score history, practice patterns,\nrecent activities) reflect ``range``. The sub-skill overview and the\ndifficulty donut are always all-time. Strengths / focus areas are\nqualitative, number-free coaching copy synthesized from the learner's\nrecurring feedback patterns (RAG-backed).",
+        "description": "Stats page data, anchored to the learner's *curriculum* calendar.\n\nRange-dependent sections (period KPIs, score history, practice patterns,\nrecent activities, difficulty donut) reflect ``range``. The sub-skill\noverview (radar/bars) stays all-time mastery — a skill *level* must not\nreset each week; its weekly movement is surfaced separately via\n``weekly_points_by_skill``. Strengths / focus areas are\nqualitative, number-free coaching copy synthesized from the learner's\nrecurring feedback patterns (RAG-backed).",
         "operationId": "get_stats_dashboard_progress_stats_get",
         "parameters": [
           {

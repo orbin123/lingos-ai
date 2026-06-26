@@ -11,12 +11,33 @@ export interface SkillScoreSnapshot {
 
 export interface WeeklySnapshot {
   overall_score: number;
-  overall_score_change: number;
+  /** null when there is no prior period to compare against (first week). */
+  overall_score_change: number | null;
   tasks_completed: number;
   weekly_task_goal: number;
   best_skill_name: string | null;
   best_skill_display_label: string | null;
   best_skill_score: number | null;
+}
+
+export interface PeriodSnapshot {
+  range: StatsRange;
+  overall_score: number;
+  /** null when there is no prior period to compare against (first week). */
+  overall_score_change: number | null;
+  tasks_completed: number;
+  /** Prorated pace-to-date goal for the week (tasks_per_day × current_day). */
+  tasks_goal: number;
+  completion_pct: number;
+  /** Bounded active practice time (per-attempt, capped) in seconds. */
+  time_practiced_seconds: number;
+  time_practiced_change_seconds: number | null;
+  best_skill_name: string | null;
+  best_skill_display_label: string | null;
+  best_skill_score: number | null;
+  curriculum_week: number;
+  curriculum_day: number;
+  weeks_completed: number;
 }
 
 export interface StatsMistake {
@@ -66,6 +87,7 @@ export interface PracticePatterns {
 }
 
 export interface StatsDashboard {
+  period_snapshot: PeriodSnapshot;
   weekly_snapshot: WeeklySnapshot;
   practice_patterns: PracticePatterns;
   skill_scores: SkillScoreSnapshot[];

@@ -62,7 +62,8 @@ class WeeklySnapshot(BaseModel):
     """
 
     overall_score: float
-    overall_score_change: float
+    # None when there is no prior period to compare against (first week).
+    overall_score_change: float | None
     tasks_completed: int
     weekly_task_goal: int
     best_skill_name: str | None
@@ -80,7 +81,8 @@ class PeriodSnapshot(BaseModel):
 
     range: Literal["week", "month", "all"]
     overall_score: float
-    overall_score_change: float
+    # None when there is no prior period to compare against (first week).
+    overall_score_change: float | None
     tasks_completed: int
     tasks_goal: int
     completion_pct: float
@@ -147,9 +149,10 @@ class StatsDashboard(BaseModel):
     """Everything the frontend stats page needs in one read-only response.
 
     Range-dependent sections (``period_snapshot``, ``skill_history*``,
-    ``practice_patterns``, ``recent_activities``) reflect the requested
-    ``range``. ``skill_scores`` and ``difficulty_distribution`` are always
-    all-time (the sub-skill overview and difficulty donut ignore the range).
+    ``practice_patterns``, ``recent_activities``, ``difficulty_distribution``)
+    reflect the requested ``range``. ``skill_scores`` is always all-time
+    mastery (a skill *level* must not reset weekly); its weekly movement is
+    surfaced via ``weekly_points_by_skill``.
     """
 
     range: Literal["week", "month", "all"]

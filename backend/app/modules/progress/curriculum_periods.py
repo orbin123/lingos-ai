@@ -140,10 +140,11 @@ def build_period(
 ) -> CurriculumPeriod:
     """Resolve a range against a learner's curriculum position.
 
-    ``tasks_per_day`` × 7 is the week goal and ``× 28`` the month goal — full
-    targets, not prorated to the in-progress day, so an in-progress week reads
-    e.g. ``16 / 28``. All-time prorates the goal to the number of weeks the
-    learner has reached.
+    The week goal is prorated to the in-progress day (``tasks_per_day ×
+    current_day``) so the completion ratio reads as "ahead/behind through
+    today" rather than against a full-week mountain the learner hasn't reached
+    yet. The month goal is ``× 28`` and all-time prorates to the number of
+    weeks the learner has reached.
     """
     course_length = _course_length(course_length)
     max_week = _MAX_WEEK[course_length]
@@ -159,7 +160,8 @@ def build_period(
         comparison = (
             _week_day_ids(course_length, current_week - 1) if current_week > 1 else None
         )
-        expected = tpd * DAYS_PER_WEEK
+        # Prorate to the in-progress day so completion reads as pace-to-date.
+        expected = tpd * current_day
         labels = [f"D{d}" for d in range(1, DAYS_PER_WEEK + 1)]
         bucket_day_ids = [
             [format_day_id(course_length, current_week, d)]
