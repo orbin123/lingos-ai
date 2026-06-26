@@ -202,6 +202,16 @@ most one new teaching point and end with one question.
 Specific praise is enough: quote the useful learner phrase, say why it works
 in simple words, and move forward. Do not add celebration filler.
 
+GREETING & HUMAN TONE:
+On the FIRST turn only, open with a warm, natural greeting that uses the
+learner's first name when it is known (e.g. "Hi Carlos!"). Then frame today's
+lesson conversationally, like a human teacher starting class — e.g. "Today
+we're learning about <topic> — let's start with <first idea>." Do NOT repeat
+the learner's name on later turns. Throughout, write the way a friendly human
+teacher speaks: natural, encouraging, and plain. Avoid stiff, textbook or
+encyclopedic phrasing. This personalizes the surface wording only — never add
+teaching content beyond the authored steps.
+
 ONE IDEA PER TURN:
 Introduce at most one new rule, pattern, or example per turn. If the learner
 has NOT yet demonstrated the previous point, do not add another — re-probe
@@ -319,6 +329,7 @@ def _format_profile(learner_profile: dict[str, Any]) -> str:
 
     structured = learner_profile.get("structured_personalisation")
     lines = [
+        f"Learner first name: {_stringify(learner_profile.get('learner_name')) or 'unknown'}",
         f"Interests: {_stringify(learner_profile.get('interests')) or 'unknown'}",
         f"Primary goals: {_stringify(learner_profile.get('primary_goals')) or 'unknown'}",
         "Personalisation context: "
@@ -683,6 +694,7 @@ def _fallback_text(
     teacher_instructions: TeacherInstructions | None = None,
     current_step_index: int | None = None,
     lesson_description: str | None = None,
+    learner_name: str = "",
 ) -> str:
     """Deterministic teacher turn used when the LLM is unavailable."""
 
@@ -696,12 +708,13 @@ def _fallback_text(
     step_text = _step_instruction(scripted_plan, step_index)
 
     if not conversation or ai_turns == 0:
+        greeting = f"Hi {learner_name}!" if learner_name else "Hi!"
         # First turn: teach the topic and end with one probing question.
         # Never gatekeep with a bare "tell me an answer to start" — the
         # opener is the most visible turn and must actually introduce the
         # lesson.
         if scripted_plan or step_text:
-            opener = f"Hi! Today we're learning about {topic}."
+            opener = f"{greeting} Today we're learning about {topic}."
             desc = _stringify(lesson_description)
             # Fold the lesson aim in only when it keeps the opener within the
             # turn's word budget (the fallback is validated like any turn).
@@ -713,7 +726,7 @@ def _fallback_text(
             )
             return opener
         return (
-            f"Hi! Today our lesson is about tense: {topic}. Tense tells us "
+            f"{greeting} Today our lesson is about tense: {topic}. Tense tells us "
             "when an action or state happens. The simple present is for facts, "
             "routines, and habits, like 'I work every day.' Can you tell me "
             "one real daily routine you have?"
@@ -915,6 +928,7 @@ async def generate_teaching_turn(
             teacher_instructions=teacher_instructions,
             current_step_index=current_step_index,
             lesson_description=lesson_description,
+            learner_name=_stringify((learner_profile or {}).get("learner_name")),
         )
     )
     return TeachingOutput(messages=[fallback])
@@ -1043,6 +1057,7 @@ async def stream_teaching_turn(
             teacher_instructions=teacher_instructions,
             current_step_index=current_step_index,
             lesson_description=lesson_description,
+            learner_name=_stringify((learner_profile or {}).get("learner_name")),
         )
     )
     yield fallback
