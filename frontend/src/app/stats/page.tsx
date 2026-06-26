@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { authApi } from "@/lib/auth-api";
@@ -55,6 +55,18 @@ const SKILL_AXES = [
 ] as const;
 
 const DEFAULT_SCORES = [6, 5, 4, 5.5, 4.5, 5.8, 4.2];
+
+// Per-activity reward by performance tier. Mirrors the backend scoring engine
+// (`app/scoring/constants.py`: REWARDS_24W / REWARDS_48W). The shorter 24-week
+// course awards ~2x per activity since there are fewer activities overall.
+// Used by the <ScoreHelp> explainer popover on the Sub-skill overview card.
+const SCORE_TIERS = [
+  { name: "Excellent", band: "8.0 – 10.0", pts24: 55, pts48: 28, color: "oklch(58% 0.16 155)" },
+  { name: "Good",      band: "6.0 – 7.9",  pts24: 40, pts48: 20, color: "oklch(64% 0.14 175)" },
+  { name: "Average",   band: "4.0 – 5.9",  pts24: 24, pts48: 12, color: "oklch(72% 0.16 65)"  },
+  { name: "Poor",      band: "2.0 – 3.9",  pts24: 10, pts48: 5,  color: "oklch(66% 0.18 40)"  },
+  { name: "Very poor", band: "0.0 – 1.9",  pts24: 0,  pts48: 0,  color: "oklch(58% 0.2 25)"   },
+] as const;
 
 function normalizeSkillName(n: string) {
   return n.toLowerCase().replace(/[_&.]/g, " ").replace(/\s+/g, " ").trim();
@@ -138,6 +150,131 @@ const PulseIcon = () => (
     background: T.primary, animation: "pulseDot 2s ease infinite",
   }}/>
 );
+
+const HelpIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+    <path
+      d="M5.9 6.1c0-1.2 1-2 2.1-2 1.2 0 2.1.8 2.1 1.9 0 1.6-2 1.6-2 3M8 11.4v.1"
+      stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
+    />
+  </svg>
+);
+
+// Hover/focus popover that explains how activities turn into points and a
+// 0–10 dashboard score. The points table is dynamic per course length.
+function ScoreHelp({ courseLength }: { courseLength?: string }) {
+  const [open, setOpen] = useState(false);
+  const is48 = courseLength === "48w";
+  const courseLabel = is48 ? "48-week course" : "24-week course";
+
+  return (
+    <div
+      style={{ position: "relative", display: "inline-flex" }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        aria-label="How scoring works"
+        aria-expanded={open}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 26, height: 26, borderRadius: "50%",
+          background: open ? T.primary : T.primarySoft,
+          color: open ? "#fff" : T.primaryDeep,
+          border: "none", cursor: "help", padding: 0, fontFamily: "inherit",
+          transition: "background 0.18s ease, color 0.18s ease, transform 0.18s ease",
+          transform: open ? "scale(1.06)" : "scale(1)",
+          boxShadow: open ? "0 4px 14px rgba(0,112,196,0.35)" : "none",
+        }}
+      >
+        <HelpIcon />
+      </button>
+
+      {open && (
+        <div
+          role="tooltip"
+          style={{
+            position: "absolute", top: "100%", right: 0, marginTop: 10,
+            width: 312, zIndex: 30,
+            background: "#fff", borderRadius: 18,
+            border: "1px solid oklch(90% 0.02 240)",
+            boxShadow: "0 18px 44px rgba(40,70,140,0.22)",
+            overflow: "hidden", cursor: "default",
+          }}
+        >
+          {/* Header band */}
+          <div style={{
+            padding: "16px 18px 14px",
+            background: "linear-gradient(135deg, #0070C4 0%, oklch(62% 0.15 215) 55%, oklch(70% 0.13 175) 100%)",
+            color: "#fff",
+          }}>
+            <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+              1 score = 1,000 points
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.92, marginTop: 5, fontWeight: 500 }}>
+              Each sub-skill maxes out at 10.0 (10,000 pts).
+            </div>
+          </div>
+
+          {/* Tier list */}
+          <div style={{ padding: "12px 14px 6px" }}>
+            <div style={{
+              fontSize: 11, fontWeight: 700, color: T.inkMuted, textTransform: "uppercase",
+              letterSpacing: "0.04em", marginBottom: 8, paddingLeft: 4,
+            }}>
+              Points per activity
+            </div>
+            {SCORE_TIERS.map(t => {
+              const pts = is48 ? t.pts48 : t.pts24;
+              return (
+                <div key={t.name} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "7px 8px", borderRadius: 10,
+                  background: "oklch(98% 0.005 240)", marginBottom: 5,
+                }}>
+                  <span style={{
+                    width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
+                    background: t.color, boxShadow: `0 0 0 3px ${t.color}22`,
+                  }}/>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: T.navy, width: 76, flexShrink: 0 }}>
+                    {t.name}
+                  </span>
+                  <span style={{ fontSize: 11.5, color: T.inkMuted, flex: 1 }}>
+                    {t.band}
+                  </span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 800, padding: "3px 8px", borderRadius: 7,
+                    background: pts > 0 ? "oklch(95% 0.06 155)" : "oklch(95% 0.015 240)",
+                    color: pts > 0 ? "oklch(38% 0.14 155)" : T.inkMuted,
+                    minWidth: 50, textAlign: "center",
+                  }}>
+                    +{pts} pts
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer note */}
+          <div style={{
+            padding: "10px 18px 14px", borderTop: "1px dashed oklch(91% 0.02 240)",
+            fontSize: 11.5, color: T.inkMuted, lineHeight: 1.5,
+          }}>
+            Each activity splits its points across your sub-skills by weight — so a
+            reading task feeds mostly Vocabulary &amp; Comprehension, a roleplay feeds
+            Tone &amp; Fluency, and so on.
+            <span style={{ display: "block", marginTop: 6, fontWeight: 700, color: T.primaryDeep }}>
+              Showing rewards for your {courseLabel}.
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Card wrapper ─────────────────────────────────────────────────────────────
 function Card({
@@ -736,6 +873,7 @@ export default function StatsPage() {
                     <CardHead
                       title="Sub-skill overview"
                       sub="Mastery level · points earned this week"
+                      right={<ScoreHelp courseLength={userQuery.data?.preference?.course_length} />}
                     />
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "center" }}>
                       <Radar skills={skillScores}/>
