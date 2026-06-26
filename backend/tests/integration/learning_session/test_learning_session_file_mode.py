@@ -454,11 +454,10 @@ async def test_initial_stream_emits_session_blueprint_before_teaching() -> None:
     messages = [msg async for msg in service.initial_messages_stream("chat-w1d1")]
 
     _assert_w1d1_blueprint_event(messages[0])
-    # Transient welcome streams right after the blueprint (instant first
-    # paint), then the real teaching turn follows.
-    assert messages[1].type == "chat_stream_start"
-    welcome_end = next(m for m in messages if m.type == "chat_stream_end")
-    assert "set up your lesson" in (welcome_end.content or "")
+    # The real teaching turn streams directly after the blueprint — no
+    # "give me a moment to set up your lesson" wait message in between.
+    assert all("set up your lesson" not in (m.content or "") for m in messages)
+    assert messages[1].type == "chat_message"
     assert messages[-1].type == "chat_message"
 
 
@@ -491,10 +490,10 @@ async def test_initial_stream_emits_session_blueprint_for_48w_depth_day() -> Non
     messages = [msg async for msg in service.initial_messages_stream("chat-48w-d2")]
 
     _assert_blueprint_event(messages[0], day_id)
-    # Same transient welcome contract as the 24w path.
-    assert messages[1].type == "chat_stream_start"
-    welcome_end = next(m for m in messages if m.type == "chat_stream_end")
-    assert "set up your lesson" in (welcome_end.content or "")
+    # Same contract as the 24w path: teaching streams straight after the
+    # blueprint with no "wait" welcome.
+    assert all("set up your lesson" not in (m.content or "") for m in messages)
+    assert messages[1].type == "chat_message"
     assert messages[-1].type == "chat_message"
 
 

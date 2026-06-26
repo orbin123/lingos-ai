@@ -1225,16 +1225,14 @@ class LearningSessionService:
     ) -> AsyncIterator[WSOutgoingMessage]:
         """Stream the first teaching turn when the WebSocket connects.
 
-        The blueprint and a short transient welcome are yielded immediately so
-        the learner sees the lesson frame while the teaching LLM warms up. The
-        welcome is intentionally NOT persisted to ``session.messages``:
-        ``_stream_teaching_turn`` positions the scripted-plan cursor by
-        counting persisted teacher turns, so persisting it would shift the
-        cursor for authored lessons.
+        The blueprint is yielded immediately so the learner sees the lesson
+        frame, then the real teaching opener streams straight in under the
+        chat skeleton — no "give me a moment" wait message. Teaching is fast
+        now (task generation runs lazily off the critical path), so the opener
+        itself is the first thing the learner reads.
         """
         t0 = time.perf_counter()
         first_yield_ms: float | None = None
-        welcome_ms: float | None = None
         teaching_first_chunk_ms: float | None = None
         try:
             session = self._load_session(session_id)
@@ -1250,14 +1248,6 @@ class LearningSessionService:
             yield self._session_blueprint_message(session, state)
             first_yield_ms = (time.perf_counter() - t0) * 1000
 
-            welcome = (
-                f"Hi! Today we're working on {session.topic}. "
-                "Give me a moment to set up your lesson..."
-            )
-            async for msg in self._stream_chat_text(welcome):
-                yield msg
-            welcome_ms = (time.perf_counter() - t0) * 1000
-
             async for msg in self._stream_teaching_turn(session, state):
                 if teaching_first_chunk_ms is None and msg.type == "chat_stream_delta":
                     teaching_first_chunk_ms = (time.perf_counter() - t0) * 1000
@@ -1271,7 +1261,6 @@ class LearningSessionService:
                 first_yield_ms=(
                     round(first_yield_ms) if first_yield_ms is not None else None
                 ),
-                welcome_ms=round(welcome_ms) if welcome_ms is not None else None,
                 teaching_first_chunk_ms=(
                     round(teaching_first_chunk_ms)
                     if teaching_first_chunk_ms is not None
@@ -3061,10 +3050,11 @@ class LearningSessionService:
 
         content = "".join(chunks).strip()
         if not content:
+            topic = state.get("topic") or "this topic"
             fallback = (
-                f"Today we are learning {state.get('topic') or 'this topic'}. "
-                "I will guide you through a quick concept check, then we will "
-                "do a short practice. Say 'ready' when you want to begin."
+                f"Let's start today's lesson on {topic}. We'll learn the key "
+                "idea together with a few quick examples. To begin, can you "
+                "give me one short sentence about today's topic?"
             )
             for chunk in self._split_text_chunks(fallback):
                 yield WSOutgoingMessage(

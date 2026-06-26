@@ -682,6 +682,7 @@ def _fallback_text(
     scripted_plan: list[str] | None,
     teacher_instructions: TeacherInstructions | None = None,
     current_step_index: int | None = None,
+    lesson_description: str | None = None,
 ) -> str:
     """Deterministic teacher turn used when the LLM is unavailable."""
 
@@ -695,22 +696,27 @@ def _fallback_text(
     step_text = _step_instruction(scripted_plan, step_index)
 
     if not conversation or ai_turns == 0:
-        if step_text:
-            return (
-                f"Hi! Today our lesson is {topic}. "
-                "Tell me one short answer to start today's first step."
+        # First turn: teach the topic and end with one probing question.
+        # Never gatekeep with a bare "tell me an answer to start" — the
+        # opener is the most visible turn and must actually introduce the
+        # lesson.
+        if scripted_plan or step_text:
+            opener = f"Hi! Today we're learning about {topic}."
+            desc = _stringify(lesson_description)
+            # Fold the lesson aim in only when it keeps the opener within the
+            # turn's word budget (the fallback is validated like any turn).
+            if desc and len((opener + " " + desc).split()) <= _TARGET_WORDS:
+                opener += f" {desc.rstrip('.')}."
+            opener += (
+                " We'll take it step by step with short examples. To start, "
+                "can you give me one short sentence about today's topic?"
             )
-        if scripted_plan:
-            return (
-                f"Hi! Today our lesson is {topic}. Let's start with the "
-                "first step from today's lesson. Tell me one short answer "
-                "connected to this topic."
-            )
+            return opener
         return (
             f"Hi! Today our lesson is about tense: {topic}. Tense tells us "
             "when an action or state happens. The simple present is for facts, "
-            "routines, and habits, like 'I work every day.' Tell me one real "
-            "daily routine you have."
+            "routines, and habits, like 'I work every day.' Can you tell me "
+            "one real daily routine you have?"
         )
 
     if any(
@@ -865,8 +871,14 @@ async def generate_teaching_turn(
     if text and not violations:
         return TeachingOutput(messages=[text])
 
-    if violations:
-        logger.warning("teacher repair triggered: %s", violations)
+    # The opener is the most visible turn; give it an extra retry before
+    # dropping to the deterministic fallback. Later turns keep a single
+    # retry to bound latency.
+    max_retries = 2 if _count_teacher_chat_turns(conversation) == 0 else 1
+    attempt = 0
+    while violations and attempt < max_retries:
+        attempt += 1
+        logger.warning("teacher repair triggered (attempt %d): %s", attempt, violations)
         retry_prompt = (
             user_prompt
             + "\n\n"
@@ -881,12 +893,12 @@ async def generate_teaching_turn(
         retry_text, retry_violations = _repair_and_check(retry_raw, previous_assistant)
         if retry_text and not retry_violations:
             return TeachingOutput(messages=[retry_text])
-        if retry_violations:
-            logger.warning(
-                "teacher repair: retry still invalid (%s); using fallback",
-                retry_violations,
-            )
-            violations = retry_violations
+        logger.warning(
+            "teacher repair: retry %d still invalid (%s)",
+            attempt,
+            retry_violations,
+        )
+        violations = retry_violations
 
     logger.warning(
         "teacher.fallback_used: violations=%s step_index=%s",
@@ -902,6 +914,7 @@ async def generate_teaching_turn(
             scripted_plan=scripted_plan,
             teacher_instructions=teacher_instructions,
             current_step_index=current_step_index,
+            lesson_description=lesson_description,
         )
     )
     return TeachingOutput(messages=[fallback])
@@ -988,8 +1001,16 @@ async def stream_teaching_turn(
         yield text
         return
 
-    if violations:
-        logger.warning("teacher repair triggered (stream): %s", violations)
+    # The opener is the most visible turn; give it an extra retry before
+    # dropping to the deterministic fallback. Later turns keep a single
+    # retry to bound latency.
+    max_retries = 2 if _count_teacher_chat_turns(conversation) == 0 else 1
+    attempt = 0
+    while violations and attempt < max_retries:
+        attempt += 1
+        logger.warning(
+            "teacher repair triggered (stream, attempt %d): %s", attempt, violations
+        )
         retry_prompt = (
             user_prompt + "\n\n" + _retry_instruction(violations, previous_assistant)
         )
@@ -1005,8 +1026,7 @@ async def stream_teaching_turn(
         if retry_text and not retry_violations:
             yield retry_text
             return
-        if retry_violations:
-            violations = retry_violations
+        violations = retry_violations
 
     logger.warning(
         "teacher.fallback_used (stream): violations=%s step_index=%s",
@@ -1022,6 +1042,7 @@ async def stream_teaching_turn(
             scripted_plan=scripted_plan,
             teacher_instructions=teacher_instructions,
             current_step_index=current_step_index,
+            lesson_description=lesson_description,
         )
     )
     yield fallback
