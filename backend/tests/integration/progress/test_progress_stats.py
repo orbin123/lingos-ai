@@ -175,12 +175,16 @@ def _complete_session(
     db.flush()
     arch = archetype or _archetype_id(db)
     for seq in range(n_attempts):
+        # Active time is measured per attempt as submitted_at − created_at, so
+        # pin created_at to ``started`` to make each attempt's duration the
+        # session's ``completed − started`` span (deterministic in tests).
         attempt = ActivityAttempt(
             session_id=session.id,
             archetype_id=arch,
             sequence=seq,
             status=AttemptStatus.EVALUATED,
             task_content={},
+            created_at=started,
             submitted_at=completed,
         )
         db.add(attempt)
@@ -263,7 +267,7 @@ def _add_points_log(db, *, user_id, skill_id, points, created_at, session_id=Non
 
 
 class TestBuildPeriod:
-    def test_week_goal_is_tasks_per_day_times_seven(self):
+    def test_week_goal_is_prorated_to_current_day(self):
         period = build_period(
             "week",
             course_length="24w",
@@ -271,7 +275,9 @@ class TestBuildPeriod:
             current_week=1,
             current_day=4,
         )
-        assert period.expected_tasks == 28  # not the old constant 7
+        # Prorated pace-to-date: 4 tasks/day × 4 days reached = 16 (not 28).
+        assert period.expected_tasks == 16
+        # The day-id window is still the whole week — only the goal prorates.
         assert period.day_ids == [f"day_24_01_{d:02d}" for d in range(1, 8)]
         assert period.bucket_labels == [f"D{d}" for d in range(1, 8)]
         assert period.comparison_day_ids is None  # no week 0
@@ -321,7 +327,7 @@ class TestBuildPeriod:
 
 
 class TestTaskGoals:
-    def test_day_four_four_per_day_is_sixteen_of_twentyeight(self, db_session):
+    def test_day_four_four_per_day_is_sixteen_of_sixteen(self, db_session):
         user = _seed_user(db_session, tasks_per_day=4, current_week=1, current_day=4)
         week = _add_week(db_session, 1)
         for d in range(1, 5):  # days 1..4 done, 4 attempts each = 16
@@ -332,10 +338,11 @@ class TestTaskGoals:
 
         stats = _stats(db_session, user, "week")
         assert stats.period_snapshot.tasks_completed == 16
-        assert stats.period_snapshot.tasks_goal == 28  # full week, not prorated
-        assert stats.period_snapshot.completion_pct == pytest.approx(57.1, abs=0.2)
-        # Legacy card mirrors the period goal — no more hardcoded 7.
-        assert stats.weekly_snapshot.weekly_task_goal == 28
+        # Goal prorates to the day reached: 4 tasks/day × day 4 = 16 → on pace.
+        assert stats.period_snapshot.tasks_goal == 16
+        assert stats.period_snapshot.completion_pct == pytest.approx(100.0, abs=0.2)
+        # Legacy card mirrors the prorated period goal.
+        assert stats.weekly_snapshot.weekly_task_goal == 16
 
     def test_month_goal_is_112(self, db_session):
         user = _seed_user(db_session, tasks_per_day=4, current_week=2, current_day=1)
@@ -423,15 +430,31 @@ class TestRangeBehaviour:
         # Change vs previous week (4.0) → +4.0.
         assert week_stats.period_snapshot.overall_score_change == pytest.approx(4.0)
 
+    def test_score_change_is_none_on_first_week(self, db_session):
+        # Week 1 has no prior period → change is None (UI shows "first week"),
+        # not a misleading 0.0 "No change".
+        user = _seed_user(db_session, tasks_per_day=2, current_week=1, current_day=3)
+        week = _add_week(db_session, 1)
+        day = _add_day(db_session, week, 1)
+        _complete_session(
+            db_session, user_id=user.id, day_id=day.day_id, n_attempts=2, score=6.0
+        )
+
+        stats = _stats(db_session, user, "week")
+        assert stats.period_snapshot.overall_score_change is None
+        assert stats.weekly_snapshot.overall_score_change is None
+
 
 # ── endpoint: time practiced ───────────────────────────────────────
 
 
 class TestTimePracticed:
-    def test_sums_session_durations_in_period(self, db_session):
+    def test_sums_bounded_per_attempt_active_time(self, db_session):
+        # Active time = Σ per-attempt min(submitted − created, 8 min cap).
         user = _seed_user(db_session, tasks_per_day=4, current_week=1, current_day=2)
         week = _add_week(db_session, 1)
         start = datetime.now(timezone.utc)
+        # Day 1: 2 attempts × 3 min (under the cap) = 360 s.
         d1 = _add_day(db_session, week, 1)
         _complete_session(
             db_session,
@@ -439,22 +462,24 @@ class TestTimePracticed:
             day_id=d1.day_id,
             n_attempts=2,
             started=start,
-            completed=start + timedelta(minutes=10),
+            completed=start + timedelta(minutes=3),
         )
+        # Day 2: 1 attempt left open 20 min → bounded to the 8-min cap = 480 s.
         d2 = _add_day(db_session, week, 2)
         _complete_session(
             db_session,
             user_id=user.id,
             day_id=d2.day_id,
-            n_attempts=2,
+            n_attempts=1,
             started=start,
-            completed=start + timedelta(minutes=5),
+            completed=start + timedelta(minutes=20),
         )
 
         stats = _stats(db_session, user, "week")
-        assert stats.period_snapshot.time_practiced_seconds == 15 * 60
+        assert stats.period_snapshot.time_practiced_seconds == 360 + 480
         assert stats.practice_patterns.sessions_count == 2
-        assert stats.practice_patterns.avg_session_seconds == int(15 * 60 / 2)
+        # Avg session = bounded total ÷ completed sessions.
+        assert stats.practice_patterns.avg_session_seconds == int((360 + 480) / 2)
 
 
 # ── endpoint: RAG insights are qualitative & number-free ───────────

@@ -79,6 +79,12 @@ _CEFR_TIERS: dict[str, str] = {
     "C2": "advanced",
 }
 
+# Per-activity active-time bound. We measure engagement as the gap between an
+# attempt being served (``created_at``) and submitted (``submitted_at``), capped
+# so a learner who leaves the tab open over lunch doesn't book a 16-hour
+# "session". 8 min comfortably covers the longest real activity.
+_ACTIVE_CAP_SECONDS = 8 * 60
+
 
 def _archetype_name(archetype_id: str) -> str:
     try:
@@ -250,14 +256,33 @@ def _completed_sessions(
     )
 
 
-def _session_seconds(sessions: list[DailySession]) -> int:
-    """Total practice seconds across completed sessions (negatives ignored)."""
+def _active_seconds(db: Session, user_id: int, day_ids: list[str]) -> int:
+    """Bounded active practice seconds across the given curriculum days.
+
+    Active time = Σ over EVALUATED attempts of ``min(submitted_at − created_at,
+    cap)``. Measuring per attempt (served → submitted) and capping each one
+    avoids the wall-clock trap where an idle open tab inflates the total.
+    """
+    if not day_ids:
+        return 0
+    rows = (
+        db.query(ActivityAttempt.created_at, ActivityAttempt.submitted_at)
+        .join(DailySession, DailySession.id == ActivityAttempt.session_id)
+        .filter(
+            DailySession.user_id == user_id,
+            ActivityAttempt.status == AttemptStatus.EVALUATED,
+            ActivityAttempt.submitted_at.isnot(None),
+            DailySession.day_id.in_(day_ids),
+        )
+        .all()
+    )
     total = 0.0
-    for s in sessions:
-        if s.completed_at is not None and s.started_at is not None:
-            delta = (s.completed_at - s.started_at).total_seconds()
-            if delta > 0:
-                total += delta
+    for created_at, submitted_at in rows:
+        if created_at is None or submitted_at is None:
+            continue
+        delta = (submitted_at - created_at).total_seconds()
+        if delta > 0:
+            total += min(delta, _ACTIVE_CAP_SECONDS)
     return int(total)
 
 
@@ -274,8 +299,10 @@ def get_stats_dashboard(
     """Stats page data, anchored to the learner's *curriculum* calendar.
 
     Range-dependent sections (period KPIs, score history, practice patterns,
-    recent activities) reflect ``range``. The sub-skill overview and the
-    difficulty donut are always all-time. Strengths / focus areas are
+    recent activities, difficulty donut) reflect ``range``. The sub-skill
+    overview (radar/bars) stays all-time mastery — a skill *level* must not
+    reset each week; its weekly movement is surfaced separately via
+    ``weekly_points_by_skill``. Strengths / focus areas are
     qualitative, number-free coaching copy synthesized from the learner's
     recurring feedback patterns (RAG-backed).
     """
@@ -313,10 +340,12 @@ def get_stats_dashboard(
     period_avg = _avg_eval_score(db, user_id, period.day_ids)
     overall_score = round(period_avg, 1) if period_avg is not None else 0.0
     prev_avg = _avg_eval_score(db, user_id, period.comparison_day_ids or [])
+    # None (not 0.0) when there is no prior period with data — the UI shows
+    # "Your first week" instead of a misleading "No change".
     score_change = (
         round(period_avg - prev_avg, 1)
         if period_avg is not None and prev_avg is not None
-        else 0.0
+        else None
     )
 
     tasks_completed = _count_completed(db, user_id, period.day_ids)
@@ -327,11 +356,12 @@ def get_stats_dashboard(
     )
 
     period_sessions = _completed_sessions(db, user_id, period.day_ids)
-    time_practiced = _session_seconds(period_sessions)
+    time_practiced = _active_seconds(db, user_id, period.day_ids)
     time_change: int | None = None
     if period.comparison_day_ids:
-        prev_sessions = _completed_sessions(db, user_id, period.comparison_day_ids)
-        time_change = time_practiced - _session_seconds(prev_sessions)
+        time_change = time_practiced - _active_seconds(
+            db, user_id, period.comparison_day_ids
+        )
 
     # ── Points earned per skill in the period (best-skill + trend column) ──
     period_points_rows = (
@@ -365,18 +395,23 @@ def get_stats_dashboard(
         scores, key=lambda s: s.score, default=None
     )
 
-    # ── Difficulty distribution — ALWAYS all-time ──
+    # ── Difficulty distribution — over the selected period ──
     cefr_counts = (
-        db.query(CurriculumWeek.cefr_level, func.count(ActivityAttempt.id))
-        .join(CurriculumDay, CurriculumDay.week_id == CurriculumWeek.id)
-        .join(DailySession, DailySession.day_id == CurriculumDay.day_id)
-        .join(ActivityAttempt, ActivityAttempt.session_id == DailySession.id)
-        .filter(
-            DailySession.user_id == user_id,
-            ActivityAttempt.status == AttemptStatus.EVALUATED,
+        (
+            db.query(CurriculumWeek.cefr_level, func.count(ActivityAttempt.id))
+            .join(CurriculumDay, CurriculumDay.week_id == CurriculumWeek.id)
+            .join(DailySession, DailySession.day_id == CurriculumDay.day_id)
+            .join(ActivityAttempt, ActivityAttempt.session_id == DailySession.id)
+            .filter(
+                DailySession.user_id == user_id,
+                ActivityAttempt.status == AttemptStatus.EVALUATED,
+                DailySession.day_id.in_(period.day_ids),
+            )
+            .group_by(CurriculumWeek.cefr_level)
+            .all()
         )
-        .group_by(CurriculumWeek.cefr_level)
-        .all()
+        if period.day_ids
+        else []
     )
     beginner = intermediate = advanced = 0
     for cefr, count in cefr_counts:

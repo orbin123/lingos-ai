@@ -26,9 +26,20 @@ const T = {
   bg: "oklch(91% 0.04 245)",
 };
 
-// ─── Mocks for sections with no tracking data yet ─────────────────────────────
-const MOCK_TIME_PRACTICED = "–";
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+/** Whole-minute label for a duration in seconds ("–" when there's none). */
+function formatMinutes(seconds: number | null | undefined): string {
+  if (!seconds || seconds <= 0) return "–";
+  return String(Math.round(seconds / 60));
+}
+
+/** Signed "±Nm vs last week" copy for a time delta, or null when unavailable. */
+function timeDeltaCopy(changeSeconds: number | null | undefined): string | null {
+  if (changeSeconds == null) return null;
+  const mins = Math.round(changeSeconds / 60);
+  if (mins === 0) return "No change vs last week";
+  return `${mins > 0 ? "+" : ""}${mins}m vs last week`;
+}
 // Axes use the LEGACY backend sub-skill identifiers as keys. The displayed
 // label is the friendlier wording shipped via `display_label` in the API
 // (and mirrored in `@/lib/skill-labels` for fallback). See Phase 5 of the
@@ -113,11 +124,6 @@ const CheckIcon = () => (
 const AlertIcon = () => (
   <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
     <path d="M7 4v3.5M7 9.8v.2" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-  </svg>
-);
-const ArrowRight = () => (
-  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-    <path d="M6 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
   </svg>
 );
 const ArrowOut = () => (
@@ -352,28 +358,15 @@ function ActivityRow({ activity, onClick }: { activity: RecentActivity; onClick:
   );
 }
 
-function MockActivityRow({ title, meta, scoreStr, scoreColor: sc }: {
-  title: string; meta: string[]; scoreStr: string; scoreColor: { bg: string; color: string };
-}) {
+function EmptyState({ text }: { text: string }) {
   return (
     <div style={{
-      display: "flex", alignItems: "center", gap: 14,
-      padding: "14px 16px", borderRadius: 14,
-      background: "white", border: `1.5px solid ${T.line}`,
-      marginBottom: 8,
+      padding: "28px 20px", textAlign: "center",
+      color: T.inkMuted, fontSize: 13.5, lineHeight: 1.5,
+      background: "oklch(97% 0.02 240)", borderRadius: 14,
+      border: `1px dashed ${T.line}`,
     }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: T.navy }}>{title}</div>
-        <div style={{ fontSize: 12, color: T.inkMuted, marginTop: 2, display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {meta.map((m, j) => <span key={j}>{j > 0 && "· "}{m}</span>)}
-        </div>
-      </div>
-      <span style={{
-        fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 8,
-        background: sc.bg, color: sc.color, flexShrink: 0,
-      }}>
-        {scoreStr}
-      </span>
+      {text}
     </div>
   );
 }
@@ -586,24 +579,27 @@ export default function StatsPage() {
   if (!isReady) return null;
 
   const stats = statsQuery.data;
-  const weekly = stats?.weekly_snapshot;
+  const period = stats?.period_snapshot;
   const skillScores = axisScores(stats?.skill_scores ?? []);
-  const overallScore = skillScores.length > 0 
-    ? skillScores.reduce((sum, s) => sum + s.score, 0) / skillScores.length 
-    : 0;
-  const change = weekly?.overall_score_change ?? 0;
-  const changeUp = change >= 0;
+  // KPI overall score is this week's evaluator average (value + delta are the
+  // same metric, unlike the all-time mastery radar below).
+  const overallScore = period?.overall_score ?? 0;
+  // null = no prior week to compare against → "Your first week".
+  const change = period?.overall_score_change ?? null;
   const strengths = stats?.feedback.strengths ?? [];
   const focusAreas = stats?.feedback.focus_areas ?? [];
   const activities = stats?.recent_activities ?? [];
-  const tasksCompleted = weekly?.tasks_completed ?? 0;
-  const tasksGoal = weekly?.weekly_task_goal ?? 7;
+  const tasksCompleted = period?.tasks_completed ?? 0;
+  const tasksGoal = period?.tasks_goal ?? 0;
+  const completionPct = period?.completion_pct ?? 0;
+  const timePracticedSeconds = period?.time_practiced_seconds ?? 0;
+  const timeChangeCopy = timeDeltaCopy(period?.time_practiced_change_seconds);
   const weeklyPts = stats?.weekly_points_by_skill ?? {};
   const historyLabels = stats?.skill_history_labels;
   const skillHistory = stats?.skill_history;
   const difficultyDist = stats?.difficulty_distribution;
-  const bestSkill = displaySkillName(weekly?.best_skill_name ?? null);
-  const bestScore = weekly?.best_skill_score;
+  const bestSkill = displaySkillName(period?.best_skill_name ?? null);
+  const bestScore = period?.best_skill_score;
 
   const practice = stats?.practice_patterns;
   const avgSessionMin =
@@ -621,7 +617,7 @@ export default function StatsPage() {
     {
       num: practice ? String(practice.sessions_count) : "—",
       unit: "",
-      label: "Per week",
+      label: "Lessons done",
     },
   ];
 
@@ -675,21 +671,42 @@ export default function StatsPage() {
                   label="Overall score"
                   value={<>{statsQuery.isLoading ? "…" : overallScore.toFixed(1)}</>}
                   unit="/ 10"
-                  delta={change === 0 ? "No change vs last week" : `${changeUp ? "+" : ""}${change.toFixed(1)} vs last week`}
-                  deltaDir={change > 0 ? "up" : change < 0 ? "down" : "flat"}
+                  delta={
+                    change == null
+                      ? "Your first week"
+                      : change === 0
+                        ? "No change vs last week"
+                        : `${change > 0 ? "+" : ""}${change.toFixed(1)} vs last week`
+                  }
+                  deltaDir={change == null ? "flat" : change > 0 ? "up" : change < 0 ? "down" : "flat"}
                 />
                 <KpiTile
                   label="Tasks completed"
                   value={statsQuery.isLoading ? "…" : `${tasksCompleted}`}
-                  unit={`/ ${tasksGoal}`}
-                  delta={`${tasksGoal > 0 ? Math.round((tasksCompleted / tasksGoal) * 100) : 0}% completion`}
-                  deltaDir="up"
+                  unit={tasksGoal > 0 ? `/ ${tasksGoal}` : undefined}
+                  delta={
+                    tasksGoal <= 0
+                      ? "No goal yet"
+                      : completionPct >= 100
+                        ? "On pace this week"
+                        : `${Math.round(completionPct)}% of today's goal`
+                  }
+                  deltaDir={completionPct >= 100 ? "up" : "flat"}
                 />
                 <KpiTile
                   label="Time practiced"
-                  value={MOCK_TIME_PRACTICED}
-                  delta="+24m vs last week"
-                  deltaDir="up"
+                  value={statsQuery.isLoading ? "…" : formatMinutes(timePracticedSeconds)}
+                  unit={timePracticedSeconds > 0 ? "min" : undefined}
+                  delta={timeChangeCopy ?? "Your first week"}
+                  deltaDir={
+                    timeChangeCopy == null
+                      ? "flat"
+                      : (period?.time_practiced_change_seconds ?? 0) > 0
+                        ? "up"
+                        : (period?.time_practiced_change_seconds ?? 0) < 0
+                          ? "down"
+                          : "flat"
+                  }
                 />
                 <KpiTile
                   label="Best skill"
@@ -718,8 +735,7 @@ export default function StatsPage() {
                   <Card>
                     <CardHead
                       title="Sub-skill overview"
-                      sub="Updated by Evaluator Agent"
-                      right={<CardLink>Drill into a skill <ArrowRight/></CardLink>}
+                      sub="Mastery level · points earned this week"
                     />
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "center" }}>
                       <Radar skills={skillScores}/>
@@ -731,8 +747,8 @@ export default function StatsPage() {
                   <Card style={{ marginBottom: 0 }}>
                     <CardHead
                       title="Recent activities"
-                      sub={`Last ${activities.length || 7} sessions`}
-                      right={<CardLink onClick={handleViewAll}>View all <ArrowOut/></CardLink>}
+                      sub={activities.length > 0 ? `Last ${activities.length} sessions` : "This curriculum week"}
+                      right={activities.length > 0 ? <CardLink onClick={handleViewAll}>View all <ArrowOut/></CardLink> : undefined}
                     />
                     {statsQuery.isLoading ? (
                       <div style={{ padding: 24, color: T.inkMuted, fontSize: 14 }}>Loading activities…</div>
@@ -745,32 +761,7 @@ export default function StatsPage() {
                         />
                       ))
                     ) : (
-                      <>
-                        <MockActivityRow
-                          title="Past simple — chat & drills"
-                          meta={["Grammar", "6m 42s", "Today, 9:14 AM"]}
-                          scoreStr="6.2"
-                          scoreColor={{ bg: "oklch(94% 0.07 155)", color: "oklch(35% 0.14 155)" }}
-                        />
-                        <MockActivityRow
-                          title="Read aloud — workplace email"
-                          meta={["Pronunciation", "4m 10s", "Yesterday, 8:02 PM"]}
-                          scoreStr="4.0"
-                          scoreColor={{ bg: "oklch(94% 0.06 25)", color: "oklch(40% 0.18 25)" }}
-                        />
-                        <MockActivityRow
-                          title="Vocabulary drill — interview verbs"
-                          meta={["Vocabulary", "5m 22s", "Yesterday, 7:30 PM"]}
-                          scoreStr="5.4"
-                          scoreColor={{ bg: T.primarySoft, color: T.primaryDeep }}
-                        />
-                        <MockActivityRow
-                          title="Mock interview — first 3 minutes"
-                          meta={["Fluency", "3m 02s", "Wed, 6:48 PM"]}
-                          scoreStr="5.5"
-                          scoreColor={{ bg: T.primarySoft, color: T.primaryDeep }}
-                        />
-                      </>
+                      <EmptyState text="Complete a lesson to see your activity here." />
                     )}
                   </Card>
                 </div>
@@ -794,11 +785,7 @@ export default function StatsPage() {
                         <InsightRow key={i} text={s} meta="Feedback Agent · sustained" tone="ok"/>
                       ))
                     ) : (
-                      <>
-                        <InsightRow text={<>Past tense conjugation — <strong>92% accuracy</strong> over 5 sessions.</>} meta="Grammar · sustained" tone="ok"/>
-                        <InsightRow text={<>Pronunciation of /θ/ and /ð/ improving — <strong>+12% clarity</strong>.</>} meta="Pronunciation · trending up" tone="ok"/>
-                        <InsightRow text={<>Comprehension of formal phrasing tracking at <strong>2.1 above peers</strong>.</>} meta="Listening · benchmark" tone="ok"/>
-                      </>
+                      <EmptyState text="Your strengths appear here once the Feedback Agent has a few graded tasks to learn from." />
                     )}
                   </Card>
 
@@ -828,11 +815,7 @@ export default function StatsPage() {
                         <InsightRow key={i} text={f} meta="Feedback Agent" tone="no"/>
                       ))
                     ) : (
-                      <>
-                        <InsightRow text={<>Spend extra reps on <strong>tone control</strong> — formal vs casual.</>} meta="Tone & Register · 4.2" tone="no"/>
-                        <InsightRow text={<>Fluency dips when sentences exceed <strong>12 words</strong>.</>} meta="Fluency · pause patterns" tone="no"/>
-                        <InsightRow text={<>Stress patterns drop on multi-syllable verbs.</>} meta="Pronunciation · 4.0" tone="no"/>
-                      </>
+                      <EmptyState text="Focus areas appear here once the Feedback Agent spots a recurring pattern to work on." />
                     )}
                   </Card>
 
@@ -844,7 +827,7 @@ export default function StatsPage() {
 
                   {/* Task difficulty */}
                   <Card>
-                    <CardHead title="Task difficulty" sub="All sessions so far"/>
+                    <CardHead title="Task difficulty" sub="This curriculum week"/>
                     <Donut dist={difficultyDist ?? null}/>
                   </Card>
 
@@ -863,6 +846,9 @@ export default function StatsPage() {
                           </div>
                         </div>
                       ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: T.inkMuted, marginTop: 10, lineHeight: 1.4 }}>
+                      “Day” = your curriculum day (1–7) within the week, not a weekday.
                     </div>
                   </Card>
                 </div>
