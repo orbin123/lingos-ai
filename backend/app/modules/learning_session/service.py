@@ -49,6 +49,7 @@ from app.ai.graphs.nodes import (
     task_delivery_node,
 )
 from app.ai.graphs.state import LearningSessionState, PhaseType
+from app.modules.auth.models import User
 from app.modules.auth.repository import UserProfileRepository
 from app.modules.curriculum.adapters import v2_course_topic
 from app.modules.curriculum.repository import (
@@ -1741,9 +1742,26 @@ class LearningSessionService:
             # Input gate: confront gibberish / off-topic replies BEFORE any
             # advance or teaching-turn logic. Wrong-but-relevant answers and
             # genuine confusion fall through to the normal teaching flow.
-            if not _looks_like_ready_response(text) and not _is_confusion(text):
+            #
+            # A bare affirmative ("yes"/"ok"/"ready") only means "advance" when
+            # the tutor actually invited one — it asked a readiness question, or
+            # it has already mentioned the practice task (so the forced-transition
+            # escape valve below can still fire). An affirmative to a *content*
+            # question ("complete this sentence") is a non-answer, so gate it like
+            # an off-topic reply instead of silently skipping the lesson step.
+            affirmative = _looks_like_ready_response(text)
+            tutor_invited_affirmative = _tutor_asked_readiness(
+                previous_tutor_message
+            ) or _any_tutor_mentioned_practice_task(messages)
+            affirmative_non_answer = affirmative and not tutor_invited_affirmative
+
+            if (not affirmative or affirmative_non_answer) and not _is_confusion(text):
                 gate_reason: str | None = None
-                if _is_structural_gibberish(text):
+                if affirmative_non_answer:
+                    # Deterministic — don't burn an LLM call to learn that a bare
+                    # "yes" isn't an attempt at the tutor's question.
+                    gate_reason = "off_topic"
+                elif _is_structural_gibberish(text):
                     gate_reason = "gibberish"
                 else:
                     verdict = await classify_reply_relevance(
@@ -2600,9 +2618,12 @@ class LearningSessionService:
     # ------------------------------------------------------------------
 
     def _profile_context(self, user_id: int) -> dict[str, Any]:
+        user = self.db.get(User, user_id)
+        learner_name = user.name.split()[0] if user and user.name else ""
         profile = self.profile_repo.get_by_user_id(user_id)
         if profile is None:
             return {
+                "learner_name": learner_name,
                 "interests": "",
                 "primary_goals": "",
                 "personalisation_context": "",
@@ -2611,6 +2632,7 @@ class LearningSessionService:
                 "structured_personalisation": None,
             }
         return {
+            "learner_name": learner_name,
             "interests": profile.interests.strip() if profile.interests else "",
             "primary_goals": (
                 profile.primary_goals.strip() if profile.primary_goals else ""

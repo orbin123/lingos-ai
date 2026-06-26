@@ -152,6 +152,19 @@ def test_format_profile_includes_native_language() -> None:
     assert "Native language: Italian" in profile
 
 
+def test_format_profile_includes_learner_first_name() -> None:
+    profile = _format_profile({"learner_name": "Carlos"})
+    assert "Learner first name: Carlos" in profile
+    # Absent name degrades to 'unknown', never crashes.
+    assert "Learner first name: unknown" in _format_profile({"interests": "travel"})
+
+
+def test_system_prompt_has_greeting_and_human_tone_guidance() -> None:
+    one_line_prompt = " ".join(_system_prompt().split())
+    assert "GREETING & HUMAN TONE" in one_line_prompt
+    assert "first name" in one_line_prompt
+
+
 def test_teacher_prompt_includes_native_language_from_profile() -> None:
     prompt = _build_user_prompt(
         topic="Simple Present",

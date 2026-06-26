@@ -1326,6 +1326,185 @@ async def test_wrong_but_relevant_reply_falls_through_to_teaching(monkeypatch) -
     assert any((m.content or "") == "__TEACHING__" for m in out)
 
 
+@pytest.mark.asyncio
+async def test_bare_yes_to_content_question_is_redirected_not_advanced(
+    monkeypatch,
+) -> None:
+    """A bare "yes" that doesn't answer the tutor's content question is gated.
+
+    Regression for the "yes is a wildcard" bug: an affirmative only advances when
+    the tutor actually invited one (readiness prompt / practice-task mention).
+    Here the tutor asked a content question, so "yes" must be redirected
+    deterministically — without invoking the relevance classifier or advancing.
+    """
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    chat = SimpleNamespace(
+        session_id="chat-1",
+        user_id=1,
+        messages=[],
+        understanding_confirmed=False,
+    )
+    service._load_session = MagicMock(return_value=chat)
+    service._enrich_state_with_profile = MagicMock()
+    service._apply_update = MagicMock()
+    service._next_pending_attempt = MagicMock(
+        side_effect=AssertionError("must not advance on a bare 'yes'")
+    )
+
+    async def _teaching_stub(_session, _state):  # pragma: no cover - must not run
+        raise AssertionError("must not reach a teaching turn")
+        yield
+
+    service._stream_teaching_turn = _teaching_stub
+
+    state = {
+        "phase": "teaching",
+        "topic": "pronouns",
+        "messages": [
+            {
+                "role": "ai",
+                "content": "Complete this sentence with the correct pronoun.",
+                "type": "chat",
+            }
+        ],
+    }
+    service._state_from_row = MagicMock(return_value=state)
+    # The gate decides this deterministically — the LLM classifier must not run.
+    monkeypatch.setattr(
+        "app.modules.learning_session.service.classify_reply_relevance",
+        AsyncMock(side_effect=AssertionError("classifier must not run")),
+    )
+
+    incoming = WSIncomingMessage(type="user_message", content="yes")
+    out = [m async for m in service.process_message_stream("chat-1", incoming)]
+
+    assert any(m.type == "chat_stream_end" for m in out)
+    update = service._apply_update.call_args.args[1]
+    assert update["phase"] == "teaching"
+    assert update["messages"][-1]["redirect"] is True
+
+
+@pytest.mark.asyncio
+async def test_bare_yes_to_readiness_prompt_still_advances(monkeypatch) -> None:
+    """ "yes" after a readiness prompt must bypass the gate and advance."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    chat = SimpleNamespace(
+        session_id="chat-1",
+        user_id=1,
+        messages=[],
+        understanding_confirmed=False,
+    )
+    service._load_session = MagicMock(return_value=chat)
+    service._enrich_state_with_profile = MagicMock()
+    service._apply_update = MagicMock()
+    # No pending attempt left → advance path lands on completion, proving the
+    # affirmative bypassed the input gate (no redirect).
+    service._next_pending_attempt = MagicMock(return_value=None)
+
+    async def _complete_stub(_session, _state):
+        yield WSOutgoingMessage(type="chat_message", content="__COMPLETE__")
+
+    service._complete_and_announce = _complete_stub
+    monkeypatch.setattr(
+        "app.modules.learning_session.service.classify_reply_relevance",
+        AsyncMock(side_effect=AssertionError("classifier must not run on readiness")),
+    )
+
+    state = {
+        "phase": "teaching",
+        "topic": "pronouns",
+        "messages": [
+            {
+                "role": "ai",
+                "content": "Nice. Ready to try the practice task?",
+                "type": "chat",
+            }
+        ],
+    }
+    service._state_from_row = MagicMock(return_value=state)
+
+    incoming = WSIncomingMessage(type="user_message", content="yes")
+    out = [m async for m in service.process_message_stream("chat-1", incoming)]
+
+    assert any((m.content or "") == "__COMPLETE__" for m in out)
+
+
+@pytest.mark.asyncio
+async def test_off_topic_reply_is_redirected_via_classifier(monkeypatch) -> None:
+    """A non-affirmative off-topic reply still routes through the classifier."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    chat = SimpleNamespace(
+        session_id="chat-1",
+        user_id=1,
+        messages=[],
+        understanding_confirmed=False,
+    )
+    service._load_session = MagicMock(return_value=chat)
+    service._enrich_state_with_profile = MagicMock()
+    service._apply_update = MagicMock()
+    service._next_pending_attempt = MagicMock(
+        side_effect=AssertionError("must not advance on off-topic")
+    )
+
+    state = {
+        "phase": "teaching",
+        "topic": "pronouns",
+        "messages": [
+            {
+                "role": "ai",
+                "content": "Complete this sentence with the correct pronoun.",
+                "type": "chat",
+            }
+        ],
+    }
+    service._state_from_row = MagicMock(return_value=state)
+    classifier = AsyncMock(return_value=SimpleNamespace(verdict="OFF_TOPIC"))
+    monkeypatch.setattr(
+        "app.modules.learning_session.service.classify_reply_relevance",
+        classifier,
+    )
+
+    incoming = WSIncomingMessage(type="user_message", content="so")
+    out = [m async for m in service.process_message_stream("chat-1", incoming)]
+
+    classifier.assert_awaited_once()
+    assert any(m.type == "chat_stream_end" for m in out)
+    update = service._apply_update.call_args.args[1]
+    assert update["messages"][-1]["redirect"] is True
+
+
+def test_profile_context_includes_learner_first_name() -> None:
+    """`_profile_context` exposes the learner's first name to the teacher agent."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.db.get.return_value = SimpleNamespace(name="Carlos Mendez")
+    service.profile_repo = MagicMock()
+
+    # No UserProfile row yet — still surfaces the first name.
+    service.profile_repo.get_by_user_id.return_value = None
+    assert service._profile_context(1)["learner_name"] == "Carlos"
+
+    # With a profile, the first name rides alongside the profile fields.
+    service.profile_repo.get_by_user_id.return_value = SimpleNamespace(
+        interests="travel",
+        primary_goals="work",
+        personalisation_context="",
+        self_assessed_level=None,
+        native_language="Spanish",
+        structured_personalisation=None,
+    )
+    ctx = service._profile_context(1)
+    assert ctx["learner_name"] == "Carlos"
+    assert ctx["native_language"] == "Spanish"
+
+    # Missing user degrades to an empty name, never raises.
+    service.db.get.return_value = None
+    assert service._profile_context(1)["learner_name"] == ""
+
+
 # ── Phase 1: task_queue sync, resume checkpoint, restart scorecard ──────────
 
 
