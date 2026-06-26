@@ -246,7 +246,8 @@ async def test_teaching_turn_falls_back_when_llm_fails(monkeypatch) -> None:
     )
 
     assert "Today our lesson is about tense" in result.messages[0]
-    assert "Tell me one real daily routine" in result.messages[0]
+    assert "one real daily routine" in result.messages[0]
+    assert result.messages[0].rstrip().endswith("?")
 
 
 @pytest.mark.asyncio
@@ -271,3 +272,36 @@ async def test_scripted_teaching_turn_fallback_uses_current_lesson(
     assert "Simple Past Tense" in message
     assert "simple present" not in message.lower()
     assert "routine" not in message.lower()
+
+
+@pytest.mark.asyncio
+async def test_first_turn_fallback_teaches_not_gatekeeps(monkeypatch) -> None:
+    """The opener fallback must introduce the lesson and ask a probing
+    question — never the old "tell me an answer to start" gatekeeper, and
+    never the removed "wait" framing."""
+    fake = FakeTextLLM(fail=True)
+    monkeypatch.setattr(teacher, "get_default_llm_client", lambda: fake)
+
+    result = await generate_teaching_turn(
+        topic="Pronouns - Subject, Object, and Possessives",
+        sub_skill="grammar",
+        task_type="read",
+        user_level=1,
+        learner_profile={},
+        conversation=[],
+        lesson_description="Learners use subject and object pronouns correctly.",
+        scripted_plan=["Open: greet and explain subject vs object pronouns."],
+    )
+
+    message = result.messages[0]
+    lowered = message.lower()
+    # Real teaching: names the topic, folds the lesson aim, ends with a probe.
+    assert "Pronouns" in message
+    assert "subject and object pronouns" in lowered
+    assert message.rstrip().endswith("?")
+    # No gatekeeper / wait framing.
+    assert "tell me one short answer to start" not in lowered
+    assert "give me a moment" not in lowered
+    assert "say 'ready'" not in lowered
+    # Still contract-clean (single question, within the word ceiling).
+    assert validate_teaching_message(message) == []

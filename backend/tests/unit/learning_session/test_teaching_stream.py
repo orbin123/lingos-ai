@@ -5,8 +5,8 @@ service's FIRST-chunk timeout must cover a full generate (+ a possible
 validation retry), not just first-token latency. The old 8s budget assumed
 gpt-4o-mini's ~1-2s first token; on a slower model it expired, `_timed_chunks`
 broke with an empty buffer, and `_stream_teaching_turn` emitted its hardcoded
-"Say 'ready' when you want to begin." fallback — i.e. zero teaching. These pin
-(a) the raised budget and (b) that a valid teacher turn actually flows through.
+"wait" fallback — i.e. zero teaching. These pin (a) the raised budget and
+(b) that a valid teacher turn actually flows through.
 """
 
 from __future__ import annotations
@@ -18,10 +18,12 @@ import pytest
 from app.modules.learning_session import service as ls_service
 from app.modules.learning_session.service import LearningSessionService
 
-# The exact canned string the service falls back to when no teacher content
+# A fragment unique to the service's canned fallback when no teacher content
 # arrives in time (service.py `_stream_teaching_turn`). The whole bug is that
-# the learner saw THIS instead of a real lesson.
-_OUTER_FALLBACK_FRAGMENT = "Say 'ready' when you want to begin"
+# the learner saw a canned message instead of a real lesson; the fallback now
+# teaches rather than telling the learner to wait, so this fragment must never
+# appear when the teacher streams a real turn.
+_OUTER_FALLBACK_FRAGMENT = "We'll learn the key idea together"
 
 
 def test_teaching_first_chunk_timeout_is_at_least_30s() -> None:
