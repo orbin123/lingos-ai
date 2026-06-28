@@ -8,6 +8,7 @@ from app.modules.auth.dependencies import get_current_user, require_verified
 from app.modules.auth.models import User
 from app.modules.subscriptions.catalog import PLAN_CATALOG
 from app.modules.subscriptions.exceptions import (
+    AccountNotDeletable,
     NoPlanSelected,
     NotCancellable,
     PlanLocked,
@@ -176,4 +177,13 @@ def delete_account(
     db: Session = Depends(get_db),
 ) -> None:
     """Permanently delete the current account."""
-    SubscriptionService(db).delete_account(current_user)
+    try:
+        SubscriptionService(db).delete_account(current_user)
+    except AccountNotDeletable:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "account_not_deletable",
+                "message": "Admin accounts can't be deleted.",
+            },
+        )

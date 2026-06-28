@@ -138,7 +138,7 @@ function Toggle({
 export default function SettingsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { logout } = useAuthStore();
+  const { logout, isAdmin } = useAuthStore();
   const { isReady } = useRequireAuth();
   const [modal, setModal] = useState<ModalKind>(null);
   const [deleteText, setDeleteText] = useState("");
@@ -350,6 +350,7 @@ export default function SettingsPage() {
           />
           <AboutCard />
           <AccountCard
+            canDelete={!isAdmin}
             onSignOut={handleLogout}
             onPause={() => setModal("pause")}
             onDelete={() => setModal("delete-step-1")}
@@ -385,8 +386,43 @@ export default function SettingsPage() {
             <p style={modalBodyStyle}>
               This action cannot be undone. Enter DELETE to enable account deletion.
             </p>
+            <div
+              style={{
+                marginTop: 16,
+                padding: "14px 16px",
+                borderRadius: 8,
+                background: "oklch(96% 0.03 28)",
+                border: "1px solid oklch(90% 0.05 28)",
+                fontSize: 13.5,
+                lineHeight: 1.55,
+                color: "oklch(40% 0.1 28)",
+              }}
+            >
+              <p style={{ margin: 0 }}>
+                You&apos;re on the <strong>{currentPlan.plan_name}</strong>
+                {typeof purchaseQuery.data?.days_remaining === "number"
+                  ? `, with ${purchaseQuery.data.days_remaining} day${purchaseQuery.data.days_remaining === 1 ? "" : "s"} of access left`
+                  : ""}
+                {purchaseQuery.data?.current_period_end
+                  ? ` (until ${formatDate(purchaseQuery.data.current_period_end)})`
+                  : ""}
+                . Deleting now ends your learning journey here.
+              </p>
+              <p style={{ margin: "10px 0 0" }}>
+                This permanently removes your account, progress, and task
+                history — <strong>it cannot be recovered.</strong>
+              </p>
+              <p style={{ margin: "10px 0 0" }}>
+                <strong>
+                  You will not receive a refund for the remaining period of your
+                  purchase.
+                </strong>
+              </p>
+            </div>
             <input
               autoFocus
+              className="delete-confirm-input"
+              placeholder="DELETE"
               value={deleteText}
               onChange={(event) => setDeleteText(event.target.value)}
               style={{
@@ -397,10 +433,12 @@ export default function SettingsPage() {
                 padding: "12px 13px",
                 fontSize: 14,
                 marginTop: 14,
+                color: "oklch(20% 0.05 245)",
               }}
             />
+            <style>{`.delete-confirm-input::placeholder { color: oklch(55% 0.04 245); opacity: 1; }`}</style>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22 }}>
-              <button style={{ ...buttonBase, background: "white", borderColor: "oklch(82% 0.03 245)" }} onClick={() => setModal(null)}>
+              <button style={{ ...buttonBase, background: "white", borderColor: "oklch(82% 0.03 245)", color: "oklch(28% 0.06 245)" }} onClick={() => setModal(null)}>
                 Cancel
               </button>
               <button
@@ -797,10 +835,12 @@ function AboutCard() {
 }
 
 function AccountCard({
+  canDelete,
   onSignOut,
   onPause,
   onDelete,
 }: {
+  canDelete: boolean;
   onSignOut: () => void;
   onPause: () => void;
   onDelete: () => void;
@@ -820,10 +860,17 @@ function AccountCard({
         <button onClick={onPause} style={{ ...buttonBase, background: "oklch(96% 0.03 28)", color: "oklch(45% 0.16 28)", borderColor: "oklch(90% 0.05 28)" }}>
           Pause course
         </button>
-        <button onClick={onDelete} style={{ ...buttonBase, background: "oklch(54% 0.2 28)", color: "white" }}>
-          Delete account
-        </button>
+        {canDelete && (
+          <button onClick={onDelete} style={{ ...buttonBase, background: "oklch(54% 0.2 28)", color: "white" }}>
+            Delete account
+          </button>
+        )}
       </div>
+      {!canDelete && (
+        <p style={{ margin: "14px 0 0", color: "oklch(45% 0.06 240)", fontSize: 13 }}>
+          Admin accounts are permanent and can&apos;t be deleted.
+        </p>
+      )}
     </section>
   );
 }
@@ -885,7 +932,7 @@ function ConfirmModal({
         <h2 style={modalTitleStyle}>{title}</h2>
         <p style={modalBodyStyle}>{body}</p>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 22 }}>
-          <button style={{ ...buttonBase, background: "white", borderColor: "oklch(82% 0.03 245)" }} onClick={onCancel}>
+          <button style={{ ...buttonBase, background: "white", borderColor: "oklch(82% 0.03 245)", color: "oklch(28% 0.06 245)" }} onClick={onCancel}>
             Cancel
           </button>
           <button

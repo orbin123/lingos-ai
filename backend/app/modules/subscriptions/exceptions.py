@@ -30,3 +30,7 @@ class NotCancellable(SubscriptionError):
 
 class PurchaseNotFound(SubscriptionError):
     """No Purchase row exists for the user (e.g. pause requested pre-purchase)."""
+
+
+class AccountNotDeletable(SubscriptionError):
+    """Admin/super-admin accounts cannot be self-deleted (kept permanent)."""

@@ -18,11 +18,12 @@ from enum import Enum
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.modules.auth.models import User, UserProfile
+from app.modules.auth.models import ADMIN_ROLE_NAMES, User, UserProfile
 from app.modules.auth.repository import UserProfileRepository
 from app.modules.preferences.repository import UserCoursePreferenceRepository
 from app.modules.subscriptions.catalog import PLAN_CATALOG, add_years
 from app.modules.subscriptions.exceptions import (
+    AccountNotDeletable,
     NoPlanSelected,
     NotCancellable,
     PlanLocked,
@@ -332,7 +333,13 @@ class SubscriptionService:
         return profile
 
     def delete_account(self, user: User) -> None:
-        """Permanently delete the current account."""
+        """Permanently delete the current account.
+
+        Admin / super-admin accounts are kept permanent: there is no
+        app-layer way to recreate an admin, so self-deletion is blocked.
+        """
+        if user.has_any_role(ADMIN_ROLE_NAMES):
+            raise AccountNotDeletable
         self.repo.delete_user(user)
         self.db.commit()
 
