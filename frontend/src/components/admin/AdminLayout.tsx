@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   BarChart3,
@@ -16,6 +16,7 @@ import {
   LogOut,
   Newspaper,
   Repeat,
+  RotateCw,
   ShieldCheck,
   Star,
   ThumbsUp,
@@ -63,6 +64,11 @@ export function AdminLayout({
   const pathname = usePathname();
   const { isReady } = useRequireAuth();
   const logout = useAuthStore((s) => s.logout);
+  const queryClient = useQueryClient();
+  const isRefreshing = useIsFetching({ queryKey: ["admin"] }) > 0;
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["admin"] });
+  };
 
   const { data: user, isLoading } = useQuery({
     queryKey: ["me"],
@@ -151,7 +157,22 @@ export function AdminLayout({
             {eyebrow && <div style={eyebrowStyle}>{eyebrow}</div>}
             <h1 style={titleStyle}>{title}</h1>
           </div>
-          {actions && <div style={actionsStyle}>{actions}</div>}
+          <div style={actionsStyle}>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              style={refreshStyle}
+              aria-label="Refresh data"
+            >
+              <RotateCw
+                size={16}
+                className={isRefreshing ? "animate-spin" : undefined}
+              />
+              Refresh
+            </button>
+            {actions}
+          </div>
         </header>
         {children}
       </main>
@@ -182,6 +203,7 @@ const sidebarStyle: CSSProperties = {
   position: "sticky",
   top: 0,
   height: "100vh",
+  overflowY: "auto",
   display: "flex",
   flexDirection: "column",
   gap: 18,
@@ -318,4 +340,20 @@ const actionsStyle: CSSProperties = {
   gap: 10,
   flexWrap: "wrap",
   justifyContent: "flex-end",
+};
+
+const refreshStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  minHeight: 38,
+  border: "1px solid oklch(88% 0.018 245)",
+  borderRadius: 8,
+  background: "white",
+  color: "oklch(35% 0.055 245)",
+  padding: "0 12px",
+  cursor: "pointer",
+  fontFamily: "inherit",
+  fontSize: 14,
+  fontWeight: 700,
 };

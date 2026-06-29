@@ -72,10 +72,14 @@ A required `DCO` check (the probot DCO app) blocks any PR whose commits lack a `
 git commit -s -m "feat(scope): summary"     # -s appends the Signed-off-by trailer
 git rebase --signoff main                   # retro-fix a branch that forgot it
 ```
-When Claude authors a commit, include both trailers (one per line, after a blank line):
+
 ```
-Signed-off-by: Orbin Sunny <91816511+orbin123@users.noreply.github.com>
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+All commits and pull requests must be authored only by me using my GitHub identity:
+
+Orbin Sunny
+Email: 91816511+orbin123@users.noreply.github.com
+
+Do not include `Co-Authored-By` or any AI/tool attribution (Claude, Cursor, ChatGPT, Copilot, etc.). The only trailer permitted is my own `Signed-off-by: Orbin Sunny <91816511+orbin123@users.noreply.github.com>`, which the required DCO check needs and is **not** tool attribution. Remove any automatically added attribution before committing or creating a PR.
 ```
 Use the conventional-commit style the history follows (`feat(scope): …`, `fix(scope): …`, `chore(deps): …`). Fill in `.github/pull_request_template.md` (tests, DB-migration, new-env-var, OpenAPI-snapshot, and security-note checklist) — it mirrors the gates above.
 
@@ -168,4 +172,4 @@ TTS audio and generated images are written to disk by `LocalBlobStorage` (`app/a
 - Scoring math is deterministic and lives only in `app/scoring/` — consume it, don't duplicate it. See `backend/RESTRUCTURE_DECISIONS.md` for the locked constants' rationale.
 - Changed backend routes → regenerate `backend/openapi.json` (`uv run python scripts/export_openapi.py`) and commit it, or the `openapi-drift` check fails.
 - **Ship via PR, never push to `main`.** Merging to `main` auto-deploys to production (`deploy.yml` for backend on ECS, Vercel for frontend). Get the required checks green first, run `ruff format` + `mypy` + the relevant tests locally before pushing, and keep migrations forward-only (a smoke-failure rollback re-points the service but does **not** revert migrations).
-- **Sign off every commit** (`git commit -s`) so the required `DCO` check passes — the trailer's name/email must match the author. Claude-authored commits carry both `Signed-off-by:` and `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+- **Sign off every commit** (`git commit -s`) so the required `DCO` check passes — the trailer's name/email must match the author. Commits and PRs are authored solely by me (Orbin Sunny); the only trailer is my own `Signed-off-by:` — never add `Co-Authored-By` or any AI/agent attribution.
