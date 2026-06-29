@@ -191,10 +191,10 @@ def test_system_prompt_advances_after_correct_frequency_adverb_sentence() -> Non
 
 
 def test_system_prompt_keeps_positive_feedback_specific() -> None:
-    prompt = _system_prompt()
+    one_line = " ".join(_system_prompt().split())
 
-    assert "quote the useful learner phrase" in prompt
-    assert "do not add celebration filler" in prompt.lower()
+    assert "quote a word or phrase from their message" in one_line
+    assert "do not add celebration filler" in one_line.lower()
 
 
 @pytest.mark.asyncio

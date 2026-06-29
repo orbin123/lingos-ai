@@ -421,6 +421,23 @@ def _looks_like_ready_response(text: str) -> bool:
     return False
 
 
+def _looks_like_strict_affirmative(text: str) -> bool:
+    """Affirmative match WITHOUT typo fuzzing.
+
+    Used for the affirmative-non-answer gate during teaching, where a genuine
+    short content answer ("on", "in", "at") must NOT be mistaken for a bare
+    "ok"/"yes": "on" is edit-distance 1 from "ok", so the typo-tolerant
+    `_looks_like_ready_response` flags it. Typo tolerance stays reserved for the
+    readiness gate, which only fires after the tutor asked a readiness question.
+    """
+    cleaned = (text or "").strip().lower()
+    if not cleaned:
+        return False
+    if cleaned in _READY_RESPONSE_PHRASES:
+        return True
+    return any(pattern.search(cleaned) for pattern in _READY_RESPONSE_PATTERNS)
+
+
 def _looks_like_ready_for_practice(
     text: str,
     *,
@@ -645,6 +662,66 @@ def _count_trailing_redirects(messages: list[dict]) -> int:
             # scanning past it. (Each redirect answers exactly one user turn.)
             continue
         if message.get("redirect") is True:
+            count += 1
+            continue
+        break
+    return count
+
+
+def _count_trailing_stays(messages: list[dict]) -> int:
+    """Count consecutive trailing AI re-teach ("stayed") turns.
+
+    Same derivation as `_count_trailing_redirects`: a re-teach turn (emitted
+    when the learner is confused and the cursor is held on the current step)
+    is tagged ``stayed=True``. Counting from the tail measures how long the
+    learner has been stuck on one step. No DB column — derived from the
+    persisted `messages` list.
+    """
+    count = 0
+    for message in reversed(messages):
+        if message.get("role") not in ("ai", "assistant"):
+            continue
+        if message.get("stayed") is True:
+            count += 1
+            continue
+        break
+    return count
+
+
+def _count_green_path_turns(messages: list[dict]) -> int:
+    """Count teacher chat turns that *advanced* the lesson (the script cursor).
+
+    The adaptive teaching loop decouples the script cursor from the raw
+    teacher-turn count: only "green-path" turns (a genuine answer was accepted)
+    move the cursor. Redirects (``redirect=True``) and re-teaches
+    (``stayed=True``) hold the learner on the current step, so they are
+    excluded here. The first green-path turn is the lesson opener (step 1).
+    """
+    count = 0
+    for message in messages:
+        if message.get("role") not in ("ai", "assistant"):
+            continue
+        if str(message.get("type") or "chat") != "chat":
+            continue
+        if message.get("redirect") is True or message.get("stayed") is True:
+            continue
+        count += 1
+    return count
+
+
+def _stuck_on_step_count(messages: list[dict]) -> int:
+    """Consecutive non-advancing trailing turns since the last accepted answer.
+
+    A single scan counting trailing AI turns that are EITHER a redirect or a
+    re-teach (the two break each other when interleaved, so summing the
+    separate counters would undercount). This is the dial the safety net uses
+    to decide a learner is stuck on one step and must be eased forward.
+    """
+    count = 0
+    for message in reversed(messages):
+        if message.get("role") not in ("ai", "assistant"):
+            continue
+        if message.get("redirect") is True or message.get("stayed") is True:
             count += 1
             continue
         break
@@ -1753,9 +1830,26 @@ class LearningSessionService:
             tutor_invited_affirmative = _tutor_asked_readiness(
                 previous_tutor_message
             ) or _any_tutor_mentioned_practice_task(messages)
-            affirmative_non_answer = affirmative and not tutor_invited_affirmative
+            # Use a STRICT affirmative check here so a genuine short answer
+            # ("on", which is a 1-edit typo of "ok") is never mistaken for a
+            # bare "yes" non-answer and redirected. The typo-tolerant
+            # `affirmative` still drives the gate-skip below so typo readiness
+            # replies ("yys") keep working.
+            affirmative_non_answer = (
+                _looks_like_strict_affirmative(text) and not tutor_invited_affirmative
+            )
 
-            if (not affirmative or affirmative_non_answer) and not _is_confusion(text):
+            # Adaptive teaching loop: classify the reply, then route.
+            #   off-topic / gibberish / bare-yes  -> REDIRECT (hold the step)
+            #   confused                          -> RETEACH  (hold the step)
+            #   genuine answer (relevant)         -> ACCEPT   (advance the step)
+            # `stay_on_step` re-teaches the current step instead of advancing;
+            # it is set by the deterministic confusion check or a CONFUSED
+            # classifier verdict. A genuine answer (right or wrong) advances —
+            # the teacher acknowledges it inline before moving on.
+            stay_on_step: bool = _is_confusion(text)
+
+            if (not affirmative or affirmative_non_answer) and not stay_on_step:
                 gate_reason: str | None = None
                 if affirmative_non_answer:
                     # Deterministic — don't burn an LLM call to learn that a bare
@@ -1769,8 +1863,13 @@ class LearningSessionService:
                         current_step=previous_tutor_message,
                         learner_reply=text,
                     )
-                    if verdict is not None and verdict.verdict == "OFF_TOPIC":
-                        gate_reason = "off_topic"
+                    if verdict is not None:
+                        if verdict.verdict == "OFF_TOPIC":
+                            gate_reason = "off_topic"
+                        elif verdict.verdict == "CONFUSED":
+                            # The learner is asking for help, not answering —
+                            # re-teach this step rather than redirecting.
+                            stay_on_step = True
 
                 if gate_reason is not None:
                     redirect = _build_redirect_message(
@@ -1853,7 +1952,9 @@ class LearningSessionService:
                 ):
                     yield msg
             else:
-                async for msg in self._stream_teaching_turn(session, state):
+                async for msg in self._stream_teaching_turn(
+                    session, state, stay_on_step=stay_on_step
+                ):
                     yield msg
             return
 
@@ -2961,7 +3062,13 @@ class LearningSessionService:
         self,
         session: LearningSession,
         state: LearningSessionState,
+        *,
+        stay_on_step: bool = False,
     ) -> AsyncIterator[WSOutgoingMessage]:
+        # `stay_on_step` is True when the learner was confused: re-teach the
+        # CURRENT step instead of advancing. The turn is tagged ``stayed=True``
+        # so it does not move the script cursor (see `_count_green_path_turns`).
+        #
         # Boundary guard (before the broad except below, so strict mode surfaces
         # loudly rather than being swallowed by the fallback handler).
         raw_pre_instructions = (state.get("daily_plan") or {}).get(
@@ -3012,30 +3119,64 @@ class LearningSessionService:
             # cannot accidentally reopen the lesson once early messages
             # roll out of the conversation context window.
             conversation_messages = list(state.get("messages", []))
-            teacher_turns_so_far = _count_teacher_chat_turns(conversation_messages)
+            # The script cursor is driven by *accepted* answers, not the raw
+            # teacher-turn count: only green-path turns advance it. Redirects and
+            # re-teaches hold the learner on the current step. `prior_plain` is
+            # the number of green-path turns already produced (the opener is the
+            # first). On a re-teach (`stay_on_step`) we hold the cursor at the
+            # current step instead of advancing.
+            prior_plain = _count_green_path_turns(conversation_messages)
             plan_length = len(scripted_plan) if scripted_plan else 0
-            current_step_index = (
-                min(teacher_turns_so_far + 1, plan_length) if plan_length else None
-            )
-            if teacher_turns_so_far > 0:
+            if plan_length:
+                if stay_on_step:
+                    current_step_index = min(max(prior_plain, 1), plan_length)
+                else:
+                    current_step_index = min(prior_plain + 1, plan_length)
+            else:
+                current_step_index = None
+            stuck_count = _stuck_on_step_count(conversation_messages)
+            if prior_plain > 0 or stay_on_step:
                 if plan_length:
                     next_step = current_step_index or plan_length
+                    if stay_on_step:
+                        progress_line = (
+                            f"The learner is confused — re-teach step "
+                            f"{next_step} of {plan_length} in simpler words with "
+                            f"a fresh example, then ask one easier question. Do "
+                            f"NOT advance and do NOT ask the readiness question."
+                        )
+                    else:
+                        progress_line = (
+                            f"The next turn is step {next_step} of {plan_length}. "
+                            f"Advance only because the learner gave a genuine "
+                            f"answer: acknowledge it (right or wrong) first, then "
+                            f"teach this step. If the learner is confused or "
+                            f"off-topic instead, re-teach and stay — never jump "
+                            f"to the readiness question while they are stuck."
+                        )
                     status_hint = (
-                        f"Conversation cursor: you have already produced "
-                        f"{teacher_turns_so_far} teacher turn(s); the next "
-                        f"turn must be step {next_step} of the authored "
-                        f"plan (total {plan_length} steps). Never restart "
-                        f"the lesson from step 1. If "
-                        f"{teacher_turns_so_far} >= {plan_length}, ask "
-                        f"'Ready to try the practice task?' verbatim and stop."
+                        f"Conversation cursor: you have produced {prior_plain} "
+                        f"lesson step(s). Never restart the lesson from step 1. "
+                        f"{progress_line}"
                     )
+                    if stuck_count >= _REDIRECT_ESCALATION_THRESHOLD:
+                        status_hint += (
+                            " The learner has been stuck on this step several "
+                            "times — give the simplest possible explanation and a "
+                            "tiny hint so they are never trapped."
+                        )
                 else:
                     status_hint = (
-                        f"Conversation cursor: you have already produced "
-                        f"{teacher_turns_so_far} teacher turn(s). Continue "
-                        f"from where the conversation left off — never "
-                        f"restart the lesson from the beginning."
+                        f"Conversation cursor: you have produced {prior_plain} "
+                        f"lesson step(s). Continue from where the conversation "
+                        f"left off — never restart the lesson from the beginning."
                     )
+                    if stay_on_step:
+                        status_hint += (
+                            " The learner is confused — re-explain the current "
+                            "point in simpler words and ask one easier question; "
+                            "do not advance."
+                        )
                 if isinstance(teacher_instructions, dict):
                     teacher_instructions["authored_plan_status"] = status_hint
                 else:
@@ -3088,7 +3229,12 @@ class LearningSessionService:
             content = fallback
 
         new_messages = list(state.get("messages", []))
-        new_messages.append({"role": "ai", "content": content, "type": "chat"})
+        teaching_turn: dict = {"role": "ai", "content": content, "type": "chat"}
+        if stay_on_step:
+            # Tag re-teaches so the script cursor does not count them as
+            # progress (see `_count_green_path_turns` / `_count_trailing_stays`).
+            teaching_turn["stayed"] = True
+        new_messages.append(teaching_turn)
         self._apply_update(
             session,
             {"phase": "teaching", "messages": new_messages},
