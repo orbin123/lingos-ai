@@ -205,7 +205,7 @@ interface PronunciationResultPayload {
 
 /* ── Event log ───────────────────────────────────────────────────────── */
 type ChatEvent =
-  | { kind: "chat"; role: "ai" | "you"; content: string; actions?: string[]; streamId?: string; streaming?: boolean }
+  | { kind: "chat"; role: "ai" | "you"; content: string; actions?: string[]; streamId?: string; streaming?: boolean; retryTaskGen?: boolean }
   | { kind: "section"; tone: "intro" | "task" | "score" | "feedback"; label: string }
   | { kind: "task"; payload: AnyTaskPayload; submitted: boolean; answers: Record<string, unknown> }
   | { kind: "scorecard"; payload: ScorecardPayload }
@@ -221,7 +221,7 @@ type WSIncoming =
   | { type: "chat_stream_end"; role?: string; stream_id?: string; content?: string; actions?: string[] }
   | { type: "ui_event"; widget: string; payload: Record<string, unknown> }
   | { type: "pong" }
-  | { type: "error"; content?: string };
+  | { type: "error"; content?: string; code?: string };
 
 type WSOutgoing =
   | { type: "user_message"; content: string }
@@ -317,6 +317,10 @@ function isLastActivitySequence(
 }
 
 const RETRY_ACTIVITY_ACTION = "Retry activity";
+// Sent when the learner taps the retry icon on a failed-task-generation error
+// bubble. The backend forces a fresh generation (bypassing the broken cached
+// task) and re-delivers. Must match REGENERATE_TASK_ACTION in the backend.
+const REGENERATE_TASK_ACTION = "Regenerate task";
 
 function isNavigationPromptActions(actions?: string[]): boolean {
   return (
@@ -1399,6 +1403,8 @@ export default function ChatSessionPage() {
   const [restarting, setRestarting] = useState(false);
   const [restartDialogOpen, setRestartDialogOpen] = useState(false);
   const [retryingSequence, setRetryingSequence] = useState<number | null>(null);
+  // True while a forced task regeneration (retry-on-failed-generation) is in flight.
+  const [regenerating, setRegenerating] = useState(false);
   const [currentSequence, setCurrentSequence] = useState<number | null>(null);
   const [lastSubmittedSequence, setLastSubmittedSequence] = useState<number | null>(null);
   const [completedSummaries, setCompletedSummaries] = useState<CompletedActivitySummary[]>([]);
@@ -2010,6 +2016,8 @@ export default function ChatSessionPage() {
           }));
         }
         setCurrentSequence(sequenceFromMeta(msg.payload));
+        // A task arrived — any in-flight regeneration succeeded.
+        setRegenerating(false);
         setEvents((prev) => [
           ...prev,
           { kind: "section", tone: "task", label: WIDGET_SECTION_LABEL[widget] },
@@ -2032,9 +2040,19 @@ export default function ChatSessionPage() {
     }
     if (msg.type === "error") {
       setLoadingType(null);
+      setRegenerating(false);
+      // A recoverable task-generation/validation failure (tagged by the backend)
+      // gets a retry icon next to the copy icon; the learner can force a fresh
+      // generation. Other errors stay as a plain warning with no retry.
+      const recoverable = msg.code === "task_generation_failed";
       setEvents((prev) => [
         ...prev,
-        { kind: "chat", role: "ai", content: `⚠️ ${msg.content || "Something went wrong."}` },
+        {
+          kind: "chat",
+          role: "ai",
+          content: `⚠️ ${msg.content || "Something went wrong."}`,
+          retryTaskGen: recoverable,
+        },
       ]);
     }
   }, []);
@@ -2226,6 +2244,14 @@ export default function ChatSessionPage() {
     setEvents((prev) => [...prev, { kind: "chat", role: "you", content: label }]);
     send({ type: "follow_up_action", action: label });
     if (label === "Next activity") setPhase("practice");
+  }
+
+  function handleRegenerateTask() {
+    if (regenerating) return;
+    // Force a brand-new task generation on the backend (it bypasses the broken
+    // cached content and re-runs the task agent), then re-delivers the task.
+    setRegenerating(true);
+    send({ type: "follow_up_action", action: REGENERATE_TASK_ACTION });
   }
 
   function requestRestartSession() {
@@ -2529,9 +2555,15 @@ export default function ChatSessionPage() {
                   }
                   copyText={evt.role === "ai" ? evt.content : undefined}
                   onRetry={
-                    showRetry ? () => handleRetryActivity(retrySequence) : undefined
+                    evt.retryTaskGen
+                      ? handleRegenerateTask
+                      : showRetry
+                        ? () => handleRetryActivity(retrySequence)
+                        : undefined
                   }
-                  retrying={retryingSequence !== null}
+                  retrying={
+                    evt.retryTaskGen ? regenerating : retryingSequence !== null
+                  }
                 >
                   {useFormatted ? (
                     <ChatFormattedText>{evt.content}</ChatFormattedText>
