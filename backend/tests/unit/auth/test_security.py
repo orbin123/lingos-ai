@@ -40,6 +40,14 @@ class TestPasswordHashing:
         assert verify_password("same-password", a)
         assert verify_password("same-password", b)
 
+    def test_blank_hash_returns_false_not_raises(self):
+        # Google OAuth accounts carry no bcrypt hash; verifying against a blank
+        # string must return False, never raise UnknownHashError.
+        assert verify_password("anything", "") is False
+
+    def test_unidentifiable_hash_returns_false_not_raises(self):
+        assert verify_password("anything", "not-a-real-bcrypt-hash") is False
+
 
 class TestJwt:
     def test_round_trips_subject(self):

@@ -301,3 +301,45 @@ class TestLoginContract:
         )
         assert res.status_code == 200
         assert res.json()["access_token"]
+
+    def test_google_only_account_login_403_oauth_account(self, client, db_session):
+        # A Google OAuth account has password_hash=None. Logging in with
+        # email/password must return a structured 403 — never a 500 from
+        # passlib's UnknownHashError.
+        db_session.add(
+            User(
+                email="googler@example.com",
+                password_hash=None,
+                name="Googler",
+                email_verified=True,
+            )
+        )
+        db_session.commit()
+        res = client.post(
+            "/auth/login",
+            json={"email": "googler@example.com", "password": "whatever123"},
+        )
+        assert res.status_code == 403
+        detail = res.json()["detail"]
+        assert detail["code"] == "oauth_account"
+        assert "Google" in detail["message"]
+
+
+class TestAuthenticateOauthAccount:
+    def test_authenticate_raises_password_login_unavailable(self, db_session):
+        from app.modules.auth.exceptions import PasswordLoginUnavailable
+        from app.modules.auth.service import AuthService
+
+        db_session.add(
+            User(
+                email="googler2@example.com",
+                password_hash=None,
+                name="Googler",
+                email_verified=True,
+            )
+        )
+        db_session.commit()
+        with pytest.raises(PasswordLoginUnavailable):
+            AuthService(db_session).authenticate(
+                email="googler2@example.com", password="whatever123"
+            )

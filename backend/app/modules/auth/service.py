@@ -9,6 +9,7 @@ from app.modules.auth.exceptions import (
     EmailAlreadyExists,
     EmailNotVerified,
     InvalidCredentials,
+    PasswordLoginUnavailable,
 )
 from app.modules.auth.models import ROLE_LEARNER, User
 from app.modules.auth.repository import (
@@ -65,6 +66,9 @@ class AuthService:
 
         Raises:
             InvalidCredentials: if email not found OR password is wrong.
+            PasswordLoginUnavailable: the account has no password because it
+                was created via Google OAuth — the user must continue with
+                Google instead of email/password.
             EmailNotVerified: credentials are correct but the email is not
                 verified yet. Checked AFTER the password so verification
                 state never leaks on a bad-credentials probe.
@@ -77,7 +81,12 @@ class AuthService:
         if not user.is_active:
             raise InvalidCredentials("Invalid email or password")
 
-        if not verify_password(password, user.password_hash or ""):
+        # Google OAuth accounts have no password hash. Verifying against an
+        # empty string makes passlib raise UnknownHashError, so branch first.
+        if user.password_hash is None:
+            raise PasswordLoginUnavailable()
+
+        if not verify_password(password, user.password_hash):
             raise InvalidCredentials("Invalid email or password")
 
         if not user.email_verified:
