@@ -57,7 +57,11 @@ Answer with exactly one verdict:
   tutor for help instead of answering.
 
 Be lenient: only choose OFF_TOPIC when the reply clearly does not try to
-address the step. A short or imperfect answer is RELEVANT.
+address the step. A short or imperfect answer is RELEVANT. In particular, a
+single word or short phrase that plausibly fills the blank or answers the
+tutor's question (e.g. "on", "in", "between" when asked which preposition
+fits) is a genuine attempt — judge it RELEVANT, not OFF_TOPIC, even if it just
+repeats a word that appeared in the question.
 """
 
 
