@@ -14,12 +14,10 @@ venv/
 .vscode/
 .idea/
 *.swp
-# Ignore /docs CONTENTS (not the dir itself) so the negation below can
-# re-include one folder — git can't re-include under a fully-excluded parent.
+.claude/
+
+# Local docs (internal notes, walkthroughs, ad-hoc plans — not for public)
 /docs/*
-# …but version the post-GPT-5 Final Fixes plan + walkthrough + bug
-# screenshots so cloud sessions (which clone the remote) can read them.
-!/docs/Final_fixes/
 
 # macOS (IMPORTANT for you)
 .DS_Store
