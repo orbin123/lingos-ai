@@ -5,6 +5,7 @@ from typing import Any
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from passlib.exc import UnknownHashError
 
 from app.core.config import settings
 
@@ -26,9 +27,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Check if a plain password matches a stored hash.
 
     Used during login. Returns True if match, Fasle otherwise.
-    Never raises an exception for wrong passwords - just returns False
+    Never raises an exception for wrong passwords - just returns False.
+    A blank/legacy/unidentifiable hash also returns False instead of raising
+    (e.g. Google OAuth accounts carry no bcrypt hash).
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except (UnknownHashError, ValueError):
+        return False
 
 
 def create_access_token(

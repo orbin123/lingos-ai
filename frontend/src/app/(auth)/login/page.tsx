@@ -9,7 +9,7 @@ import { useSearchParams } from "next/navigation";
 import { loginSchema, type LoginInput } from "@/lib/validators/auth";
 import { useLogin } from "@/hooks/useLogin";
 import { useRedirectIfAuthed } from "@/hooks/useRedirectIfAuthed";
-import { getApiErrorMessage } from "@/lib/errors";
+import { getApiErrorCode, getApiErrorMessage } from "@/lib/errors";
 
 import { AuthCard } from "@/components/auth/AuthCard";
 import { FormField } from "@/components/auth/FormField";
@@ -52,6 +52,8 @@ function LoginPageInner() {
   const onSubmit = (data: LoginInput) => login.mutate(data);
 
   const serverError = login.error ? getApiErrorMessage(login.error) : (oauthErrorMessage ?? null);
+  // Google-only account tried email/password — steer them to the button below.
+  const isOauthAccount = login.error ? getApiErrorCode(login.error) === "oauth_account" : false;
 
   return (
     <AuthCard
@@ -132,6 +134,14 @@ function LoginPageInner() {
         </div>
 
         <SocialDivider />
+        {isOauthAccount && (
+          <p
+            className="mb-2 text-center text-[13px] font-medium"
+            style={{ color: "oklch(35% 0.07 240)" }}
+          >
+            Use the Google button below to continue.
+          </p>
+        )}
         <GoogleButton />
       </form>
     </AuthCard>

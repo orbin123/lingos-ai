@@ -20,6 +20,13 @@ class EmailNotVerified(Exception):
     pass
 
 
+class PasswordLoginUnavailable(Exception):
+    """Raised on email/password login for an account that has no password
+    (signed up via Google OAuth). The user should continue with Google."""
+
+    pass
+
+
 class OtpNotFoundOrExpired(Exception):
     """No active (unconsumed, unexpired) OTP for this email+purpose."""
 

@@ -33,6 +33,7 @@ from app.modules.auth.exceptions import (
     OtpMismatch,
     OtpNotFoundOrExpired,
     OtpSendLimitExceeded,
+    PasswordLoginUnavailable,
 )
 from app.modules.auth.models import (
     ROLE_ADMIN,
@@ -318,6 +319,16 @@ def login(
     except InvalidCredentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
+        )
+    except PasswordLoginUnavailable:
+        # Account was created via Google OAuth and has no password — point the
+        # user at the Google button instead of a generic credentials error.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "oauth_account",
+                "message": "This account uses Google sign-in. Continue with Google.",
+            },
         )
     except EmailNotVerified:
         # Structured contract the frontend branches on to route the user to
