@@ -441,6 +441,30 @@ class SessionService:
         self.db.refresh(attempt)
         return attempt
 
+    async def force_regenerate_attempt(
+        self, attempt: ActivityAttempt
+    ) -> ActivityAttempt:
+        """Re-run the task agent for a pending attempt, ignoring cached content.
+
+        Unconditional counterpart to ``prepare_attempt_for_delivery``: it does
+        not consult ``_is_attempt_content_valid`` (which is lenient and can pass
+        an empty-``items`` payload that the strict contract later rejects). It
+        always calls the generator via ``_regenerate_task_content`` and replaces
+        the persisted ``task_content``. Used by the chat "retry" affordance after
+        a generation/validation failure, so the learner gets a genuinely fresh
+        task rather than the same broken cached one.
+        """
+        spec = get_archetype(attempt.archetype_id)
+        repaired = await self._regenerate_task_content(
+            attempt=attempt,
+            archetype=spec,
+            prior=dict(attempt.task_content or {}),
+        )
+        attempt.task_content = repaired
+        self.db.commit()
+        self.db.refresh(attempt)
+        return attempt
+
     @staticmethod
     def _is_attempt_content_valid(content: dict, spec: ArchetypeSpec) -> bool:
         return is_valid_task_content(spec.archetype_id, content)

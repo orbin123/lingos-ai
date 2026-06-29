@@ -43,6 +43,7 @@ from app.modules.learning_session.service import (
     LearningSessionTaskUnavailable,
 )
 from app.ai.sessions.exceptions import TaskGenerationFailed
+from app.modules.sessions.contracts.projection import ContractValidationError
 from app.modules.sessions.exceptions import (
     AttemptNotFound,
     SessionNotFound,
@@ -56,6 +57,14 @@ TASK_GENERATION_FAILED_DETAIL = {
     "code": "task_generation_failed",
     "message": "We couldn't prepare today's lesson. Please try again.",
 }
+
+# Learner-facing copy for a mid-session task-generation/validation failure on the
+# WebSocket flow. Replaces the raw pydantic/contract error string in the chat and
+# pairs with `code="task_generation_failed"` so the client shows a retry icon.
+TASK_REGEN_FAILED_CHAT_DETAIL = (
+    "We couldn't prepare this activity. Tap the retry icon below to generate a "
+    "fresh one."
+)
 
 
 # --- REST -------------------------------------------------------------
@@ -481,6 +490,24 @@ async def learning_session_ws(
                 stream = service.process_message_stream(session_id, incoming)
                 async for msg in stream:
                     await _send(websocket, msg)
+            except (ContractValidationError, TaskGenerationFailed) as exc:
+                # Recoverable: the LLM/contract couldn't produce renderable task
+                # content. Surface a friendly, tagged error so the client can offer
+                # a retry (which forces a fresh generation, bypassing the cached
+                # broken content) rather than wedging the session on a raw error.
+                logger.warning(
+                    "ws task generation failed session_id=%s: %s", session_id, exc
+                )
+                capture_to_sentry(exc)
+                await _send(
+                    websocket,
+                    WSOutgoingMessage(
+                        type="error",
+                        code="task_generation_failed",
+                        content=TASK_REGEN_FAILED_CHAT_DETAIL,
+                    ),
+                )
+                continue
             except Exception as exc:  # pragma: no cover — unexpected
                 logger.exception("ws process_message failed session_id=%s", session_id)
                 capture_to_sentry(exc)

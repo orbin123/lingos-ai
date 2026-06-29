@@ -179,6 +179,11 @@ _ACTIVITY_COMPLETE_MESSAGE = (
     '"Next activity" to keep going, or "Go to dashboard" to take a break.'
 )
 
+# follow_up_action the chat sends when the learner taps the retry icon on a
+# failed-task-generation error bubble. Routed in `_stream_followup_response` to a
+# forced fresh generation (bypasses the broken cached task_content).
+REGENERATE_TASK_ACTION = "Regenerate task"
+
 
 def _validate_teacher_input(**fields) -> None:
     """Guard the teacher-agent boundary. Raises under ``strict_contracts``;
@@ -2410,6 +2415,50 @@ class LearningSessionService:
 
         if any(sig in action for sig in end_signals):
             async for msg in self._complete_and_announce(session, state):
+                yield msg
+            return
+
+        if action == REGENERATE_TASK_ACTION.lower() or "regenerate task" in action:
+            # The learner tapped "retry" on a failed task-generation error. Force
+            # a brand-new generation through the task agent, ignoring the broken
+            # content cached on the pending attempt, then re-deliver. Not
+            # idempotent on `practice_task` (the prior failed delivery left the
+            # phase there) — the whole point is to re-run generation.
+            attempt = self._next_pending_attempt(session)
+            if attempt is None:
+                async for msg in self._complete_and_announce(session, state):
+                    yield msg
+                return
+            session.phase = "practice_task"
+            state["phase"] = "practice_task"
+            self.session_repo.save(session)
+            self.db.commit()
+            v2_service = _make_v2_session_service(self.db)
+            # Force regeneration first (bypasses cache), then run the normal
+            # delivery prep so TTS/contract handling stays in one place. May raise
+            # ContractValidationError again → router re-emits the retryable error.
+            await v2_service.force_regenerate_attempt(attempt)
+            attempt = await self._prepare_attempt_for_delivery(attempt)
+            state["task_content"] = dict(attempt.task_content or {})
+            state["task_type"] = self._task_type_for_attempt(attempt)
+            state["current_sequence"] = attempt.sequence
+            state["current_task_index"] = attempt.sequence - 1
+            state["phase"] = "practice_task"
+            session.pre_generated_tasks = state["task_content"] or {}
+            session.task_type = state["task_type"] or ""
+            session.current_task_index = state["current_task_index"]
+            session.user_submission = None
+            session.evaluation = None
+            session.feedback = None
+            session.phase = "practice_task"
+
+            update = await task_delivery_node(state)
+            self._apply_update(session, update)
+            self.db.commit()
+            async for msg in self._stream_outgoing_events(
+                update.get("outgoing_events", []),
+                state=state,
+            ):
                 yield msg
             return
 

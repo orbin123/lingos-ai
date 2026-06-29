@@ -111,3 +111,7 @@ class WSOutgoingMessage(BaseModel):
     feedback_widget: Optional[str] = None
     activity_contract: Optional[dict] = None
     payload_kind: Optional[str] = None
+    # Machine-readable error classifier (e.g. "task_generation_failed"). Lets the
+    # chat client distinguish a recoverable task-generation failure (offer a retry
+    # affordance) from an unrecoverable one. Only set on `type == "error"`.
+    code: Optional[str] = None

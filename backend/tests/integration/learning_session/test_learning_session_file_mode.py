@@ -1719,6 +1719,109 @@ async def _empty_async_iter():
 
 
 @pytest.mark.asyncio
+async def test_regenerate_task_forces_fresh_generation_and_delivers(
+    monkeypatch,
+) -> None:
+    """The chat retry icon sends ``Regenerate task``: it must force a fresh
+    generation (bypassing the broken cached content) and re-deliver — even when
+    the prior failed delivery already flipped the phase to ``practice_task``
+    (where a duplicate ``Next activity`` would no-op)."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.attempts_repo = MagicMock()
+    service.session_repo = MagicMock()
+    service._task_type_for_attempt = MagicMock(return_value="open_text")
+    service._apply_update = MagicMock()
+    service._stream_outgoing_events = MagicMock(return_value=_empty_async_iter())
+
+    session = MagicMock()
+    session.phase = "practice_task"  # the failed delivery left it here
+    session.current_task_index = 6
+    session.messages = []
+
+    state = {"phase": "practice_task", "current_sequence": 7, "messages": []}
+
+    attempt = MagicMock()
+    attempt.sequence = 7
+    attempt.task_content = {"widget": "open_text", "ui_widget": "OpenTextList"}
+    attempt.archetype_id = "WRITE_PARAPHRASE"
+    service.attempts_repo.first_pending.return_value = attempt
+    service._prepare_attempt_for_delivery = AsyncMock(return_value=attempt)
+
+    v2_service = MagicMock()
+    v2_service.force_regenerate_attempt = AsyncMock(return_value=attempt)
+    monkeypatch.setattr(
+        "app.modules.learning_session.service._make_v2_session_service",
+        MagicMock(return_value=v2_service),
+    )
+
+    delivery_calls: list[int] = []
+
+    async def _fake_task_delivery_node(_state):
+        delivery_calls.append(1)
+        return {"outgoing_events": []}
+
+    monkeypatch.setattr(
+        "app.modules.learning_session.service.task_delivery_node",
+        _fake_task_delivery_node,
+    )
+
+    out = [
+        msg
+        async for msg in service._stream_followup_response(
+            session,
+            state,
+            "Regenerate task",
+        )
+    ]
+
+    assert out == []
+    # The task agent was re-run (cache bypassed) and the task re-delivered.
+    v2_service.force_regenerate_attempt.assert_awaited_once_with(attempt)
+    service._prepare_attempt_for_delivery.assert_awaited_once_with(attempt)
+    assert delivery_calls == [1]
+    assert session.phase == "practice_task"
+
+
+@pytest.mark.asyncio
+async def test_regenerate_task_announces_completion_when_nothing_pending(
+    monkeypatch,
+) -> None:
+    """If there's no pending attempt to retry, the regenerate action falls back
+    to announcing completion rather than crashing."""
+    service = LearningSessionService.__new__(LearningSessionService)
+    service.db = MagicMock()
+    service.attempts_repo = MagicMock()
+    service.session_repo = MagicMock()
+    service.attempts_repo.first_pending.return_value = None
+
+    announced: list[int] = []
+
+    async def _fake_complete(_session, _state):
+        announced.append(1)
+        return
+        yield  # pragma: no cover — async generator
+
+    service._complete_and_announce = _fake_complete
+
+    session = MagicMock()
+    session.messages = []
+    state = {"phase": "feedback", "messages": []}
+
+    out = [
+        msg
+        async for msg in service._stream_followup_response(
+            session,
+            state,
+            "Regenerate task",
+        )
+    ]
+
+    assert out == []
+    assert announced == [1]
+
+
+@pytest.mark.asyncio
 async def test_resume_from_feedback_phase_lands_on_next_activity(
     monkeypatch,
 ) -> None:
