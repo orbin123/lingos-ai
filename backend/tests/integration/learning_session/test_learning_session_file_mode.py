@@ -1295,7 +1295,7 @@ async def test_wrong_but_relevant_reply_falls_through_to_teaching(monkeypatch) -
     service._enrich_state_with_profile = MagicMock()
     service._apply_update = MagicMock()
 
-    async def _teaching_stub(_session, _state):
+    async def _teaching_stub(_session, _state, *, stay_on_step=False):
         yield WSOutgoingMessage(type="chat_message", content="__TEACHING__")
 
     service._stream_teaching_turn = _teaching_stub
@@ -1352,7 +1352,9 @@ async def test_bare_yes_to_content_question_is_redirected_not_advanced(
         side_effect=AssertionError("must not advance on a bare 'yes'")
     )
 
-    async def _teaching_stub(_session, _state):  # pragma: no cover - must not run
+    async def _teaching_stub(
+        _session, _state, *, stay_on_step=False
+    ):  # pragma: no cover - must not run
         raise AssertionError("must not reach a teaching turn")
         yield
 
@@ -1857,7 +1859,7 @@ async def test_teaching_runs_multiple_turns_then_redirects_offtopic(
     # exactly as the real _stream_teaching_turn does.
     turns: list[str] = []
 
-    async def _fake_teaching(row, st):  # noqa: ANN001
+    async def _fake_teaching(row, st, *, stay_on_step=False):  # noqa: ANN001
         content = f"Teaching turn {len(turns) + 1}: good — one more short sentence?"
         turns.append(content)
         msgs = list(st.get("messages", []))
