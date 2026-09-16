@@ -28,6 +28,7 @@ venv/
 !/docs/AZURE_VM_HOST_BOOTSTRAP.md
 !/docs/AZURE_DEPLOYMENT_STATUS.md
 !/docs/AZURE_PHASE0_OWNER_CHECKLIST.md
+!/docs/AZURE_EPHEMERAL_BILLING_RUNBOOK.md
 
 # Azure go-live plan and its progress log. These are the two files a new
 # session reads to pick the work up, so they belong with the repository.
@@ -65,6 +66,7 @@ backup*.sql
 !/scripts/azure-up.sh
 !/scripts/azure-down.sh
 !/scripts/azure-status.sh
+!/scripts/azure-auto-down.sh
 
 # Test Files
 backend/scratch

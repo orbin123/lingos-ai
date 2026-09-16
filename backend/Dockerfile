@@ -57,11 +57,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # of these, so the call hangs ~28s then fails and the route returns 502 — it
 # works on a dev Mac but not in the container (a local↔prod parity bug). Install
 # the runtime deps here. (libssl3 is usually already present; listed for clarity
-# and to fail loudly if a future base image drops it.)
+# and to fail loudly if a future base image drops it.) libpcre2-8-0 is named
+# explicitly so apt upgrades the base copy to the current security candidate.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         libasound2 \
+        libpcre2-8-0 \
         libssl3 \
     && rm -rf /var/lib/apt/lists/*
 

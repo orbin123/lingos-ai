@@ -1,13 +1,13 @@
 name: Azure sleep watchdog
 
 # PostgreSQL Flexible Server automatically starts after seven days stopped.
-# This autonomous hourly safety net returns expired environments to cold state.
+# This autonomous five-minute safety net returns expired environments to cold state.
 # It intentionally does not reference the reviewer-gated production Environment;
 # doing so would leave every scheduled stop waiting for human approval.
 
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "*/5 * * * *"
 
 concurrency:
   # Keep the safety net independent from reviewer-gated runs that can wait for
@@ -22,6 +22,7 @@ env:
   AZURE_RESOURCE_GROUP: rg-lingosai-prod
   AZURE_VM_NAME: vm-lingosai-prod
   AZURE_POSTGRES_SERVER: ${{ vars.AZURE_POSTGRES_SERVER }}
+  AZURE_EPHEMERAL_BILLING_ENABLED: ${{ vars.AZURE_EPHEMERAL_BILLING_ENABLED || 'false' }}
 
 jobs:
   enforce-cold-state:
@@ -51,6 +52,6 @@ jobs:
             echo "### Azure sleep watchdog"
             echo "- Checked the bounded \`lingosai-active-until\` resource-group tag."
             echo "- An active future window is left untouched."
-            echo "- An absent, invalid, or expired window is drained, VM-deallocated, and PostgreSQL-stopped."
+            echo "- An absent, invalid, or expired window is drained, VM-deallocated, PostgreSQL-stopped, and its active-window public IP removed."
             echo "- Any failed stop operation fails this workflow and triggers normal GitHub Actions notifications."
           } >>"$GITHUB_STEP_SUMMARY"

@@ -52,10 +52,10 @@ process in
 
 | Workflow | Purpose | Status |
 | --- | --- | --- |
-| `azure-deploy.yml` | Push-to-main deploy through ACR + VM Run Command | Authored |
+| `azure-deploy.yml` | Push-to-main pinned-commit build through VM Run Command | Authored |
 | `azure-wake.yml` | Manual start with bounded live window (1-24 h) | Authored |
 | `azure-sleep.yml` | Manual deallocate VM + stop PostgreSQL | Authored |
-| `azure-sleep-watchdog.yml` | Hourly enforcement of expired live windows | Authored |
+| `azure-sleep-watchdog.yml` | Five-minute enforcement of expired live windows | Authored |
 
 ### WP5 — Azure scripts
 
@@ -66,7 +66,7 @@ Seven scripts in `.github/scripts/`: `azure-vm-bootstrap.sh`,
 
 ### Azure Terraform
 
-Full `infra/azure/` tree with modules for: vm, postgres, acr, storage,
+Full `infra/azure/` tree with persistent modules for: vm, postgres, storage,
 network, key-vault, cost-guardrails. Bootstrap and prod environment roots are
 present. Static guardrail and host-contract test scripts included.
 
@@ -145,11 +145,12 @@ step-by-step commands.
   `api://AzureADTokenExchange`.
 - [ ] **Grant scoped RBAC** — give the Entra identity a reviewed custom role
   at the resource-group scope (VM start/stop/run-command, PostgreSQL
-  start/stop, ACR push/read, tag merge). No Owner/Contributor.
+  start/stop plus the named active firewall rule, named public-IP lifecycle,
+  production NIC update, and tag merge). No Owner/Contributor.
 - [ ] **Set GitHub repository variables** —
   `AZURE_AUTOMATION_ENABLED` (initially `false`),
   `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`,
-  `AZURE_ACR_NAME`, `AZURE_POSTGRES_SERVER`, `AZURE_API_BASE_URL`.
+  `AZURE_EPHEMERAL_BILLING_ENABLED`, `AZURE_POSTGRES_SERVER`, `AZURE_API_BASE_URL`.
 - [ ] **Create GitHub `production` Environment** — required reviewers,
   deployment-branch rule for `main`, environment variable
   `AZURE_PRODUCTION_ENVIRONMENT_GUARD=reviewed-and-protected`.
@@ -179,8 +180,9 @@ step-by-step commands.
 
 - [ ] **Lower DNS TTL** — at Namecheap, reduce the `api` A-record TTL at
   least 24 hours before cutover.
-- [ ] **Point DNS to Azure** — set the `api.lingosai.com` A record to the
-  VM's static public IP.
+- [ ] **Point DNS to Azure** — replace the `api.lingosai.com` A record with a
+  CNAME to `lingosai-prod.centralindia.cloudapp.azure.com` so the active-window
+  public IP can change without another DNS edit.
 - [ ] **Update OAuth redirect URIs** — Google OAuth callback must point to
   the Azure API URL.
 - [ ] **Update Razorpay webhook URL** — point to the Azure API.

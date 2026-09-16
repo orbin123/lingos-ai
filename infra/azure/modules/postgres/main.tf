@@ -53,20 +53,3 @@ resource "azurerm_postgresql_flexible_server_active_directory_administrator" "ap
   principal_name      = var.administrator_principal_name
   principal_type      = "Group"
 }
-
-resource "azurerm_postgresql_flexible_server_firewall_rule" "vm_only" {
-  name             = "allow-vm-only"
-  server_id        = azurerm_postgresql_flexible_server.production.id
-  start_ip_address = var.vm_public_ip_address
-  end_ip_address   = var.vm_public_ip_address
-
-  lifecycle {
-    precondition {
-      condition = (
-        var.vm_public_ip_address != "0.0.0.0" &&
-        var.vm_public_ip_address != "255.255.255.255"
-      )
-      error_message = "Broad PostgreSQL firewall ranges and Allow Azure Services are forbidden."
-    }
-  }
-}

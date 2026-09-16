@@ -2,7 +2,7 @@
 
 # Fail-closed verification for the separately bootstrapped Azure VM. It checks
 # the local host contract and proves managed-identity read access without ever
-# printing the Key Vault secret or ACR access token.
+# printing the Key Vault secret.
 
 set -Eeuo pipefail
 umask 077
@@ -11,13 +11,10 @@ readonly EXPECTED_API_HOSTNAME="api.lingosai.com"
 readonly API_HOSTNAME="${1:-}"
 readonly KEY_VAULT_NAME="${2:-}"
 readonly ENV_SECRET_NAME="${3:-}"
-readonly REGISTRY_NAME="${4:-}"
-readonly POSTGRES_SERVER="${5:-}"
+readonly POSTGRES_SERVER="${4:-}"
 readonly STATE_DIR="/var/lib/lingosai"
 readonly ENV_FILE="/etc/lingosai/backend.env"
 readonly MAINTENANCE_FILE="$STATE_DIR/maintenance"
-
-acr_token=""
 
 fail() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -25,7 +22,6 @@ fail() {
 }
 
 cleanup() {
-  unset acr_token
   az logout --output none >/dev/null 2>&1 || true
 }
 
@@ -37,8 +33,6 @@ require_inputs() {
     || fail "invalid Key Vault name"
   [[ "$ENV_SECRET_NAME" =~ ^[A-Za-z0-9-]{1,127}$ ]] \
     || fail "invalid Key Vault secret name"
-  [[ "$REGISTRY_NAME" =~ ^[a-z0-9]{5,50}$ ]] \
-    || fail "invalid ACR name"
   [[ "$POSTGRES_SERVER" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ ]] \
     || fail "invalid PostgreSQL server name"
 }
@@ -94,15 +88,6 @@ verify_managed_identity_access() {
     || fail "managed identity could not read the approved Key Vault secret"
   unset secret_id
 
-  acr_token="$(az acr login \
-    --name "$REGISTRY_NAME" \
-    --expose-token \
-    --query accessToken \
-    --output tsv \
-    --only-show-errors)"
-  [[ -n "$acr_token" ]] \
-    || fail "managed identity could not obtain an ACR pull token"
-  unset acr_token
 }
 
 verify_postgres_network_path() {

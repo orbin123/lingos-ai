@@ -22,7 +22,7 @@ tracked in [AGENT_WORK.md](./AGENT_WORK.md).
 | Public IP | `pip-lingosai-prod` | Standard SKU, **Static**, `20.219.52.248` |
 | PostgreSQL | `psql-lingosai-e231` | `Standard_B1ms`, PG 16, 32 GiB, Entra-only auth, **Stopped** |
 | Postgres firewall | `allow-vm-only` | Only `20.219.52.248` |
-| ACR | `acrlingosaie231` | **Basic** SKU, admin disabled, repo `lingosai-backend` |
+| ACR | `acrlingosaie231` | **Migration target for removal**; active-window design builds pinned commits on the VM |
 | Blob | `stlingosaipube231` | `public-media` |
 | Blob | `stlingosaiprive231` | `learner-media`, `internal-media` |
 | Key Vault | `kv-lingosai-e231` | Contains one secret: `backend-env` |
@@ -51,7 +51,7 @@ monthly VM allowance.
 | GitHub Environment `production` | Exists, reviewer-gated |
 | `AZURE_CLIENT_ID` / `TENANT_ID` / `SUBSCRIPTION_ID` / `ACR_NAME` / `POSTGRES_SERVER` | All set as repository variables |
 | Last `Azure backend deploy` run | **success**, 30 August 2026, on `main` |
-| `Azure sleep watchdog` | Running hourly, succeeding |
+| `Azure sleep watchdog` | Authored for five-minute enforcement after the ephemeral-billing migration |
 | Local `az` CLI | Authenticated |
 | Local `gh` CLI | Authenticated as `orbin123` |
 

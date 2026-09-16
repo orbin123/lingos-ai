@@ -5,7 +5,7 @@
 #   scripts/azure-up.sh          # 6 hours (the default)
 #   scripts/azure-up.sh 2        # 2 hours
 #
-# The window is a tag on the resource group. The hourly sleep watchdog reads it
+# The window is a tag on the resource group. The five-minute sleep watchdog reads it
 # and forces the environment cold once it expires, so forgetting to run
 # azure-down.sh costs you the rest of the window, not the rest of the month.
 #
@@ -53,7 +53,7 @@ for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
       note "$API_ORIGIN/health/ready answered 200 in ${seconds}s"
       note "Active until: $(active_until)"
       echo
-      note "Put it back to sleep when you are done:  scripts/azure-down.sh"
+      note "Put it back to sleep when you are done:  AZURE_EPHEMERAL_BILLING_ENABLED=true scripts/azure-down.sh"
       exit 0
       ;;
     503)

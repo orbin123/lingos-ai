@@ -42,26 +42,10 @@ HOST_SCRIPT="$verify" bash -c '
     api.lingosai.com \
     lingosai-test-vault \
     backend-env \
-    lingosaitestregistry \
     lingosai-test-postgres
   source "$HOST_SCRIPT"
   require_inputs
 '
-if HOST_SCRIPT="$verify" bash -c '
-  id() { printf "0\n"; }
-  set -- \
-    api.lingosai.com \
-    lingosai-test-vault \
-    backend-env \
-    Bad-Registry \
-    lingosai-test-postgres
-  source "$HOST_SCRIPT"
-  require_inputs
-' >/dev/null 2>&1; then
-  printf 'Verifier accepted an invalid ACR name.\n' >&2
-  exit 1
-fi
-
 HOST_SCRIPT="$postgres_bootstrap" bash -c '
   set -- \
     lingosai-test-postgres \
@@ -147,8 +131,13 @@ grep -Eq 'fallocate -l 1G /swapfile' "$bootstrap"
 
 grep -Eq 'az keyvault secret show' "$verify"
 grep -Eq -- '--query id' "$verify"
-grep -Eq 'az acr login' "$verify"
-grep -Eq -- '--expose-token' "$verify"
+if grep -Eq 'az acr|azurecr\.io' "$verify" "$deploy"; then
+  printf 'Host lifecycle still depends on continuously billed ACR.\n' >&2
+  exit 1
+fi
+grep -Eq 'github\.com/orbin123/lingos-ai/archive' "$deploy"
+grep -Eq 'docker build' "$deploy"
+grep -Eq 'is_commit_sha' "$deploy"
 grep -Eq '/dev/tcp/.*/5432' "$verify"
 
 grep -Eq 'FIREWALL_RULE="temporary-identity-bootstrap"' "$postgres_bootstrap"

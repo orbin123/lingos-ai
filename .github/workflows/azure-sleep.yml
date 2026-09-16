@@ -14,6 +14,7 @@ env:
   AZURE_RESOURCE_GROUP: rg-lingosai-prod
   AZURE_VM_NAME: vm-lingosai-prod
   AZURE_POSTGRES_SERVER: ${{ vars.AZURE_POSTGRES_SERVER }}
+  AZURE_EPHEMERAL_BILLING_ENABLED: ${{ vars.AZURE_EPHEMERAL_BILLING_ENABLED || 'false' }}
 
 jobs:
   sleep:
@@ -48,5 +49,6 @@ jobs:
             echo "### Azure production is cold"
             echo "- VM: \`PowerState/deallocated\` (not merely stopped)"
             echo "- PostgreSQL: \`Stopped\`"
-            echo "- Live window: expired; the watchdog will enforce this state hourly"
+            echo "- Ephemeral public IP and exact-IP PostgreSQL rule: removed when zero-idle billing is enabled"
+            echo "- Live window: expired; the watchdog will enforce this state within five minutes"
           } >>"$GITHUB_STEP_SUMMARY"

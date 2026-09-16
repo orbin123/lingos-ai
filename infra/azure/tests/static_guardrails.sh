@@ -10,14 +10,14 @@ if [[ "$environment_count" != "1" ]] || [[ ! -d "$azure_root/environments/prod" 
   printf 'Expected exactly one production environment root.\n' >&2
   exit 1
 fi
-if [[ "$module_count" != "7" ]]; then
-  printf 'Expected exactly seven approved Azure modules, found %s.\n' "$module_count" >&2
+if [[ "$module_count" != "6" ]]; then
+  printf 'Expected exactly six persistent Azure modules, found %s.\n' "$module_count" >&2
   exit 1
 fi
 
 count_resources() {
   local pattern="$1"
-  rg --glob '*.tf' --count-matches "^resource \"${pattern}\"" "${prod_paths[@]}" \
+  { rg --glob '*.tf' --count-matches "^resource \"${pattern}\"" "${prod_paths[@]}" || true; } \
     | awk -F: '{total += $2} END {print total + 0}'
 }
 
@@ -35,7 +35,7 @@ assert_count() {
 
 assert_count azurerm_resource_group 1
 assert_count azurerm_linux_virtual_machine 1
-assert_count azurerm_public_ip 1
+assert_count azurerm_public_ip 0
 assert_count azurerm_network_interface 1
 assert_count azurerm_virtual_network 1
 assert_count azurerm_subnet 1
@@ -43,20 +43,20 @@ assert_count azurerm_network_security_group 1
 assert_count azurerm_subnet_network_security_group_association 1
 assert_count azurerm_postgresql_flexible_server 1
 assert_count azurerm_postgresql_flexible_server_active_directory_administrator 1
-assert_count azurerm_postgresql_flexible_server_firewall_rule 1
+assert_count azurerm_postgresql_flexible_server_firewall_rule 0
 assert_count azurerm_storage_account 2
 assert_count azurerm_storage_container 3
 assert_count azurerm_storage_management_policy 2
-assert_count azurerm_container_registry 1
+assert_count azurerm_container_registry 0
 assert_count azurerm_key_vault 1
 assert_count azurerm_monitor_action_group 1
 assert_count azurerm_consumption_budget_resource_group 1
 assert_count azurerm_resource_group_policy_assignment 2
-assert_count azurerm_role_assignment 4
+assert_count azurerm_role_assignment 3
 
 total_resources="$(rg --glob '*.tf' '^resource "' "${prod_paths[@]}" | wc -l | tr -d ' ')"
-if [[ "$total_resources" != "28" ]]; then
-  printf 'Expected exactly 28 production Terraform resources, found %s\n' \
+if [[ "$total_resources" != "24" ]]; then
+  printf 'Expected exactly 24 persistent production Terraform resources, found %s\n' \
     "$total_resources" >&2
   exit 1
 fi
@@ -125,15 +125,12 @@ if [[ "$(rg --glob 'providers.tf' --count-matches 'resource_provider_registratio
 fi
 rg --quiet 'depends_on[[:space:]]*=[[:space:]]*\[module\.cost_guardrails\]' \
   "$azure_root/environments/prod/main.tf"
-rg --quiet 'sku[[:space:]]*=[[:space:]]*"Standard"' \
-  "$azure_root/modules/acr/main.tf"
-rg --quiet 'admin_enabled[[:space:]]*=[[:space:]]*false' \
-  "$azure_root/modules/acr/main.tf"
-if rg --quiet 'export_policy_enabled[[:space:]]*=[[:space:]]*false' \
-  "$azure_root/modules/acr/main.tf"; then
-  printf 'Disabling ACR exports would require the forbidden Premium SKU.\n' >&2
-  exit 1
-fi
+control_plane="$azure_root/../../.github/scripts/azure-control-plane.sh"
+rg --quiet 'network public-ip create' "$control_plane"
+rg --quiet 'network public-ip delete' "$control_plane"
+rg --quiet -- '--dns-name "\$public_dns_label"' "$control_plane"
+rg --quiet 'firewall-rule create' "$control_plane"
+rg --quiet 'firewall-rule delete' "$control_plane"
 rg --quiet 'sku_name[[:space:]]*=[[:space:]]*"standard"' \
   "$azure_root/modules/key-vault/main.tf"
 rg --quiet 'rbac_authorization_enabled[[:space:]]*=[[:space:]]*true' \

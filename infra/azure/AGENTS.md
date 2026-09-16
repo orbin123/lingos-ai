@@ -4,8 +4,9 @@ This directory contains the reviewed infrastructure for the Azure zero-cost
 migration. Planning and production execution remain separate approval gates.
 The root `AGENTS.md` and both Azure migration documents remain authoritative.
 
-- Keep exactly one application environment under `environments/prod` plus the
-  one-time `bootstrap` state-storage root.
+- Keep exactly one persistent application environment under `environments/prod`
+  plus the one-time `bootstrap` state-storage root. The bounded lifecycle script
+  exclusively owns the active-window public IP and PostgreSQL firewall rule.
 - A real plan is allowed only after the owner approves the exact region and
   subscription, Phase 0 is complete, and the active identity has read-only
   discovery plus the minimum remote-state data access. Read-only Azure CLI
@@ -23,7 +24,9 @@ The root `AGENTS.md` and both Azure migration documents remain authoritative.
   subscription, principal, storage-account, registry, vault, or server IDs.
 - Preserve `infra/terraform` and all AWS recovery material unchanged.
 - Keep resource types, counts, SKUs, storage/privacy settings, identities, RBAC,
-  and cost controls inside the migration documents' approved envelope.
+  and cost controls inside `docs/AZURE_EPHEMERAL_BILLING_RUNBOOK.md` and the
+  migration documents' persistent-data envelope. Do not reintroduce ACR or a
+  Terraform-retained public IP.
 - Do not add deployment workflows, wake/sleep automation, DNS, frontend work,
   data migration, private endpoints, or any PR 7+ work here.
 

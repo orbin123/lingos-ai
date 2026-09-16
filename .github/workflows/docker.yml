@@ -2,8 +2,8 @@ name: docker
 
 # Proves the backend image builds reproducibly and is free of HIGH/CRITICAL
 # CVEs on every PR that touches the backend or this workflow. Non-pushing:
-# ACR publishing is separately gated in azure-deploy.yml; deploy.yml remains
-# manual AWS recovery history only.
+# Azure deployment builds the pinned public commit on the VM; deploy.yml
+# remains manual AWS recovery history only.
 
 on:
   push:
