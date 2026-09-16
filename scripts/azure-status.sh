@@ -24,6 +24,13 @@ window="$(active_until)"
 bold "LingosAI production"
 printf '  %-14s %s\n' "VM" "${vm_state#PowerState/}"
 printf '  %-14s %s\n' "PostgreSQL" "$pg_state"
+public_ip="$(az network public-ip show \
+  --resource-group "$RESOURCE_GROUP" \
+  --name pip-lingosai-prod \
+  --query ipAddress \
+  --output tsv \
+  --only-show-errors 2>/dev/null || true)"
+printf '  %-14s %s\n' "Public IP" "${public_ip:-absent (not billing)}"
 
 # --- live window -------------------------------------------------------------
 
@@ -178,7 +185,7 @@ PY
 
 echo
 if [[ "$vm_state" == "PowerState/running" ]]; then
-  note "Running now. Sleep it with:  scripts/azure-down.sh"
+  note "Running now. Sleep it with:  AZURE_EPHEMERAL_BILLING_ENABLED=true scripts/azure-down.sh"
 else
-  note "Cold. Wake it with:  scripts/azure-up.sh 4"
+  note "Cold. Wake it with:  ./start.sh 4"
 fi

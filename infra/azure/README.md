@@ -11,7 +11,7 @@ disabled until their production gates pass.
 ```text
 bootstrap/             one-time private Azure Blob state storage
 environments/prod/     the only application environment
-modules/               minimal network, VM, PostgreSQL, Blob, ACR, Key Vault,
+modules/               persistent network, VM, PostgreSQL, Blob, Key Vault,
                        and cost-policy components
 tests/                 offline resource/count/forbidden-service assertions
 ```
@@ -47,6 +47,7 @@ terraform -chdir=environments/prod validate
 terraform -chdir=environments/prod test
 bash tests/static_guardrails.sh
 bash tests/host_contract_guardrails.sh
+bash tests/lifecycle_guardrails.sh
 ```
 
 The Terraform test uses a mock provider and proves that an unapproved region
@@ -69,15 +70,17 @@ approved out-of-band backend configuration after bootstrap.
 ## Production constraints
 
 - one `Standard_B2ats_v2` Linux VM, one embedded 64 GiB Premium LRS (P6) OS
-  disk, one Standard static IPv4, and no data disk;
+  disk, and no data disk; the Standard static IPv4 is an active-window resource
+  created and deleted by the reviewed lifecycle script;
 - one PostgreSQL Flexible Server `B_Standard_B1ms`, PostgreSQL 16, exactly
   32 GiB/P4 storage, seven-day local backups, HA/geo backup/autogrow disabled,
   and one firewall rule matching only the VM public IP;
 - two Standard Hot LRS storage accounts and exactly three containers: public
   blob-only media, private learner media, and private internal data;
-- one Standard ACR with admin disabled and one Standard RBAC Key Vault;
-- system-assigned VM identity with only ACR pull, Blob data contributor on the
-  two application accounts, and Key Vault secret-read roles;
+- no ACR; pinned public commits are built and retained on the VM OS disk;
+- one Standard RBAC Key Vault, with the system-assigned VM identity granted
+  Blob data contributor on the two application accounts and Key Vault
+  secret-read access;
 - one action group, one resource-group budget, and enforced allowed-location and
   allowed-resource-type policies;
 - Vercel remains the Phase 1 frontend.

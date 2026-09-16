@@ -48,7 +48,7 @@ root:
 ```
 
 The wrapper accepts only non-secret identifiers. It requires the server to be
-`Ready` with exactly the Terraform-authored `allow-vm-only` firewall rule,
+`Ready` with exactly the lifecycle-authored `allow-active-vm` firewall rule,
 opens one fixed temporary rule for the single operator IPv4, and removes and
 verifies removal of that rule on every exit path. A pre-existing temporary or
 unexpected rule closes the gate.
@@ -79,8 +79,9 @@ database, mapping, object, or firewall rule to make the gate pass.
 
 The same VM identity runs forward-only Alembic migrations and the single
 backend process, so it owns only the `lingosai` database. It receives no server
-administrator role and no access to other databases. The server firewall still
-allows only the VM's static public IP.
+administrator role and no access to other databases. During an active window,
+the server firewall allows only the VM's current public IP; sleep deletes that
+rule with the ephemeral address.
 
 ## Verification and rollback
 

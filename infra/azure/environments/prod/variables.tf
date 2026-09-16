@@ -62,17 +62,6 @@ variable "private_storage_account_name" {
   }
 }
 
-variable "container_registry_name" {
-  description = "Globally unique ACR name, approved out of band."
-  type        = string
-  nullable    = false
-
-  validation {
-    condition     = can(regex("^[a-zA-Z0-9]{5,50}$", var.container_registry_name))
-    error_message = "container_registry_name must be 5-50 alphanumeric characters."
-  }
-}
-
 variable "key_vault_name" {
   description = "Globally unique Key Vault name, approved out of band."
   type        = string

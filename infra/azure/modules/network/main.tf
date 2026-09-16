@@ -61,18 +61,6 @@ resource "azurerm_subnet_network_security_group_association" "vm" {
   network_security_group_id = azurerm_network_security_group.vm.id
 }
 
-resource "azurerm_public_ip" "vm" {
-  name                = "pip-lingosai-prod"
-  resource_group_name = var.resource_group_name
-  location            = var.location
-  allocation_method   = "Static"
-  sku                 = "Standard"
-  sku_tier            = "Regional"
-  ip_version          = "IPv4"
-  zones               = []
-  tags                = var.tags
-}
-
 resource "azurerm_network_interface" "vm" {
   name                = "nic-lingosai-prod"
   resource_group_name = var.resource_group_name
@@ -83,7 +71,6 @@ resource "azurerm_network_interface" "vm" {
     name                          = "primary"
     subnet_id                     = azurerm_subnet.vm.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.vm.id
     primary                       = true
   }
 }

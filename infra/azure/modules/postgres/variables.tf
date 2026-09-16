@@ -22,18 +22,6 @@ variable "administrator_principal_name" {
   type = string
 }
 
-variable "vm_public_ip_address" {
-  type = string
-
-  validation {
-    condition = (
-      can(cidrhost("${var.vm_public_ip_address}/32", 0)) &&
-      var.vm_public_ip_address != "0.0.0.0"
-    )
-    error_message = "PostgreSQL ingress must be the VM's exact nonzero IPv4 address."
-  }
-}
-
 variable "sku_name" {
   type = string
 

@@ -50,7 +50,6 @@ module "postgres" {
   tenant_id                    = var.tenant_id
   administrator_object_id      = var.postgres_administrator_object_id
   administrator_principal_name = var.postgres_administrator_principal_name
-  vm_public_ip_address         = module.network.public_ip_address
   sku_name                     = local.postgres_sku
   postgres_version             = local.postgres_version
   storage_mb                   = local.postgres_storage_mb
@@ -71,16 +70,6 @@ module "storage" {
   protected_container_access = local.protected_container_access
   vm_principal_id            = module.vm.principal_id
   tags                       = local.common_tags
-}
-
-module "acr" {
-  source = "../../modules/acr"
-
-  resource_group_name = azurerm_resource_group.production.name
-  location            = azurerm_resource_group.production.location
-  registry_name       = var.container_registry_name
-  vm_principal_id     = module.vm.principal_id
-  tags                = local.common_tags
 }
 
 module "key_vault" {
@@ -108,7 +97,6 @@ module "cost_guardrails" {
     "Microsoft.Compute/disks",
     "Microsoft.Compute/virtualMachines",
     "Microsoft.Consumption/budgets",
-    "Microsoft.ContainerRegistry/registries",
     "Microsoft.DBforPostgreSQL/flexibleServers",
     "Microsoft.DBforPostgreSQL/flexibleServers/administrators",
     "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules",

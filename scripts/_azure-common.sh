@@ -21,6 +21,7 @@ readonly VM_NAME="vm-lingosai-prod"
 readonly POSTGRES_SERVER="psql-lingosai-e231"
 readonly ACTIVE_UNTIL_TAG="lingosai-active-until"
 readonly API_ORIGIN="https://api.lingosai.com"
+readonly EPHEMERAL_BILLING_ENABLED="${AZURE_EPHEMERAL_BILLING_ENABLED:-false}"
 
 # Azure's free allowance for this VM size, per calendar month.
 readonly FREE_VM_HOURS=750
@@ -54,6 +55,7 @@ run_control_plane() {
     AZURE_RESOURCE_GROUP="$RESOURCE_GROUP" \
       AZURE_VM_NAME="$VM_NAME" \
       AZURE_POSTGRES_SERVER="$POSTGRES_SERVER" \
+      AZURE_EPHEMERAL_BILLING_ENABLED="$EPHEMERAL_BILLING_ENABLED" \
       "$CONTROL_PLANE" "$@"
   )
 }

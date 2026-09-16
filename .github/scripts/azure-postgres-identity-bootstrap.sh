@@ -110,7 +110,7 @@ rules = json.load(sys.stdin)
 if len(rules) != 1:
     raise SystemExit("expected exactly one PostgreSQL firewall rule")
 rule = rules[0]
-if rule.get("name") != "allow-vm-only":
+if rule.get("name") != "allow-active-vm":
     raise SystemExit("unexpected PostgreSQL firewall rule")
 start = rule.get("startIpAddress")
 end = rule.get("endIpAddress")

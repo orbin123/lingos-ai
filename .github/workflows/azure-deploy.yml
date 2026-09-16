@@ -11,11 +11,13 @@ on:
       - ".github/scripts/azure-*.sh"
       - ".github/workflows/azure-deploy.yml"
       - "infra/azure/tests/host_contract_guardrails.sh"
+      - "infra/azure/tests/lifecycle_guardrails.sh"
   pull_request:
     paths:
       - ".github/scripts/azure-*.sh"
       - ".github/workflows/azure-deploy.yml"
       - "infra/azure/tests/host_contract_guardrails.sh"
+      - "infra/azure/tests/lifecycle_guardrails.sh"
   workflow_dispatch:
 
 concurrency:
@@ -28,7 +30,7 @@ env:
   AZURE_CORE_OUTPUT: none
   AZURE_RESOURCE_GROUP: rg-lingosai-prod
   AZURE_VM_NAME: vm-lingosai-prod
-  IMAGE_REPOSITORY: lingosai-backend
+  AZURE_EPHEMERAL_BILLING_ENABLED: ${{ vars.AZURE_EPHEMERAL_BILLING_ENABLED || 'false' }}
 
 jobs:
   test:
@@ -46,7 +48,9 @@ jobs:
           enable-cache: true
       - name: Validate Azure host contract
         working-directory: .
-        run: bash infra/azure/tests/host_contract_guardrails.sh
+        run: |
+          bash infra/azure/tests/host_contract_guardrails.sh
+          bash infra/azure/tests/lifecycle_guardrails.sh
       - name: Install locked dependencies
         run: uv sync --frozen
       - name: Lint and format check
@@ -63,7 +67,7 @@ jobs:
           git diff --exit-code -- openapi.json
 
   deploy:
-    name: push and deploy immutable digest
+    name: build and deploy pinned commit
     if: ${{ github.ref == 'refs/heads/main' && vars.AZURE_AUTOMATION_ENABLED == 'true' }}
     needs: test
     runs-on: ubuntu-latest
@@ -75,7 +79,6 @@ jobs:
       id-token: write
     env:
       AZURE_POSTGRES_SERVER: ${{ vars.AZURE_POSTGRES_SERVER }}
-      AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
       AZURE_API_BASE_URL: ${{ vars.AZURE_API_BASE_URL }}
       AZURE_PRODUCTION_ENVIRONMENT_GUARD: ${{ vars.AZURE_PRODUCTION_ENVIRONMENT_GUARD }}
     steps:
@@ -85,7 +88,6 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$AZURE_PRODUCTION_ENVIRONMENT_GUARD" == "reviewed-and-protected" ]]
-          [[ "$AZURE_ACR_NAME" =~ ^[a-z0-9]{5,50}$ ]]
           [[ "$AZURE_POSTGRES_SERVER" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ ]]
           [[ "$AZURE_API_BASE_URL" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?$ ]]
 
@@ -101,108 +103,27 @@ jobs:
       - name: Require an active, healthy production window
         run: .github/scripts/azure-control-plane.sh preflight
 
-      - name: Resolve approved registry
-        id: registry
+      - name: Build and deploy the exact commit on the VM
         run: |
           set -euo pipefail
-          login_server="$(az acr show \
-            --name "$AZURE_ACR_NAME" \
-            --query loginServer \
-            --output tsv \
-            --only-show-errors)"
-          [[ "$login_server" == "$AZURE_ACR_NAME.azurecr.io" ]]
-          echo "login_server=$login_server" >>"$GITHUB_OUTPUT"
-
-      - name: Authenticate Docker to ACR
-        run: az acr login --name "$AZURE_ACR_NAME" --output none --only-show-errors
-
-      - name: Compute immutable commit tag
-        id: image
-        run: |
-          set -euo pipefail
-          tag="git-$GITHUB_SHA"
-          echo "tag=$tag" >>"$GITHUB_OUTPUT"
-
-      - name: Check for an existing commit image
-        id: existing
-        run: |
-          set -euo pipefail
-          digest="$(az acr repository show \
-            --name "$AZURE_ACR_NAME" \
-            --image "$IMAGE_REPOSITORY:${{ steps.image.outputs.tag }}" \
-            --query digest \
-            --output tsv \
-            --only-show-errors 2>/dev/null || true)"
-          if [[ -n "$digest" ]]; then
-            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-            echo "found=true" >>"$GITHUB_OUTPUT"
-            echo "digest=$digest" >>"$GITHUB_OUTPUT"
-          else
-            echo "found=false" >>"$GITHUB_OUTPUT"
-          fi
-
-      - name: Set up Docker Buildx
-        if: ${{ steps.existing.outputs.found != 'true' }}
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build and push commit image
-        id: build
-        if: ${{ steps.existing.outputs.found != 'true' }}
-        uses: docker/build-push-action@v7
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          push: true
-          tags: ${{ steps.registry.outputs.login_server }}/${{ env.IMAGE_REPOSITORY }}:${{ steps.image.outputs.tag }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Resolve and verify pushed digest
-        id: resolved
-        env:
-          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
-          EXISTING_DIGEST: ${{ steps.existing.outputs.digest }}
-        run: |
-          set -euo pipefail
-          digest="${EXISTING_DIGEST:-$BUILD_DIGEST}"
-          [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-
-          remote_digest="$(az acr repository show \
-            --name "$AZURE_ACR_NAME" \
-            --image "$IMAGE_REPOSITORY:${{ steps.image.outputs.tag }}" \
-            --query digest \
-            --output tsv \
-            --only-show-errors)"
-          [[ "$remote_digest" == "$digest" ]]
-
-          image_ref="${{ steps.registry.outputs.login_server }}/$IMAGE_REPOSITORY@$digest"
-          echo "digest=$digest" >>"$GITHUB_OUTPUT"
-          echo "image_ref=$image_ref" >>"$GITHUB_OUTPUT"
-
-      - name: Deploy image by digest on the VM
-        env:
-          IMAGE_REF: ${{ steps.resolved.outputs.image_ref }}
-        run: |
-          set -euo pipefail
+          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
           az vm run-command invoke \
             --resource-group "$AZURE_RESOURCE_GROUP" \
             --name "$AZURE_VM_NAME" \
             --command-id RunShellScript \
             --scripts @.github/scripts/azure-vm-deploy.sh \
-            --parameters deploy "$IMAGE_REF" "$AZURE_ACR_NAME" \
+            --parameters deploy "$GITHUB_SHA" \
             --output none \
             --only-show-errors
 
       - name: External health checks and automatic application rollback
-        env:
-          IMAGE_REF: ${{ steps.resolved.outputs.image_ref }}
         run: |
           set -euo pipefail
           base_url="${AZURE_API_BASE_URL%/}"
           for attempt in $(seq 1 15); do
             if curl --fail --silent --show-error --max-time 10 "$base_url/health/live" >/dev/null \
               && curl --fail --silent --show-error --max-time 10 "$base_url/health/ready" >/dev/null; then
-              echo "External health checks passed for $IMAGE_REF"
+              echo "External health checks passed for commit $GITHUB_SHA"
               exit 0
             fi
             echo "External health attempt $attempt/15 failed"
@@ -215,14 +136,12 @@ jobs:
             --name "$AZURE_VM_NAME" \
             --command-id RunShellScript \
             --scripts @.github/scripts/azure-vm-deploy.sh \
-            --parameters rollback unused "$AZURE_ACR_NAME" \
+            --parameters rollback \
             --output none \
             --only-show-errors || echo "::error::Automatic application rollback also failed"
           exit 1
 
-      - name: Record deployed digest in non-secret resource-group tags
-        env:
-          DEPLOYED_DIGEST: ${{ steps.resolved.outputs.digest }}
+      - name: Record deployed commit in non-secret resource-group tags
         run: |
           set -euo pipefail
           group_id="$(az group show \
@@ -233,20 +152,16 @@ jobs:
           az tag update \
             --resource-id "$group_id" \
             --operation Merge \
-            --tags \
-              "lingosai-deployed-digest=$DEPLOYED_DIGEST" \
-              "lingosai-deployed-sha=$GITHUB_SHA" \
+            --tags "lingosai-deployed-sha=$GITHUB_SHA" \
             --output none \
             --only-show-errors
 
       - name: Deployment summary
-        env:
-          IMAGE_REF: ${{ steps.resolved.outputs.image_ref }}
         run: |
           {
             echo "### Azure backend deployment"
             echo "- Commit: \`$GITHUB_SHA\`"
-            echo "- Image: \`$IMAGE_REF\`"
-            echo "- Deployment: digest-pinned with external live/readiness checks"
+            echo "- Source commit: \`$GITHUB_SHA\`"
+            echo "- Deployment: built on the VM from the pinned public commit and stored by immutable local image ID"
             echo "- Database migrations: forward-only; never rolled back automatically"
           } >>"$GITHUB_STEP_SUMMARY"

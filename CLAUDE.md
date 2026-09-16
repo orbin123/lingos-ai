@@ -60,10 +60,10 @@ PR-triggered jobs run on **every** PR with no `paths` filter — that's delibera
 | `docker.yml` | `docker-build` | backend image builds + Trivy HIGH/CRITICAL CVE scan (repo-root `.trivyignore` is the justified allowlist) |
 | `backend-curriculum.yml` | `curriculum-seed-smoke` | path-filtered pre-deploy guard: both 24w/48w calendars import + seed/composer/teacher tests |
 | `deploy.yml` | — (manual recovery only) | frozen AWS recovery workflow; never runs on push |
-| `azure-deploy.yml` | `test backend before deployment`, `push and deploy immutable digest` | backend gates → OIDC → ACR commit tag → deploy resolved digest through VM Run Command; protected `production` approval and live window required |
+| `azure-deploy.yml` | `test backend before deployment`, `build and deploy pinned commit` | backend gates → OIDC → VM builds the exact public commit and retains its immutable local image ID; protected `production` approval and live window required |
 | `azure-wake.yml` | — (manual only) | protected, bounded 1–24 hour start: live-window tag → PostgreSQL `Ready` → VM running → public health checks; failure returns the environment to cold state |
 | `azure-sleep.yml` | — (manual only) | protected, idempotent drain → VM deallocate/verify → PostgreSQL stop/verify |
-| `azure-sleep-watchdog.yml` | — (scheduled) | hourly enforcement of expired live windows, including PostgreSQL's forced seven-day restart |
+| `azure-sleep-watchdog.yml` | — (scheduled) | five-minute enforcement of expired live windows, including PostgreSQL's forced seven-day restart and active-window public-IP removal |
 
 Two more required checks come from GitHub Apps, not Actions: **`DCO`** (sign-off, see below) and **`Vercel`** (frontend preview/prod deploy). `migrations` exists because the unit/integration suites use SQLite `create_all` and never exercise the real migration graph — never delete it.
 
@@ -72,7 +72,7 @@ The workflow has no `push` trigger, so pushes and merges to `main` cannot invoke
 
 ### Azure production automation
 
-The four Azure workflows and their host scripts implement PR 7 only. All Azure cloud jobs require `AZURE_AUTOMATION_ENABLED == 'true'`; any missing or different value leaves them skipped. Deployment is restricted to `main`, uses the protected `production` GitHub Environment, requires an already-active live window, pushes the backend to ACR under `git-<full-sha>`, and passes only the resolved `sha256` digest to the VM. Application rollback restores the prior digest; Alembic migrations remain forward-only. Wake defaults to six hours and rejects values outside 1–24. Sleep always deallocates the VM before stopping PostgreSQL. The hourly watchdog does not use the reviewer-gated Environment because an unattended stop cannot wait for approval; its OIDC trust must instead be restricted to the default branch. See `docs/AZURE_CICD_RUNBOOK.md` for required human-owned setup and the VM host contract. Do not enable or run any Azure workflow until those gates are reviewed and complete.
+The four Azure workflows and their host scripts implement the bounded production lifecycle. All Azure cloud jobs require `AZURE_AUTOMATION_ENABLED == 'true'`; any missing or different value leaves them skipped. Deployment is restricted to `main`, uses the protected `production` GitHub Environment, requires an already-active live window, and asks the VM to build the exact public Git commit. Application rollback restores the prior immutable local image ID; Alembic migrations remain forward-only. Wake defaults to six hours and rejects values outside 1–24. Sleep deallocates the VM before stopping PostgreSQL and, after the separately gated DNS/Terraform migration, removes the active-window public IP and exact-IP firewall rule. The five-minute watchdog does not use the reviewer-gated Environment because an unattended stop cannot wait for approval; its OIDC trust must instead be restricted to the default branch. See `docs/AZURE_EPHEMERAL_BILLING_RUNBOOK.md` and `docs/AZURE_CICD_RUNBOOK.md` before activation.
 
 ### Frontend API availability
 

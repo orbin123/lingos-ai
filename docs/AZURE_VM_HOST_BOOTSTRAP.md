@@ -15,14 +15,14 @@ Neither Azure Run Command parameters nor script output contain the value.
 Before running the bootstrap:
 
 1. The reviewed Azure stack exists and the VM is running.
-2. The VM identity has only the Terraform-defined `AcrPull`, Blob data, and Key
-   Vault secret-read assignments.
+2. The VM identity has only the Terraform-defined Blob data and Key Vault
+   secret-read assignments.
 3. Key Vault contains an enabled secret named `backend-env` whose value is the
    completed production dotenv file. The file must satisfy
    `.env.production.example`, contain no placeholders or database password,
    and use the Azure managed-identity database and Blob modes.
-4. PostgreSQL is running, its firewall permits only the VM's static public IP,
-   and the managed-identity database mapping gate is ready to execute.
+4. PostgreSQL is running, its firewall permits only the active-window public
+   IP, and the managed-identity database mapping gate is ready to execute.
 5. DNS remains unchanged and Azure automation remains disabled.
 
 Upload the completed environment from a temporary `0600` file outside the
@@ -92,7 +92,6 @@ az vm run-command invoke \
     api.lingosai.com \
     <approved-key-vault-name> \
     backend-env \
-    <approved-acr-name> \
     <approved-postgres-server-name> \
   --output none \
   --only-show-errors
@@ -104,13 +103,13 @@ Success proves:
 - the environment remains root-owned and no more permissive than `0600`;
 - maintenance mode, the bounded swapfile, Caddy syntax, upload cap, and local
   reverse proxy are present;
-- the VM identity can read the approved Key Vault secret metadata and acquire
-  an ACR token without displaying either credential;
+- the VM identity can read the approved Key Vault secret metadata without
+  displaying the credential;
 - the PostgreSQL hostname resolves and port `5432` is reachable from the VM.
 
 This is not the database-authentication gate. Complete
 `AZURE_POSTGRES_MANAGED_IDENTITY.md`, then run Alembic, the fresh administrator
-bootstrap, seeders, and the digest-pinned deployment. Caddy removes maintenance
+bootstrap, seeders, and the commit-pinned local-image deployment. Caddy removes maintenance
 mode only after local liveness and readiness both pass.
 
 ## Refresh and rollback

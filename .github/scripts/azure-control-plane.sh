@@ -8,6 +8,11 @@ set -Eeuo pipefail
 
 readonly EXPECTED_RESOURCE_GROUP="rg-lingosai-prod"
 readonly EXPECTED_VM_NAME="vm-lingosai-prod"
+readonly EXPECTED_PUBLIC_IP_NAME="pip-lingosai-prod"
+readonly EXPECTED_NIC_NAME="nic-lingosai-prod"
+readonly EXPECTED_NIC_IP_CONFIG="primary"
+readonly EXPECTED_PUBLIC_DNS_LABEL="lingosai-prod"
+readonly EXPECTED_POSTGRES_FIREWALL_RULE="allow-active-vm"
 readonly ACTIVE_UNTIL_TAG="lingosai-active-until"
 readonly POLL_SECONDS="${AZURE_POLL_SECONDS:-15}"
 readonly MAX_POLLS="${AZURE_MAX_POLLS:-120}" # 30 minutes at the default interval
@@ -15,6 +20,12 @@ readonly MAX_POLLS="${AZURE_MAX_POLLS:-120}" # 30 minutes at the default interva
 resource_group="${AZURE_RESOURCE_GROUP:-$EXPECTED_RESOURCE_GROUP}"
 vm_name="${AZURE_VM_NAME:-$EXPECTED_VM_NAME}"
 postgres_server="${AZURE_POSTGRES_SERVER:-}"
+public_ip_name="${AZURE_PUBLIC_IP_NAME:-$EXPECTED_PUBLIC_IP_NAME}"
+nic_name="${AZURE_NIC_NAME:-$EXPECTED_NIC_NAME}"
+nic_ip_config="${AZURE_NIC_IP_CONFIG:-$EXPECTED_NIC_IP_CONFIG}"
+public_dns_label="${AZURE_PUBLIC_DNS_LABEL:-$EXPECTED_PUBLIC_DNS_LABEL}"
+postgres_firewall_rule="${AZURE_POSTGRES_FIREWALL_RULE:-$EXPECTED_POSTGRES_FIREWALL_RULE}"
+ephemeral_billing_enabled="${AZURE_EPHEMERAL_BILLING_ENABLED:-false}"
 
 error() {
   printf '::error::%s\n' "$*" >&2
@@ -35,6 +46,18 @@ require_config() {
   fi
   if [[ ! "$postgres_server" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ ]]; then
     error "AZURE_POSTGRES_SERVER is missing or is not a valid server name"
+    return 1
+  fi
+  if [[ "$public_ip_name" != "$EXPECTED_PUBLIC_IP_NAME" ]] \
+    || [[ "$nic_name" != "$EXPECTED_NIC_NAME" ]] \
+    || [[ "$nic_ip_config" != "$EXPECTED_NIC_IP_CONFIG" ]] \
+    || [[ "$public_dns_label" != "$EXPECTED_PUBLIC_DNS_LABEL" ]] \
+    || [[ "$postgres_firewall_rule" != "$EXPECTED_POSTGRES_FIREWALL_RULE" ]]; then
+    error "ephemeral network resource names left the reviewed production contract"
+    return 1
+  fi
+  if [[ "$ephemeral_billing_enabled" != "true" && "$ephemeral_billing_enabled" != "false" ]]; then
+    error "AZURE_EPHEMERAL_BILLING_ENABLED must be true or false"
     return 1
   fi
   if [[ ! "$POLL_SECONDS" =~ ^[1-9][0-9]*$ ]] || [[ ! "$MAX_POLLS" =~ ^[1-9][0-9]*$ ]]; then
@@ -63,12 +86,163 @@ read_active_until() {
     --only-show-errors
 }
 
-read_deployed_digest() {
+read_deployed_sha() {
   az group show \
     --name "$resource_group" \
-    --query 'tags."lingosai-deployed-digest"' \
+    --query 'tags."lingosai-deployed-sha"' \
     --output tsv \
     --only-show-errors
+}
+
+public_ip_address() {
+  az network public-ip show \
+    --resource-group "$resource_group" \
+    --name "$public_ip_name" \
+    --query ipAddress \
+    --output tsv \
+    --only-show-errors 2>/dev/null || true
+}
+
+public_ip_presence() {
+  az network public-ip show \
+    --resource-group "$resource_group" \
+    --name "$public_ip_name" \
+    --output none \
+    --only-show-errors >/dev/null 2>&1
+}
+
+ensure_active_public_endpoint() {
+  local ip_address location fqdn expected_fqdn
+  location="$(az group show --name "$resource_group" --query location --output tsv --only-show-errors)"
+
+  local presence_status
+  set +e
+  public_ip_presence
+  presence_status=$?
+  set -e
+  case "$presence_status" in
+    0) ;;
+    3)
+      az network public-ip create \
+        --resource-group "$resource_group" \
+        --name "$public_ip_name" \
+        --location "$location" \
+        --allocation-method Static \
+        --sku Standard \
+        --tier Regional \
+        --version IPv4 \
+        --dns-name "$public_dns_label" \
+        --tags \
+          application=lingosai \
+          environment=production \
+          managed_by=bounded-lifecycle \
+          cost_model=active-window-only \
+        --output none \
+        --only-show-errors
+      ;;
+    *)
+      error "Unable to determine whether $public_ip_name exists (Azure CLI exit $presence_status)"
+      return 1
+      ;;
+  esac
+
+  az network nic ip-config update \
+    --resource-group "$resource_group" \
+    --nic-name "$nic_name" \
+    --name "$nic_ip_config" \
+    --public-ip-address "$public_ip_name" \
+    --output none \
+    --only-show-errors
+
+  ip_address="$(public_ip_address)"
+  [[ "$ip_address" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || {
+    error "Azure did not allocate a public IPv4 address"
+    return 1
+  }
+
+  fqdn="$(az network public-ip show \
+    --resource-group "$resource_group" \
+    --name "$public_ip_name" \
+    --query dnsSettings.fqdn \
+    --output tsv \
+    --only-show-errors)"
+  expected_fqdn="$public_dns_label.${location// /}.cloudapp.azure.com"
+  fqdn="$(printf '%s' "$fqdn" | tr '[:upper:]' '[:lower:]')"
+  expected_fqdn="$(printf '%s' "$expected_fqdn" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$fqdn" != "$expected_fqdn" ]]; then
+    error "public IP FQDN is $fqdn; expected $expected_fqdn"
+    return 1
+  fi
+
+  az postgres flexible-server firewall-rule create \
+    --resource-group "$resource_group" \
+    --server-name "$postgres_server" \
+    --name "$postgres_firewall_rule" \
+    --start-ip-address "$ip_address" \
+    --end-ip-address "$ip_address" \
+    --output none \
+    --only-show-errors
+
+  notice "Active public endpoint is $fqdn ($ip_address)"
+}
+
+remove_active_public_endpoint() {
+  local presence_status
+  set +e
+  az postgres flexible-server firewall-rule show \
+    --resource-group "$resource_group" \
+    --server-name "$postgres_server" \
+    --name "$postgres_firewall_rule" \
+    --output none \
+    --only-show-errors >/dev/null 2>&1
+  presence_status=$?
+  set -e
+  case "$presence_status" in
+    0)
+      az postgres flexible-server firewall-rule delete \
+        --resource-group "$resource_group" \
+        --server-name "$postgres_server" \
+        --name "$postgres_firewall_rule" \
+        --yes \
+        --output none \
+        --only-show-errors
+      ;;
+    3) notice "PostgreSQL active-window firewall rule is already absent" ;;
+    *)
+      error "Unable to inspect the PostgreSQL active-window firewall rule (Azure CLI exit $presence_status)"
+      return 1
+      ;;
+  esac
+
+  set +e
+  public_ip_presence
+  presence_status=$?
+  set -e
+  case "$presence_status" in
+    0) ;;
+    3)
+      notice "Public IP is already absent"
+      return 0
+      ;;
+    *)
+      error "Unable to inspect $public_ip_name before deletion (Azure CLI exit $presence_status)"
+      return 1
+      ;;
+  esac
+
+  az network nic ip-config update \
+    --resource-group "$resource_group" \
+    --nic-name "$nic_name" \
+    --name "$nic_ip_config" \
+    --remove publicIpAddress \
+    --output none \
+    --only-show-errors
+  az network public-ip delete \
+    --resource-group "$resource_group" \
+    --name "$public_ip_name" \
+    --output none \
+    --only-show-errors
+  notice "Deleted the billed Standard public IP for the inactive window"
 }
 
 set_active_until() {
@@ -216,9 +390,9 @@ start_vm() {
 }
 
 deployment_is_recorded() {
-  local digest
-  digest="$(read_deployed_digest)"
-  [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+  local commit_sha
+  commit_sha="$(read_deployed_sha)"
+  [[ "$commit_sha" =~ ^[a-f0-9]{40}$ ]]
 }
 
 resume_vm_application() {
@@ -255,13 +429,18 @@ PY
   printf 'Active window ends at %s\n' "$active_until"
 
   start_postgres
+  if [[ "$ephemeral_billing_enabled" == "true" ]]; then
+    ensure_active_public_endpoint
+  else
+    notice "Ephemeral billing migration is not activated; preserving the existing public IP"
+  fi
   start_vm
 
   if deployment_is_recorded; then
     resume_vm_application
     printf 'deployment_recorded=true\n' >>"${GITHUB_OUTPUT:-/dev/null}"
   else
-    notice "No deployed digest is recorded; compute is ready for the initial protected deployment"
+    notice "No deployed commit is recorded; compute is ready for the initial protected deployment"
     printf 'deployment_recorded=false\n' >>"${GITHUB_OUTPUT:-/dev/null}"
   fi
   printf 'active_until=%s\n' "$active_until" >>"${GITHUB_OUTPUT:-/dev/null}"
@@ -346,9 +525,16 @@ sleep_environment() {
   set_active_until "$expired" || failures=1
 
   # Preserve the required shutdown order: drain/stop the application,
-  # deallocate and verify the VM, then stop and verify PostgreSQL.
+  # deallocate and verify the VM, remove its ephemeral network access while
+  # PostgreSQL still accepts control-plane updates, then stop PostgreSQL.
   graceful_stop_vm_application || failures=1
   deallocate_vm || failures=1
+
+  if [[ "$ephemeral_billing_enabled" == "true" ]]; then
+    remove_active_public_endpoint || failures=1
+  else
+    notice "Ephemeral billing migration is not activated; the Standard public IP remains billable"
+  fi
   stop_postgres || failures=1
 
   set_active_until "$expired" || failures=1
